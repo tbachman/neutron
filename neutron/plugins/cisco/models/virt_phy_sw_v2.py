@@ -406,7 +406,8 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
         """
         LOG.debug(_("delete_port() called"))
         port = self.get_port(context, id)
-        if self.config_nexus:
+        if self.config_nexus and\
+            port['device_owner'] not in ('', 'compute:none', 'network:dhcp'):
             vlan_id = self._get_segmentation_id(port['network_id'])
             n_args = [port['device_id'], vlan_id]
             self._invoke_plugin_per_device(const.NEXUS_PLUGIN,
