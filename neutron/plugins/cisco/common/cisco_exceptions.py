@@ -63,20 +63,17 @@ class QosNameAlreadyExists(exceptions.NeutronException):
 
 class CredentialNotFound(exceptions.NeutronException):
     """Credential with this ID cannot be found."""
-    message = _("Credential %(credential_id)s could not be found "
-                "for tenant %(tenant_id)s")
+    message = _("Credential %(credential_id)s could not be found")
 
 
 class CredentialNameNotFound(exceptions.NeutronException):
     """Credential Name could not be found."""
-    message = _("Credential %(credential_name)s could not be found "
-                "for tenant %(tenant_id)s")
+    message = _("Credential %(credential_name)s could not be found")
 
 
 class CredentialAlreadyExists(exceptions.NeutronException):
     """Credential ID already exists."""
-    message = _("Credential %(credential_id)s already exists "
-                "for tenant %(tenant_id)s")
+    message = _("Credential %(credential_id)s already exists")
 
 
 class NexusComputeHostNotConfigured(exceptions.NeutronException):
@@ -131,3 +128,64 @@ class SubnetInterfacePresent(exceptions.NeutronException):
 class PortIdForNexusSvi(exceptions.NeutronException):
         """Port Id specified for Nexus SVI."""
         message = _('Nexus hardware router gateway only uses Subnet Ids')
+
+
+class InvalidDetach(exceptions.NeutronException):
+    message = _("Unable to unplug the attachment %(att_id)s from port "
+                "%(port_id)s for network %(net_id)s. The attachment "
+                "%(att_id)s does not exist.")
+
+
+class PolicyProfileAlreadyExists(exceptions.NeutronException):
+    """Policy Profile cannot be created since it already exists."""
+    message = _("Policy Profile %(profile_id)s "
+                "already exists.")
+
+
+class PolicyProfileIdNotFound(exceptions.NeutronException):
+    """Policy Profile with the given UUID cannot be found."""
+    message = _("Policy Profile %(profile_id)s could not be found")
+
+
+class NetworkProfileAlreadyExists(exceptions.NeutronException):
+    """Network Profile cannot be created since it already exists."""
+    message = _("Network Profile %(profile_id)s "
+                "already exists.")
+
+
+class NetworkProfileIdNotFound(exceptions.NeutronException):
+    """Network Profile with the given UUID cannot be found."""
+    message = _("Network Profile %(profile_id)s could not be found")
+
+
+class VMNetworkNotFound(exceptions.NeutronException):
+    """VM Network with the given name cannot be found."""
+    message = _("VM Network %(name)s could not be found")
+
+
+class VxlanIdInUse(exceptions.NeutronException):
+    """VXLAN ID is in use."""
+    message = _("Unable to create the network. "
+                "The VXLAN ID %(vxlan_id)s is in use.")
+
+
+class VSMConnectionFailed(exceptions.NeutronException):
+    """Connection to VSM failed."""
+    message = _("Connection to VSM failed: %(reason)s")
+
+
+class VSMError(exceptions.NeutronException):
+    """Error has occured on the VSM."""
+    message = _("Internal VSM Error: %(reason)s")
+
+
+class N1kvNetworkBindingNotFound(exceptions.NeutronException):
+    """Network Binding for network cannot be found."""
+    message = _("Network Binding for network %(network_id)s could "
+                "not be found.")
+
+
+class N1kvPortBindingNotFound(exceptions.NeutronException):
+    """Port Binding for port cannot be found."""
+    message = _("Port Binding for port %(port_id)s could "
+                "not be found.")

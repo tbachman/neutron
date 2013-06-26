@@ -1,7 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
-# Copyright 2011 Cisco Systems, Inc.
-# All rights reserved.
+# Copyright 2012 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -16,18 +15,40 @@
 #    under the License.
 #
 # @author: Ying Liu, Cisco Systems, Inc.
+# @author: Abhishek Raut, Cisco Systems, Inc
 #
 
 from webob import exc
 
 from neutron.api import api_common as common
 from neutron.api import extensions
+from neutron.api.v2 import attributes as attr
 from neutron.manager import NeutronManager
 from neutron.plugins.cisco.common import cisco_exceptions as exception
 from neutron.plugins.cisco.common import cisco_faults as faults
 from neutron.plugins.cisco.extensions import (_credential_view as
                                               credential_view)
 from neutron import wsgi
+
+
+# Attribute Map
+RESOURCE_ATTRIBUTE_MAP = {
+    'credentials': {
+        'credential_id': {'allow_post': False, 'allow_put': False,
+                          'validate': {'type:regex': attr.UUID_PATTERN},
+                          'is_visible': True},
+        'credential_name': {'allow_post': True, 'allow_put': True,
+                            'is_visible': True, 'default': ''},
+        'type': {'allow_post': True, 'allow_put': True,
+                 'is_visible': True, 'default': ''},
+        'user_name': {'allow_post': True, 'allow_put': True,
+                      'is_visible': True, 'default': ''},
+        'password': {'allow_post': True, 'allow_put': True,
+                     'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'is_visible': False, 'default': ''},
+    },
+}
 
 
 class Credential(extensions.ExtensionDescriptor):
