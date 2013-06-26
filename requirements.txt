@@ -25,5 +25,6 @@ stevedore>=0.9
 oslo.config>=1.2.0a3
 
 # Cisco plugin dependencies
+configobj
 python-novaclient
 # End Cisco dependencies

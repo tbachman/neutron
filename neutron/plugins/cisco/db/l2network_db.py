@@ -1,6 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2012, Cisco Systems, Inc.
+
+# Copyright 2011, Cisco Systems, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,20 +13,25 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
 # @author: Rohit Agarwalla, Cisco Systems, Inc.
 
 from sqlalchemy.orm import exc
 
-from neutron.db import api as db
+from neutron.common import exceptions as q_exc
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_exceptions as c_exc
 from neutron.plugins.cisco.common import config
-from neutron.plugins.cisco.db import network_models_v2
-from neutron.plugins.openvswitch import ovs_models_v2
+from neutron.plugins.cisco.db import l2network_models
+
+import neutron.plugins.cisco.db.api as db
 
 
 LOG = logging.getLogger(__name__)
+
+
+def initialize():
+    """Establish database connection and load models."""
+    db.configure_db()
 
 
 def create_vlanids():
@@ -34,14 +39,14 @@ def create_vlanids():
     LOG.debug(_("create_vlanids() called"))
     session = db.get_session()
     try:
-        vlanid = session.query(network_models_v2.VlanID).one()
+        vlanid = session.query(l2network_models.VlanID).one()
     except exc.MultipleResultsFound:
         pass
     except exc.NoResultFound:
         start = int(config.CISCO.vlan_start)
         end = int(config.CISCO.vlan_end)
         while start <= end:
-            vlanid = network_models_v2.VlanID(start)
+            vlanid = l2network_models.VlanID(start)
             session.add(vlanid)
             start += 1
         session.flush()
@@ -52,7 +57,7 @@ def get_all_vlanids():
     """Gets all the vlanids."""
     LOG.debug(_("get_all_vlanids() called"))
     session = db.get_session()
-    return session.query(network_models_v2.VlanID).all()
+    return session.query(l2network_models.VlanID).all()
 
 
 def is_vlanid_used(vlan_id):
@@ -60,7 +65,7 @@ def is_vlanid_used(vlan_id):
     LOG.debug(_("is_vlanid_used() called"))
     session = db.get_session()
     try:
-        vlanid = (session.query(network_models_v2.VlanID).
+        vlanid = (session.query(l2network_models.VlanID).
                   filter_by(vlan_id=vlan_id).one())
         return vlanid["vlan_used"]
     except exc.NoResultFound:
@@ -72,7 +77,7 @@ def release_vlanid(vlan_id):
     LOG.debug(_("release_vlanid() called"))
     session = db.get_session()
     try:
-        vlanid = (session.query(network_models_v2.VlanID).
+        vlanid = (session.query(l2network_models.VlanID).
                   filter_by(vlan_id=vlan_id).one())
         vlanid["vlan_used"] = False
         session.merge(vlanid)
@@ -80,6 +85,7 @@ def release_vlanid(vlan_id):
         return vlanid["vlan_used"]
     except exc.NoResultFound:
         raise c_exc.VlanIDNotFound(vlan_id=vlan_id)
+    return
 
 
 def delete_vlanid(vlan_id):
@@ -87,7 +93,7 @@ def delete_vlanid(vlan_id):
     LOG.debug(_("delete_vlanid() called"))
     session = db.get_session()
     try:
-        vlanid = (session.query(network_models_v2.VlanID).
+        vlanid = (session.query(l2network_models.VlanID).
                   filter_by(vlan_id=vlan_id).one())
         session.delete(vlanid)
         session.flush()
@@ -101,11 +107,11 @@ def reserve_vlanid():
     LOG.debug(_("reserve_vlanid() called"))
     session = db.get_session()
     try:
-        rvlan = (session.query(network_models_v2.VlanID).
+        rvlan = (session.query(l2network_models.VlanID).
                  filter_by(vlan_used=False).first())
         if not rvlan:
             raise exc.NoResultFound
-        rvlanid = (session.query(network_models_v2.VlanID).
+        rvlanid = (session.query(l2network_models.VlanID).
                    filter_by(vlan_id=rvlan["vlan_id"]).one())
         rvlanid["vlan_used"] = True
         session.merge(rvlanid)
@@ -119,15 +125,82 @@ def get_all_vlanids_used():
     """Gets all the vlanids used."""
     LOG.debug(_("get_all_vlanids() called"))
     session = db.get_session()
-    return (session.query(network_models_v2.VlanID).
+    return (session.query(l2network_models.VlanID).
             filter_by(vlan_used=True).all())
+
+
+def get_all_vlan_bindings():
+    """Lists all the vlan to network associations."""
+    LOG.debug(_("get_all_vlan_bindings() called"))
+    session = db.get_session()
+    return session.query(l2network_models.VlanBinding).all()
+
+
+def get_vlan_binding(netid):
+    """Lists the vlan given a network_id."""
+    LOG.debug(_("get_vlan_binding() called"))
+    session = db.get_session()
+    try:
+        binding = (session.query(l2network_models.VlanBinding).
+                   filter_by(network_id=netid).one())
+        return binding
+    except exc.NoResultFound:
+        raise q_exc.NetworkNotFound(net_id=netid)
+
+
+def add_vlan_binding(vlanid, vlanname, netid):
+    """Adds a vlan to network association."""
+    LOG.debug(_("add_vlan_binding() called"))
+    session = db.get_session()
+    try:
+        binding = (session.query(l2network_models.VlanBinding).
+                   filter_by(vlan_id=vlanid).one())
+        raise c_exc.NetworkVlanBindingAlreadyExists(vlan_id=vlanid,
+                                                    network_id=netid)
+    except exc.NoResultFound:
+        binding = l2network_models.VlanBinding(vlanid, vlanname, netid)
+        session.add(binding)
+        session.flush()
+        return binding
+
+
+def remove_vlan_binding(netid):
+    """Removes a vlan to network association."""
+    LOG.debug(_("remove_vlan_binding() called"))
+    session = db.get_session()
+    try:
+        binding = (session.query(l2network_models.VlanBinding).
+                   filter_by(network_id=netid).one())
+        session.delete(binding)
+        session.flush()
+        return binding
+    except exc.NoResultFound:
+        pass
+
+
+def update_vlan_binding(netid, newvlanid=None, newvlanname=None):
+    """Updates a vlan to network association."""
+    LOG.debug(_("update_vlan_binding() called"))
+    session = db.get_session()
+    try:
+        binding = (session.query(l2network_models.VlanBinding).
+                   filter_by(network_id=netid).one())
+        if newvlanid:
+            binding["vlan_id"] = newvlanid
+        if newvlanname:
+            binding["vlan_name"] = newvlanname
+        session.merge(binding)
+        session.flush()
+        return binding
+    except exc.NoResultFound:
+        raise q_exc.NetworkNotFound(net_id=netid)
 
 
 def get_all_qoss(tenant_id):
     """Lists all the qos to tenant associations."""
     LOG.debug(_("get_all_qoss() called"))
     session = db.get_session()
-    return (session.query(network_models_v2.QoS).
+    return (session.query(l2network_models.QoS).
             filter_by(tenant_id=tenant_id).all())
 
 
@@ -136,9 +209,10 @@ def get_qos(tenant_id, qos_id):
     LOG.debug(_("get_qos() called"))
     session = db.get_session()
     try:
-        return (session.query(network_models_v2.QoS).
-                filter_by(tenant_id=tenant_id).
-                filter_by(qos_id=qos_id).one())
+        qos = (session.query(l2network_models.QoS).
+               filter_by(tenant_id=tenant_id).
+               filter_by(qos_id=qos_id).one())
+        return qos
     except exc.NoResultFound:
         raise c_exc.QosNotFound(qos_id=qos_id,
                                 tenant_id=tenant_id)
@@ -149,13 +223,13 @@ def add_qos(tenant_id, qos_name, qos_desc):
     LOG.debug(_("add_qos() called"))
     session = db.get_session()
     try:
-        qos = (session.query(network_models_v2.QoS).
+        qos = (session.query(l2network_models.QoS).
                filter_by(tenant_id=tenant_id).
                filter_by(qos_name=qos_name).one())
         raise c_exc.QosNameAlreadyExists(qos_name=qos_name,
                                          tenant_id=tenant_id)
     except exc.NoResultFound:
-        qos = network_models_v2.QoS(tenant_id, qos_name, qos_desc)
+        qos = l2network_models.QoS(tenant_id, qos_name, qos_desc)
         session.add(qos)
         session.flush()
         return qos
@@ -165,7 +239,7 @@ def remove_qos(tenant_id, qos_id):
     """Removes a qos to tenant association."""
     session = db.get_session()
     try:
-        qos = (session.query(network_models_v2.QoS).
+        qos = (session.query(l2network_models.QoS).
                filter_by(tenant_id=tenant_id).
                filter_by(qos_id=qos_id).one())
         session.delete(qos)
@@ -179,7 +253,7 @@ def update_qos(tenant_id, qos_id, new_qos_name=None):
     """Updates a qos to tenant association."""
     session = db.get_session()
     try:
-        qos = (session.query(network_models_v2.QoS).
+        qos = (session.query(l2network_models.QoS).
                filter_by(tenant_id=tenant_id).
                filter_by(qos_id=qos_id).one())
         if new_qos_name:
@@ -195,49 +269,51 @@ def update_qos(tenant_id, qos_id, new_qos_name=None):
 def get_all_credentials():
     """Lists all the creds for a tenant."""
     session = db.get_session()
-    return (session.query(network_models_v2.Credential).all())
+    return session.query(l2network_models.Credential).all()
 
 
 def get_credential(credential_id):
-    """Lists the creds for given a cred_id."""
+    """Lists the creds for given a cred_id and tenant_id."""
     session = db.get_session()
     try:
-        return (session.query(network_models_v2.Credential).
+        cred = (session.query(l2network_models.Credential).
                 filter_by(credential_id=credential_id).one())
+        return cred
     except exc.NoResultFound:
         raise c_exc.CredentialNotFound(credential_id=credential_id)
 
 
 def get_credential_name(credential_name):
-    """Lists the creds for given a cred_name."""
+    """Lists the creds for given a cred_name and tenant_id."""
     session = db.get_session()
     try:
-        return (session.query(network_models_v2.Credential).
+        cred = (session.query(l2network_models.Credential).
                 filter_by(credential_name=credential_name).one())
+        return cred
     except exc.NoResultFound:
         raise c_exc.CredentialNameNotFound(credential_name=credential_name)
 
 
 def add_credential(credential_name, user_name, password, type):
-    """Create a credential."""
+    """Adds a qos to tenant association."""
     session = db.get_session()
     try:
-        cred = (session.query(network_models_v2.Credential).
+        cred = (session.query(l2network_models.Credential).
                 filter_by(credential_name=credential_name).one())
         raise c_exc.CredentialAlreadyExists(credential_name=credential_name)
     except exc.NoResultFound:
-        cred = network_models_v2.Credential(credential_name,
-                                            user_name, password, type)
+        cred = l2network_models.Credential(credential_name,
+                                           user_name, password, type)
         session.add(cred)
         session.flush()
         return cred
 
 
 def remove_credential(credential_id):
-    """Removes a credential."""
+    """Removes a credential from a  tenant."""
     session = db.get_session()
     try:
-        cred = (session.query(network_models_v2.Credential).
+        cred = (session.query(l2network_models.Credential).
                 filter_by(credential_id=credential_id).one())
         session.delete(cred)
         session.flush()
@@ -251,7 +327,7 @@ def update_credential(credential_id,
     """Updates a credential for a tenant."""
     session = db.get_session()
     try:
-        cred = (session.query(network_models_v2.Credential).
+        cred = (session.query(l2network_models.Credential).
                 filter_by(credential_id=credential_id).one())
         if new_user_name:
             cred["user_name"] = new_user_name
@@ -262,76 +338,3 @@ def update_credential(credential_id,
         return cred
     except exc.NoResultFound:
         raise c_exc.CredentialNotFound(credential_id=credential_id)
-
-
-def get_all_n1kv_credentials():
-    session = db.get_session()
-    return (session.query(network_models_v2.Credential).
-            filter_by(type='n1kv').all())
-
-
-def get_ovs_vlans():
-    session = db.get_session()
-    bindings = (session.query(ovs_models_v2.VlanAllocation.vlan_id).
-                filter_by(allocated=True))
-    return [binding.vlan_id for binding in bindings]
-
-
-class Credential_db_mixin(object):
-
-    """
-    Mixin class for Cisco Credentials as a resource.
-    """
-
-    def _make_credential_dict(self, credential, fields=None):
-        res = {'credential_id': credential['credential_id'],
-               'credential_name': credential['credential_name'],
-               'user_name': credential['user_name'],
-               'password': credential['password'],
-               'type': credential['type']}
-        return self._fields(res, fields)
-
-    def create_credential(self, context, credential):
-        """
-        Create a credential
-        """
-        c = credential['credential']
-        cred = add_credential(c['credential_name'],
-                              c['user_name'],
-                              c['password'],
-                              c['type'])
-        return self._make_credential_dict(cred)
-
-    def get_credentials(self, context, filters=None, fields=None):
-        """
-        Retrieve a list of credentials
-        """
-        return self._get_collection(context,
-                                    network_models_v2.Credential,
-                                    self._make_credential_dict,
-                                    filters=filters,
-                                    fields=fields)
-
-    def get_credential(self, context, id, fields=None):
-        """
-        Retireve the requested credential based on its id
-        """
-        credential = get_credential(id)
-        return self._make_credential_dict(credential, fields)
-
-    def update_credential(self, context, id, credential):
-        """
-        Update a credential based on its id
-        """
-        c = credential['credential']
-        cred = update_credential(id,
-                                 c['credential_name'],
-                                 c['user_name'],
-                                 c['password'])
-        return self._make_credential_dict(cred)
-
-    def delete_credential(self, context, id):
-        """
-        Delete a credential based on its id
-        """
-        return remove_credential(id)
