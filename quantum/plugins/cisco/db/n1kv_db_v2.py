@@ -251,8 +251,6 @@ def release_vlan(session, physical_network, vlan_id, network_vlan_ranges):
                 if vlan_id >= vlan_range[0] and vlan_id <= vlan_range[1]:
                     inside = True
                     break
-            if not inside:
-                session.delete(alloc)
             LOG.debug("releasing vlan %s on physical network %s %s pool" %
                       (vlan_id, physical_network,
                        inside and "to" or "outside"))
@@ -347,8 +345,6 @@ def release_vxlan(session, vxlan_id, vxlan_id_ranges):
                         and vxlan_id <= vxlan_id_range[1]):
                     inside = True
                     break
-            if not inside:
-                session.delete(alloc)
             LOG.debug("releasing vxlan %s %s pool" %
                       (vxlan_id, inside and "to" or "outside"))
         except exc.NoResultFound:
@@ -815,53 +811,6 @@ class NetworkProfile_db_mixin(object):
         self._validate_network_profile(p)
         self._validate_segment_range_uniqueness(context, p)
 
-    def _validate_vlan(self, p):
-        """Validate if vlan falls within segment boundaries."""
-        '''
-        seg_min, seg_max = self._get_segment_range(p['segment_range'])
-        ranges = conf.CISCO_N1K.network_vlan_ranges
-        ranges = ranges.split(',')
-        for entry in ranges:
-            entry = entry.strip()
-            if ':' in entry:
-                g_phy_nw, g_seg_min, g_seg_max = entry.split(':')
-                if (seg_min < int(g_seg_min)) or (seg_max > int(g_seg_max)):
-                    msg = _("Vlan out of range")
-                    LOG.exception(msg)
-                    raise q_exc.InvalidInput(error_message=msg)
-        '''
-        pass
-
-    def _validate_vxlan(self, p):
-        """
-        Validate if vxlan falls within segment boundaries.
-        :param p:
-        :return:
-        """
-        '''
-        seg_min, seg_max = self._get_segment_range(p['segment_range'])
-        ranges = conf.CISCO_N1K.vxlan_id_ranges
-        ranges = ranges.split(',')
-        g_seg_min, g_seg_max = map(int, ranges[0].split(':'))
-        LOG.debug("segmin %s segmax %s gsegmin %s gsegmax %s", seg_min,
-                  seg_max, g_seg_min, g_seg_max)
-        if (seg_min < g_seg_min) or (seg_max > g_seg_max):
-            msg = _("Vxlan out of range")
-            LOG.exception(msg)
-            raise q_exc.InvalidInput(error_message=msg)
-        if p['multicast_ip_range'] == '0.0.0.0':
-            msg = _("Multicast ip range is required")
-            raise q_exc.InvalidInput(error_message=msg)
-        if p['multicast_ip_range'].count('-') != 1:
-            msg = _("invalid ip range. example range: 225.280.100.10-"
-                    "225.280.100.20")
-            raise q_exc.InvalidInput(error_message=msg)
-        for ip in p['multicast_ip_range'].split('-'):
-            if _validate_ip_address(ip) != None:
-                msg = _("invalid ip address %s" % ip)
-                raise q_exc.InvalidInput(error_message=msg)
-        '''
-        pass
 
     def _validate_segment_range(self, p):
         """
@@ -892,10 +841,7 @@ class NetworkProfile_db_mixin(object):
             raise q_exc.InvalidInput(error_message=msg)
         self._validate_segment_range(p)
         if _segment_type == n1kv_models_v2.SEGMENT_TYPE_VLAN:
-            self._validate_vlan(p)
             p['multicast_ip_range'] = '0.0.0.0'
-        elif _segment_type == n1kv_models_v2.SEGMENT_TYPE_VXLAN:
-            self._validate_vxlan(p)
 
     def _validate_segment_range_uniqueness(self, context, p):
         """
