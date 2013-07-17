@@ -149,10 +149,13 @@ class AgentNotifierApi(proxy.RpcProxy,
 
     API version history:
         1.0 - Initial version.
+        1.1 - Added get_active_networks_info, create_dhcp_port,
+              and update_dhcp_port methods.
+
 
     '''
 
-    BASE_RPC_API_VERSION = '1.0'
+    BASE_RPC_API_VERSION = '1.1'
 
     def __init__(self, topic):
         super(AgentNotifierApi, self).__init__(
@@ -188,7 +191,8 @@ class LinuxBridgePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           extraroute_db.ExtraRoute_db_mixin,
                           l3_gwmode_db.L3_NAT_db_mixin,
                           sg_db_rpc.SecurityGroupServerRpcMixin,
-                          agentschedulers_db.AgentSchedulerDbMixin,
+                          agentschedulers_db.L3AgentSchedulerDbMixin,
+                          agentschedulers_db.DhcpAgentSchedulerDbMixin,
                           portbindings_db.PortBindingMixin):
     """Implement the Neutron abstractions using Linux bridging.
 
@@ -215,7 +219,9 @@ class LinuxBridgePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     _supported_extension_aliases = ["provider", "router", "ext-gw-mode",
                                     "binding", "quotas", "security-group",
-                                    "agent", "extraroute", "agent_scheduler"]
+                                    "agent", "extraroute",
+                                    "l3_agent_scheduler",
+                                    "dhcp_agent_scheduler"]
 
     @property
     def supported_extension_aliases(self):
