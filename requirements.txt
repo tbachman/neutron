@@ -12,15 +12,17 @@ httplib2
 iso8601>=0.1.4
 kombu>=1.0.4
 netaddr
-python-quantumclient>=2.2.0,<3.0.0
+python-neutronclient>=2.2.3,<3.0.0
 pyudev
 sqlalchemy>=0.7.8,<=0.7.99
 WebOb>=1.2
 python-keystoneclient>=0.2.0
 alembic>=0.4.1
-http://tarballs.openstack.org/oslo.config/oslo.config-1.2.0a2.tar.gz#egg=oslo.config-1.2.0a2
 six
 stevedore>=0.9
+
+-f http://tarballs.openstack.org/oslo.config/oslo.config-1.2.0a3.tar.gz#egg=oslo.config-1.2.0a3
+oslo.config>=1.2.0a3
 
 # Cisco plugin dependencies
 python-novaclient
