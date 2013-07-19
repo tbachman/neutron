@@ -24,24 +24,24 @@ import uuid
 
 from oslo.config import cfg
 
-from quantum.agent import securitygroups_rpc as sg_rpc
-from quantum.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from quantum.api.rpc.agentnotifiers import l3_rpc_agent_api
-from quantum.common import constants as q_const
-from quantum.common import rpc as q_rpc
-from quantum.common import topics
-from quantum.db import agents_db
-from quantum.db.db_base_plugin_v2 import QuantumDbPluginV2
-from quantum.db import dhcp_rpc_base
-from quantum.db import l3_rpc_base
-from quantum.db.securitygroups_db import SecurityGroupDbMixin
-from quantum.db import securitygroups_rpc_base as sg_db_rpc
-from quantum.openstack.common import log as logging
-from quantum.openstack.common import rpc
-from quantum.openstack.common.rpc import proxy
-from quantum.plugins.opendaylight import config  # noqa
-from quantum.plugins.opendaylight import odl_db
-from quantum.plugins.opendaylight import odl_xml_snippets
+from neutron.agent import securitygroups_rpc as sg_rpc
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
+from neutron.common import constants as q_const
+from neutron.common import rpc as q_rpc
+from neutron.common import topics
+from neutron.db import agents_db
+from neutron.db.db_base_plugin_v2 import NeutronDbPluginV2
+from neutron.db import dhcp_rpc_base
+from neutron.db import l3_rpc_base
+from neutron.db.securitygroups_db import SecurityGroupDbMixin
+from neutron.db import securitygroups_rpc_base as sg_db_rpc
+from neutron.openstack.common import log as logging
+from neutron.openstack.common import rpc
+from neutron.openstack.common.rpc import proxy
+from neutron.plugins.opendaylight import config  # noqa
+from neutron.plugins.opendaylight import odl_db
+from neutron.plugins.opendaylight import odl_xml_snippets
 
 
 LOG = logging.getLogger(__name__)
@@ -100,18 +100,18 @@ class ODLRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
     def odl_port_create(self, rpc_context, *args, **kwargs):
         LOG.debug(_("Port create RPC call received"))
-        obj = ODLQuantumPlugin()
+        obj = ODLNeutronPlugin()
         obj._create_port_add_flows(rpc_context, kwargs)
 
     def odl_port_delete(self, rpc_context, *args, **kwargs):
         LOG.debug(_("Port delete RPC call received"))
-        obj = ODLQuantumPlugin()
+        obj = ODLNeutronPlugin()
         obj._delete_port_del_flow(rpc_context, kwargs)
 
     def get_segment_id(self, rpc_context, *args, **kwargs):
         LOG.debug(_("Getting segment id for port"))
         port = kwargs['port_id']
-        obj = ODLQuantumPlugin()
+        obj = ODLNeutronPlugin()
         port = obj.get_port(rpc_context, port)
         network_id = port['network_id']
         segmgr = SegmentationManager()
@@ -145,7 +145,7 @@ class AgentNotifierApi(proxy.RpcProxy,
                          topic=self.topic_port_update)
 
 
-class ODLQuantumPlugin(QuantumDbPluginV2, SecurityGroupDbMixin):
+class ODLNeutronPlugin(NeutronDbPluginV2, SecurityGroupDbMixin):
 
     _supported_extension_aliases = ["provider", "router", "agent",
                                     "binding", "quotas", "security-group"]
@@ -456,7 +456,7 @@ class ODLQuantumPlugin(QuantumDbPluginV2, SecurityGroupDbMixin):
         # Assign segment id
         session = context.session
         with session.begin(subtransactions=True):
-            net = super(ODLQuantumPlugin, self).create_network(context,
+            net = super(ODLNeutronPlugin, self).create_network(context,
                                                                network)
             self.segmentation_manager.allocate_network_segment(
                 session, net['id'])
@@ -472,25 +472,25 @@ class ODLQuantumPlugin(QuantumDbPluginV2, SecurityGroupDbMixin):
             # Delete all subnets
             for subnet in network['subnets']:
                 self.delete_subnet(context, subnet)
-            super(ODLQuantumPlugin, self).delete_network(context, id)
+            super(ODLNeutronPlugin, self).delete_network(context, id)
             #self.segmentation_manager.delete_segment_binding(session, id)
 
     def create_port(self, context, port):
         LOG.debug(_("Creating port"))
         port['port']['status'] = q_const.PORT_STATUS_DOWN
-        port = super(ODLQuantumPlugin, self).create_port(context, port)
+        port = super(ODLNeutronPlugin, self).create_port(context, port)
         return port
 
     def create_subnet(self, context, subnet):
         LOG.debug(_("Creating subnet"))
-        subnet = super(ODLQuantumPlugin, self).create_subnet(context, subnet)
+        subnet = super(ODLNeutronPlugin, self).create_subnet(context, subnet)
         self._create_subnet(context, subnet)
         return subnet
 
     def delete_subnet(self, context, id):
         LOG.debug(_("Deleting subnet"))
         subnet = self.get_subnet(context, id)
-        super(ODLQuantumPlugin, self).delete_subnet(context, id)
+        super(ODLNeutronPlugin, self).delete_subnet(context, id)
         # Delete gateway with this subnet id in the controller
         if (subnet['name']):
             self._delete_subnet(context, subnet['name'])

@@ -31,16 +31,16 @@ import eventlet
 import netifaces
 from oslo.config import cfg
 
-from quantum.agent.linux import ovs_lib
-from quantum.agent.linux.ovs_lib import VifPort
-from quantum.agent.linux import utils
-from quantum.agent import rpc as agent_rpc
-from quantum.common import config as logging_config
-from quantum.common import topics
-from quantum import context as q_context
-from quantum.openstack.common import log
-from quantum.openstack.common.rpc import dispatcher
-from quantum.plugins.opendaylight import config  # noqa
+from neutron.agent.linux import ovs_lib
+from neutron.agent.linux.ovs_lib import VifPort
+from neutron.agent.linux import utils
+from neutron.agent import rpc as agent_rpc
+from neutron.common import config as logging_config
+from neutron.common import topics
+from neutron import context as q_context
+from neutron.openstack.common import log
+from neutron.openstack.common.rpc import dispatcher
+from neutron.plugins.opendaylight import config  # noqa
 
 
 LOG = log.getLogger(__name__)
@@ -173,13 +173,13 @@ class ODLPluginApi(agent_rpc.PluginApi, object):
                          topic=self.topic)
 
 
-class OVSQuantumOFPODLAgent(object):
+class OVSNeutronOFPODLAgent(object):
 
     RPC_API_VERSION = '1.1'
 
     def __init__(self, integ_br, tun_br, tunnel_ip, ovsdb_ip, ovsdb_port,
                  polling_interval, enable_tunneling, root_helper):
-        super(OVSQuantumOFPODLAgent, self).__init__()
+        super(OVSNeutronOFPODLAgent, self).__init__()
         self.ports = {}
         self.polling_interval = polling_interval
         self.enable_tunneling = enable_tunneling
@@ -328,7 +328,7 @@ class OVSQuantumOFPODLAgent(object):
 
 def main():
     eventlet.monkey_patch()
-    cfg.CONF(project='quantum')
+    cfg.CONF(project='neutron')
 
     logging_config.setup_logging(cfg.CONF)
 
@@ -349,7 +349,7 @@ def main():
         enable_tunneling = True
 
     try:
-        agent = OVSQuantumOFPODLAgent(integ_br, tun_br, tunnel_ip, ovsdb_ip,
+        agent = OVSNeutronOFPODLAgent(integ_br, tun_br, tunnel_ip, ovsdb_ip,
                                       ovsdb_port, polling_interval,
                                       enable_tunneling, root_helper)
     except httplib.HTTPException, e:

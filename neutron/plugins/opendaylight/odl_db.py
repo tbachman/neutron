@@ -19,13 +19,13 @@
 
 from sqlalchemy.orm import exc
 
-import quantum.db.api as db
-from quantum.db import models_v2
-from quantum.db import securitygroups_db as sg_db
-from quantum.extensions import securitygroup as ext_sg
-from quantum import manager
-from quantum.openstack.common import log as logging
-from quantum.plugins.opendaylight import odl_models
+import neutron.db.api as db
+from neutron.db import models_v2
+from neutron.db import securitygroups_db as sg_db
+from neutron.extensions import securitygroup as ext_sg
+from neutron import manager
+from neutron.openstack.common import log as logging
+from neutron.plugins.opendaylight import odl_models
 
 
 LOG = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ def get_port_from_device(port_id):
     if not port_and_sgs:
         return None
     port = port_and_sgs[0][0]
-    plugin = manager.QuantumManager.get_plugin()
+    plugin = manager.NeutronManager.get_plugin()
     port_dict = plugin._make_port_dict(port)
     port_dict[ext_sg.SECURITYGROUPS] = [
         sg_id for port_, sg_id in port_and_sgs if sg_id]

@@ -28,22 +28,22 @@ import time
 import eventlet
 from oslo.config import cfg
 
-from quantum.agent.linux import ip_lib
-from quantum.agent.linux import ovs_lib
-from quantum.agent.linux import utils
-from quantum.agent import rpc as agent_rpc
-from quantum.agent import securitygroups_rpc as sg_rpc
-from quantum.common import config as logging_config
-from quantum.common import constants as q_const
-from quantum.common import topics
-from quantum.common import utils as q_utils
-from quantum import context
-from quantum.extensions import securitygroup as ext_sg
-from quantum.openstack.common import log as logging
-from quantum.openstack.common import loopingcall
-from quantum.openstack.common.rpc import dispatcher
-from quantum.plugins.openvswitch.common import config  # noqa
-from quantum.plugins.openvswitch.common import constants
+from neutron.agent.linux import ip_lib
+from neutron.agent.linux import ovs_lib
+from neutron.agent.linux import utils
+from neutron.agent import rpc as agent_rpc
+from neutron.agent import securitygroups_rpc as sg_rpc
+from neutron.common import config as logging_config
+from neutron.common import constants as q_const
+from neutron.common import topics
+from neutron.common import utils as q_utils
+from neutron import context
+from neutron.extensions import securitygroup as ext_sg
+from neutron.openstack.common import log as logging
+from neutron.openstack.common import loopingcall
+from neutron.openstack.common.rpc import dispatcher
+from neutron.plugins.openvswitch.common import config  # noqa
+from neutron.plugins.openvswitch.common import constants
 
 
 LOG = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class LocalVLANMapping:
 
 
 class Port(object):
-    """Represents a quantum port.
+    """Represents a neutron port.
 
     Class stores port data in a ORM-free way, so attributres are
     still available even if a row has been deleted.
@@ -114,7 +114,7 @@ class OVSSecurityGroupAgent(sg_rpc.SecurityGroupAgentRpcMixin):
         self.init_firewall()
 
 
-class OVSQuantumAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
+class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
     '''Implements OVS-based tunneling, VLANs and flat networks.
 
     Two local bridges are created: an integration bridge (defaults to
@@ -167,8 +167,8 @@ class OVSQuantumAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         '''
         self.root_helper = root_helper
         self.available_local_vlans = set(
-            xrange(OVSQuantumAgent.MIN_VLAN_TAG,
-                   OVSQuantumAgent.MAX_VLAN_TAG))
+            xrange(OVSNeutronAgent.MIN_VLAN_TAG,
+                   OVSNeutronAgent.MAX_VLAN_TAG))
         self.int_br = self.setup_integration_br(integ_br)
         self.setup_physical_bridges(bridge_mappings)
         self.local_vlan_map = {}
@@ -181,7 +181,7 @@ class OVSQuantumAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         if self.enable_tunneling:
             self.setup_tunnel_br(tun_br)
         self.agent_state = {
-            'binary': 'quantum-openvswitch-agent',
+            'binary': 'neutron-openvswitch-agent',
             'host': cfg.CONF.host,
             'topic': q_const.L2_AGENT_TOPIC,
             'configurations': bridge_mappings,
@@ -754,7 +754,7 @@ def create_agent_config_map(config):
 
 def main():
     eventlet.monkey_patch()
-    cfg.CONF(project='quantum')
+    cfg.CONF(project='neutron')
     logging_config.setup_logging(cfg.CONF)
 
     try:
@@ -763,7 +763,7 @@ def main():
         LOG.error(_('%s Agent terminated!'), e)
         sys.exit(1)
 
-    plugin = OVSQuantumAgent(**agent_config)
+    plugin = OVSNeutronAgent(**agent_config)
 
     # Start everything.
     LOG.info(_("Agent initialized successfully, now running... "))

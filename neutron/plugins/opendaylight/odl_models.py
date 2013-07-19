@@ -19,7 +19,7 @@
 
 from sqlalchemy import Column, ForeignKey, Integer, String
 
-from quantum.db.models_v2 import model_base
+from neutron.db.models_v2 import model_base
 
 
 class NetworkBinding(model_base.BASEV2):

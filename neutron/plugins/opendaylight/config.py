@@ -19,7 +19,7 @@
 
 from oslo.config import cfg
 
-from quantum.agent.common import config
+from neutron.agent.common import config
 
 DEFAULT_TUNNEL_RANGES = '5000:10000'
 
