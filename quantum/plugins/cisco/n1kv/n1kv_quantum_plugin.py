@@ -20,10 +20,9 @@
 # @author: Sergey Sudakovich, Cisco Systems, Inc.
 
 
+import eventlet
 import logging
 import sys
-import threading
-import time
 
 from novaclient.v1_1 import client as nova_client
 from oslo.config import cfg as quantum_cfg
@@ -68,9 +67,6 @@ from quantum.plugins.cisco.n1kv import n1kv_client
 
 
 LOG = logging.getLogger(__name__)
-
-# Polling duration (in sec) for the plugin to retrieve policy profiles from VSM
-POLL_DURATION = 10
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
@@ -268,7 +264,12 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         # Retrieve all the policy profiles from VSM.
         self._populate_policy_profiles()
         # Continue to poll VSM for any create/delete of policy profiles.
-        PollVSM().start()
+        eventlet.spawn(self._poll_policy_profiles)
+
+    def _poll_policy_profiles(self):
+        while True:
+            self._poll_policies(event_type='port_profile')
+            eventlet.sleep(int(conf.CISCO_N1K.POLL_DURATION))
 
     def _populate_policy_profiles(self):
         """
@@ -932,11 +933,3 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             n1kv_db_v2.delete_vxlan_allocations(self.delete_vxlan_ranges)
         self._send_delete_network_profile_request(_network_profile)
         self._send_delete_fabric_network_request(_network_profile)
-
-
-class PollVSM (threading.Thread, N1kvQuantumPluginV2):
-
-    def run(self):
-        while True:
-            self._poll_policies(event_type="port_profile")
-            time.sleep(POLL_DURATION)
