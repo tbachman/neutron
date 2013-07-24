@@ -46,6 +46,7 @@ from quantum.db import agents_db
 from quantum.db import agentschedulers_db
 
 from quantum.extensions import providernet as provider
+from quantum.extensions import portbindings
 
 from quantum.openstack.common import context
 from quantum.openstack.common import rpc
@@ -78,7 +79,7 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                        sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
     # Set RPC API version to 1.0 by default.
-    RPC_API_VERSION = '1.0'
+    RPC_API_VERSION = '1.1'
 
     def __init__(self, notifier):
         self.notifier = notifier
@@ -91,6 +92,12 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         '''
         return q_rpc.PluginRpcDispatcher([self,
                                           agents_db.AgentExtRpcCallback()])
+
+    def get_port_from_device(cls, device):
+        port = n1kv_db_v2.get_port_from_device(device)
+        if port:
+            port['device'] = device
+        return port
 
     def get_device_details(self, rpc_context, **kwargs):
         """Agent requests device details"""
@@ -220,11 +227,14 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
     # This attribute specifies whether the plugin supports or not
     # bulk operations.
     __native_bulk_support = False
-    supported_extension_aliases = ["provider", "agent",
+    supported_extension_aliases = ["provider", "agent", "binding",
                                    "policy_profile_binding",
                                    "network_profile_binding",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "router", "credential"]
+
+    binding_view = "extension:port_binding:view"
+    binding_set = "extension:port_binding:set"
 
     def __init__(self, configfile=None):
         """
@@ -236,7 +246,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         n1kv_db_v2.initialize()
         cred.Store.initialize()
-        self.network_vlan_ranges = {}
+        self._initialize_network_vlan_ranges()
         # If no api_extensions_path is provided set the following
         if not quantum_cfg.CONF.api_extensions_path:
             quantum_cfg.CONF.set_override(
@@ -309,6 +319,17 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                         self._add_policy_profile(
                             profile_name, profile_id, tenant_id)
             self._remove_all_fake_policy_profiles()
+
+    def _initialize_network_vlan_ranges(self):
+        self.network_vlan_ranges = {}
+        network_profiles = n1kv_db_v2._get_network_profiles()
+        for network_profile in network_profiles:
+            if network_profile['segment_type'] == const.TYPE_VLAN:
+                seg_min, seg_max = self.\
+                    _get_segment_range(network_profile['segment_range'])
+                self._add_network_vlan_range(network_profile['physical_network'],
+                                             int(seg_min),
+                                             int(seg_max))
 
     def _add_network_vlan_range(self, physical_network, vlan_min, vlan_max):
         self._add_network(physical_network)
@@ -462,6 +483,17 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             raise q_exc.InvalidInput(error_message=msg)
 
         return (profile_id)
+
+    def _check_view_auth(self, context, resource, action):
+        return policy.check(context, action, resource)
+
+    def _enforce_set_auth(self, context, resource, action):
+        policy.enforce(context, action, resource)
+
+    def _extend_port_dict_binding(self, context, port):
+        if self._check_view_auth(context, port, self.binding_view):
+            port[portbindings.VIF_TYPE] = portbindings.VIF_TYPE_OVS
+        return port
 
     # TBD: remove added for compilation
     def _send_register_request(self):
@@ -659,8 +691,17 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             else:
                 # provider network
                 if network_type == const.TYPE_VLAN:
-                    n1kv_db_v2.reserve_specific_vlan(session, physical_network,
-                                                     segmentation_id)
+                    network_profile = self.get_network_profile(context,
+                                                               profile_id)
+                    seg_min, seg_max = self._get_segment_range(
+                        network_profile['segment_range'])
+                    if not seg_min <= segmentation_id <= seg_max:
+                        raise cisco_exceptions.VlanIDOutsidePool
+                    else:
+                        n1kv_db_v2.reserve_specific_vlan(session,
+                                                         physical_network,
+                                                         segmentation_id)
+                        multicast_ip = '0.0.0.0'
             net = super(N1kvQuantumPluginV2, self).create_network(context,
                                                                   network)
             n1kv_db_v2.add_network_binding(session,
@@ -781,6 +822,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 super(N1kvQuantumPluginV2, self).delete_port(context, pt['id'])
             else:
                 LOG.debug("Created port: %s", pt)
+                self._extend_port_dict_binding(context, pt)
                 return pt
 
     def _add_dummy_profile_for_test(self, obj):
@@ -816,6 +858,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                                                       id)
         port = super(N1kvQuantumPluginV2, self).update_port(context, id, port)
         self._extend_port_dict_profile(context, port)
+        self._extend_port_dict_binding(context, port)
         return port
 
     def delete_port(self, context, id):
@@ -828,6 +871,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         LOG.debug("Get port: %s", id)
         port = super(N1kvQuantumPluginV2, self).get_port(context, id, fields)
         self._extend_port_dict_profile(context, port)
+        self._extend_port_dict_binding(context, port)
         return self._fields(port, fields)
 
     def get_ports(self, context, filters=None, fields=None):
@@ -837,6 +881,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                                            fields)
         for port in ports:
             self._extend_port_dict_profile(context, port)
+            self._extend_port_dict_binding(context, port)
 
         return [self._fields(port, fields) for port in ports]
 
@@ -899,8 +944,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             self.vxlan_id_ranges = []
             self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
             n1kv_db_v2.sync_vxlan_allocations(self.vxlan_id_ranges)
-        # TODO: VSM currently does not support fabric network creation.
-        #      Uncomment the following once VSM supports creation via REST api.
         try:
             self._send_create_fabric_network_request(_network_profile)
         except(cisco_exceptions.VSMError,

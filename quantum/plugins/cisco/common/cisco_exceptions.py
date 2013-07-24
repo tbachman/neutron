@@ -52,6 +52,12 @@ class VlanIDNotAvailable(exceptions.QuantumException):
     message = _("No Vlan ID available")
 
 
+class VlanIDOutsidePool(exceptions.QuantumException):
+    """VLAN ID cannot be allocated, since it is outside the configured pool."""
+    message = _("Unable to complete operation. VLAN ID exists outside of the "
+                "configured network segment range.")
+
+
 class QosNotFound(exceptions.QuantumException):
     """QoS level with this ID cannot be found"""
     message = _("QoS level %(qos_id)s could not be found "
