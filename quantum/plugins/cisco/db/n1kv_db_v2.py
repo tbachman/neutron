@@ -907,19 +907,6 @@ class PolicyProfile_db_mixin(object):
     Policy Profile Mixin
     """
 
-    def _get_policy_collection_for_tenant(self, model, tenant_id):
-        session = db.get_session()
-        profile_ids = (session.query(n1kv_models_v2.ProfileBinding.profile_id)
-                       .filter_by(tenant_id=tenant_id).
-                       filter_by(profile_type='policy').all())
-        profiles = []
-        for pid in profile_ids:
-            try:
-                profiles.append(session.query(model).
-                                filter_by(id=pid[0]).one())
-            except exc.NoResultFound:
-                return []
-        return [self._make_policy_profile_dict(p) for p in profiles]
 
     def _make_policy_profile_dict(self, profile, fields=None):
         res = {'id': profile['id'], 'name': profile['name']}
@@ -951,14 +938,9 @@ class PolicyProfile_db_mixin(object):
         return self._make_policy_profile_dict(profile, fields)
 
     def get_policy_profiles(self, context, filters=None, fields=None):
-        if context.is_admin:
-            return self._get_collection(context, n1kv_models_v2.PolicyProfile,
-                                        self._make_policy_profile_dict,
-                                        filters=filters, fields=fields)
-        else:
-            return self._get_policy_collection_for_tenant(n1kv_models_v2.
-                                                          PolicyProfile,
-                                                          context.tenant_id)
+        return self._get_collection(context, n1kv_models_v2.PolicyProfile,
+                                    self._make_policy_profile_dict,
+                                    filters=filters, fields=fields)
 
     def get_policy_profile_bindings(self, context, filters=None, fields=None):
         if context.is_admin:
