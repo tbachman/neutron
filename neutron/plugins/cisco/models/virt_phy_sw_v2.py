@@ -426,17 +426,15 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
             vlan_name = conf.CISCO.vlan_name_prefix + str(vlan_id)
 
             n_args = [vlan_name, vlan_id, subnet['id'], gateway_ip, router_id]
-            nexus_output = self._invoke_plugin_per_device(const.NEXUS_PLUGIN,
-                                                          self._func_name(),
-                                                          n_args)
-            return nexus_output
+            return self._invoke_plugin_per_device(const.NEXUS_PLUGIN,
+                                                  self._func_name(),
+                                                  n_args)
         else:
             LOG.debug(_("No Nexus plugin, sending to vswitch"))
             n_args = [context, router_id, interface_info]
-            ovs_output = self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
-                                                        self._func_name(),
-                                                        n_args)
-            return ovs_output
+            return self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
+                                                  self._func_name(),
+                                                  n_args)
 
     def remove_router_interface(self, context, router_id, interface_info):
         """Remove a router interface.
@@ -453,17 +451,15 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
             vlan_id = self._get_segmentation_id(network_id)
             n_args = [vlan_id, router_id]
 
-            nexus_output = self._invoke_plugin_per_device(const.NEXUS_PLUGIN,
-                                                          self._func_name(),
-                                                          n_args)
-            return nexus_output
+            return self._invoke_plugin_per_device(const.NEXUS_PLUGIN,
+                                                  self._func_name(),
+                                                  n_args)
         else:
             LOG.debug(_("No Nexus plugin, sending to vswitch"))
             n_args = [context, router_id, interface_info]
-            ovs_output = self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
-                                                        self._func_name(),
-                                                        n_args)
-            return ovs_output
+            return self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
+                                                  self._func_name(),
+                                                  n_args)
 
     def create_subnet(self, context, subnet):
         """For this model this method will be delegated to vswitch plugin."""

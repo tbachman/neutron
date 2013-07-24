@@ -20,22 +20,17 @@
 # @author: Sergey Sudakovich, Cisco Systems, Inc.
 
 import eventlet
-import threading
-import time
 
 from oslo.config import cfg as q_conf
-
-from neutron import policy
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
-
+from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
-
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.db import db_base_plugin_v2
@@ -43,14 +38,11 @@ from neutron.db import dhcp_rpc_base
 from neutron.db import l3_db
 from neutron.db import l3_rpc_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
-
-from neutron.extensions import providernet
 from neutron.extensions import portbindings
-
+from neutron.extensions import providernet
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.openstack.common.rpc import proxy
-
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
 from neutron.plugins.cisco.common import cisco_exceptions
@@ -59,7 +51,7 @@ from neutron.plugins.cisco.db import n1kv_db_v2
 from neutron.plugins.cisco.db import network_db_v2
 from neutron.plugins.cisco.extensions import n1kv_profile
 from neutron.plugins.cisco.n1kv import n1kv_client
-from neutron.common import constants as q_const
+from neutron import policy
 
 
 LOG = logging.getLogger(__name__)
@@ -242,7 +234,13 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # Retrieve all the policy profiles from VSM.
         self._populate_policy_profiles()
         # Continue to poll VSM for any create/delete of policy profiles.
-        PollVSM().start()
+        eventlet.spawn(self._poll_policy_profiles)
+
+    def _poll_policy_profiles(self):
+        """Start a green thread to pull policy profiles from VSM."""
+        while True:
+            self._poll_policies(event_type='port_profile')
+            eventlet.sleep(POLL_DURATION)
 
     def _populate_policy_profiles(self):
         """
@@ -434,7 +432,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         if not self.network_profile_exists(context, profile_id):
             raise cisco_exceptions.NetworkProfileIdNotFound(
                 profile_id=profile_id)
-        return (profile_id)
+        return profile_id
 
     def _process_policy_profile(self, context, attrs):
         """Validates whether policy profile exists."""
@@ -446,8 +444,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         if not self.policy_profile_exists(context, profile_id):
             msg = _("n1kv:profile_id does not exist")
             raise q_exc.InvalidInput(error_message=msg)
-
-        return (profile_id)
+        return profile_id
 
     def _check_view_auth(self, context, resource, action):
         return policy.check(context, action, resource)
@@ -833,8 +830,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         self._add_dummy_profile_only_if_testing(port)
 
-        if 'device_id' in port['port'] and port['port']['device_owner'] in \
-                ['network:dhcp', 'network:router_interface']:
+        if ('device_id' in port['port'] and port['port']['device_owner'] in
+            ['network:dhcp', 'network:router_interface']):
             p_profile_name = c_conf.CISCO_N1K.default_policy_profile
             p_profile = self._get_policy_profile_by_name(p_profile_name)
             if p_profile:
@@ -970,6 +967,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('Update subnet'))
         sub = super(N1kvNeutronPluginV2, self).update_subnet(context, subnet)
         self._send_update_subnet_request(context, sub)
+        self._send_update_subnet_request(sub)
         LOG.debug(_("Updated subnet: %s"), sub['id'])
         return sub
 
@@ -1087,17 +1085,3 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             n1kv_db_v2.delete_vxlan_allocations(self.delete_vxlan_ranges)
         self._send_delete_network_profile_request(_network_profile)
         self._send_delete_logical_network_request(_network_profile)
-
-
-class PollVSM (threading.Thread, N1kvNeutronPluginV2):
-    """
-    Spawn a new thread to poll VSM for policy profiles.
-
-    Poll the VSM for any policy profile updates at specified (POLL_DURATION)
-    interval. Based on the commands returned in the XML, policy profiles will
-    be created or deleted from neutron database.
-    """
-    def run(self):
-        while True:
-            self._poll_policies(event_type="port_profile")
-            eventlet.sleep(POLL_DURATION)

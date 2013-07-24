@@ -18,9 +18,9 @@
 
 import base64
 import httplib
+import netaddr
 
-from netaddr import IPNetwork
-
+from neutron.common import exceptions as q_exc
 from neutron.extensions import providernet
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_const
@@ -197,9 +197,9 @@ class Client(object):
                 'id': network['id'],
                 'networkSegmentPool': network_profile['name'], }
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VLAN:
-            body.update({'vlan': network[providernet.SEGMENTATION_ID]})
-        if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            body.update({'bridgeDomain': network['name'] + '_bd'})
+            body['vlan'] = network[providernet.SEGMENTATION_ID]
+        elif network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
+            body['bridgeDomain'] = network['name'] + '_bd'
         return self._post(self.network_segments_path,
                           body=body)
 
@@ -276,9 +276,13 @@ class Client(object):
         :param subnet: subnet dict
         """
         if subnet['cidr']:
-            ip = IPNetwork(subnet['cidr'])
-            netmask = str(ip.netmask)
-            network_address = str(ip.network)
+            try:
+                ip = netaddr.IPNetwork(subnet['cidr'])
+                netmask = str(ip.netmask)
+                network_address = str(ip.network)
+            except netaddr.AddrFormatError:
+                msg = _("Invalid input for CIDR")
+                raise q_exc.InvalidInput(error_message=msg)
         else:
             netmask = network_address = ""
 
@@ -400,7 +404,7 @@ class Client(object):
         action = self.action_prefix + action
         if not headers and self.hosts:
             headers = self._get_auth_header(self.hosts[0])
-        headers.update({'Content-Type': self._set_content_type('json')})
+        headers['Content-Type'] = self._set_content_type('json')
         if body:
             body = "%s  " % self._serialize(body)
             LOG.debug(_("req: %s"), body)
@@ -489,15 +493,12 @@ class Client(object):
 
     def _get_vsm_hosts(self):
         """
-        Retreive a list of VSM ip addresses.
+        Retrieve a list of VSM ip addresses.
 
         :return: list of host ip addresses.
         """
-        host_list = []
-        credentials = network_db_v2.get_all_n1kv_credentials()
-        for cr in credentials:
-            host_list.append(cr[c_const.CREDENTIAL_NAME])
-        return host_list
+        return [cr[c_const.CREDENTIAL_NAME] for cr in
+                network_db_v2.get_all_n1kv_credentials()]
 
     def _get_auth_header(self, host_ip):
         """

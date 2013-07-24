@@ -14,10 +14,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
+# @author: Juergen Brendel, Cisco Systems Inc.
 # @author: Abhishek Raut, Cisco Systems Inc.
 
 from sqlalchemy.orm import exc as s_exc
-import unittest2
+from testtools import matchers
 
 from neutron.common import exceptions as q_exc
 from neutron import context
@@ -27,7 +28,9 @@ from neutron.plugins.cisco.db import n1kv_db_v2
 from neutron.plugins.cisco.db.n1kv_models_v2 import NetworkProfile
 from neutron.plugins.cisco.db.n1kv_models_v2 import PolicyProfile
 from neutron.plugins.cisco.db.n1kv_models_v2 import ProfileBinding
+from neutron.tests import base
 from neutron.tests.unit import test_db_plugin as test_plugin
+
 
 PHYS_NET = 'physnet1'
 PHYS_NET_2 = 'physnet2'
@@ -36,8 +39,8 @@ VLAN_MAX = 19
 VLAN_RANGES = {PHYS_NET: [(VLAN_MIN, VLAN_MAX)]}
 UPDATED_VLAN_RANGES = {PHYS_NET: [(VLAN_MIN + 20, VLAN_MAX + 20)],
                        PHYS_NET_2: [(VLAN_MIN + 40, VLAN_MAX + 40)]}
-VXLAN_MIN = 100
-VXLAN_MAX = 109
+VXLAN_MIN = 5000
+VXLAN_MAX = 5009
 VXLAN_RANGES = [(VXLAN_MIN, VXLAN_MAX)]
 UPDATED_VXLAN_RANGES = [(VXLAN_MIN + 20, VXLAN_MAX + 20)]
 SEGMENT_RANGE = '200-220'
@@ -55,7 +58,7 @@ TEST_NETWORK_PROFILE_2 = {'name': 'test_profile_2',
                           'segment_range': SEGMENT_RANGE}
 TEST_NETWORK_PROFILE_VXLAN = {'name': 'test_profile',
                               'segment_type': 'vxlan',
-                              'segment_range': '100-109',
+                              'segment_range': '5000-5009',
                               'multicast_ip_range': '239.0.0.70-239.0.0.80'}
 TEST_POLICY_PROFILE = {'id': '4a417990-76fb-11e2-bcfd-0800200c9a66',
                        'name': 'test_policy_profile'}
@@ -81,15 +84,16 @@ def _create_test_policy_profile_if_not_there(session,
     return _profile
 
 
-class VlanAllocationsTest(unittest2.TestCase):
+class VlanAllocationsTest(base.BaseTestCase):
 
     def setUp(self):
+        super(VlanAllocationsTest, self).setUp()
         n1kv_db_v2.initialize()
         n1kv_db_v2.sync_vlan_allocations(VLAN_RANGES)
         self.session = db.get_session()
 
     def tearDown(self):
-        db.clear_db()
+        super(VlanAllocationsTest, self).tearDown()
 
     def test_sync_vlan_allocations(self):
         self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
@@ -169,27 +173,25 @@ class VlanAllocationsTest(unittest2.TestCase):
         vlan_ids = set()
         p = _create_test_network_profile_if_not_there(self.session)
         for x in xrange(VLAN_MIN, VLAN_MAX + 1):
-            physical_network, seg_type, vlan_id, m_ip = \
-                n1kv_db_v2.reserve_vlan(
-                    self.session, p)
+            (physical_network, seg_type,
+             vlan_id, m_ip) = n1kv_db_v2.reserve_vlan(self.session, p)
             self.assertEqual(physical_network, PHYS_NET)
-            self.assertGreaterEqual(vlan_id, VLAN_MIN)
-            self.assertLessEqual(vlan_id, VLAN_MAX)
+            self.assertThat(vlan_id, matchers.GreaterThan(VLAN_MIN - 1))
+            self.assertThat(vlan_id, matchers.LessThan(VLAN_MAX + 1))
             vlan_ids.add(vlan_id)
 
-        with self.assertRaises(q_exc.NoNetworkAvailable):
-            physical_network, seg_type, vlan_id, m_ip = \
-                n1kv_db_v2.reserve_vlan(
-                    self.session, p)
+        self.assertRaises(q_exc.NoNetworkAvailable,
+                          n1kv_db_v2.reserve_vlan,
+                          self.session,
+                          p)
 
         n1kv_db_v2.release_vlan(self.session, PHYS_NET, vlan_ids.pop(),
                                 VLAN_RANGES)
-        physical_network, seg_type, vlan_id, m_ip = \
-            n1kv_db_v2.reserve_vlan(
-                self.session, p)
+        physical_network, seg_type, vlan_id, m_ip = (n1kv_db_v2.reserve_vlan(
+                                                     self.session, p))
         self.assertEqual(physical_network, PHYS_NET)
-        self.assertGreaterEqual(vlan_id, VLAN_MIN)
-        self.assertLessEqual(vlan_id, VLAN_MAX)
+        self.assertThat(vlan_id, matchers.GreaterThan(VLAN_MIN - 1))
+        self.assertThat(vlan_id, matchers.LessThan(VLAN_MAX + 1))
         vlan_ids.add(vlan_id)
 
         for vlan_id in vlan_ids:
@@ -204,8 +206,11 @@ class VlanAllocationsTest(unittest2.TestCase):
         self.assertTrue(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
                                                        vlan_id).allocated)
 
-        with self.assertRaises(q_exc.VlanIdInUse):
-            n1kv_db_v2.reserve_specific_vlan(self.session, PHYS_NET, vlan_id)
+        self.assertRaises(q_exc.VlanIdInUse,
+                          n1kv_db_v2.reserve_specific_vlan,
+                          self.session,
+                          PHYS_NET,
+                          vlan_id)
 
         n1kv_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
         self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
@@ -218,22 +223,27 @@ class VlanAllocationsTest(unittest2.TestCase):
         self.assertTrue(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
                                                        vlan_id).allocated)
 
-        with self.assertRaises(q_exc.VlanIdInUse):
-            n1kv_db_v2.reserve_specific_vlan(self.session, PHYS_NET, vlan_id)
+        self.assertRaises(q_exc.VlanIdInUse,
+                          n1kv_db_v2.reserve_specific_vlan,
+                          self.session,
+                          PHYS_NET,
+                          vlan_id)
 
         n1kv_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
         self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET, vlan_id))
 
 
-class VxlanAllocationsTest(unittest2.TestCase):
+class VxlanAllocationsTest(base.BaseTestCase,
+                           n1kv_db_v2.NetworkProfile_db_mixin):
 
     def setUp(self):
+        super(VxlanAllocationsTest, self).setUp()
         n1kv_db_v2.initialize()
         n1kv_db_v2.sync_vxlan_allocations(VXLAN_RANGES)
         self.session = db.get_session()
 
     def tearDown(self):
-        db.clear_db()
+        super(VxlanAllocationsTest, self).tearDown()
 
     def test_sync_vxlan_allocations(self):
         self.assertIsNone(n1kv_db_v2.get_vxlan_allocation(VXLAN_MIN - 1))
@@ -260,28 +270,28 @@ class VxlanAllocationsTest(unittest2.TestCase):
 
     def test_vxlan_pool(self):
         vxlan_ids = set()
-        profile = _create_test_network_profile_if_not_there(
-            session=self.session,
-            profile=TEST_NETWORK_PROFILE_VXLAN)
+        profile = n1kv_db_v2.create_network_profile(TEST_NETWORK_PROFILE_VXLAN)
         for x in xrange(VXLAN_MIN, VXLAN_MAX + 1):
             vxlan = n1kv_db_v2.reserve_vxlan(self.session, profile)
             vxlan_id = vxlan[2]
-            self.assertGreaterEqual(vxlan_id, VXLAN_MIN)
-            self.assertLessEqual(vxlan_id, VXLAN_MAX)
+            self.assertThat(vxlan_id, matchers.GreaterThan(VXLAN_MIN - 1))
+            self.assertThat(vxlan_id, matchers.LessThan(VXLAN_MAX + 1))
             vxlan_ids.add(vxlan_id)
 
-        with self.assertRaises(q_exc.NoNetworkAvailable):
-            vxlan = n1kv_db_v2.reserve_vxlan(self.session, profile)
-            vxlan_id = vxlan[2]
+        self.assertRaises(q_exc.NoNetworkAvailable,
+                          n1kv_db_v2.reserve_vxlan,
+                          self.session,
+                          profile)
         n1kv_db_v2.release_vxlan(self.session, vxlan_ids.pop(), VXLAN_RANGES)
         vxlan = n1kv_db_v2.reserve_vxlan(self.session, profile)
         vxlan_id = vxlan[2]
-        self.assertGreaterEqual(vxlan_id, VXLAN_MIN)
-        self.assertLessEqual(vxlan_id, VXLAN_MAX)
+        self.assertThat(vxlan_id, matchers.GreaterThan(VXLAN_MIN - 1))
+        self.assertThat(vxlan_id, matchers.LessThan(VXLAN_MAX + 1))
         vxlan_ids.add(vxlan_id)
 
         for vxlan_id in vxlan_ids:
             n1kv_db_v2.release_vxlan(self.session, vxlan_id, VXLAN_RANGES)
+        n1kv_db_v2.delete_network_profile(profile.id)
 
     def test_specific_vxlan_inside_pool(self):
         vxlan_id = VXLAN_MIN + 5
@@ -289,8 +299,10 @@ class VxlanAllocationsTest(unittest2.TestCase):
         n1kv_db_v2.reserve_specific_vxlan(self.session, vxlan_id)
         self.assertTrue(n1kv_db_v2.get_vxlan_allocation(vxlan_id).allocated)
 
-        with self.assertRaises(c_exc.VxlanIdInUse):
-            n1kv_db_v2.reserve_specific_vxlan(self.session, vxlan_id)
+        self.assertRaises(c_exc.VxlanIdInUse,
+                          n1kv_db_v2.reserve_specific_vxlan,
+                          self.session,
+                          vxlan_id)
 
         n1kv_db_v2.release_vxlan(self.session, vxlan_id, VXLAN_RANGES)
         self.assertFalse(n1kv_db_v2.get_vxlan_allocation(vxlan_id).allocated)
@@ -301,8 +313,10 @@ class VxlanAllocationsTest(unittest2.TestCase):
         n1kv_db_v2.reserve_specific_vxlan(self.session, vxlan_id)
         self.assertTrue(n1kv_db_v2.get_vxlan_allocation(vxlan_id).allocated)
 
-        with self.assertRaises(c_exc.VxlanIdInUse):
-            n1kv_db_v2.reserve_specific_vxlan(self.session, vxlan_id)
+        self.assertRaises(c_exc.VxlanIdInUse,
+                          n1kv_db_v2.reserve_specific_vxlan,
+                          self.session,
+                          vxlan_id)
 
         n1kv_db_v2.release_vxlan(self.session, vxlan_id, VXLAN_RANGES)
         self.assertIsNone(n1kv_db_v2.get_vxlan_allocation(vxlan_id))
@@ -340,15 +354,16 @@ class NetworkBindingsTest(test_plugin.NeutronDbPluginV2TestCase):
             self.assertEqual(binding.segmentation_id, 1234)
 
 
-class NetworkProfileTests(unittest2.TestCase,
+class NetworkProfileTests(base.BaseTestCase,
                           n1kv_db_v2.NetworkProfile_db_mixin):
 
     def setUp(self):
+        super(NetworkProfileTests, self).setUp()
         n1kv_db_v2.initialize()
         self.session = db.get_session()
 
     def tearDown(self):
-        db.clear_db()
+        super(NetworkProfileTests, self).tearDown()
 
     def test_create_network_profile(self):
         _db_profile = n1kv_db_v2.create_network_profile(TEST_NETWORK_PROFILE)
@@ -373,20 +388,26 @@ class NetworkProfileTests(unittest2.TestCase,
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-min-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_MIN_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        with self.assertRaises(q_exc.InvalidInput):
-            self.create_network_profile(ctx, test_net_profile)
+        self.assertRaises(q_exc.InvalidInput,
+                          self.create_network_profile,
+                          ctx,
+                          test_net_profile)
 
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-max-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_MAX_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        with self.assertRaises(q_exc.InvalidInput):
-            self.create_network_profile(ctx, test_net_profile)
+        self.assertRaises(q_exc.InvalidInput,
+                          self.create_network_profile,
+                          ctx,
+                          test_net_profile)
 
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        with self.assertRaises(q_exc.InvalidInput):
-            self.create_network_profile(ctx, test_net_profile)
+        self.assertRaises(q_exc.InvalidInput,
+                          self.create_network_profile,
+                          ctx,
+                          test_net_profile)
         n1kv_db_v2.delete_network_profile(_db_profile.id)
 
     def test_delete_network_profile(self):
@@ -412,19 +433,21 @@ class NetworkProfileTests(unittest2.TestCase,
         updated_profile = n1kv_db_v2.update_network_profile(profile.id,
                                                             TEST_PROFILE_1)
         try:
-            self.session.query(NetworkProfile).filter_by(name=profile.name).\
-                one()
+            (self.session.query(NetworkProfile).filter_by(name=profile.name).
+             one())
         except s_exc.NoResultFound:
             pass
         else:
             self.fail("Profile name was not updated")
         self.assertEqual(updated_profile.name, TEST_PROFILE_1['name'])
+        n1kv_db_v2.delete_network_profile(profile.id)
 
     def test_get_network_profile(self):
-        profile = _create_test_network_profile_if_not_there(self.session)
+        profile = n1kv_db_v2.create_network_profile(TEST_NETWORK_PROFILE)
         got_profile = n1kv_db_v2.get_network_profile(profile.id)
         self.assertEqual(profile.id, got_profile.id)
         self.assertEqual(profile.name, got_profile.name)
+        n1kv_db_v2.delete_network_profile(profile.id)
 
     def test_get_network_profiles(self):
         test_profiles = [{'name': 'test_profile1',
@@ -461,14 +484,15 @@ class NetworkProfileTests(unittest2.TestCase,
         self.assertEqual(len(test_profiles), len(profiles))
 
 
-class PolicyProfileTests(unittest2.TestCase):
+class PolicyProfileTests(base.BaseTestCase):
 
     def setUp(self):
+        super(PolicyProfileTests, self).setUp()
         n1kv_db_v2.initialize()
         self.session = db.get_session()
 
     def tearDown(self):
-        db.clear_db()
+        super(PolicyProfileTests, self).tearDown()
 
     def test_create_policy_profile(self):
         _db_profile = n1kv_db_v2.create_policy_profile(TEST_POLICY_PROFILE)
@@ -476,8 +500,8 @@ class PolicyProfileTests(unittest2.TestCase):
         db_profile = self.session.query(PolicyProfile).filter_by(
             name=TEST_POLICY_PROFILE['name']).one()
         self.assertIsNotNone(db_profile)
-        self.assertTrue(_db_profile.id == db_profile.id and
-                        _db_profile.name == db_profile.name)
+        self.assertTrue(_db_profile.id == db_profile.id)
+        self.assertTrue(_db_profile.name == db_profile.name)
 
     def test_delete_policy_profile(self):
         profile = _create_test_policy_profile_if_not_there(self.session)
@@ -497,8 +521,8 @@ class PolicyProfileTests(unittest2.TestCase):
         updated_profile = n1kv_db_v2.update_policy_profile(profile.id,
                                                            TEST_PROFILE_1)
         try:
-            self.session.query(PolicyProfile).filter_by(name=profile.name).\
-                one()
+            (self.session.query(PolicyProfile).filter_by(name=profile.name).
+             one())
         except s_exc.NoResultFound:
             pass
         else:
@@ -512,14 +536,15 @@ class PolicyProfileTests(unittest2.TestCase):
         self.assertEqual(profile.name, got_profile.name)
 
 
-class ProfileBindingTests(unittest2.TestCase):
+class ProfileBindingTests(base.BaseTestCase):
 
     def setUp(self):
+        super(ProfileBindingTests, self).setUp()
         n1kv_db_v2.initialize()
         self.session = db.get_session()
 
     def tearDown(self):
-        db.clear_db()
+        super(ProfileBindingTests, self).tearDown()
 
     def _create_test_binding_if_not_there(self, tenant_id, profile_id,
                                           profile_type):
@@ -570,14 +595,8 @@ class ProfileBindingTests(unittest2.TestCase):
                                                test_profile_id,
                                                test_profile_type)
         n1kv_db_v2.delete_profile_binding(test_tenant_id, test_profile_id)
-        try:
-            self.session.query(ProfileBinding).filter_by(
-                profile_type=test_profile_type,
-                tenant_id=test_tenant_id,
-                profile_id=test_profile_id).one()
-        except s_exc.NoResultFound:
-            pass
-        except s_exc.MultipleResultsFound:
-            self.fail("This is very bad - multiple results and should be none")
-        else:
-            self.fail("Profile binding was not deleted")
+        q = (self.session.query(ProfileBinding).filter_by(
+             profile_type=test_profile_type,
+             tenant_id=test_tenant_id,
+             profile_id=test_profile_id))
+        self.assertFalse(q.count())

@@ -34,9 +34,6 @@ class VlanID(model_base.BASEV2):
         self.vlan_id = vlan_id
         self.vlan_used = False
 
-    def __repr__(self):
-        return "<VlanID(%d,%s)>" % (self.vlan_id, self.vlan_used)
-
 
 class QoS(model_base.BASEV2):
     """Represents QoS for a tenant."""
@@ -53,10 +50,6 @@ class QoS(model_base.BASEV2):
         self.tenant_id = tenant_id
         self.qos_name = qos_name
         self.qos_desc = qos_desc
-
-    def __repr__(self):
-        return "<QoS(%s,%s,%s,%s)>" % (self.qos_id, self.tenant_id,
-                                       self.qos_name, self.qos_desc)
 
 
 class Credential(model_base.BASEV2):
@@ -76,10 +69,3 @@ class Credential(model_base.BASEV2):
         self.user_name = user_name
         self.password = password
         self.type = type
-
-    def __repr__(self):
-        return "<Credentials(%s,%s,%s,%s, %s)>" % (self.credential_id,
-                                                   self.credential_name,
-                                                   self.user_name,
-                                                   self.password,
-                                                   self.type)

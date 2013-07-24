@@ -28,25 +28,25 @@ class NetworkSegmentIDNotFound(exceptions.NeutronException):
 
 
 class NoMoreNics(exceptions.NeutronException):
-    """No more dynamic nics are available in the system."""
-    message = _("Unable to complete operation. No more dynamic nics are "
+    """No more dynamic NICs are available in the system."""
+    message = _("Unable to complete operation. No more dynamic NICs are "
                 "available in the system.")
 
 
 class NetworkVlanBindingAlreadyExists(exceptions.NeutronException):
     """Binding cannot be created, since it already exists."""
     message = _("NetworkVlanBinding for %(vlan_id)s and network "
-                "%(network_id)s already exists")
+                "%(network_id)s already exists.")
 
 
 class VlanIDNotFound(exceptions.NeutronException):
     """VLAN ID cannot be found."""
-    message = _("Vlan ID %(vlan_id)s not found")
+    message = _("Vlan ID %(vlan_id)s not found.")
 
 
 class VlanIDNotAvailable(exceptions.NeutronException):
     """No VLAN ID available."""
-    message = _("No Vlan ID available")
+    message = _("No Vlan ID available.")
 
 
 class VlanIDOutsidePool(exceptions.NeutronException):
@@ -58,28 +58,28 @@ class VlanIDOutsidePool(exceptions.NeutronException):
 class QosNotFound(exceptions.NeutronException):
     """QoS level with this ID cannot be found."""
     message = _("QoS level %(qos_id)s could not be found "
-                "for tenant %(tenant_id)s")
+                "for tenant %(tenant_id)s.")
 
 
 class QosNameAlreadyExists(exceptions.NeutronException):
     """QoS Name already exists."""
     message = _("QoS level with name %(qos_name)s already exists "
-                "for tenant %(tenant_id)s")
+                "for tenant %(tenant_id)s.")
 
 
 class CredentialNotFound(exceptions.NeutronException):
     """Credential with this ID cannot be found."""
-    message = _("Credential %(credential_id)s could not be found")
+    message = _("Credential %(credential_id)s could not be found.")
 
 
 class CredentialNameNotFound(exceptions.NeutronException):
     """Credential Name could not be found."""
-    message = _("Credential %(credential_name)s could not be found")
+    message = _("Credential %(credential_name)s could not be found.")
 
 
 class CredentialAlreadyExists(exceptions.NeutronException):
     """Credential ID already exists."""
-    message = _("Credential %(credential_id)s already exists")
+    message = _("Credential %(credential_id)s already exists.")
 
 
 class NexusComputeHostNotConfigured(exceptions.NeutronException):
@@ -99,7 +99,7 @@ class NexusConfigFailed(exceptions.NeutronException):
 
 class NexusPortBindingNotFound(exceptions.NeutronException):
     """NexusPort Binding is not present."""
-    message = _("Nexus Port Binding (%(filters)s) is not present")
+    message = _("Nexus Port Binding (%(filters)s) is not present.")
 
     def __init__(self, **kwargs):
         filters = ','.join('%s=%s' % i for i in kwargs.items())
@@ -108,32 +108,32 @@ class NexusPortBindingNotFound(exceptions.NeutronException):
 
 class NoNexusSviSwitch(exceptions.NeutronException):
     """No usable nexus switch found."""
-    message = _("No usable Nexus switch found to create SVI interface")
+    message = _("No usable Nexus switch found to create SVI interface.")
 
 
 class PortVnicBindingAlreadyExists(exceptions.NeutronException):
     """PortVnic Binding already exists."""
-    message = _("PortVnic Binding %(port_id)s already exists")
+    message = _("PortVnic Binding %(port_id)s already exists.")
 
 
 class PortVnicNotFound(exceptions.NeutronException):
     """PortVnic Binding is not present."""
-    message = _("PortVnic Binding %(port_id)s is not present")
+    message = _("PortVnic Binding %(port_id)s is not present.")
 
 
 class SubnetNotSpecified(exceptions.NeutronException):
     """Subnet id not specified."""
-    message = _("No subnet_id specified for router gateway")
+    message = _("No subnet_id specified for router gateway.")
 
 
 class SubnetInterfacePresent(exceptions.NeutronException):
     """Subnet SVI interface already exists."""
-    message = _("Subnet %(subnet_id)s has an interface on %(router_id)s")
+    message = _("Subnet %(subnet_id)s has an interface on %(router_id)s.")
 
 
 class PortIdForNexusSvi(exceptions.NeutronException):
-        """Port Id specified for Nexus SVI."""
-        message = _('Nexus hardware router gateway only uses Subnet Ids')
+    """Port Id specified for Nexus SVI."""
+    message = _('Nexus hardware router gateway only uses Subnet Ids.')
 
 
 class InvalidDetach(exceptions.NeutronException):
@@ -150,7 +150,7 @@ class PolicyProfileAlreadyExists(exceptions.NeutronException):
 
 class PolicyProfileIdNotFound(exceptions.NeutronException):
     """Policy Profile with the given UUID cannot be found."""
-    message = _("Policy Profile %(profile_id)s could not be found")
+    message = _("Policy Profile %(profile_id)s could not be found.")
 
 
 class NetworkProfileAlreadyExists(exceptions.NeutronException):
@@ -161,12 +161,12 @@ class NetworkProfileAlreadyExists(exceptions.NeutronException):
 
 class NetworkProfileIdNotFound(exceptions.NeutronException):
     """Network Profile with the given UUID cannot be found."""
-    message = _("Network Profile %(profile_id)s could not be found")
+    message = _("Network Profile %(profile_id)s could not be found.")
 
 
 class VMNetworkNotFound(exceptions.NeutronException):
     """VM Network with the given name cannot be found."""
-    message = _("VM Network %(name)s could not be found")
+    message = _("VM Network %(name)s could not be found.")
 
 
 class VxlanIdInUse(exceptions.NeutronException):
@@ -177,12 +177,12 @@ class VxlanIdInUse(exceptions.NeutronException):
 
 class VSMConnectionFailed(exceptions.NeutronException):
     """Connection to VSM failed."""
-    message = _("Connection to VSM failed: %(reason)s")
+    message = _("Connection to VSM failed: %(reason)s.")
 
 
 class VSMError(exceptions.NeutronException):
     """Error has occured on the VSM."""
-    message = _("Internal VSM Error: %(reason)s")
+    message = _("Internal VSM Error: %(reason)s.")
 
 
 class N1kvNetworkBindingNotFound(exceptions.NeutronException):

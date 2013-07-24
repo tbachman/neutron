@@ -329,7 +329,7 @@ class PluginV2(db_base_plugin_v2.NeutronDbPluginV2):
         LOG.debug(_("get_credential_details() called"))
         try:
             credential = cdb.get_credential(credential_id)
-        except Exception:
+        except exc.NotFound:
             raise cexc.CredentialNotFound(credential_id=credential_id)
         return credential
 
@@ -338,7 +338,7 @@ class PluginV2(db_base_plugin_v2.NeutronDbPluginV2):
         LOG.debug(_("rename_credential() called"))
         try:
             credential = cdb.get_credential(credential_id)
-        except Exception:
+        except exc.NotFound:
             raise cexc.CredentialNotFound(credential_id=credential_id)
         credential = cdb.update_credential(credential_id, new_name)
         return credential

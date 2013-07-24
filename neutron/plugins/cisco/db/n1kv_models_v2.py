@@ -16,15 +16,15 @@
 #
 # @author: Abhishek Raut, Cisco Systems Inc.
 
-import logging
-
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Enum
-
-from neutron.db.models_v2 import model_base, HasId
-from neutron.plugins.cisco.common import cisco_constants
-from neutron.plugins.cisco.common import cisco_exceptions
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import object_mapper
+
+from neutron.db import model_base
+from neutron.db.models_v2 import HasId
+from neutron.openstack.common import log as logging
+from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.common import cisco_exceptions
 
 
 LOG = logging.getLogger(__name__)
@@ -44,16 +44,7 @@ class N1kvVlanAllocation(model_base.BASEV2):
     physical_network = Column(String(64), nullable=False, primary_key=True)
     vlan_id = Column(Integer, nullable=False, primary_key=True,
                      autoincrement=False)
-    allocated = Column(Boolean, nullable=False)
-
-    def __init__(self, physical_network, vlan_id):
-        self.physical_network = physical_network
-        self.vlan_id = vlan_id
-        self.allocated = False
-
-    def __repr__(self):
-        return "<VlanAllocation(%s,%d,%s)>" % (self.physical_network,
-                                               self.vlan_id, self.allocated)
+    allocated = Column(Boolean, nullable=False, default=False)
 
 
 class N1kvVxlanAllocation(model_base.BASEV2):
@@ -63,14 +54,7 @@ class N1kvVxlanAllocation(model_base.BASEV2):
 
     vxlan_id = Column(Integer, nullable=False, primary_key=True,
                       autoincrement=False)
-    allocated = Column(Boolean, nullable=False)
-
-    def __init__(self, vxlan_id):
-        self.vxlan_id = vxlan_id
-        self.allocated = False
-
-    def __repr__(self):
-        return "<VxlanAllocation(%d,%s)>" % (self.vxlan_id, self.allocated)
+    allocated = Column(Boolean, nullable=False, default=False)
 
 
 class N1kvPortBinding(model_base.BASEV2):
@@ -82,14 +66,6 @@ class N1kvPortBinding(model_base.BASEV2):
                      ForeignKey('ports.id', ondelete="CASCADE"),
                      primary_key=True)
     profile_id = Column(String(36))
-
-    def __init__(self, port_id, profile_id):
-        self.port_id = port_id
-        self.profile_id = profile_id
-
-    def __repr__(self):
-        return "<PortBinding(%s,%s)>" % (self.port_id,
-                                         self.profile_id)
 
 
 class N1kvNetworkBinding(model_base.BASEV2):
@@ -106,53 +82,6 @@ class N1kvNetworkBinding(model_base.BASEV2):
     segmentation_id = Column(Integer)  # vxlan_id or vlan_id
     multicast_ip = Column(String(32))  # multicast ip
     profile_id = Column(String(36))  # n1kv profile id
-
-    def __init__(self, network_id, network_type, physical_network,
-                 segmentation_id, multicast_ip, profile_id):
-        self.network_id = network_id
-        self.network_type = network_type
-        self.physical_network = physical_network
-        self.segmentation_id = segmentation_id
-        self.multicast_ip = multicast_ip
-        self.profile_id = profile_id
-
-    def __repr__(self):
-        return "<NetworkBinding(%s,%s,%s,%d %x %s)>" % (self.network_id,
-                                                        self.network_type,
-                                                        self.physical_network,
-                                                        self.segmentation_id,
-                                                        self.multicast_ip,
-                                                        self.profile_id)
-
-
-class N1kvVxlanIP(model_base.BASEV2):
-
-    """Represents vxlan endpoint in DB mode."""
-    __tablename__ = 'n1kv_vxlan_ips'
-
-    ip_address = Column(String(255), primary_key=True)
-
-    def __init__(self, ip_address):
-        self.ip_address = ip_address
-
-    def __repr__(self):
-        return "<VxlanIP(%s)>" % (self.ip_address)
-
-
-class N1kvVxlanEndpoint(model_base.BASEV2):
-
-    """Represents vxlan endpoint in RPC mode."""
-    __tablename__ = 'n1kv_vxlan_endpoints'
-
-    ip_address = Column(String(64), primary_key=True)
-    id = Column(Integer, nullable=False)
-
-    def __init__(self, ip_address, id):
-        self.ip_address = ip_address
-        self.id = id
-
-    def __repr__(self):
-        return "<VxlanEndpoint(%s,%s)>" % (self.ip_address, self.id)
 
 
 class L2NetworkBase(object):
@@ -211,18 +140,6 @@ class N1kVmNetwork(model_base.BASEV2):
     network_id = Column(String(36))
     port_count = Column(Integer)
 
-    def __init__(self, name, profile_id, network_id, port_count):
-        self.name = name
-        self.profile_id = profile_id
-        self.network_id = network_id
-        self.port_count = port_count
-
-    def __repr__(self):
-        return "<VmNetwork(%s,%s,%s,%s)>" % (self.name,
-                                             self.profile_id,
-                                             self.network_id,
-                                             self.port_count)
-
 
 class NetworkProfile(model_base.BASEV2, HasId):
 
@@ -240,7 +157,7 @@ class NetworkProfile(model_base.BASEV2, HasId):
     name = Column(String(255))
     segment_type = Column(SEGMENT_TYPE, nullable=False)
     segment_range = Column(String(255))
-    multicast_ip_index = Column(Integer)
+    multicast_ip_index = Column(Integer, default=0)
     multicast_ip_range = Column(String(255))
     physical_network = Column(String(255))
 
@@ -249,8 +166,8 @@ class NetworkProfile(model_base.BASEV2, HasId):
         with session.begin(subtransactions=True):
             # Sort the range to ensure min, max is in order
             seg_min, seg_max = sorted(map(int, self.segment_range.split('-')))
-            LOG.debug("NetworkProfile: seg_min %s seg_max %s",
-                      seg_min, seg_max)
+            LOG.debug(_("seg_min %(seg_min)s, seg_max %(seg_max)s"),
+                      {'seg_min': seg_min, 'seg_max': seg_max})
             return seg_min, seg_max
 
     def get_multicast_ip(self, session):
@@ -282,21 +199,6 @@ class NetworkProfile(model_base.BASEV2, HasId):
         min_ip, max_ip = self.multicast_ip_range.split('-')
         return (min_ip, max_ip)
 
-    def __init__(self, name, segment_type,
-                 segment_range=None, mcast_ip_index=None,
-                 mcast_ip_range=None, physical_network=None):
-        self.name = name
-        self.segment_type = segment_type
-        self.segment_range = segment_range
-        self.multicast_ip_index = mcast_ip_index or 0
-        self.multicast_ip_range = mcast_ip_range
-        self.physical_network = physical_network
-
-    def __repr__(self):
-        return "<NetworkProfile (%s, %s, %s, %d, %s, %s)>" % (self.id,
-               self.name, self.segment_type, self.multicast_ip_index,
-               self.multicast_ip_range, self.physical_network)
-
 
 class PolicyProfile(model_base.BASEV2):
 
@@ -310,13 +212,6 @@ class PolicyProfile(model_base.BASEV2):
     id = Column(String(36), primary_key=True)
     name = Column(String(255))
 
-    def __init__(self, id, name):
-        self.id = id
-        self.name = name
-
-    def __repr__(self):
-        return "<PolicyProfile (%s, %s)>" % (self.id, self.name)
-
 
 class ProfileBinding(model_base.BASEV2):
 
@@ -329,12 +224,3 @@ class ProfileBinding(model_base.BASEV2):
     profile_type = Column(PROFILE_TYPE)
     tenant_id = Column(String(36), primary_key=True, default=TENANT_ID_NOT_SET)
     profile_id = Column(String(36), primary_key=True)
-
-    def __init__(self, profile_type, tenant_id, profile_id):
-        self.profile_type = profile_type
-        self.tenant_id = tenant_id
-        self.profile_id = profile_id
-
-    def __repr__(self):
-        return "<ProfileBinding (%s, %s, %s)>" % (self.profile_type,
-               self.tenant_id, self.profile_id)

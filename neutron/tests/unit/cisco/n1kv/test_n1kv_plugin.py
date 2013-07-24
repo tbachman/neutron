@@ -14,23 +14,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
+# @author: Juergen Brendel, Cisco Systems Inc.
 # @author: Abhishek Raut, Cisco Systems Inc.
 
 import httplib
-import unittest
 
 from mock import patch
 
+from neutron import context
+import neutron.db.api as db
 from neutron.plugins.cisco.db import n1kv_db_v2
 from neutron.plugins.cisco.db import n1kv_models_v2
 from neutron.plugins.cisco.db import network_db_v2 as cdb
 from neutron.plugins.cisco.extensions import n1kv_profile
 from neutron.plugins.cisco.n1kv import n1kv_client
 from neutron.plugins.cisco.n1kv import n1kv_neutron_plugin
+from neutron.tests import base
 from neutron.tests.unit import test_db_plugin as test_plugin
-
-from neutron import context
-import neutron.db.api as db
 
 
 class FakeResponse(object):
@@ -115,15 +115,17 @@ class N1kvPluginTestCase(test_plugin.NeutronDbPluginV2TestCase):
         Create a profile record for testing purposes.
 
         """
-        alloc_obj = n1kv_models_v2.N1kvVlanAllocation("foo", 123)
+        alloc_obj = n1kv_models_v2.N1kvVlanAllocation(physical_network='foo',
+                                                      vlan_id=123)
         alloc_obj.allocated = False
         segment_range = "100-900"
         segment_type = 'vlan'
         physical_network = 'phys1'
-        profile_obj = n1kv_models_v2.NetworkProfile("test_np",
-                                                    segment_type,
-                                                    segment_range,
-                                                    physical_network)
+        profile_obj = n1kv_models_v2.NetworkProfile(
+            name="test_np",
+            segment_type=segment_type,
+            segment_range=segment_range,
+            physical_network=physical_network)
         session = db.get_session()
         session.add(profile_obj)
         session.flush()
@@ -388,7 +390,7 @@ class TestN1kvNetworks(test_plugin.TestNetworksV2,
             self._delete('ports', port2['port']['id'])
 
 
-class TestN1kvNonDbTest(unittest.TestCase):
+class TestN1kvNonDbTest(base.BaseTestCase):
 
     """
     This test class here can be used to test the plugin directly,
@@ -398,7 +400,7 @@ class TestN1kvNonDbTest(unittest.TestCase):
 
     """
     def setUp(self):
-        pass
+        super(TestN1kvNonDbTest, self).setUp()
 
     def test_foo(self):
         self.assertTrue(1 == 1)

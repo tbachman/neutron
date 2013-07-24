@@ -56,34 +56,34 @@ class Credential(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_name(cls):
-        """Returns Ext Resource Name."""
+        """Returns Extended Resource Name."""
         return "Cisco Credential"
 
     @classmethod
     def get_alias(cls):
-        """Returns Ext Resource Alias."""
+        """Returns Extended Resource Alias."""
         return "Cisco Credential"
 
     @classmethod
     def get_description(cls):
-        """Returns Ext Resource Description."""
+        """Returns Extended Resource Description."""
         return "Credential include username and password"
 
     @classmethod
     def get_namespace(cls):
-        """Returns Ext Resource Namespace."""
+        """Returns Extended Resource Namespace."""
         return "http://docs.ciscocloud.com/api/ext/credential/v1.0"
 
     @classmethod
     def get_updated(cls):
-        """Returns Ext Resource Update Time."""
+        """Returns Extended Resource Update Time."""
         return "2011-07-25T13:25:27-06:00"
 
     @classmethod
     def get_resources(cls):
-        """Returns Ext Resources."""
+        """Returns Extended Resources."""
         parent_resource = dict(member_name="tenant",
-                               collection_name="extensions/csco/tenants")
+                               collection_name="extensions/cisco/tenants")
         controller = CredentialController(NeutronManager.get_plugin())
         return [extensions.ResourceExtension('credentials', controller,
                                              parent=parent_resource)]

@@ -279,9 +279,7 @@ def get_ovs_vlans():
 
 class Credential_db_mixin(object):
 
-    """
-    Mixin class for Cisco Credentials as a resource.
-    """
+    """Mixin class for Cisco Credentials as a resource."""
 
     def _make_credential_dict(self, credential, fields=None):
         res = {'credential_id': credential['credential_id'],
@@ -292,9 +290,7 @@ class Credential_db_mixin(object):
         return self._fields(res, fields)
 
     def create_credential(self, context, credential):
-        """
-        Create a credential
-        """
+        """Create a credential."""
         c = credential['credential']
         cred = add_credential(c['credential_name'],
                               c['user_name'],
@@ -303,9 +299,7 @@ class Credential_db_mixin(object):
         return self._make_credential_dict(cred)
 
     def get_credentials(self, context, filters=None, fields=None):
-        """
-        Retrieve a list of credentials
-        """
+        """Retrieve a list of credentials."""
         return self._get_collection(context,
                                     network_models_v2.Credential,
                                     self._make_credential_dict,
@@ -313,16 +307,12 @@ class Credential_db_mixin(object):
                                     fields=fields)
 
     def get_credential(self, context, id, fields=None):
-        """
-        Retireve the requested credential based on its id
-        """
+        """Retireve the requested credential based on its id."""
         credential = get_credential(id)
         return self._make_credential_dict(credential, fields)
 
     def update_credential(self, context, id, credential):
-        """
-        Update a credential based on its id
-        """
+        """Update a credential based on its id."""
         c = credential['credential']
         cred = update_credential(id,
                                  c['credential_name'],
@@ -331,7 +321,5 @@ class Credential_db_mixin(object):
         return self._make_credential_dict(cred)
 
     def delete_credential(self, context, id):
-        """
-        Delete a credential based on its id
-        """
+        """Delete a credential based on its id."""
         return remove_credential(id)

@@ -144,7 +144,9 @@ class NvpPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     functionality using NVP.
     """
 
-    supported_extension_aliases = ["ext_gw_mode",
+    supported_extension_aliases = ["agent",
+                                   "dhcp_agent_scheduler",
+                                   "ext_gw_mode",
                                    "extraroute",
                                    "mac-learning",
                                    "network-gateway",
@@ -817,7 +819,8 @@ class NvpPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.dispatcher = NVPRpcCallbacks().create_rpc_dispatcher()
         self.conn.create_consumer(self.topic, self.dispatcher,
                                   fanout=False)
-        self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        self.agent_notifiers[constants.AGENT_TYPE_DHCP] = (
+            dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 

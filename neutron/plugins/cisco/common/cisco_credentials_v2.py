@@ -26,15 +26,14 @@ from neutron.plugins.cisco.db import network_db_v2 as cdb
 LOG.basicConfig(level=LOG.WARN)
 LOG.getLogger(const.LOGGER_COMPONENT_NAME)
 
-_dev_dict = config.get_device_dictionary()
-
 
 class Store(object):
     """Credential Store."""
 
     @staticmethod
     def initialize():
-        for dev_id, dev_ip, dev_key in _dev_dict.keys():
+        _dev_dict = config.get_device_dictionary()
+        for dev_id, dev_ip, dev_key in _dev_dict:
             if dev_key == const.USERNAME:
                 try:
                     cdb.add_credential(
