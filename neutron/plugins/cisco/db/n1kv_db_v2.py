@@ -22,7 +22,8 @@
 import re
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import and_
-
+from neutron.extensions import securitygroup as ext_sg
+from neutron import manager
 from neutron.common import exceptions as q_exc
 import neutron.db.api as db
 from neutron.db import models_v2
@@ -38,6 +39,42 @@ def initialize():
     """Initialize the database."""
     db.configure_db()
 
+def get_port(port_id):
+    session = db.get_session()
+    try:
+        port = session.query(models_v2.Port).filter_by(id=port_id).one()
+    except exc.NoResultFound:
+        port = None
+    return port
+
+def get_port_from_device(port_id):
+    """Get port from database."""
+    LOG.debug(_("get_port_with_securitygroups() called:port_id=%s"), port_id)
+    session = db.get_session()
+
+    query = session.query(models_v2.Port)
+    query = query.filter(models_v2.Port.id == port_id)
+    port = query.first()
+    if not port:
+        return None
+    plugin = manager.NeutronManager.get_plugin()
+    port_dict = plugin._make_port_dict(port)
+    port_dict[ext_sg.SECURITYGROUPS] = []
+    port_dict['security_group_rules'] = []
+    port_dict['security_group_source_groups'] = []
+    port_dict['fixed_ips'] = [ip['ip_address']
+                              for ip in port['fixed_ips']]
+    return port_dict
+
+def set_port_status(port_id, status):
+    session = db.get_session()
+    try:
+        port = session.query(models_v2.Port).filter_by(id=port_id).one()
+        port['status'] = status
+        session.merge(port)
+        session.flush()
+    except exc.NoResultFound:
+        raise q_exc.PortNotFound(port_id=port_id)
 
 def get_network_binding(db_session, network_id):
     """
@@ -298,15 +335,9 @@ def reserve_specific_vlan(db_session, physical_network, vlan_id):
                         "network %(network)s from pool"),
                       {'vlan': vlan_id, 'network': physical_network})
             alloc.allocated = True
-        except exc.NoResultFound:
-            LOG.debug(_("Reserving specific vlan %(vlan)s on physical "
-                        "network %(network)s outside pool"),
-                      {'vlan': vlan_id, 'network': physical_network})
-            alloc = n1kv_models_v2.N1kvVlanAllocation(physical_network,
-                                                      vlan_id)
-            alloc.allocated = True
             db_session.add(alloc)
-
+        except exc.NoResultFound:
+            raise c_exc.VlanIDOutsidePool
 
 def release_vlan(db_session, physical_network, vlan_id, network_vlan_ranges):
     """

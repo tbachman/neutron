@@ -123,25 +123,26 @@ class Client(object):
 
     # Define paths for the URI where the client connects for HTTP requests.
     port_profiles_path = "/virtual-port-profile"
-    network_segments_path = "/vm-network-definition"
-    network_segment_path = "/vm-network-definition/%s"
-    network_segment_pools_path = "/fabric-network-definition"
-    network_segment_pool_path = "/fabric-network-definition/%s"
-    ip_pools_path = "/ip-address-pool"
-    ip_pool_path = "/ip-address-pool/%s"
-    ports_path = "/vm-network/%s/ports"
-    port_path = "/vm-network/%s/ports/%s"
-    vm_networks_path = "/vm-network"
-    vm_network_path = "/vm-network/%s"
-    bridge_domains_path = "/bridge-domain"
-    bridge_domain_path = "/bridge-domain/%s"
-    logical_networks_path = "/fabric-network"
-    events_path = "/events"
+    network_segments_path = "/network-segment"
+    network_segment_path = "/network-segment/%s"
+    network_segment_pools_path = "/network-segment-pool"
+    network_segment_pool_path = "/network-segment-pool/%s"
+    ip_pools_path = "/ip-pool-template"
+    ip_pool_path = "/ip-pool-template/%s"
+    ports_path = "/kvm/vm-network/%s/ports"
+    port_path = "/kvm/vm-network/%s/ports/%s"
+    vm_networks_path = "/kvm/vm-network"
+    vm_network_path = "/kvm/vm-network/%s"
+    bridge_domains_path = "/kvm/bridge-domain"
+    bridge_domain_path = "/kvm/bridge-domain/%s"
+    logical_networks_path = "/logical-network"
+    logical_network_path = "/logical-network/%s"
+    events_path = "/kvm/events"
 
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
         self.format = 'json'
-        self.action_prefix = '/api/hyper-v'
+        self.action_prefix = '/api/n1k'
         self.hosts = self._get_vsm_hosts()
 
     def list_port_profiles(self):
@@ -194,7 +195,7 @@ class Client(object):
         LOG.debug(_("seg id %s\n"), network_profile['name'])
         body = {'name': network['name'],
                 'id': network['id'],
-                'networkDefinition': network_profile['name'], }
+                'networkSegmentPool': network_profile['name'], }
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VLAN:
             body.update({'vlan': network[providernet.SEGMENTATION_ID]})
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
@@ -234,6 +235,10 @@ class Client(object):
         return self._post(self.logical_networks_path,
                           body=body)
 
+    def delete_logical_network(self, network_profile):
+        """ Delete a logical network on VSM."""
+        return self._delete(self.logical_network_path % (network_profile['name']))
+
     def create_network_segment_pool(self, network_profile):
         """
         Create a network segment pool on the VSM
@@ -243,9 +248,17 @@ class Client(object):
         LOG.debug(_("network_segment_pool"))
         body = {'name': network_profile['name'],
                 'id': network_profile['id'],
-                'fabricNetworkName': 'test'}
+                'logicalNetwork': network_profile['name']}
         return self._post(self.network_segment_pools_path,
                           body=body)
+
+    def update_network_segment_pool(self, network_segment_pool, body):
+        """
+        Updates a Network Segment Pool on the VSM
+        """
+        return self._post(self.network_segment_pool_path %
+                          (network_segment_pool), body=body)
+
 
     def delete_network_segment_pool(self, network_segment_pool_name):
         """
@@ -265,8 +278,9 @@ class Client(object):
         if subnet['cidr']:
             ip = IPNetwork(subnet['cidr'])
             netmask = str(ip.netmask)
+            network_address = str(ip.network)
         else:
-            netmask = ""
+            netmask = network_address = ""
 
         if subnet['allocation_pools']:
             address_range_start = subnet['allocation_pools'][0]['start']
@@ -275,12 +289,12 @@ class Client(object):
             address_range_start = None
             address_range_end = None
 
-        body = {'dhcp': subnet['enable_dhcp'],
-                'addressRangeStart': address_range_start,
+        body = {'addressRangeStart': address_range_start,
                 'addressRangeEnd': address_range_end,
                 'ipAddressSubnet': netmask,
                 'name': subnet['name'],
-                'gateway': subnet['gateway_ip'], }
+                'gateway': subnet['gateway_ip'],
+                'networkAddress': network_address}
         return self._post(self.ip_pools_path,
                           body=body)
 
@@ -295,7 +309,7 @@ class Client(object):
     # TODO(abhraut): Removing tenantId from the request as a temp fix to allow
     #                port create. VSM CLI needs to be fixed. Should not
     #                interfere since VSM is not using tenantId as of now.
-    def create_vm_network(self, port, vm_network_name, policy_profile):
+    def create_vm_network(self, port, vm_network_name, policy_profile, network_name):
         """
         Create a VM network on the VSM
 
@@ -305,7 +319,8 @@ class Client(object):
         """
         body = {'name': vm_network_name,
                 #'tenantId': port['tenant_id'],
-                'vmNetworkDefinition': port['network_id'],
+                'networkSegmentId': port['network_id'],
+                'networkSegment': network_name,
                 'portProfile': policy_profile['name'],
                 'portProfileId': policy_profile['id'],
                 }
