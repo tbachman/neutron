@@ -139,7 +139,7 @@ class Credential(model_base.BASEV2, L2NetworkBase):
 
     def __repr__(self):
         return "<Credentials(%s,%s,%s,%s, %s)>" % (self.credential_id,
-                                                  self.credential_name,
-                                                  self.user_name,
-                                                  self.password,
-                                                  self.type)
+                                                   self.credential_name,
+                                                   self.user_name,
+                                                   self.password,
+                                                   self.type)

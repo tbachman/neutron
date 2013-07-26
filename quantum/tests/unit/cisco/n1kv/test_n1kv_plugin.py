@@ -1,34 +1,36 @@
-# Copyright (c) 2012 OpenStack, LLC.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
 
-import unittest
+# Copyright 2013 Cisco Systems, Inc.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+#
+# @author: Juergen Brendel, Cisco Systems Inc.
+# @author: Abhishek Raut, Cisco Systems Inc.
+
 import httplib
 
 from mock import patch
 
-from quantum.plugins.cisco.db import n1kv_models_v2
-from quantum.plugins.cisco.db import n1kv_db_v2
-from quantum.tests.unit import test_db_plugin as test_plugin
-from quantum.plugins.cisco.extensions import n1kv_profile
-
-from quantum.plugins.cisco.n1kv import n1kv_client
-from quantum.plugins.cisco.n1kv import n1kv_quantum_plugin
-from quantum.plugins.cisco.db import network_db_v2 as cdb
-
 from quantum import context
 import quantum.db.api as db
+from quantum.plugins.cisco.db import n1kv_db_v2
+from quantum.plugins.cisco.db import n1kv_models_v2
+from quantum.plugins.cisco.db import network_db_v2 as cdb
+from quantum.plugins.cisco.extensions import n1kv_profile
+from quantum.plugins.cisco.n1kv import n1kv_client
+from quantum.plugins.cisco.n1kv import n1kv_quantum_plugin
+from quantum.tests import base
+from quantum.tests.unit import test_db_plugin as test_plugin
 
 
 class FakeResponse(object):
@@ -82,9 +84,8 @@ def _fake_add_dummy_profile_for_test(self, obj):
 
 
 def _fake_setup_vsm(self):
-    """ Fake establish Communication with Cisco Nexus1000V VSM """
+    """Fake establish Communication with Cisco Nexus1000V VSM."""
     self.agent_vsm = True
-    self._send_register_request()
     self._poll_policies(event_type="port_profile")
 
 
@@ -114,16 +115,17 @@ class N1kvPluginTestCase(test_plugin.QuantumDbPluginV2TestCase):
         Create a profile record for testing purposes.
 
         """
-        alloc_obj = n1kv_models_v2.N1kvVlanAllocation("foo", 123)
+        alloc_obj = n1kv_models_v2.N1kvVlanAllocation(physical_network='foo',
+                                                      vlan_id=123)
         alloc_obj.allocated = False
         segment_range = "100-900"
         segment_type = 'vlan'
-        tunnel_id = 200
         physical_network = 'phys1'
-        profile_obj = n1kv_models_v2.NetworkProfile("test_np",
-                                                    segment_type,
-                                                    segment_range,
-                                                    physical_network)
+        profile_obj = n1kv_models_v2.NetworkProfile(
+            name="test_np",
+            segment_type=segment_type,
+            segment_range=segment_range,
+            physical_network=physical_network)
         session = db.get_session()
         session.add(profile_obj)
         session.flush()
@@ -179,10 +181,10 @@ class N1kvPluginTestCase(test_plugin.QuantumDbPluginV2TestCase):
         # Now define the return values for a few functions that may be called
         # on any instance of the fake HTTP connection class.
         instance = FakeHttpConnection.return_value
-        instance.getresponse.return_value = \
-            FakeResponse(self.DEFAULT_RESP_CODE,
-                         self.DEFAULT_RESP_BODY,
-                         'application/xml')
+        instance.getresponse.return_value = (FakeResponse(
+                                             self.DEFAULT_RESP_CODE,
+                                             self.DEFAULT_RESP_BODY,
+                                             'application/xml'))
         instance.request.return_value = None
 
         # Patch some internal functions in a few other parts of the system.
@@ -200,14 +202,14 @@ class N1kvPluginTestCase(test_plugin.QuantumDbPluginV2TestCase):
         get_cred_name_patcher = patch(cdb.__name__ + ".get_credential_name")
         fake_get_cred_name = get_cred_name_patcher.start()
         self.addCleanup(get_cred_name_patcher.stop)
-        fake_get_cred_name.return_value = \
-            {"user_name": "admin", "password": "admin_password"}
+        fake_get_cred_name.return_value = {"user_name": "admin",
+                                           "password": "admin_password"}
 
         # Patch a dummy profile creation into the N1K plugin code. The original
         # function in the plugin is a noop for production, but during test, we
         # need it to return a dummy network profile.
-        n1kv_quantum_plugin.N1kvQuantumPluginV2._add_dummy_profile_for_test = \
-            _fake_add_dummy_profile_for_test
+        (n1kv_quantum_plugin.N1kvQuantumPluginV2.
+         _add_dummy_profile_only_if_testing) = _fake_add_dummy_profile_for_test
 
         n1kv_quantum_plugin.N1kvQuantumPluginV2._setup_vsm = _fake_setup_vsm
 
@@ -215,9 +217,8 @@ class N1kvPluginTestCase(test_plugin.QuantumDbPluginV2TestCase):
         # Create some of the database entries that we require.
         self.tenant_id = self._default_tenant
         profile_obj = self._make_test_profile(self.tenant_id)
-        policy_profile_obj = \
-            self._make_test_policy_profile(
-                '41548d21-7f89-4da0-9131-3d4fd4e8BBB8')
+        policy_profile_obj = (self._make_test_policy_profile(
+                              '41548d21-7f89-4da0-9131-3d4fd4e8BBB8'))
         # Additional args for create_network(), create_port(), etc.
         self.more_args = {
             "network": {"n1kv:profile_id": profile_obj.id},
@@ -389,7 +390,7 @@ class TestN1kvNetworks(test_plugin.TestNetworksV2,
             self._delete('ports', port2['port']['id'])
 
 
-class TestN1kvNonDbTest(unittest.TestCase):
+class TestN1kvNonDbTest(base.BaseTestCase):
 
     """
     This test class here can be used to test the plugin directly,
@@ -399,7 +400,7 @@ class TestN1kvNonDbTest(unittest.TestCase):
 
     """
     def setUp(self):
-        pass
+        super(TestN1kvNonDbTest, self).setUp()
 
     def test_foo(self):
         self.assertTrue(1 == 1)

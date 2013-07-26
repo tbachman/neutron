@@ -31,7 +31,8 @@ cisco_plugins_opts = [
                        'OVSQuantumPluginV2',
                help=_("Virtual Switch to use")),
     cfg.StrOpt('nexus_plugin',
-               default=None,
+               default='quantum.plugins.cisco.nexus.cisco_nexus_plugin_v2.'
+                       'NexusPlugin',
                help=_("Nexus Switch to use")),
 ]
 
@@ -66,7 +67,7 @@ cisco_n1k_opts = [
     cfg.StrOpt('integration_bridge', default='br-int',
                help=_("N1K Integration Bridge")),
     cfg.BoolOpt('enable_tunneling', default=True,
-               help=_("N1K Enable Tunneling")),
+                help=_("N1K Enable Tunneling")),
     cfg.StrOpt('tunnel_bridge', default='br-tun',
                help=_("N1K Tunnel Bridge")),
     cfg.StrOpt('local_ip', default='10.0.0.3',
@@ -110,7 +111,7 @@ device_dictionary = {}
 
 
 class CiscoConfigOptions():
-    """ Cisco Configuration Options Class """
+    """Cisco Configuration Options Class."""
     def __init__(self):
         self._create_device_dictionary()
 

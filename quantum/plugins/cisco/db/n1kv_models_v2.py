@@ -1,6 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
-# Copyright 2011 Nicira Networks, Inc.
-# All Rights Reserved.
+
+# Copyright 2013 Cisco Systems, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -18,26 +18,27 @@
 # @author: Aruna Kushwaha, Cisco Systems, Inc.
 # @author: Abhishek Raut, Cisco Systems, Inc.
 
-import logging
-
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Enum
+from sqlalchemy.orm import exc
+from sqlalchemy.orm import object_mapper
 
 from quantum.db.models_v2 import model_base, HasId
+from quantum.openstack.common import log as logging
+from quantum.plugins.cisco.common import cisco_constants
 from quantum.plugins.cisco.common import cisco_exceptions
-from sqlalchemy.orm import exc
 
 LOG = logging.getLogger(__name__)
 SEGMENT_TYPE_VLAN = 'vlan'
 SEGMENT_TYPE_VXLAN = 'vxlan'
 SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
-PROFILE_TYPE = Enum('network', 'policy')
+PROFILE_TYPE = Enum(cisco_constants.NETWORK, cisco_constants.POLICY)
 # use this to indicate that tenant_id was not yet set
 TENANT_ID_NOT_SET = '01020304-0506-0708-0901-020304050607'
 
 
 class N1kvVlanAllocation(model_base.BASEV2):
 
-    """Represents allocation state of vlan_id on physical network"""
+    """Represents allocation state of vlan_id on physical network."""
     __tablename__ = 'n1kv_vlan_allocations'
 
     physical_network = Column(String(64), nullable=False, primary_key=True)
@@ -57,7 +58,7 @@ class N1kvVlanAllocation(model_base.BASEV2):
 
 class N1kvVxlanAllocation(model_base.BASEV2):
 
-    """Represents allocation state of vxlan_id"""
+    """Represents allocation state of vxlan_id."""
     __tablename__ = 'n1kv_vxlan_allocations'
 
     vxlan_id = Column(Integer, nullable=False, primary_key=True,
@@ -74,7 +75,7 @@ class N1kvVxlanAllocation(model_base.BASEV2):
 
 class N1kvPortBinding(model_base.BASEV2):
 
-    """Represents binding of ports to policy profile"""
+    """Represents binding of ports to policy profile."""
     __tablename__ = 'n1kv_port_bindings'
 
     port_id = Column(String(36),
@@ -93,7 +94,7 @@ class N1kvPortBinding(model_base.BASEV2):
 
 class N1kvNetworkBinding(model_base.BASEV2):
 
-    """Represents binding of virtual network to physical realization"""
+    """Represents binding of virtual network to physical realization."""
     __tablename__ = 'n1kv_network_bindings'
 
     network_id = Column(String(36),
@@ -124,65 +125,35 @@ class N1kvNetworkBinding(model_base.BASEV2):
                                                         self.profile_id)
 
 
-class N1kvVxlanIP(model_base.BASEV2):
-
-    """Represents vxlan endpoint in DB mode"""
-    __tablename__ = 'n1kv_vxlan_ips'
-
-    ip_address = Column(String(255), primary_key=True)
-
-    def __init__(self, ip_address):
-        self.ip_address = ip_address
-
-    def __repr__(self):
-        return "<VxlanIP(%s)>" % (self.ip_address)
-
-
-class N1kvVxlanEndpoint(model_base.BASEV2):
-
-    """Represents vxlan endpoint in RPC mode"""
-    __tablename__ = 'n1kv_vxlan_endpoints'
-
-    ip_address = Column(String(64), primary_key=True)
-    id = Column(Integer, nullable=False)
-
-    def __init__(self, ip_address, id):
-        self.ip_address = ip_address
-        self.id = id
-
-    def __repr__(self):
-        return "<VxlanEndpoint(%s,%s)>" % (self.ip_address, self.id)
-
-
 class L2NetworkBase(object):
 
     """Base class for L2Network Models."""
     #__table_args__ = {'mysql_engine': 'InnoDB'}
 
     def __setitem__(self, key, value):
-        """Internal Dict set method"""
+        """Internal Dict set method."""
         setattr(self, key, value)
 
     def __getitem__(self, key):
-        """Internal Dict get method"""
+        """Internal Dict get method."""
         return getattr(self, key)
 
     def get(self, key, default=None):
-        """Dict get method"""
+        """Dict get method."""
         return getattr(self, key, default)
 
     def __iter__(self):
-        """Iterate over table columns"""
+        """Iterate over table columns."""
         self._i = iter(object_mapper(self).columns)
         return self
 
     def next(self):
-        """Next method for the iterator"""
+        """Next method for the iterator."""
         n = self._i.next().name
         return n, getattr(self, n)
 
     def update(self, values):
-        """Make the model object behave like a dict"""
+        """Make the model object behave like a dict."""
         for k, v in values.iteritems():
             setattr(self, k, v)
 
@@ -198,7 +169,7 @@ class L2NetworkBase(object):
 
 class N1kVmNetwork(model_base.BASEV2):
 
-    """Represents VM Network information"""
+    """Represents VM Network information."""
     __tablename__ = 'vmnetwork'
 
     name = Column(String(80), primary_key=True)

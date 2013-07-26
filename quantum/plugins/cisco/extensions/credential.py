@@ -1,6 +1,5 @@
-"""
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
+
 # Copyright 2012 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,16 +14,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
+# @author: Ying Liu, Cisco Systems, Inc.
 # @author: Abhishek Raut, Cisco Systems, Inc
 #
-"""
 
-from abc import abstractmethod
-
-from oslo.config import cfg
 
 from quantum import manager
-from quantum import quota
 from quantum.common import exceptions as qexception
 from quantum.api.v2 import attributes as attr
 from quantum.api.v2 import base
@@ -35,16 +30,16 @@ from quantum.api import extensions
 RESOURCE_ATTRIBUTE_MAP = {
     'credentials': {
         'credential_id': {'allow_post': False, 'allow_put': False,
-               'validate': {'type:regex': attr.UUID_PATTERN},
-               'is_visible': True},
+                          'validate': {'type:regex': attr.UUID_PATTERN},
+                          'is_visible': True},
         'credential_name': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': ''},
+                            'is_visible': True, 'default': ''},
         'type': {'allow_post': True, 'allow_put': True,
                  'is_visible': True, 'default': ''},
         'user_name': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': ''},
+                      'is_visible': True, 'default': ''},
         'password': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': ''},
+                     'is_visible': True, 'default': ''},
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'is_visible': False, 'default': ''},
     },
@@ -91,5 +86,3 @@ class Credential(extensions.ExtensionDescriptor):
                                           plugin, params)
         return [extensions.ResourceExtension(collection_name,
                                              controller)]
-
-
