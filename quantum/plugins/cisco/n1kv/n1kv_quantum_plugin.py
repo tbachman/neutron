@@ -490,6 +490,14 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         n1kvclient = n1kv_client.Client()
         n1kvclient.delete_logical_network(network_profile)
 
+    def _send_delete_fabric_network_request(self, profile):
+        """
+        Send delete fabric network request to VSM.
+        """
+        LOG.debug('_send_delete_fabric_network')
+        n1kvclient = n1kv_client.Client()
+        n1kvclient.delete_fabric_network(profile)
+
     def _send_create_network_profile_request(self, context, profile):
         """
         Send create network profile request to VSM.
@@ -842,6 +850,12 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             p_profile = self._get_policy_profile_by_name(p_profile_name)
             if p_profile:
                 port['port']['n1kv:profile_id'] = p_profile['id']
+
+        if 'device_id' in port['port'] and port['port']['device_owner'] in \
+                ['network:dhcp', 'network:router_interface']:
+            p_profile_name = conf.CISCO_N1K.default_policy_profile
+            p_profile = self._get_policy_profile_by_name(p_profile_name)
+            port['port']['n1kv:profile_id'] = p_profile['id']
 
         profile_id_set = False
         if n1kv_profile.PROFILE_ID in port['port']:
