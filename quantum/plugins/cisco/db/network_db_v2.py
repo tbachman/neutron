@@ -26,7 +26,6 @@ from quantum.plugins.cisco.common import config
 from quantum.plugins.cisco.db import network_models_v2
 from quantum.plugins.openvswitch import ovs_models_v2
 from quantum.plugins.cisco.db import n1kv_models_v2
-from quantum.plugins.cisco.db import n1kv_profile_db
 
 
 def create_vlanids():
