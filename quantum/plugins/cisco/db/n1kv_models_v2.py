@@ -17,6 +17,7 @@
 # @author: Bob Kukura, Red Hat, Inc.
 # @author: Aruna Kushwaha, Cisco Systems, Inc.
 # @author: Abhishek Raut, Cisco Systems, Inc.
+# @author: Rudrajit Tapadar, Cisco Systems, Inc.
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Enum
 from sqlalchemy.orm import exc
@@ -30,7 +31,11 @@ from quantum.plugins.cisco.common import cisco_exceptions
 LOG = logging.getLogger(__name__)
 SEGMENT_TYPE_VLAN = 'vlan'
 SEGMENT_TYPE_VXLAN = 'vxlan'
-SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
+SEGMENT_TYPE_MULTI_SEGMENT = 'multi-segment'
+SEGMENT_TYPE_TRUNK = 'trunk'
+SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN,
+                    SEGMENT_TYPE_MULTI_SEGMENT, SEGMENT_TYPE_TRUNK)
+SEGMENT_SUBTYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
 PROFILE_TYPE = Enum(cisco_constants.NETWORK, cisco_constants.POLICY)
 # use this to indicate that tenant_id was not yet set
 TENANT_ID_NOT_SET = '01020304-0506-0708-0901-020304050607'
@@ -71,6 +76,49 @@ class N1kvVxlanAllocation(model_base.BASEV2):
 
     def __repr__(self):
         return "<VxlanAllocation(%d,%s)>" % (self.vxlan_id, self.allocated)
+
+
+class N1kvTrunkSegmentBinding(model_base.BASEV2):
+
+    """Represents binding of segments in trunk networks."""
+    __tablename__ = 'n1kv_trunk_segment_bindings'
+
+    trunk_segment_id = Column(String(36),
+                       ForeignKey('networks.id', ondelete="CASCADE"),
+                       primary_key=True)
+    segment_id = Column(String(36), nullable=False, primary_key=True)
+    dot1qtag = Column(String(36), nullable=False, primary_key=True)
+
+    def __init__(self, trunk_segment_id, segment_id, dot1qtag):
+        self.trunk_segment_id = trunk_segment_id
+        self.segment_id = segment_id
+        self.dot1qtag = dot1qtag
+
+    def __repr__(self):
+        return "<N1kvTrunkSegmentBinding(%s,%s,%s)>" \
+                    % (self.trunk_segment_id, self.segment_id, self.dot1qtag)
+
+
+class N1kvMultiSegmentNetworkBinding(model_base.BASEV2):
+
+    """Represents binding of segments in multi-segment networks."""
+    __tablename__ = 'n1kv_multi_segment_bindings'
+
+    multi_segment_id = Column(String(36),
+                       ForeignKey('networks.id', ondelete="CASCADE"),
+                       primary_key=True)
+    segment1_id = Column(String(36), nullable=False, primary_key=True)
+    segment2_id = Column(String(36), nullable=False, primary_key=True)
+
+    def __init__(self, multi_segment_id, segment1_id, segment2_id):
+        self.multi_segment_id = multi_segment_id
+        self.segment1_id = segment1_id
+        self.segment2_id = segment2_id
+
+    def __repr__(self):
+        return "<N1kvMultiSegmentNetworkBinding(%s,%s,%s)>" \
+                    % (self.multi_segment_id, self.segment1_id,
+                       self.segment2_id)
 
 
 class N1kvPortBinding(model_base.BASEV2):
@@ -195,7 +243,8 @@ class NetworkProfile(model_base.BASEV2, HasId):
     """
     Nexus1000V Network Profiles
 
-        segment_type - VLAN, VXLAN
+        segment_type - VLAN, VXLAN, MULTI_SEGMENT, TRUNK
+        sub_type - VLAN, VXLAN
         segment_range - '<integer>-<integer>'
         multicast_ip_index - <integer>
         multicast_ip_range - '<ip>-<ip>'
@@ -205,6 +254,7 @@ class NetworkProfile(model_base.BASEV2, HasId):
 
     name = Column(String(255))
     segment_type = Column(SEGMENT_TYPE, nullable=False)
+    sub_type = Column(SEGMENT_SUBTYPE)
     segment_range = Column(String(255))
     multicast_ip_index = Column(Integer)
     multicast_ip_range = Column(String(255))
@@ -250,18 +300,19 @@ class NetworkProfile(model_base.BASEV2, HasId):
 
     def __init__(self, name, segment_type,
                  segment_range=None, mcast_ip_index=None,
-                 mcast_ip_range=None, physical_network=None):
+                 mcast_ip_range=None, physical_network=None, sub_type=None):
         self.name = name
         self.segment_type = segment_type
         self.segment_range = segment_range
         self.multicast_ip_index = mcast_ip_index or 0
         self.multicast_ip_range = mcast_ip_range
         self.physical_network = physical_network
+        self.sub_type = sub_type
 
     def __repr__(self):
-        return "<NetworkProfile (%s, %s, %s, %d, %s, %s)>" % (self.id,
+        return "<NetworkProfile (%s, %s, %s, %d, %s, %s, %s)>" % (self.id,
                self.name, self.segment_type, self.multicast_ip_index,
-               self.multicast_ip_range, self.physical_network)
+               self.multicast_ip_range, self.physical_network, self.sub_type)
 
 
 class PolicyProfile(model_base.BASEV2):

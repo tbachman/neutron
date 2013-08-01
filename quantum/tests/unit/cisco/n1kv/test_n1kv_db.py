@@ -16,6 +16,7 @@
 #
 # @author: Juergen Brendel, Cisco Systems Inc.
 # @author: Abhishek Raut, Cisco Systems Inc.
+# @author: Rudrajit Tapadar, Cisco Systems Inc.
 
 from sqlalchemy.orm import exc as s_exc
 from testtools import matchers
@@ -48,6 +49,8 @@ SEGMENT_RANGE_MIN_OVERLAP = '210-230'
 SEGMENT_RANGE_MAX_OVERLAP = '190-209'
 SEGMENT_RANGE_OVERLAP = '190-230'
 TEST_NETWORK_ID = 'abcdefghijklmnopqrstuvwxyz'
+TEST_NETWORK_ID2 = 'abcdefghijklmnopqrstuvwxy2'
+TEST_NETWORK_ID3 = 'abcdefghijklmnopqrstuvwxy3'
 TEST_NETWORK_PROFILE = {'name': 'test_profile',
                         'segment_type': 'vlan',
                         'physical_network': 'physnet1',
@@ -62,6 +65,12 @@ TEST_NETWORK_PROFILE_VXLAN = {'name': 'test_profile',
                               'multicast_ip_range': '239.0.0.70-239.0.0.80'}
 TEST_POLICY_PROFILE = {'id': '4a417990-76fb-11e2-bcfd-0800200c9a66',
                        'name': 'test_policy_profile'}
+
+TEST_NETWORK_PROFILE_MULTI_SEGMENT = {'name': 'test_profile',
+                                      'segment_type': 'multi-segment'}
+TEST_NETWORK_PROFILE_TRUNK = {'name': 'test_profile',
+                              'segment_type': 'trunk',
+                              'sub_type': 'vlan'}
 
 
 def _create_test_network_profile_if_not_there(session,
@@ -340,7 +349,7 @@ class NetworkBindingsTest(test_plugin.QuantumDbPluginV2TestCase):
             p = _create_test_network_profile_if_not_there(self.session)
             n1kv_db_v2.add_network_binding(
                 self.session, TEST_NETWORK_ID, 'vlan',
-                PHYS_NET, 1234, '0.0.0.0', p.id)
+                PHYS_NET, 1234, '0.0.0.0', p.id, None)
             binding = n1kv_db_v2.get_network_binding(
                 self.session, TEST_NETWORK_ID)
             self.assertIsNotNone(binding)
@@ -348,6 +357,90 @@ class NetworkBindingsTest(test_plugin.QuantumDbPluginV2TestCase):
             self.assertEqual(binding.network_type, 'vlan')
             self.assertEqual(binding.physical_network, PHYS_NET)
             self.assertEqual(binding.segmentation_id, 1234)
+
+    def test_add_multi_segment_network_binding(self):
+        with self.network() as network:
+            TEST_NETWORK_ID = network['network']['id']
+
+            self.assertRaises(c_exc.N1kvNetworkBindingNotFound,
+                              n1kv_db_v2.get_network_binding,
+                              self.session,
+                              TEST_NETWORK_ID)
+
+            p = _create_test_network_profile_if_not_there(
+                self.session,
+                TEST_NETWORK_PROFILE_MULTI_SEGMENT)
+            n1kv_db_v2.add_network_binding(
+                self.session, TEST_NETWORK_ID, 'multi-segment',
+                "", 0, '0.0.0.0', p.id, None)
+            binding = n1kv_db_v2.get_network_binding(
+                self.session, TEST_NETWORK_ID)
+            self.assertIsNotNone(binding)
+            self.assertEqual(binding.network_id, TEST_NETWORK_ID)
+            self.assertEqual(binding.network_type, 'multi-segment')
+            self.assertEqual(binding.physical_network, None)
+            self.assertEqual(binding.segmentation_id, 0)
+
+    def test_add_trunk_network_binding(self):
+        with self.network() as network:
+            TEST_NETWORK_ID = network['network']['id']
+
+            self.assertRaises(c_exc.N1kvNetworkBindingNotFound,
+                              n1kv_db_v2.get_network_binding,
+                              self.session,
+                               TEST_NETWORK_ID)
+
+            p = _create_test_network_profile_if_not_there(
+                self.session,
+                TEST_NETWORK_PROFILE_TRUNK)
+            n1kv_db_v2.add_network_binding(
+                self.session, TEST_NETWORK_ID, 'trunk',
+                "", 0, '0.0.0.0', p.id, [(TEST_NETWORK_ID2, 0)])
+            binding = n1kv_db_v2.get_network_binding(
+                self.session, TEST_NETWORK_ID)
+            self.assertIsNotNone(binding)
+            self.assertEqual(binding.network_id, TEST_NETWORK_ID)
+            self.assertEqual(binding.network_type, 'trunk')
+            self.assertEqual(binding.physical_network, "")
+            self.assertEqual(binding.segmentation_id, 0)
+            trunk_binding = n1kv_db_v2.get_trunk_network_binding(
+                self.session, TEST_NETWORK_ID, (TEST_NETWORK_ID2, 0))
+            self.assertIsNotNone(trunk_binding)
+            self.assertEqual(trunk_binding.trunk_segment_id, TEST_NETWORK_ID)
+            self.assertEqual(trunk_binding.segment_id, TEST_NETWORK_ID2)
+            self.assertEqual(trunk_binding.dot1qtag, '0')
+
+    def test_add_multi_segment_binding(self):
+        with self.network() as network:
+            TEST_NETWORK_ID = network['network']['id']
+
+            self.assertRaises(c_exc.N1kvNetworkBindingNotFound,
+                              n1kv_db_v2.get_network_binding,
+                              self.session,
+                              TEST_NETWORK_ID)
+
+            p = _create_test_network_profile_if_not_there(
+                self.session,
+                TEST_NETWORK_PROFILE_MULTI_SEGMENT)
+            n1kv_db_v2.add_network_binding(
+                self.session, TEST_NETWORK_ID, 'multi-segment',
+                "", 0, '0.0.0.0', p.id, [(TEST_NETWORK_ID2, TEST_NETWORK_ID3)])
+            binding = n1kv_db_v2.get_network_binding(
+                self.session, TEST_NETWORK_ID)
+            self.assertIsNotNone(binding)
+            self.assertEqual(binding.network_id, TEST_NETWORK_ID)
+            self.assertEqual(binding.network_type, 'multi-segment')
+            self.assertEqual(binding.physical_network, "")
+            self.assertEqual(binding.segmentation_id, 0)
+            ms_binding = \
+                n1kv_db_v2.get_multi_segment_network_binding(
+                    self.session,
+                    TEST_NETWORK_ID,
+                    (TEST_NETWORK_ID2, TEST_NETWORK_ID3))
+            self.assertIsNotNone(ms_binding)
+            self.assertEqual(ms_binding.multi_segment_id, TEST_NETWORK_ID)
+            self.assertEqual(ms_binding.segment1_id, TEST_NETWORK_ID2)
+            self.assertEqual(ms_binding.segment2_id, TEST_NETWORK_ID3)
 
 
 class NetworkProfileTests(base.BaseTestCase,
@@ -478,6 +571,41 @@ class NetworkProfileTests(base.BaseTestCase,
         # TODO(abhraut): Fix this test to work with real tenant_td
         profiles = n1kv_db_v2._get_network_profiles()
         self.assertEqual(len(test_profiles), len(profiles))
+
+    def test_create_multi_segment_network_profile(self):
+        _db_profile = \
+            n1kv_db_v2.create_network_profile(
+                TEST_NETWORK_PROFILE_MULTI_SEGMENT)
+        self.assertIsNotNone(_db_profile)
+        db_profile = self.session.query(NetworkProfile).filter_by(
+            name=TEST_NETWORK_PROFILE['name']).one()
+        self.assertIsNotNone(db_profile)
+        self.assertTrue(_db_profile.id == db_profile.id and
+                        _db_profile.name == db_profile.name and
+                        _db_profile.segment_type == db_profile.segment_type and
+                        _db_profile.segment_range ==
+                        db_profile.segment_range and
+                        _db_profile.multicast_ip_index ==
+                        db_profile.multicast_ip_index and
+                        _db_profile.multicast_ip_range ==
+                        db_profile.multicast_ip_range)
+
+    def test_create_trunk_network_profile(self):
+        _db_profile = \
+            n1kv_db_v2.create_network_profile(TEST_NETWORK_PROFILE_TRUNK)
+        self.assertIsNotNone(_db_profile)
+        db_profile = self.session.query(NetworkProfile).filter_by(
+        name=TEST_NETWORK_PROFILE['name']).one()
+        self.assertIsNotNone(db_profile)
+        self.assertTrue(_db_profile.id == db_profile.id and
+                        _db_profile.name == db_profile.name and
+                        _db_profile.segment_type == db_profile.segment_type and
+                        _db_profile.segment_range ==
+                        db_profile.segment_range and
+                        _db_profile.multicast_ip_index ==
+                        db_profile.multicast_ip_index and
+                        _db_profile.multicast_ip_range ==
+                        db_profile.multicast_ip_range)
 
 
 class PolicyProfileTests(base.BaseTestCase):
