@@ -185,6 +185,9 @@ class LoadBalancerPlugin(loadbalancer_db.LoadBalancerPluginDb,
                                                                    hm_id,
                                                                    pool_id)
 
+    def _delete_db_health_monitor(self, context, id):
+        super(LoadBalancerPlugin, self).delete_health_monitor(context, id)
+
     def delete_health_monitor(self, context, id):
         with context.session.begin(subtransactions=True):
             hm = self.get_health_monitor(context, id)
@@ -195,6 +198,7 @@ class LoadBalancerPlugin(loadbalancer_db.LoadBalancerPluginDb,
                 self.driver.delete_pool_health_monitor(context,
                                                        hm,
                                                        assoc['pool_id'])
+            self.driver.delete_health_monitor(context, hm)
 
     def create_pool_health_monitor(self, context, health_monitor, pool_id):
         retval = super(LoadBalancerPlugin, self).create_pool_health_monitor(
@@ -202,14 +206,13 @@ class LoadBalancerPlugin(loadbalancer_db.LoadBalancerPluginDb,
             health_monitor,
             pool_id
         )
-        # open issue: PoolMonitorAssociation has no status field
-        # so we cant set the status to pending and let the driver
-        # set the real status of the association
         self.driver.create_pool_health_monitor(
             context, health_monitor, pool_id)
         return retval
 
     def delete_pool_health_monitor(self, context, id, pool_id):
+        self.update_pool_health_monitor(context, id, pool_id,
+                                        constants.PENDING_DELETE)
         hm = self.get_health_monitor(context, id)
         self.driver.delete_pool_health_monitor(
             context, hm, pool_id)

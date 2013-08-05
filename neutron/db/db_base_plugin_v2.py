@@ -236,9 +236,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         try:
             port = self._get_by_id(context, models_v2.Port, id)
         except exc.NoResultFound:
-            # NOTE(jkoelker) The PortNotFound exceptions requires net_id
-            #                kwarg in order to set the message correctly
-            raise q_exc.PortNotFound(port_id=id, net_id=None)
+            raise q_exc.PortNotFound(port_id=id)
         return port
 
     def _get_dns_by_subnet(self, context, subnet_id):
@@ -362,9 +360,9 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 pool_id = allocation_pool['id']
                 break
         if not pool_id:
-            error_message = _("No allocation pool found for "
-                              "ip address:%s") % ip_address
-            raise q_exc.InvalidInput(error_message=error_message)
+            NeutronDbPluginV2._delete_ip_allocation(
+                context, network_id, subnet_id, ip_address)
+            return
         # Two requests will be done on the database. The first will be to
         # search if an entry starts with ip_address + 1 (r1). The second
         # will be to see if an entry ends with ip_address -1 (r2).
@@ -995,7 +993,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                     'status': constants.NET_STATUS_ACTIVE}
             network = models_v2.Network(**args)
             context.session.add(network)
-        return self._make_network_dict(network)
+        return self._make_network_dict(network, process_extensions=False)
 
     def update_network(self, context, id, network):
         n = network['network']

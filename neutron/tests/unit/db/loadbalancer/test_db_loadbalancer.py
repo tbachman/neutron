@@ -831,8 +831,7 @@ class TestLoadBalancer(LoadBalancerPluginDbTestCase):
                 ('delay', 30),
                 ('timeout', 10),
                 ('max_retries', 3),
-                ('admin_state_up', True),
-                ('status', 'PENDING_CREATE')]
+                ('admin_state_up', True)]
         with self.health_monitor() as monitor:
             for k, v in keys:
                 self.assertEqual(monitor['health_monitor'][k], v)
@@ -843,8 +842,7 @@ class TestLoadBalancer(LoadBalancerPluginDbTestCase):
                 ('delay', 20),
                 ('timeout', 20),
                 ('max_retries', 2),
-                ('admin_state_up', False),
-                ('status', 'PENDING_UPDATE')]
+                ('admin_state_up', False)]
         with self.health_monitor() as monitor:
             data = {'health_monitor': {'delay': 20,
                                        'timeout': 20,
@@ -859,10 +857,18 @@ class TestLoadBalancer(LoadBalancerPluginDbTestCase):
 
     def test_delete_healthmonitor(self):
         with self.health_monitor(no_delete=True) as monitor:
+            ctx = context.get_admin_context()
+            qry = ctx.session.query(ldb.HealthMonitor)
+            qry = qry.filter_by(id=monitor['health_monitor']['id'])
+            self.assertIsNotNone(qry.first())
+
             req = self.new_delete_request('health_monitors',
                                           monitor['health_monitor']['id'])
             res = req.get_response(self.ext_api)
             self.assertEqual(res.status_int, 204)
+            qry = ctx.session.query(ldb.HealthMonitor)
+            qry = qry.filter_by(id=monitor['health_monitor']['id'])
+            self.assertIsNone(qry.first())
 
     def test_delete_healthmonitor_cascade_deletion_of_associations(self):
         with self.health_monitor(type='HTTP', no_delete=True) as monitor:
@@ -907,8 +913,7 @@ class TestLoadBalancer(LoadBalancerPluginDbTestCase):
                     ('delay', 30),
                     ('timeout', 10),
                     ('max_retries', 3),
-                    ('admin_state_up', True),
-                    ('status', 'PENDING_CREATE')]
+                    ('admin_state_up', True)]
             req = self.new_show_request('health_monitors',
                                         monitor['health_monitor']['id'],
                                         fmt=self.fmt)
@@ -1216,6 +1221,35 @@ class TestLoadBalancer(LoadBalancerPluginDbTestCase):
                                                 pool['pool']['id'])
             self.assertEqual(updated_pool['status'], 'ACTIVE')
             self.assertFalse(pool['pool']['status_description'])
+
+    def test_update_pool_health_monitor(self):
+        with self.pool() as pool:
+            with self.health_monitor() as hm:
+                res = self.plugin.create_pool_health_monitor(
+                    context.get_admin_context(),
+                    hm, pool['pool']['id'])
+                self.assertEqual({'health_monitor':
+                                  [hm['health_monitor']['id']]},
+                                 res)
+
+                assoc = self.plugin.get_pool_health_monitor(
+                    context.get_admin_context(),
+                    hm['health_monitor']['id'],
+                    pool['pool']['id'])
+                self.assertEqual(assoc['status'], 'PENDING_CREATE')
+                self.assertIsNone(assoc['status_description'])
+
+                self.plugin.update_pool_health_monitor(
+                    context.get_admin_context(),
+                    hm['health_monitor']['id'],
+                    pool['pool']['id'],
+                    'ACTIVE', 'ok')
+                assoc = self.plugin.get_pool_health_monitor(
+                    context.get_admin_context(),
+                    hm['health_monitor']['id'],
+                    pool['pool']['id'])
+                self.assertEqual(assoc['status'], 'ACTIVE')
+                self.assertEqual(assoc['status_description'], 'ok')
 
 
 class TestLoadBalancerXML(TestLoadBalancer):

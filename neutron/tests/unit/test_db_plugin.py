@@ -568,84 +568,96 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                 if not no_delete:
                     self._delete('ports', port['port']['id'])
 
-    def _test_list_with_sort(self, collection, items, sorts, query_params=''):
+    def _test_list_with_sort(self, resource,
+                             items, sorts, resources=None, query_params=''):
         query_str = query_params
         for key, direction in sorts:
             query_str = query_str + "&sort_key=%s&sort_dir=%s" % (key,
                                                                   direction)
-        req = self.new_list_request('%ss' % collection,
+        if not resources:
+            resources = '%ss' % resource
+        req = self.new_list_request(resources,
                                     params=query_str)
-        api = self._api_for_resource('%ss' % collection)
+        api = self._api_for_resource(resources)
         res = self.deserialize(self.fmt, req.get_response(api))
-        collection = collection.replace('-', '_')
-        expected_res = [item[collection]['id'] for item in items]
-        self.assertEqual(sorted([n['id'] for n in res["%ss" % collection]]),
+        resource = resource.replace('-', '_')
+        resources = resources.replace('-', '_')
+        expected_res = [item[resource]['id'] for item in items]
+        self.assertEqual(sorted([n['id'] for n in res[resources]]),
                          sorted(expected_res))
 
-    def _test_list_with_pagination(self, collection, items, sort,
-                                   limit, expected_page_num, query_params='',
+    def _test_list_with_pagination(self, resource, items, sort,
+                                   limit, expected_page_num,
+                                   resources=None,
+                                   query_params='',
                                    verify_key='id'):
+        if not resources:
+            resources = '%ss' % resource
         query_str = query_params + '&' if query_params else ''
         query_str = query_str + ("limit=%s&sort_key=%s&"
                                  "sort_dir=%s") % (limit, sort[0], sort[1])
-        req = self.new_list_request("%ss" % collection, params=query_str)
+        req = self.new_list_request(resources, params=query_str)
         items_res = []
         page_num = 0
-        api = self._api_for_resource('%ss' % collection)
-        collection = collection.replace('-', '_')
+        api = self._api_for_resource(resources)
+        resource = resource.replace('-', '_')
+        resources = resources.replace('-', '_')
         while req:
             page_num = page_num + 1
             res = self.deserialize(self.fmt, req.get_response(api))
-            self.assertThat(len(res["%ss" % collection]),
+            self.assertThat(len(res[resources]),
                             matchers.LessThan(limit + 1))
-            items_res = items_res + res["%ss" % collection]
+            items_res = items_res + res[resources]
             req = None
-            if '%ss_links' % collection in res:
-                for link in res['%ss_links' % collection]:
+            if '%s_links' % resources in res:
+                for link in res['%s_links' % resources]:
                     if link['rel'] == 'next':
                         content_type = 'application/%s' % self.fmt
                         req = testlib_api.create_request(link['href'],
                                                          '', content_type)
-                        self.assertEqual(len(res["%ss" % collection]),
+                        self.assertEqual(len(res[resources]),
                                          limit)
         self.assertEqual(page_num, expected_page_num)
         self.assertEqual(sorted([n[verify_key] for n in items_res]),
-                         sorted([item[collection][verify_key]
+                         sorted([item[resource][verify_key]
                                 for item in items]))
 
-    def _test_list_with_pagination_reverse(self, collection, items, sort,
+    def _test_list_with_pagination_reverse(self, resource, items, sort,
                                            limit, expected_page_num,
+                                           resources=None,
                                            query_params=''):
-        resources = '%ss' % collection
-        collection = collection.replace('-', '_')
+        if not resources:
+            resources = '%ss' % resource
+        resource = resource.replace('-', '_')
         api = self._api_for_resource(resources)
-        marker = items[-1][collection]['id']
+        marker = items[-1][resource]['id']
         query_str = query_params + '&' if query_params else ''
         query_str = query_str + ("limit=%s&page_reverse=True&"
                                  "sort_key=%s&sort_dir=%s&"
                                  "marker=%s") % (limit, sort[0], sort[1],
                                                  marker)
         req = self.new_list_request(resources, params=query_str)
-        item_res = [items[-1][collection]]
+        item_res = [items[-1][resource]]
         page_num = 0
+        resources = resources.replace('-', '_')
         while req:
             page_num = page_num + 1
             res = self.deserialize(self.fmt, req.get_response(api))
-            self.assertThat(len(res["%ss" % collection]),
+            self.assertThat(len(res[resources]),
                             matchers.LessThan(limit + 1))
-            res["%ss" % collection].reverse()
-            item_res = item_res + res["%ss" % collection]
+            res[resources].reverse()
+            item_res = item_res + res[resources]
             req = None
-            if '%ss_links' % collection in res:
-                for link in res['%ss_links' % collection]:
+            if '%s_links' % resources in res:
+                for link in res['%s_links' % resources]:
                     if link['rel'] == 'previous':
                         content_type = 'application/%s' % self.fmt
                         req = testlib_api.create_request(link['href'],
                                                          '', content_type)
-                        self.assertEqual(len(res["%ss" % collection]),
+                        self.assertEqual(len(res[resources]),
                                          limit)
         self.assertEqual(page_num, expected_page_num)
-        expected_res = [item[collection]['id'] for item in items]
+        expected_res = [item[resource]['id'] for item in items]
         expected_res.reverse()
         self.assertEqual(sorted([n['id'] for n in item_res]),
                          sorted(expected_res))
@@ -1705,6 +1717,28 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                     q = q.filter_by(port_id=None, ip_address=ip_address)
 
                 self.assertEqual(q.count(), 1)
+
+    def test_recycle_ip_address_without_allocation_pool(self):
+        plugin = NeutronManager.get_plugin()
+        allocation_pools = [{"start": '10.0.0.10',
+                             "end": '10.0.0.50'}]
+        with self.subnet(cidr='10.0.0.0/24',
+                         allocation_pools=allocation_pools) as subnet:
+            network_id = subnet['subnet']['network_id']
+            subnet_id = subnet['subnet']['id']
+            fixed_ips = [{"subnet_id": subnet_id,
+                          "ip_address": '10.0.0.100'}]
+            with self.port(subnet=subnet, fixed_ips=fixed_ips) as port:
+                update_context = context.Context('', port['port']['tenant_id'])
+                ip_address = port['port']['fixed_ips'][0]['ip_address']
+                plugin._recycle_ip(update_context,
+                                   network_id,
+                                   subnet_id,
+                                   ip_address)
+
+                q = update_context.session.query(models_v2.IPAllocation)
+                q = q.filter_by(subnet_id=subnet_id)
+                self.assertEqual(q.count(), 0)
 
     def test_recycle_held_ip_address(self):
         plugin = NeutronManager.get_plugin()
@@ -3018,10 +3052,10 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             req = self.new_update_request('subnets', data,
                                           res['subnet']['id'])
             res = self.deserialize(self.fmt, req.get_response(self.api))
-            self.assertEquals(sorted(res['subnet']['host_routes']),
-                              sorted(host_routes))
-            self.assertEquals(sorted(res['subnet']['dns_nameservers']),
-                              sorted(dns_nameservers))
+            self.assertEqual(sorted(res['subnet']['host_routes']),
+                             sorted(host_routes))
+            self.assertEqual(sorted(res['subnet']['dns_nameservers']),
+                             sorted(dns_nameservers))
 
     def test_update_subnet_shared_returns_400(self):
         with self.network(shared=True) as network:

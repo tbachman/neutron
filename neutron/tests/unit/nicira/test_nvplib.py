@@ -16,11 +16,9 @@
 # @author: Salvatore Orlando, VMware
 
 import mock
-import os
 
 from neutron.common import constants
 from neutron.common import exceptions
-import neutron.plugins.nicira as nvp_plugin
 from neutron.plugins.nicira.common import config  # noqa
 from neutron.plugins.nicira.common import exceptions as nvp_exc
 from neutron.plugins.nicira import nvp_cluster
@@ -28,9 +26,11 @@ from neutron.plugins.nicira import NvpApiClient
 from neutron.plugins.nicira import nvplib
 from neutron.tests import base
 from neutron.tests.unit.nicira import fake_nvpapiclient
+from neutron.tests.unit.nicira import NVPAPI_NAME
+from neutron.tests.unit.nicira import STUBS_PATH
 from neutron.tests.unit import test_api_v2
 
-NICIRA_PKG_PATH = nvp_plugin.__name__
+
 _uuid = test_api_v2._uuid
 
 
@@ -38,10 +38,8 @@ class NvplibTestCase(base.BaseTestCase):
 
     def setUp(self):
         # mock nvp api client
-        etc_path = os.path.join(os.path.dirname(__file__), 'etc')
-        self.fc = fake_nvpapiclient.FakeClient(etc_path)
-        self.mock_nvpapi = mock.patch('%s.NvpApiClient.NVPApiHelper'
-                                      % NICIRA_PKG_PATH, autospec=True)
+        self.fc = fake_nvpapiclient.FakeClient(STUBS_PATH)
+        self.mock_nvpapi = mock.patch(NVPAPI_NAME, autospec=True)
         instance = self.mock_nvpapi.start()
         instance.return_value.login.return_value = "the_cookie"
         fake_version = getattr(self, 'fake_version', "2.9")
@@ -104,10 +102,8 @@ class NvplibNegativeTests(base.BaseTestCase):
 
     def setUp(self):
         # mock nvp api client
-        etc_path = os.path.join(os.path.dirname(__file__), 'etc')
-        self.fc = fake_nvpapiclient.FakeClient(etc_path)
-        self.mock_nvpapi = mock.patch('%s.NvpApiClient.NVPApiHelper'
-                                      % NICIRA_PKG_PATH, autospec=True)
+        self.fc = fake_nvpapiclient.FakeClient(STUBS_PATH)
+        self.mock_nvpapi = mock.patch(NVPAPI_NAME, autospec=True)
         instance = self.mock_nvpapi.start()
         instance.return_value.login.return_value = "the_cookie"
         # Choose 2.9, but the version is irrelevant for the aim of
@@ -1269,7 +1265,7 @@ class TestNvplibLogicalPorts(NvplibTestCase):
         self.assertEqual(constants.PORT_STATUS_ACTIVE, status)
 
     def test_get_port_status_non_existent_raises(self):
-        self.assertRaises(exceptions.PortNotFound,
+        self.assertRaises(exceptions.PortNotFoundOnNetwork,
                           nvplib.get_port_status,
                           self.fake_cluster,
                           'boo', 'boo')
@@ -1290,7 +1286,7 @@ class TestNvplibLogicalPorts(NvplibTestCase):
         self.assertIn('vm_id', port_tags)
 
     def test_update_non_existent_port_raises(self):
-        self.assertRaises(exceptions.PortNotFound,
+        self.assertRaises(exceptions.PortNotFoundOnNetwork,
                           nvplib.update_port, self.fake_cluster,
                           'boo', 'boo', 'boo', 'boo', 'boo', 'boo', False)
 
@@ -1298,13 +1294,13 @@ class TestNvplibLogicalPorts(NvplibTestCase):
         lswitch, lport = self._create_switch_and_port()
         nvplib.delete_port(self.fake_cluster,
                            lswitch['uuid'], lport['uuid'])
-        self.assertRaises(exceptions.PortNotFound,
+        self.assertRaises(exceptions.PortNotFoundOnNetwork,
                           nvplib.get_port, self.fake_cluster,
                           lswitch['uuid'], lport['uuid'])
 
     def test_delete_non_existent_port_raises(self):
         lswitch = self._create_switch_and_port()[0]
-        self.assertRaises(exceptions.PortNotFound,
+        self.assertRaises(exceptions.PortNotFoundOnNetwork,
                           nvplib.delete_port, self.fake_cluster,
                           lswitch['uuid'], 'bad_port_uuid')
 
