@@ -105,6 +105,8 @@ class OdlMechanismDriver(api.MechanismDriver):
         if status == 200:
             self.connections[label]['domain'] = domain
             return True
+        else:
+            LOG.debug("\n\n\n\n\n%s\n\n\n\n" % response)
 
     def _create_bridge(self, label, brname=cfg.CONF.odl.integration_bridge):
         LOG.debug(_("Creating a bridge"))
@@ -113,9 +115,11 @@ class OdlMechanismDriver(api.MechanismDriver):
         headers = {}
         (status, response) = self._rest_call('POST', uri,
                                              headers, json.dumps({}))
-        if status == 200:
+        if status == 201:
             self.connections[label]['bridge'] = brname
             return True
+        else:
+            LOG.debug("\n\n\n\n\n%s\n\n\n\n" % response)
 
     def _get_phy_br_port_id(self, context, switch_id,
                             container=DEFAULT_CONTAINER):
