@@ -65,7 +65,7 @@ class OdlMechanismDriver(api.MechanismDriver):
         
         # Get a list of all compute nodes
         # TODO: (asomya) Get a list of compute nodes from nova
-        nodes = ['172.16.6.128']
+        nodes = cfg.CONF.odl.nodes.split(',')
         label_prefix = 'mgmt%d'
         label_num = 0
         self.connections = {}
