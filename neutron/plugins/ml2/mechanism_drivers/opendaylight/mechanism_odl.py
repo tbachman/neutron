@@ -25,16 +25,20 @@ import sys
 
 from oslo.config import cfg
 
+from neutron.agent import rpc as agent_rpc
 from neutron.common import constants as q_const
 from neutron.common import exceptions as exc
+from neutron.common import topics
 from neutron.common import utils
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron.openstack.common import log
+from neutron.openstack.common import rpc
 from neutron.plugins.common import utils as plugin_utils
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context
-
+from neutron.plugins.ml2 import rpc as plugin_rpc
+from neutron.plugins.ml2.mechanism_drivers.opendaylight import config
 
 LOG = log.getLogger(__name__)
 
@@ -49,12 +53,30 @@ FLOW_CREATE_PATH = '/controller/nb/v2/flow/%s/%s/%s/%s'
 SUBNET_LIST_PATH = '/controller/nb/v2/subnet/%s'
 SUBNET_CREATE_PATH = '/controller/nb/v2/subnet/%s/%s'
 HOST_ADD_PATH = '/controller/nb/v2/host/%s/%s'
-
+OVS_CONNECT_PATH = '/controller/nb/v2/networkconfig/bridgedomain/connect/%s/%s/%s'
+BR_CREATE_PATH = '/controller/nb/v2/networkconfig/bridgedomain/bridge/OVS/%s/%s'
 
 class OdlMechanismDriver(api.MechanismDriver):
     def initialize(self):
-        pass
+        # Make ODL connection and create integration bridge
+        self.controllers = []
+        controllers = cfg.CONF.odl.controllers.split(',')
+        self.controllers.extend(controllers)
+        
+        # Get a list of all compute nodes
+        # TODO: (asomya) Get a list of compute nodes from nova
+        nodes = ['172.16.6.128']
+        label_prefix = 'mgmt%d'
+        label_num = 0
+        self.connections = {}
 
+        for node in nodes:
+            label_num += 1
+            label = label_prefix % label_num
+            self.connections[label] = {}
+            if self._connect_bridge_domain(label, node):
+                self._create_bridge(label)
+    
     def _rest_call(self, action, uri, headers, data=None):
         LOG.debug(_("Making rest call to controller at %s") % uri)
 
@@ -72,6 +94,28 @@ class OdlMechanismDriver(api.MechanismDriver):
         respstr = response.read()
 
         return (response.status, respstr)
+
+    def _connect_bridge_domain(self, label, domain, port='6634'):
+        LOG.debug(_("Connecting to bridge domain"))
+        uri = OVS_CONNECT_PATH % (label, domain, port)
+
+        headers = {}
+        (status, response) = self._rest_call('PUT', uri,
+                                             headers, json.dumps({}))
+        if status == 200:
+            self.connections[label]['domain'] = domain
+            return True
+
+    def _create_bridge(self, label, brname=cfg.CONF.odl.integration_bridge):
+        LOG.debug(_("Creating a bridge"))
+        uri = BR_CREATE_PATH % (label, brname)
+
+        headers = {}
+        (status, response) = self._rest_call('POST', uri,
+                                             headers, json.dumps({}))
+        if status == 200:
+            self.connections[label]['bridge'] = brname
+            return True
 
     def _get_phy_br_port_id(self, context, switch_id,
                             container=DEFAULT_CONTAINER):
