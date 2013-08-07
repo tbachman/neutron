@@ -976,7 +976,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                            multicast_ip,
                                            profile_id,
                                            segment_pairs)
-
+            self._process_l3_create(context, net, network['network'])
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
 
@@ -1038,7 +1038,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                                binding.physical_network)
                 n1kv_db_v2.del_trunk_segment_binding(session,
                                                      net['id'], del_segments)
-
+            self._process_l3_update(context, net, network['network'])
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
         if binding.network_type not in [c_const.NETWORK_TYPE_MULTI_SEGMENT]:
