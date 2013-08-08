@@ -36,7 +36,7 @@ from quantum.db import agents_db
 from quantum.db import agentschedulers_db
 from quantum.db import db_base_plugin_v2
 from quantum.db import dhcp_rpc_base
-from quantum.db import l3_db
+from quantum.db import extraroute_db
 from quantum.db import l3_rpc_base
 from quantum.db import securitygroups_rpc_base as sg_db_rpc
 from quantum.extensions import portbindings
@@ -179,7 +179,7 @@ class AgentNotifierApi(proxy.RpcProxy,
 
 
 class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
-                          l3_db.L3_NAT_db_mixin,
+                          extraroute_db.ExtraRoute_db_mixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
@@ -976,10 +976,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                            multicast_ip,
                                            profile_id,
                                            segment_pairs)
-            self._process_l3_create(context, net, network['network'])
+            self._process_l3_create(context, network['network'], net['id'])
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
-
+            self._extend_network_dict_l3(context, net)
         try:
             if network_type not in [c_const.NETWORK_TYPE_MULTI_SEGMENT]:
                 self._send_create_network_request(context, net, segment_pairs)
@@ -1038,9 +1038,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                                binding.physical_network)
                 n1kv_db_v2.del_trunk_segment_binding(session,
                                                      net['id'], del_segments)
-            self._process_l3_update(context, net, network['network'])
+            self._process_l3_update(context, network['network'], id)
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
+            self._extend_network_dict_l3(context, net)
         if binding.network_type not in [c_const.NETWORK_TYPE_MULTI_SEGMENT]:
             self._send_update_network_request(context, net, add_segments,
                                               del_segments)
@@ -1089,6 +1090,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         self._extend_network_dict_provider(context, net)
         self._extend_network_dict_profile(context, net)
         self._extend_network_dict_member_segments(context, net)
+        self._extend_network_dict_l3(context, net)
         return self._fields(net, fields)
 
     def get_networks(self, context, filters=None, fields=None):
@@ -1099,6 +1101,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         for net in nets:
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
+            self._extend_network_dict_l3(context, net)
 
         return [self._fields(net, fields) for net in nets]
 
