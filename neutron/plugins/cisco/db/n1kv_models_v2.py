@@ -15,6 +15,7 @@
 #    under the License.
 #
 # @author: Abhishek Raut, Cisco Systems Inc.
+# @author: Rudrajit Tapadar, Cisco Systems Inc.
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Enum
 from sqlalchemy.orm import exc
@@ -31,6 +32,11 @@ LOG = logging.getLogger(__name__)
 SEGMENT_TYPE_VLAN = 'vlan'
 SEGMENT_TYPE_VXLAN = 'vxlan'
 SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
+SEGMENT_TYPE_MULTI_SEGMENT = 'multi-segment'
+SEGMENT_TYPE_TRUNK = 'trunk'
+SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN,
+                    SEGMENT_TYPE_MULTI_SEGMENT, SEGMENT_TYPE_TRUNK)
+SEGMENT_SUBTYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
 PROFILE_TYPE = Enum(cisco_constants.NETWORK, cisco_constants.POLICY)
 # use this to indicate that tenant_id was not yet set
 TENANT_ID_NOT_SET = '01020304-0506-0708-0901-020304050607'
@@ -55,6 +61,31 @@ class N1kvVxlanAllocation(model_base.BASEV2):
     vxlan_id = Column(Integer, nullable=False, primary_key=True,
                       autoincrement=False)
     allocated = Column(Boolean, nullable=False, default=False)
+
+
+class N1kvTrunkSegmentBinding(model_base.BASEV2):
+
+    """Represents binding of segments in trunk networks."""
+    __tablename__ = 'n1kv_trunk_segment_bindings'
+
+    trunk_segment_id = Column(String(36),
+                              ForeignKey('networks.id', ondelete="CASCADE"),
+                              primary_key=True)
+    segment_id = Column(String(36), nullable=False, primary_key=True)
+    dot1qtag = Column(String(36), nullable=False, primary_key=True)
+
+
+class N1kvMultiSegmentNetworkBinding(model_base.BASEV2):
+
+    """Represents binding of segments in multi-segment networks."""
+    __tablename__ = 'n1kv_multi_segment_bindings'
+
+    multi_segment_id = Column(String(36),
+                              ForeignKey('networks.id', ondelete="CASCADE"),
+                              primary_key=True)
+    segment1_id = Column(String(36), nullable=False, primary_key=True)
+    segment2_id = Column(String(36), nullable=False, primary_key=True)
+    encap_profile_name = Column(String(36))
 
 
 class N1kvPortBinding(model_base.BASEV2):
@@ -156,6 +187,7 @@ class NetworkProfile(model_base.BASEV2, HasId):
 
     name = Column(String(255))
     segment_type = Column(SEGMENT_TYPE, nullable=False)
+    sub_type = Column(SEGMENT_SUBTYPE)
     segment_range = Column(String(255))
     multicast_ip_index = Column(Integer, default=0)
     multicast_ip_range = Column(String(255))

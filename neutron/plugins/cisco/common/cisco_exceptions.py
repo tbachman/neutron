@@ -195,3 +195,8 @@ class N1kvPortBindingNotFound(exceptions.NeutronException):
     """Port Binding for port cannot be found."""
     message = _("Port Binding for port %(port_id)s could "
                 "not be found.")
+
+
+class N1kvNoGatewayClusterFound(exceptions.NeutronException):
+    """Port Binding for port cannot be found."""
+    message = _("There is no cluster to add multi-segment network.")
