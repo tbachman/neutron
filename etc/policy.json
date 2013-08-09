@@ -67,5 +67,11 @@
     "delete_l3-router": "rule:admin_only",
     "get_l3-routers": "rule:admin_only",
     "get_dhcp-agents": "rule:admin_only",
-    "get_l3-agents": "rule:admin_only"
+    "get_l3-agents": "rule:admin_only",
+
+    "create_network_profile": "rule:admin_only",
+    "get_network_profiles": "",
+    "get_network_profile": "",
+    "get_policy_profiles": "",
+    "get_policy_profile": ""
 }
