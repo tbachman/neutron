@@ -142,7 +142,8 @@ class Client(object):
     logical_network_path = "/logical-network/%s"
     events_path = "/kvm/events"
     clusters_path = "/cluster"
-    encapsulation_profile_path = "/encapsulation-profile/%s"
+    encap_profiles_path = "/encapsulation-profile"
+    encap_profile_path = "/encapsulation-profile/%s"
 
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
@@ -188,30 +189,25 @@ class Client(object):
         return self._post(self.bridge_domains_path,
                           body=body)
 
-    def add_trunk_segment(self, context, network_segment, trunk_dict):
+    def delete_bridge_domain(self, name):
         """
-        Adds a segment to a trunk network segment on the VSM
+        Delete a bridge domain on VSM
 
-        :param network_segment: Name of the trunk network segment
-        :param trunk_dict: Dictionary containing the segment information (uuid
-                           and link local vlan, if applicable) to be added to
-                           the trunk network
+        :param name: name of the bridge domain to be deleted
         """
-        body = {'segment': trunk_dict['segment'],
-                'dot1q': trunk_dict['dot1qtag'],
-                }
-        return self._post(self.network_segment_path
-                          % (network_segment), body=body)
+        return self._delete(self.bridge_domain_path % (name))
 
-    def del_trunk_segment(self, context, network_segment, segment):
+    def create_encapsulation_profile(self, encap):
         """
-        Deletes a segment from a trunk network segment on the VSM
+        Create an encapsulation profile on VSM.
 
-        :param network_segment: Name of the trunk network segment
-        :param segment: Segment to be removed from the trunk
+        :param encap: encapsulation dict
         """
-        return self._delete(self.network_segment_path
-                            % ((network_segment), (segment)))
+        body = {'name': encap['name'] + '_profile',
+                'add_segments': encap['add_segment_list'],
+                'del_segments': encap['del_segment_list']}
+        return self._post(self.encap_profiles_path,
+                          body=body)
 
     def update_encapsulation_profile(self, context, profile_name, body):
         """
@@ -221,43 +217,16 @@ class Client(object):
         :param profile_name: Name of the encapsulation profile
         :param body: mapping dictionary
         """
-        return self._post(self.encapsulation_profile_path
+        return self._post(self.encap_profile_path
                           % (profile_name), body=body)
 
-    def add_multi_segment(self, context, cluster_id, encapsulation):
+    def delete_encapsulation_profile(self, name):
         """
-        Adds a segment to a trunk network on the VSM
+        Delete an encapsulation profile on VSM.
 
-        :param cluster_id: The cluster id of the VXLAN gateway service module
-        :param encapsulation: The encapsulation dictionary
-                              containing the mapping
+        :param name: name of the encapsulation profile to be deleted
         """
-        body = {'name': cluster_id,
-                'serviceInstanceId': encapsulation['serviceInstance'],
-                'segment1': encapsulation['segment1'],
-                'segment2': encapsulation['segment2'],
-                }
-        return self._post(self.encapsulation_profile_path
-                          % (cluster_id), body=body)
-
-    def del_multi_segment(self, context, cluster_id, service_instance):
-        """
-        Deletes a multi-segment network pair on the VSM
-
-        :param cluster_id: The cluster id of the VXLAN gateway service module
-        :param service_instance: The service instance which
-                                 contains the encapsulation mapping
-        """
-        return self._delete(self.encapsulation_profile_path
-                            % ((cluster_id), (service_instance)))
-
-    def delete_bridge_domain(self, name):
-        """
-        Delete a bridge domain on VSM
-
-        :param name: name of the bridge domain to be deleted
-        """
-        return self._delete(self.bridge_domain_path % (name))
+        return self._delete(self.encap_profile_path % (name))
 
     def create_network_segment(self, network, network_profile):
         """
@@ -277,8 +246,11 @@ class Client(object):
         if network_profile['segment_type'] == c_const.NETWORK_TYPE_TRUNK:
             body['mode'] = c_const.NETWORK_TYPE_TRUNK
             body['segmentType'] = network_profile['sub_type']
-            body['add_segments'] = network['add_segment_list']
-            body['del_segments'] = network['del_segment_list']
+            if network_profile['sub_type'] == c_const.NETWORK_TYPE_VLAN:
+                body['add_segments'] = network['add_segment_list']
+                body['del_segments'] = network['del_segment_list']
+            else:
+                body['encapProfile'] = network['name'] + '_profile'
         else:
             body['mode'] = 'access'
             body['segmentType'] = network_profile['segment_type']

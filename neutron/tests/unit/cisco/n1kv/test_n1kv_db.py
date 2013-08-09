@@ -103,80 +103,6 @@ class VlanAllocationsTest(base.BaseTestCase):
     def tearDown(self):
         super(VlanAllocationsTest, self).tearDown()
 
-    def test_sync_vlan_allocations(self):
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MIN - 1))
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN).allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN + 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX - 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX).allocated)
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MAX + 1))
-
-        n1kv_db_v2.sync_vlan_allocations(UPDATED_VLAN_RANGES)
-
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MIN + 20 - 1))
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN + 20).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN + 20 + 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX + 20 - 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX + 20).
-                         allocated)
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MAX + 20 + 1))
-
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                         VLAN_MIN + 40 - 1))
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                        VLAN_MIN + 40).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                        VLAN_MIN + 40 + 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                        VLAN_MAX + 40 - 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                        VLAN_MAX + 40).
-                         allocated)
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                         VLAN_MAX + 40 + 1))
-
-        n1kv_db_v2.sync_vlan_allocations(VLAN_RANGES)
-
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MIN - 1))
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN).allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MIN + 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX - 1).
-                         allocated)
-        self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                        VLAN_MAX).allocated)
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                         VLAN_MAX + 1))
-
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                         VLAN_MIN + 20))
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET_2,
-                                                         VLAN_MAX + 20))
-
     def test_vlan_pool(self):
         vlan_ids = set()
         p = _create_test_network_profile_if_not_there(self.session)
@@ -223,22 +149,6 @@ class VlanAllocationsTest(base.BaseTestCase):
         n1kv_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
         self.assertFalse(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
                                                         vlan_id).allocated)
-
-    def test_specific_vlan_outside_pool(self):
-        vlan_id = VLAN_MAX + 5
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET, vlan_id))
-        n1kv_db_v2.reserve_specific_vlan(self.session, PHYS_NET, vlan_id)
-        self.assertTrue(n1kv_db_v2.get_vlan_allocation(PHYS_NET,
-                                                       vlan_id).allocated)
-
-        self.assertRaises(q_exc.VlanIdInUse,
-                          n1kv_db_v2.reserve_specific_vlan,
-                          self.session,
-                          PHYS_NET,
-                          vlan_id)
-
-        n1kv_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
-        self.assertIsNone(n1kv_db_v2.get_vlan_allocation(PHYS_NET, vlan_id))
 
 
 class VxlanAllocationsTest(base.BaseTestCase,
@@ -381,37 +291,8 @@ class NetworkBindingsTest(test_plugin.NeutronDbPluginV2TestCase):
             self.assertIsNotNone(binding)
             self.assertEqual(binding.network_id, TEST_NETWORK_ID)
             self.assertEqual(binding.network_type, 'multi-segment')
-            self.assertEqual(binding.physical_network, None)
+            self.assertEqual(binding.physical_network, '')
             self.assertEqual(binding.segmentation_id, 0)
-
-    def test_add_trunk_network_binding(self):
-        with self.network() as network:
-            TEST_NETWORK_ID = network['network']['id']
-
-            self.assertRaises(c_exc.N1kvNetworkBindingNotFound,
-                              n1kv_db_v2.get_network_binding,
-                              self.session,
-                              TEST_NETWORK_ID)
-
-            p = _create_test_network_profile_if_not_there(
-                self.session,
-                TEST_NETWORK_PROFILE_TRUNK)
-            n1kv_db_v2.add_network_binding(
-                self.session, TEST_NETWORK_ID, 'trunk',
-                "", 0, '0.0.0.0', p.id, [(TEST_NETWORK_ID2, 0)])
-            binding = n1kv_db_v2.get_network_binding(
-                self.session, TEST_NETWORK_ID)
-            self.assertIsNotNone(binding)
-            self.assertEqual(binding.network_id, TEST_NETWORK_ID)
-            self.assertEqual(binding.network_type, 'trunk')
-            self.assertEqual(binding.physical_network, "")
-            self.assertEqual(binding.segmentation_id, 0)
-            trunk_binding = n1kv_db_v2.get_trunk_network_binding(
-                self.session, TEST_NETWORK_ID, (TEST_NETWORK_ID2, 0))
-            self.assertIsNotNone(trunk_binding)
-            self.assertEqual(trunk_binding.trunk_segment_id, TEST_NETWORK_ID)
-            self.assertEqual(trunk_binding.segment_id, TEST_NETWORK_ID2)
-            self.assertEqual(trunk_binding.dot1qtag, '0')
 
     def test_add_multi_segment_binding(self):
         with self.network() as network:
@@ -592,6 +473,7 @@ class NetworkProfileTests(base.BaseTestCase,
                         db_profile.multicast_ip_index and
                         _db_profile.multicast_ip_range ==
                         db_profile.multicast_ip_range)
+        n1kv_db_v2.delete_network_profile(_db_profile.id)
 
     def test_create_trunk_network_profile(self):
         _db_profile = \
@@ -609,6 +491,7 @@ class NetworkProfileTests(base.BaseTestCase,
                         db_profile.multicast_ip_index and
                         _db_profile.multicast_ip_range ==
                         db_profile.multicast_ip_range)
+        n1kv_db_v2.delete_network_profile(_db_profile.id)
 
 
 class PolicyProfileTests(base.BaseTestCase):

@@ -641,6 +641,21 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         n1kvclient = n1kv_client.Client()
         n1kvclient.delete_network_segment_pool(profile['name'])
 
+    def _get_encap_segments(self, segment_pairs):
+        """
+        Get the list of segments in encapsulation profile format.
+
+        :param segment_pairs: List of segments thatt need to be bridged
+        """
+        member_list = []
+        for pair in segment_pairs:
+            (segment, dot1qtag) = pair
+            member_dict = {}
+            member_dict['bridgeDomain'] = segment + '_bd'
+            member_dict['dot1q'] = dot1qtag
+            member_list.append(member_dict)
+        return member_list
+
     def _populate_member_segments(self, context, network, segment_pairs, oper):
         """
         Populate trunk network dict with member segments.
@@ -684,20 +699,30 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._populate_member_segments(context, network, segment_pairs,
                                            n1kv_profile.SEGMENT_ADD)
             network['del_segment_list'] = []
+            if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
+                encap_dict = {}
+                encap_dict['name'] = network['name'] + '_profile'
+                encap_dict['add_segments'] = \
+                    self._get_encap_segments(segment_pairs)
+                encap_dict['del_segments'] = []
+                n1kvclient.create_encapsulation_profile(encap_dict)
         n1kvclient.create_network_segment(network, profile)
 
     def _send_update_network_request(self, context, network, add_segments,
                                      del_segments):
         """
-        Send update network request to VSM
+        Send update network request to VSM.
 
         :param network: network dictionary
+        :param add_segments: List of segments bindings
+                             that need to be deleted
         :param del_segments: List of segments bindings
                              that need to be deleted
         """
         LOG.debug(_('_send_update_network_request: %s'), network['id'])
         profile = n1kv_db_v2.get_network_profile(
             network[n1kv_profile.PROFILE_ID])
+        n1kvclient = n1kv_client.Client()
         body = {'name': network['name'],
                 'id': network['id'],
                 'networkSegmentPool': profile['name'],
@@ -713,10 +738,19 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             body['del_segments'] = network['del_segment_list']
             LOG.debug("add_segments=%s", body['add_segments'])
             LOG.debug("del_segments=%s", body['del_segments'])
+            if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
+                encap_profile = network['name'] + '_profile'
+                encap_dict = {}
+                encap_dict['name'] = encap_profile
+                encap_dict['add_segments'] = \
+                    self._get_encap_segments(add_segments)
+                encap_dict['del_segments'] = \
+                    self._get_encap_segments(del_segments)
+                n1kvclient.update_encapsulation_profile(context, encap_profile,
+                                                        encap_dict)
         else:
             body['mode'] = 'access'
             body['segmentType'] = profile['segment_type']
-        n1kvclient = n1kv_client.Client()
         n1kvclient.update_network_segment(network['name'], body)
 
     def _parse_multi_segments(self, context, attrs, param):
@@ -750,7 +784,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                     msg = _("Invalid pairing supplied")
                     raise q_exc.InvalidInput(error_message=msg)
                 else:
-                    #TODO(rtapadar): Add bridge-domain and vlan tag in the body
                     pair_list.append((segment1, segment2))
             else:
                 LOG.debug("%s or %s is not a valid uuid", segment1, segment2)
@@ -783,32 +816,59 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                     msg = _("Cannot add a trunk segment as a member of"
                             " another trunk segment")
                     raise q_exc.InvalidInput(error_message=msg)
-                else:
+                elif binding.network_type == c_const.NETWORK_TYPE_VLAN:
                     if physical_network == "":
                         physical_network = binding.physical_network
                     elif physical_network != binding.physical_network:
                         msg = _("Network UUID supplied belongs to a different "
                                 "physical network.")
                         raise q_exc.InvalidInput(error_message=msg)
-                    pair_list.append((segment, dot1qtag))
+                pair_list.append((segment, dot1qtag))
             else:
                 LOG.debug("%s is not a valid uuid", segment)
                 msg = _("Invalid UUID supplied")
                 raise q_exc.InvalidInput(error_message=msg)
         return pair_list
 
-    def _send_delete_network_request(self, network):
+    def _send_delete_network_request(self, context, network):
         """
-        Send delete network request to VSM
+        Send delete network request to VSM.
 
         Delete bridge domain if network is of type VXLAN.
+        Delete encapsulation profile if network is of type VXLAN Trunk.
+        :param context: neutron api request context
         :param network: network dictionary
         """
         LOG.debug(_('_send_delete_network_request: %s'), network['id'])
         n1kvclient = n1kv_client.Client()
+        session = context.session
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
             name = network['name'] + '_bd'
             n1kvclient.delete_bridge_domain(name)
+        elif network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
+            profile = self.get_network_profile(context, network['id'])
+            if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
+                profile_name = network['name'] + '_profile'
+                n1kvclient.delete_encapsulation_profile(profile_name)
+        elif network[providernet.NETWORK_TYPE] == \
+                c_const.NETWORK_TYPE_MULTI_SEGMENT:
+            encap_dict = n1kv_db_v2.get_multi_segment_encap_dict(session,
+                                                                 network['id'])
+            for profile in encap_dict:
+                profile_dict = {}
+                profile_dict['name'] = profile
+                profile_dict['add_segments'] = []
+                profile_dict['del_segments'] = []
+                for segment_pair in encap_dict['profile']:
+                    mapping_dict = {}
+                    (segment1, segment2) = segment_pair
+                    self._extend_mapping_dict(self, context,
+                                              mapping_dict, segment1)
+                    self._extend_mapping_dict(self, context,
+                                              mapping_dict, segment2)
+                    profile_dict['del_segments'].append(mapping_dict)
+                n1kvclient.update_encapsulation_profile(context, profile,
+                                                        profile_dict)
         n1kvclient.delete_network_segment(network['name'])
 
     def _send_create_subnet_request(self, context, subnet):
@@ -1069,7 +1129,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                      net['id'], del_segments)
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
-        self._send_update_network_request(net)
         if binding.network_type not in [c_const.NETWORK_TYPE_MULTI_SEGMENT]:
             self._send_update_network_request(context, net, add_segments,
                                               del_segments)
@@ -1091,6 +1150,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 msg = _("Cannot delete a network "
                         "that is a member of a trunk segment")
                 raise q_exc.InvalidInput(error_message=msg)
+            if n1kv_db_v2.is_multi_segment_member(session, id):
+                msg = _("Cannot delete a network "
+                        "that is a member of a multi-segment network")
+                raise q_exc.InvalidInput(error_message=msg)
             super(N1kvNeutronPluginV2, self).delete_network(context, id)
             if binding.network_type == c_const.NETWORK_TYPE_VXLAN:
                 n1kv_db_v2.release_vxlan(session, binding.segmentation_id,
@@ -1102,7 +1165,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # the network_binding record is deleted via cascade from
                 # the network record, so explicit removal is not necessary
         if self.agent_vsm:
-            self._send_delete_network_request(network)
+            self._send_delete_network_request(context, network)
         LOG.debug(_("Deleted network: %s"), id)
 
     def get_network(self, context, id, fields=None):
@@ -1308,7 +1371,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('Delete subnet: %s'), id)
         subnet = self.get_subnet(context, id)
-        self._send_delete_subnet_request(subnet)
+        self._send_delete_subnet_request(context, subnet)
         return super(N1kvNeutronPluginV2, self).delete_subnet(context, id)
 
     def get_subnet(self, context, id, fields=None):
