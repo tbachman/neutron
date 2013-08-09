@@ -88,14 +88,14 @@ cisco_n1k_opts = [
 
 cfg.CONF.register_opts(cisco_opts, "CISCO")
 cfg.CONF.register_opts(cisco_n1k_opts, "CISCO_N1K")
-cfg.CONF.register_opts(cisco_plugins_opts, "CISCO_PLUGINS")
+cfg.CONF.register_opts(cisco_plugins_opts, "PLUGINS")
 cfg.CONF.register_opts(cisco_test_opts, "CISCO_TEST")
 config.register_root_helper(cfg.CONF)
 
 # shortcuts
 CISCO = cfg.CONF.CISCO
 CISCO_N1K = cfg.CONF.CISCO_N1K
-CISCO_PLUGINS = cfg.CONF.CISCO_PLUGINS
+CISCO_PLUGINS = cfg.CONF.PLUGINS
 CISCO_TEST = cfg.CONF.CISCO_TEST
 
 #

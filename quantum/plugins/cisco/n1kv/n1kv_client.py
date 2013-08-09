@@ -18,7 +18,7 @@
 # @author: Rudrajit Tapadar, Cisco Systems, Inc.
 
 import base64
-import httplib
+import httplib2
 import netaddr
 
 from quantum.common import exceptions as q_exc
@@ -147,8 +147,8 @@ class Client(object):
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
         self.format = 'json'
-        self.action_prefix = '/api/n1k'
         self.hosts = self._get_vsm_hosts()
+        self.action_prefix = 'http://%s/api/n1k' % self.hosts[0]
 
     def list_port_profiles(self):
         """
@@ -447,16 +447,6 @@ class Client(object):
         """
         return self._delete(self.port_path % ((vm_network_name), (port_id)))
 
-    def _handle_fault_response(self, status_code, replybody):
-        """
-        VSM responds with a INTERNAL SERVER ERRROR code (500) when VSM fails
-        to fulfill the HTTP request.
-        """
-        if status_code == httplib.INTERNAL_SERVER_ERROR:
-            raise c_exc.VSMError(reason=replybody)
-        elif status_code == httplib.SERVICE_UNAVAILABLE:
-            raise c_exc.VSMConnectionFailed
-
     def _do_request(self, method, action, body=None,
                     headers=None):
         """
@@ -480,36 +470,22 @@ class Client(object):
             headers = self._get_auth_header(self.hosts[0])
         headers['Content-Type'] = self._set_content_type('json')
         if body:
-            body = "%s  " % self._serialize(body)
+            body = self._serialize(body)
             LOG.debug(_("req: %s"), body)
-        conn = httplib.HTTPConnection(self.hosts[0])
-        conn.request(method, action, body, headers)
-        resp = conn.getresponse()
-        _content_type = resp.getheader('content-type')
-        replybody = resp.read()
-        status_code = self._get_status_code(resp)
-        LOG.debug(_("status_code %s\n"), status_code)
-        if status_code == httplib.OK:
-            if 'application/xml' in _content_type:
-                return self._deserialize(replybody, status_code)
-            elif 'text/plain' in _content_type:
+        resp, replybody = httplib2.Http().request(action,
+                                                  method,
+                                                  body=body,
+                                                  headers=headers)
+        LOG.debug(_("status_code %s"), resp.status)
+        if resp.status == 200:
+            if 'application/xml' in resp['content-type']:
+                return self._deserialize(replybody, resp.status)
+            elif 'text/plain' in resp['content-type']:
                 LOG.debug(_("VSM: %s"), replybody)
-        elif status_code == httplib.INTERNAL_SERVER_ERROR:
+        elif resp.status == 500:
             raise c_exc.VSMError(reason=replybody)
-        elif status_code == httplib.SERVICE_UNAVAILABLE:
+        elif resp.status == 503:
             raise c_exc.VSMConnectionFailed
-
-    def _get_status_code(self, response):
-        """
-        Return status code from the HTTP response.
-
-        :param response: HTTP response string
-        :returns: HTTP status code in integer format
-        """
-        if hasattr(response, 'status_int'):
-            return response.status_int
-        else:
-            return response.status
 
     def _serialize(self, data):
         """
