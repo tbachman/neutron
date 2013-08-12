@@ -29,6 +29,7 @@ from neutron.db import db_base_plugin_v2 as base_db
 from neutron.db import l3_db
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.db import servicetype_db as st_db
 from neutron.extensions import vpnaas
 from neutron.extensions.vpnaas import VPNPluginBase
 from neutron import manager
@@ -160,6 +161,13 @@ class VPNService(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         IPsecSiteConnection,
         backref='vpnservice',
         cascade="all, delete-orphan")
+    provider = orm.relationship(
+        st_db.ProviderResourceAssociation,
+        uselist=False,
+        lazy="joined",
+        primaryjoin="VPNService.id==ProviderResourceAssociation.resource_id",
+        foreign_keys=[st_db.ProviderResourceAssociation.resource_id]
+    )
 
 
 class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
@@ -536,6 +544,8 @@ class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
                'router_id': vpnservice['router_id'],
                'admin_state_up': vpnservice['admin_state_up'],
                'status': vpnservice['status']}
+        if vpnservice.provider:
+            res['provider'] = vpnservice.provider.provider_name
         return self._fields(res, fields)
 
     def create_vpnservice(self, context, vpnservice):

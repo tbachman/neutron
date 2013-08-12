@@ -96,7 +96,7 @@ class IPsecVpnAgentApi(proxy.RpcProxy):
         self._agent_notification(context, method, router_id)
 
 
-class IPsecVPNDriver(service_drivers.VpnDriver):
+class IPsecVPNDriver(service_drivers.VPNDriver):
     """VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):

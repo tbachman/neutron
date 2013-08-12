@@ -124,7 +124,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'convert_to': attr.convert_to_boolean,
                            'is_visible': True},
         'status': {'allow_post': False, 'allow_put': False,
-                   'is_visible': True}
+                   'is_visible': True},
+        'provider': {'allow_post': True, 'allow_put': False,
+                     'validate': {'type:string': None},
+                     'is_visible': True, 'default': attr.ATTR_NOT_SPECIFIED},
     },
 
     'ipsec_site_connections': {

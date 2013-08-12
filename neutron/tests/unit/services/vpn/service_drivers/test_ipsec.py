@@ -25,10 +25,11 @@ from neutron.tests import base
 _uuid = uuidutils.generate_uuid
 
 FAKE_VPN_CONNECTION = {
-    'vpnservice_id': _uuid()
+    'vpnservice_id': _uuid(),
 }
 FAKE_VPN_SERVICE = {
-    'router_id': _uuid()
+    'router_id': _uuid(),
+    'provider': 'fake_provider'
 }
 FAKE_HOST = 'fake_host'
 
@@ -47,13 +48,14 @@ class TestIPsecDriver(base.BaseTestCase):
         get_plugin = plugin_p.start()
         get_plugin.return_value = plugin
 
-        service_plugin = mock.Mock()
-        service_plugin._get_vpnservice.return_value = {
-            'router_id': _uuid()
+        self.service_plugin = mock.Mock()
+        self.service_plugin._get_vpnservice.return_value = {
+            'router_id': _uuid(),
+            'provider': 'fake_provider'
         }
-        self.driver = ipsec_driver.IPsecVPNDriver(service_plugin)
+        self.driver = ipsec_driver.IPsecVPNDriver(self.service_plugin)
 
-    def _test_update(self, func, args):
+    def _test_update(self, func, args, method_name=''):
         ctxt = context.Context('', 'somebody')
         with mock.patch.object(self.driver.agent_rpc, 'cast') as cast:
             func(ctxt, *args)
@@ -67,20 +69,25 @@ class TestIPsecDriver(base.BaseTestCase):
 
     def test_create_ipsec_site_connection(self):
         self._test_update(self.driver.create_ipsec_site_connection,
-                          [FAKE_VPN_CONNECTION])
+                          [FAKE_VPN_CONNECTION],
+                          method_name='create_ipsec_site_connection')
 
     def test_update_ipsec_site_connection(self):
         self._test_update(self.driver.update_ipsec_site_connection,
-                          [FAKE_VPN_CONNECTION, FAKE_VPN_CONNECTION])
+                          [FAKE_VPN_CONNECTION, FAKE_VPN_CONNECTION],
+                          method_name='update_ipsec_site_connection')
 
     def test_delete_ipsec_site_connection(self):
         self._test_update(self.driver.delete_ipsec_site_connection,
-                          [FAKE_VPN_CONNECTION])
+                          [FAKE_VPN_CONNECTION],
+                          method_name='delete_ipsec_site_connection')
 
     def test_update_vpnservice(self):
         self._test_update(self.driver.update_vpnservice,
-                          [FAKE_VPN_SERVICE, FAKE_VPN_SERVICE])
+                          [FAKE_VPN_SERVICE, FAKE_VPN_SERVICE],
+                          method_name='update_vpnservice')
 
     def test_delete_vpnservice(self):
         self._test_update(self.driver.delete_vpnservice,
-                          [FAKE_VPN_SERVICE])
+                          [FAKE_VPN_SERVICE],
+                          method_name='delete_vpnservice')
