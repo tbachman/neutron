@@ -35,7 +35,10 @@ SEGMENT_TYPE_MULTI_SEGMENT = 'multi-segment'
 SEGMENT_TYPE_TRUNK = 'trunk'
 SEGMENT_TYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN,
                     SEGMENT_TYPE_MULTI_SEGMENT, SEGMENT_TYPE_TRUNK)
-SEGMENT_SUBTYPE = Enum(SEGMENT_TYPE_VLAN, SEGMENT_TYPE_VXLAN)
+SEGMENT_SUBTYPE = Enum(SEGMENT_TYPE_VLAN,
+                       SEGMENT_TYPE_VXLAN,
+                       cisco_constants.TYPE_VXLAN_MULTICAST,
+                       cisco_constants.TYPE_VXLAN_UNICAST)
 PROFILE_TYPE = Enum(cisco_constants.NETWORK, cisco_constants.POLICY)
 # use this to indicate that tenant_id was not yet set
 TENANT_ID_NOT_SET = '01020304-0506-0708-0901-020304050607'
@@ -244,7 +247,7 @@ class NetworkProfile(model_base.BASEV2, HasId):
     Nexus1000V Network Profiles
 
         segment_type - VLAN, VXLAN, MULTI_SEGMENT, TRUNK
-        sub_type - VLAN, VXLAN
+        sub_type - VLAN, VXLAN, VXLAN_UNICAST, VXLAN_MULTICAST
         segment_range - '<integer>-<integer>'
         multicast_ip_index - <integer>
         multicast_ip_range - '<ip>-<ip>'

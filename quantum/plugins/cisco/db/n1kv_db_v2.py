@@ -831,6 +831,7 @@ def create_network_profile(network_profile):
             kwargs['mcast_ip_range'] = network_profile[
                 'multicast_ip_range']
             kwargs['segment_range'] = network_profile['segment_range']
+            kwargs['sub_type'] = network_profile['sub_type']
         elif network_profile['segment_type'] == c_const.NETWORK_TYPE_TRUNK:
             kwargs['sub_type'] = network_profile['sub_type']
         net_profile = n1kv_models_v2.NetworkProfile(**kwargs)
@@ -1233,7 +1234,7 @@ class NetworkProfile_db_mixin(object):
                         "for network profile")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
-        if _segment_type == c_const.NETWORK_TYPE_TRUNK:
+        elif _segment_type == c_const.NETWORK_TYPE_TRUNK:
             if any(net_p[arg] == '' for arg in ['sub_type']):
                 msg = _("argument sub_type missing"
                         " for trunk network profile")
@@ -1247,6 +1248,13 @@ class NetworkProfile_db_mixin(object):
                     LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
                 self._validate_segment_range(net_p)
+        elif _segment_type in [c_const.NETWORK_TYPE_VXLAN]:
+            if any(net_p[arg] == '' for arg in ['sub_type']):
+                msg = _("argument sub_type missing"
+                        " for VXLAN network profile.")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+        elif _segment_type == c_const.NETWORK_TYPE_TRUNK:
         if _segment_type not in [c_const.NETWORK_TYPE_VXLAN]:
             net_p['multicast_ip_range'] = '0.0.0.0'
 

@@ -140,6 +140,10 @@ NETWORK_TYPE_NONE = 'none'
 NETWORK_TYPE_MULTI_SEGMENT = 'multi-segment'
 NETWORK_TYPE_TRUNK = 'trunk'
 
+# Values for VXLAN subtypes
+TYPE_VXLAN_UNICAST = 'unicast'
+TYPE_VXLAN_MULTICAST = 'multicast'
+
 SET = 'set'
 INSTANCE = 'instance'
 PROPERTIES = 'properties'

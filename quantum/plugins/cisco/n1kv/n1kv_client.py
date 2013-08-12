@@ -176,7 +176,7 @@ class Client(object):
         """
         return self._get(self.clusters_path, params=_params)
 
-    def create_bridge_domain(self, network):
+    def create_bridge_domain(self, network, vxlan_subtype):
         """
         Create a bridge domain on VSM.
 
@@ -184,7 +184,9 @@ class Client(object):
         """
         body = {'name': network['name'] + '_bd',
                 'segmentId': network[providernet.SEGMENTATION_ID],
-                'groupIp': network[n1kv_profile.MULTICAST_IP], }
+                'subType': vxlan_subtype}
+        if vxlan_subtype == c_const.TYPE_VXLAN_MULTICAST:
+            body['groupIp'] = network[n1kv_profile.MULTICAST_IP]
         return self._post(self.bridge_domains_path,
                           body=body)
 
