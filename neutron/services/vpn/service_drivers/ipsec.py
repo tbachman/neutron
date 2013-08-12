@@ -102,8 +102,8 @@ class IPsecVPNDriver(service_drivers.VpnDriver):
     """VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):
+        super(IPsecVPNDriver, self).__init__(service_plugin)
         self.callbacks = IPsecVpnDriverCallBack(self)
-        self.service_plugin = service_plugin
         self.conn = rpc.create_connection(new=True)
         self.conn.create_consumer(
             topics.IPSEC_DRIVER_TOPIC,

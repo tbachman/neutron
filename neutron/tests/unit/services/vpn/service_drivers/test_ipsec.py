@@ -26,10 +26,11 @@ from neutron.tests import base
 _uuid = uuidutils.generate_uuid
 
 FAKE_VPN_CONNECTION = {
-    'vpnservice_id': _uuid()
+    'vpnservice_id': _uuid(),
 }
 FAKE_VPN_SERVICE = {
-    'router_id': _uuid()
+    'router_id': _uuid(),
+    'provider': 'fake_provider'
 }
 FAKE_HOST = 'fake_host'
 
@@ -52,12 +53,14 @@ class TestIPsecDriver(base.BaseTestCase):
         get_service_plugin = service_plugin_p.start()
         get_service_plugin.return_value = {constants.L3_ROUTER_NAT: plugin}
 
-        service_plugin = mock.Mock()
-        service_plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
-        service_plugin._get_vpnservice.return_value = {
-            'router_id': _uuid()
+        self.service_plugin = mock.Mock()
+        self.service_plugin.get_l3_agents_hosting_routers.return_value = [
+            l3_agent]
+        self.service_plugin._get_vpnservice.return_value = {
+            'router_id': _uuid(),
+            'provider': 'fake_provider'
         }
-        self.driver = ipsec_driver.IPsecVPNDriver(service_plugin)
+        self.driver = ipsec_driver.IPsecVPNDriver(self.service_plugin)
 
     def _test_update(self, func, args):
         ctxt = context.Context('', 'somebody')

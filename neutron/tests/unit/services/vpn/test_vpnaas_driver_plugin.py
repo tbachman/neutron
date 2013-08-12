@@ -44,8 +44,13 @@ class TestVPNDriverPlugin(test_db_vpnaas.TestVpnaas,
         self.driver = mock.Mock()
         self.driver.service_type = ipsec_driver.IPSEC
         driver_cls.return_value = self.driver
+        vpnaas_provider = (
+            p_constants.VPN +
+            ':vpnaas:neutron.services.vpn.'
+            'service_drivers.ipsec.IPsecVPNDriver:default')
         super(TestVPNDriverPlugin, self).setUp(
-            vpnaas_plugin=VPN_DRIVER_CLASS)
+            vpnaas_plugin=VPN_DRIVER_CLASS,
+            vpnaas_provider=vpnaas_provider)
 
     def test_create_ipsec_site_connection(self, **extras):
         super(TestVPNDriverPlugin, self).test_create_ipsec_site_connection()
