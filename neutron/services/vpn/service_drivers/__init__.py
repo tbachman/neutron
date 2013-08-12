@@ -20,8 +20,16 @@ import abc
 import six
 
 
+from neutron.openstack.common import log as logging
+
+LOG = logging.getLogger(__name__)
+
+
 @six.add_metaclass(abc.ABCMeta)
 class VpnDriver(object):
+
+    def __init__(self, plugin):
+        self.plugin = plugin
 
     @property
     def service_type(self):
