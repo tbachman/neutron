@@ -1254,7 +1254,6 @@ class NetworkProfile_db_mixin(object):
                         " for VXLAN network profile.")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
-        elif _segment_type == c_const.NETWORK_TYPE_TRUNK:
         if _segment_type not in [c_const.NETWORK_TYPE_VXLAN]:
             net_p['multicast_ip_range'] = '0.0.0.0'
 
