@@ -1238,6 +1238,11 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :returns: subnet object
         """
         LOG.debug(_('Create subnet'))
+        # Verify whether subnet name is populated.
+        if not subnet['subnet']['name']:
+            # If subnet name is not populated, auto-generate it for VSM.
+            subnet['subnet']['name'] = c_const.SUBNET + "_" + str(
+                subnet['subnet']['network_id'])
         sub = super(N1kvQuantumPluginV2, self).create_subnet(context, subnet)
         try:
             self._send_create_subnet_request(context, sub)
@@ -1257,8 +1262,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :returns: updated subnet object
         """
         LOG.debug(_('Update subnet'))
-        sub = super(N1kvQuantumPluginV2, self).update_subnet(context, subnet)
-        self._send_update_subnet_request(context, sub)
+        sub = super(N1kvQuantumPluginV2, self).update_subnet(context, id, subnet)
+        self._send_update_subnet_request(sub)
         LOG.debug(_("Updated subnet: %s"), sub['id'])
         return sub
 
