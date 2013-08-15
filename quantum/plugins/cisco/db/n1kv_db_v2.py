@@ -455,8 +455,11 @@ def reserve_vxlan(db_session, network_profile):
         if alloc:
             segment_id = alloc.vxlan_id
             alloc.allocated = True
-            return (physical_network, segment_type,
-                    segment_id, network_profile.get_multicast_ip(db_session))
+            if network_profile.sub_type == c_const.TYPE_VXLAN_MULTICAST:
+                return (physical_network, segment_type,
+                        segment_id, network_profile.get_multicast_ip(db_session))
+            else:
+                return (physical_network, segment_type, segment_id, "0.0.0.0")
         raise q_exc.NoNetworkAvailable()
 
 
