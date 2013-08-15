@@ -214,7 +214,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         n1kv_db_v2.initialize()
         c_cred.Store.initialize()
-        self._initialize_network_vlan_ranges()
+        self._initialize_network_ranges()
         # If no api_extensions_path is provided set the following
         if not q_conf.CONF.api_extensions_path:
             q_conf.CONF.set_override(
@@ -305,15 +305,18 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             # Replace tenant-id for profile bindings with admin's tenant-id
             self._remove_all_fake_policy_profiles()
 
-    def _initialize_network_vlan_ranges(self):
+    def _initialize_network_ranges(self):
         self.network_vlan_ranges = {}
+        self.vxlan_id_ranges = []
         network_profiles = n1kv_db_v2._get_network_profiles()
         for network_profile in network_profiles:
+            seg_min, seg_max = self.\
+                _get_segment_range(network_profile['segment_range'])
             if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                seg_min, seg_max = self.\
-                    _get_segment_range(network_profile['segment_range'])
                 self._add_network_vlan_range(network_profile[
                     'physical_network'], int(seg_min), int(seg_max))
+            elif network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
+                self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
 
     def _add_network_vlan_range(self, physical_network, vlan_min, vlan_max):
         self._add_network(physical_network)
@@ -1342,7 +1345,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                          int(seg_max))
             n1kv_db_v2.sync_vlan_allocations(self.network_vlan_ranges)
         elif _network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
-            self.vxlan_id_ranges = []
             self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
             n1kv_db_v2.sync_vxlan_allocations(self.vxlan_id_ranges)
         try:
