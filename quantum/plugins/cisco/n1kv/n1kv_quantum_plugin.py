@@ -732,18 +732,18 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         LOG.debug(_('_send_update_subnet_request: %s'), subnet['id'])
     # TBD End.
 
-    def _send_delete_subnet_request(self, context, subnet_name):
+    def _send_delete_subnet_request(self, context, subnet):
         """
         Send delete subnet request to VSM
 
-        :param subnet_name: string representing name of the subnet to delete
+        :param subnet: subnet dictionary
         """
-        LOG.debug(_('_send_delete_subnet_request: %s'), subnet_name)
-        network = self.get_network(context, subnet_name['network_id'])
-        body = {'ipPoolName': subnet_name['name'], 'deleteSubnet': True}
+        LOG.debug(_('_send_delete_subnet_request: %s'), subnet)
+        network = self.get_network(context, subnet['network_id'])
+        body = {'ipPoolName': subnet['name'], 'deleteSubnet': True}
         n1kvclient = n1kv_client.Client()
         n1kvclient.update_network_segment(network['name'], body=body)
-        n1kvclient.delete_ip_pool(subnet_name)
+        n1kvclient.delete_ip_pool(subnet['name'])
 
     def _send_create_port_request(self, context, port):
         """
