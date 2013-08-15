@@ -268,22 +268,30 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         tenant-ids.
         """
         LOG.debug(_('_populate_policy_profiles'))
-        n1kvclient = n1kv_client.Client()
-        policy_profiles = n1kvclient.list_port_profiles()
-        for profile in policy_profiles['body'][c_const.SET]:
-            if c_const.ID and c_const.NAME in profile:
-                profile_id = profile[c_const.PROPERTIES][c_const.ID]
-                profile_name = profile[c_const.PROPERTIES][c_const.NAME]
-                self._add_policy_profile(profile_name, profile_id)
-        self._remove_all_fake_policy_profiles()
+        try:
+            n1kvclient = n1kv_client.Client()
+            policy_profiles = n1kvclient.list_port_profiles()
+            for profile in policy_profiles['body'][c_const.SET]:
+                if c_const.ID and c_const.NAME in profile:
+                    profile_id = profile[c_const.PROPERTIES][c_const.ID]
+                    profile_name = profile[c_const.PROPERTIES][c_const.NAME]
+                    self._add_policy_profile(profile_name, profile_id)
+            self._remove_all_fake_policy_profiles()
+        except (cisco_exceptions.VSMError,
+                cisco_exceptions.VSMConnectionFailed):
+            LOG.warning(_('No policy profile populated from VSM'))
 
     def _poll_policies(self, event_type=None, epoch=None, tenant_id=None):
         """
         Poll for Policy Profiles from Cisco Nexus1000V for any updates/deletes
         """
         LOG.debug(_('_poll_policies'))
-        n1kvclient = n1kv_client.Client()
-        policy_profiles = n1kvclient.list_events(event_type, epoch)
+        try:
+            n1kvclient = n1kv_client.Client()
+            policy_profiles = n1kvclient.list_events(event_type, epoch)
+        except (cisco_exceptions.VSMError,
+                cisco_exceptions.VSMConnectionFailed):
+            return
         if policy_profiles:
             for profile in policy_profiles['body'][c_const.SET]:
                 if c_const.NAME in profile:
