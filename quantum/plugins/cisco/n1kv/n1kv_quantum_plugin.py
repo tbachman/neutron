@@ -41,6 +41,7 @@ from quantum.db import l3_rpc_base
 from quantum.db import securitygroups_rpc_base as sg_db_rpc
 from quantum.extensions import portbindings
 from quantum.extensions import providernet
+from quantum.openstack.common import excutils
 from quantum.openstack.common import log as logging
 from quantum.openstack.common import rpc
 from quantum.openstack.common import uuidutils as uuidutils
@@ -981,7 +982,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 self._send_add_multi_segment_request(context, segment_pairs)
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
-            super(N1kvQuantumPluginV2, self).delete_network(context, net['id'])
+            with excutils.save_and_reraise_exception():
+                self.agent_vsm = False
+                self.delete_network(context, net['id'])
         else:
             # note - exception will rollback entire transaction
             LOG.debug(_("Created network: %s"), net['id'])
@@ -1068,6 +1071,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 # the network record, so explicit removal is not necessary
         if self.agent_vsm:
             self._send_delete_network_request(network)
+        else:
+            self.agent_vsm = True
         LOG.debug(_("Deleted network: %s"), id)
 
     def get_network(self, context, id, fields=None):
@@ -1143,7 +1148,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 self._send_create_port_request(context, pt)
             except(cisco_exceptions.VSMError,
                    cisco_exceptions.VSMConnectionFailed):
-                super(N1kvQuantumPluginV2, self).delete_port(context, pt['id'])
+                with excutils.save_and_reraise_exception():
+                    self.agent_vsm = False
+                    self.delete_port(context, pt['id'])
             else:
                 LOG.debug(_("Created port: %s"), pt)
                 self._extend_port_dict_binding(context, pt)
@@ -1180,7 +1187,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param id: UUID representing the port to delete
         :returns: deleted port object
         """
-        self._send_delete_port_request(context, id)
+        if self.agent_vsm:
+            self._send_delete_port_request(context, id)
+        else:
+            self.agent_vsm = True
         return super(N1kvQuantumPluginV2, self).delete_port(context, id)
 
     def get_port(self, context, id, fields=None):
@@ -1241,7 +1251,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             self._send_create_subnet_request(context, sub)
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
-            super(N1kvQuantumPluginV2, self).delete_subnet(context, sub['id'])
+            with excutils.save_and_reraise_exception():
+                self.agent_vsm = False
+                self.delete_subnet(context, sub['id'])
         else:
             LOG.debug(_("Created subnet: %s"), sub['id'])
             return sub
@@ -1269,8 +1281,11 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :returns: deleted subnet object
         """
         LOG.debug(_('Delete subnet: %s'), id)
-        subnet = self.get_subnet(context, id)
-        self._send_delete_subnet_request(context, subnet)
+        if self.agent_vsm:
+            subnet = self.get_subnet(context, id)
+            self._send_delete_subnet_request(context, subnet)
+        else:
+            self.agent_vsm = True
         return super(N1kvQuantumPluginV2, self).delete_subnet(context, id)
 
     def get_subnet(self, context, id, fields=None):
@@ -1341,16 +1356,18 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             self._send_create_logical_network_request(_network_profile)
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
-            super(N1kvQuantumPluginV2, self).delete_network_profile(
-                context, _network_profile['id'])
+            with excutils.save_and_reraise_exception():
+                self.agent_vsm = False
+                self.delete_network_profile(context, _network_profile['id'])
         try:
             self._send_create_network_profile_request(context,
                                                       _network_profile)
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
-            self._send_delete_logical_network_request(_network_profile)
-            super(N1kvQuantumPluginV2, self).delete_network_profile(
-                context, _network_profile['id'])
+            with excutils.save_and_reraise_exception():
+                self._send_delete_logical_network_request(_network_profile)
+                self.agent_vsm = False
+                self.delete_network_profile(context, _network_profile['id'])
         else:
             return _network_profile
 
@@ -1377,5 +1394,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             self.delete_vxlan_ranges = []
             self.delete_vxlan_ranges.append((int(seg_min), int(seg_max)))
             n1kv_db_v2.delete_vxlan_allocations(self.delete_vxlan_ranges)
-        self._send_delete_network_profile_request(_network_profile)
-        self._send_delete_logical_network_request(_network_profile)
+        if self.agent_vsm:
+            self._send_delete_network_profile_request(_network_profile)
+            self._send_delete_logical_network_request(_network_profile)
+        else:
+            self.agent_vsm = True

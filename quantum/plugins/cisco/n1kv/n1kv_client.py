@@ -139,6 +139,7 @@ class Client(object):
         self.format = 'json'
         self.hosts = self._get_vsm_hosts()
         self.action_prefix = 'http://%s/api/n1k' % self.hosts[0]
+        self.timeout = 15
 
     def list_port_profiles(self):
         """
@@ -452,20 +453,22 @@ class Client(object):
         if body:
             body = self._serialize(body)
             LOG.debug(_("req: %s"), body)
-        resp, replybody = httplib2.Http().request(action,
-                                                  method,
-                                                  body=body,
-                                                  headers=headers)
+        try:
+            resp, replybody = (httplib2.Http(timeout=self.timeout).
+                                             request(action,
+                                                     method,
+                                                     body=body,
+                                                     headers=headers))
+        except Exception as e:
+            raise c_exc.VSMConnectionFailed(reason=e)
         LOG.debug(_("status_code %s"), resp.status)
         if resp.status == 200:
             if 'application/xml' in resp['content-type']:
                 return self._deserialize(replybody, resp.status)
             elif 'text/plain' in resp['content-type']:
                 LOG.debug(_("VSM: %s"), replybody)
-        elif resp.status == 500:
+        else:
             raise c_exc.VSMError(reason=replybody)
-        elif resp.status == 503:
-            raise c_exc.VSMConnectionFailed
 
     def _serialize(self, data):
         """
