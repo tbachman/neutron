@@ -247,15 +247,13 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_setup_vsm'))
         self.agent_vsm = True
-        # Retrieve all the policy profiles from VSM.
-        self._populate_policy_profiles()
-        # Continue to poll VSM for any create/delete of policy profiles.
+        # Poll VSM for create/delete of policy profiles.
         eventlet.spawn(self._poll_policy_profiles)
 
     def _poll_policy_profiles(self):
         """Start a green thread to pull policy profiles from VSM."""
         while True:
-            self._poll_policies(event_type='port_profile')
+            self._populate_policy_profiles()
             eventlet.sleep(int(c_conf.CISCO_N1K.POLL_DURATION))
 
     def _populate_policy_profiles(self):
@@ -271,47 +269,31 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         try:
             n1kvclient = n1kv_client.Client()
             policy_profiles = n1kvclient.list_port_profiles()
-            for profile in policy_profiles['body'][c_const.SET]:
-                if c_const.ID and c_const.NAME in profile:
-                    profile_id = profile[c_const.PROPERTIES][c_const.ID]
-                    profile_name = profile[c_const.PROPERTIES][c_const.NAME]
-                    self._add_policy_profile(profile_name, profile_id)
+            vsm_profiles = {}
+            plugin_profiles = {}
+            # Fetch policy profiles from VSM
+            if policy_profiles:
+                for profile in policy_profiles['body'][c_const.SET]:
+                    if c_const.ID and c_const.NAME in profile:
+                        vsm_profiles[profile[c_const.PROPERTIES][c_const.ID]] =\
+                            profile[c_const.PROPERTIES][c_const.NAME]
+                # Fetch policy profiles previously populated
+                for profile in n1kv_db_v2._get_policy_profiles():
+                    plugin_profiles[profile.id] = profile.name
+                vsm_profiles_set = set(vsm_profiles)
+                plugin_profiles_set = set(plugin_profiles)
+                # Update database if the profile sets differ.
+                if vsm_profiles_set ^ plugin_profiles_set:
+                    # Add profiles in database if new profiles were created in VSM
+                    for pid in vsm_profiles_set - plugin_profiles_set:
+                        self._add_policy_profile(vsm_profiles[pid], pid)
+                    # Delete profiles from database if profiles were deleted in VSM
+                    for pid in plugin_profiles_set - vsm_profiles_set:
+                        self._delete_policy_profile(pid)
             self._remove_all_fake_policy_profiles()
         except (cisco_exceptions.VSMError,
                 cisco_exceptions.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
-
-    def _poll_policies(self, event_type=None, epoch=None, tenant_id=None):
-        """
-        Poll for Policy Profiles from Cisco Nexus1000V for any updates/deletes
-        """
-        LOG.debug(_('_poll_policies'))
-        try:
-            n1kvclient = n1kv_client.Client()
-            policy_profiles = n1kvclient.list_events(event_type, epoch)
-        except (cisco_exceptions.VSMError,
-                cisco_exceptions.VSMConnectionFailed):
-            return
-        if policy_profiles:
-            for profile in policy_profiles['body'][c_const.SET]:
-                if c_const.NAME in profile:
-                    # Extract commands from the events XML.
-                    cmd = profile[c_const.PROPERTIES]['cmd']
-                    cmds = cmd.split(';')
-                    cmdwords = cmds[1].split()
-                    profile_name = profile[c_const.PROPERTIES][c_const.NAME]
-                    # Delete the policy profile from db if it's deleted on VSM
-                    if 'no' in cmdwords[0]:
-                        p = self._get_policy_profile_by_name(profile_name)
-                        if p:
-                            self._delete_policy_profile(p['id'])
-                    # Add policy profile to neutron DB idempotently
-                    elif c_const.ID in profile[c_const.PROPERTIES]:
-                        profile_id = profile[c_const.PROPERTIES][c_const.ID]
-                        self._add_policy_profile(
-                            profile_name, profile_id, tenant_id)
-            # Replace tenant-id for profile bindings with admin's tenant-id
-            self._remove_all_fake_policy_profiles()
 
     def _initialize_network_ranges(self):
         self.network_vlan_ranges = {}

@@ -76,15 +76,6 @@ class Client(object):
     It maintains a list of ports that uses the network-segment and
     policy-profile this vm-network refers to.
 
-    events:
-    Events correspond to commands that are logged on Nexus1000V VSM.
-    Events are used to poll for a certain resource on Nexus1000V VSM.
-    Event type of port_profile: Return all updates/create/deletes
-    of port profiles from the VSM.
-    Event type of port_profile_update: Return only updates regarding
-    policy-profiles.
-    Event type of port_profile_delete: Return only deleted policy profiles.
-
 
     WORK FLOW:
 
@@ -139,7 +130,6 @@ class Client(object):
     bridge_domain_path = "/kvm/bridge-domain/%s"
     logical_networks_path = "/logical-network"
     logical_network_path = "/logical-network/%s"
-    events_path = "/kvm/events"
     clusters_path = "/cluster"
     cluster_path = "/cluster/%s"
     cluster_service_instance_path = "/cluster/%s/service-instance/%s"
@@ -157,18 +147,6 @@ class Client(object):
         :returns: XML string
         """
         return self._get(self.port_profiles_path)
-
-    def list_events(self, event_type=None, epoch=None):
-        """
-        Fetch all events of event_type from the VSM.
-
-        :param event_type: type of event to be listed.
-        :param epoch: timestamp after which the events occurred to be listed.
-        :returns: XML string
-        """
-        if event_type:
-            self.events_path = self.events_path + '?type=' + event_type
-        return self._get(self.events_path)
 
     def get_vxlan_gw_clusters(self, **_params):
         """

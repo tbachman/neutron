@@ -30,6 +30,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                'is_visible': True},
         'name': {'allow_post': False, 'allow_put': False,
                  'is_visible': True, 'default': ''},
+        'add_tenant': {'allow_post': True, 'allow_put': True,
+                       'is_visible': True, 'default': None},
+        'remove_tenant': {'allow_post': True, 'allow_put': True,
+                          'is_visible': True, 'default': None},
     },
     'policy_profile_bindings': {
         'profile_id': {'allow_post': False, 'allow_put': False,
