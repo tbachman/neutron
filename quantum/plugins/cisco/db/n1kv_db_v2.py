@@ -1076,6 +1076,8 @@ class NetworkProfile_db_mixin(object):
             profile_bindings = _get_profile_bindings(profile_type='network')
             return [self._make_profile_bindings_dict(pb)
                     for pb in profile_bindings]
+        else:
+            raise q_exc.NotAuthorized()
 
     def create_network_profile(self, context, network_profile):
         """
@@ -1384,6 +1386,8 @@ class PolicyProfile_db_mixin(object):
             profile_bindings = _get_profile_bindings(profile_type='policy')
             return [self._make_profile_bindings_dict(pb)
                     for pb in profile_bindings]
+        else:
+            raise q_exc.NotAuthorized()
 
     def update_policy_profile(self, context, id, policy_profile):
         """
