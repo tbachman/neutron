@@ -1386,10 +1386,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             seg_min, seg_max = self._get_segment_range(
                     _network_profile['segment_range'])
         if _network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-            self._add_network_vlan_range(_network_profile['physical_network'],
-                                         int(seg_min),
-                                         int(seg_max))
-            n1kv_db_v2.delete_vlan_allocations(self.network_vlan_ranges)
+            deleted_vlan_ranges = {}
+            deleted_vlan_ranges[_network_profile["physical_network"]] = []
+            deleted_vlan_ranges[_network_profile["physical_network"]].append((int(seg_min), int(seg_max)))
+            n1kv_db_v2.delete_vlan_allocations(deleted_vlan_ranges)
         elif _network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
             self.delete_vxlan_ranges = []
             self.delete_vxlan_ranges.append((int(seg_min), int(seg_max)))
