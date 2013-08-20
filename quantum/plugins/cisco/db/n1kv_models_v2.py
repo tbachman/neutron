@@ -263,44 +263,6 @@ class NetworkProfile(model_base.BASEV2, HasId):
     multicast_ip_range = Column(String(255))
     physical_network = Column(String(255))
 
-    def get_segment_range(self, session):
-        """Get the segment range min and max for a network profile."""
-        with session.begin(subtransactions=True):
-            # Sort the range to ensure min, max is in order
-            seg_min, seg_max = sorted(map(int, self.segment_range.split('-')))
-            LOG.debug("NetworkProfile: seg_min %s seg_max %s",
-                      seg_min, seg_max)
-            return (int(seg_min), int(seg_max))
-
-    def get_multicast_ip(self, session):
-        "Returns a multicast ip from the defined pool."
-        # Round robin multicast ip allocation
-        with session.begin(subtransactions=True):
-            try:
-                min_ip, max_ip = self._get_multicast_ip_range()
-                min_addr = int(min_ip.split('.')[3])
-                max_addr = int(max_ip.split('.')[3])
-                addr_list = list(xrange(min_addr, max_addr + 1))
-
-                mul_ip = min_ip.split('.')
-                mul_ip[3] = str(addr_list[self.multicast_ip_index])
-
-                self.multicast_ip_index += 1
-                if self.multicast_ip_index == len(addr_list):
-                    self.multicast_ip_index = 0
-                mul_ip_str = '.'.join(mul_ip)
-                return mul_ip_str
-
-            except exc.NoResultFound:
-                raise cisco_exceptions.NetworkProfileIdNotFound(profile_id=id)
-
-    def _get_multicast_ip_range(self):
-        # Assumption: ip range belongs to the same subnet
-        # Assumption: ip range is already sorted
-        # min_ip, max_ip = sorted(self.multicast_ip_range.split('-'))
-        min_ip, max_ip = self.multicast_ip_range.split('-')
-        return (min_ip, max_ip)
-
     def __init__(self, name, segment_type,
                  segment_range=None, mcast_ip_index=None,
                  mcast_ip_range=None, physical_network=None, sub_type=None):

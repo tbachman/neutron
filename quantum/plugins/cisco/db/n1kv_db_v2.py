@@ -291,6 +291,44 @@ def add_network_binding(db_session, network_id, network_type,
             add_trunk_segment_binding(db_session, network_id, add_segments)
 
 
+def get_segment_range(network_profile):
+    """Get the segment range min and max for a network profile."""
+    # Sort the range to ensure min, max is in order
+    seg_min, seg_max = sorted(map(int,
+                                  network_profile.segment_range.split('-')))
+    LOG.debug("NetworkProfile: seg_min %s seg_max %s",
+        seg_min, seg_max)
+    return (int(seg_min), int(seg_max))
+
+
+def get_multicast_ip(db_session, network_profile):
+    "Returns a multicast ip from the defined pool."
+    # Round robin multicast ip allocation
+    with db_session.begin(subtransactions=True):
+        min_ip, max_ip = _get_multicast_ip_range(network_profile)
+        min_addr = int(min_ip.split('.')[3])
+        max_addr = int(max_ip.split('.')[3])
+        addr_list = list(xrange(min_addr, max_addr + 1))
+
+        mul_ip = min_ip.split('.')
+        mul_ip[3] = str(addr_list[network_profile.multicast_ip_index])
+
+        alloc = (db_session.query(n1kv_models_v2.NetworkProfile).
+                 filter_by(id=network_profile.id).one())
+        alloc.multicast_ip_index += 1
+        if network_profile.multicast_ip_index == len(addr_list):
+            network_profile.multicast_ip_index = 0
+        mul_ip_str = '.'.join(mul_ip)
+        return mul_ip_str
+
+
+def _get_multicast_ip_range(network_profile):
+    # Assumption: ip range belongs to the same subnet
+    # Assumption: ip range is already sorted
+    # min_ip, max_ip = sorted(self.multicast_ip_range.split('-'))
+    return network_profile.multicast_ip_range.split('-')
+
+
 def get_port_binding(db_session, port_id):
     """
     Retrieve port binding.
@@ -412,7 +450,7 @@ def reserve_vlan(db_session, network_profile):
     :param db_session: database session
     :param network_profile: network profile object
     """
-    seg_min, seg_max = network_profile.get_segment_range(db_session)
+    seg_min, seg_max = get_segment_range(network_profile)
     segment_type = 'vlan'
 
     with db_session.begin(subtransactions=True):
@@ -439,7 +477,7 @@ def reserve_vxlan(db_session, network_profile):
     :param db_session: database session
     :param network_profile: network profile object
     """
-    seg_min, seg_max = network_profile.get_segment_range(db_session)
+    seg_min, seg_max = get_segment_range(network_profile)
     segment_type = c_const.NETWORK_TYPE_VXLAN
     physical_network = ""
 
@@ -457,7 +495,8 @@ def reserve_vxlan(db_session, network_profile):
             alloc.allocated = True
             if network_profile.sub_type == c_const.TYPE_VXLAN_MULTICAST:
                 return (physical_network, segment_type,
-                        segment_id, network_profile.get_multicast_ip(db_session))
+                        segment_id,
+                        get_multicast_ip(db_session, network_profile))
             else:
                 return (physical_network, segment_type, segment_id, "0.0.0.0")
         raise q_exc.NoNetworkAvailable()
