@@ -316,8 +316,8 @@ def get_multicast_ip(db_session, network_profile):
         alloc = (db_session.query(n1kv_models_v2.NetworkProfile).
                  filter_by(id=network_profile.id).one())
         alloc.multicast_ip_index += 1
-        if network_profile.multicast_ip_index == len(addr_list):
-            network_profile.multicast_ip_index = 0
+        if alloc.multicast_ip_index == len(addr_list):
+            alloc.multicast_ip_index = 0
         mul_ip_str = '.'.join(mul_ip)
         return mul_ip_str
 
