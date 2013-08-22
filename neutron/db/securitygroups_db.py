@@ -379,24 +379,43 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
                               'remote_group_id']
         for key in include_if_present:
             value = sgr.get(key)
-            if value:
+            if key == 'protocol':
+                # Check for both protocol name and number
+                if isinstance(value, basestring):
+                    res[key] = [value, IP_PROTOCOL_MAP[value.lower()]]
+                else:
+                    pname = [proto for proto, num in IP_PROTOCOL_MAP.items()
+                             if num == value]
+                    res[key] = pname + [value]
+            elif value:
                 res[key] = [value]
         return res
 
     def _check_for_duplicate_rules(self, context, security_group_rules):
         for i in security_group_rules:
+            iprotocol = i['security_group_rule']['protocol']
+            # Convert protocol to number to avoid duplicate rules
+            if isinstance(iprotocol, basestring):
+                i['security_group_rule']['protocol'] = (
+                    IP_PROTOCOL_MAP[iprotocol.lower()])
             found_self = False
             for j in security_group_rules:
+                jprotocol = j['security_group_rule']['protocol']
+                # Convert protocol to number to avoid duplicate rules
+                if isinstance(jprotocol, basestring):
+                    j['security_group_rule']['protocol'] = (
+                        IP_PROTOCOL_MAP[jprotocol.lower()])
                 if i['security_group_rule'] == j['security_group_rule']:
                     if found_self:
                         raise ext_sg.DuplicateSecurityGroupRuleInPost(rule=i)
                     found_self = True
-
             # Check in database if rule exists
             filters = self._make_security_group_rule_filter_dict(i)
             rules = self.get_security_group_rules(context, filters)
             if rules:
                 raise ext_sg.SecurityGroupRuleExists(id=str(rules[0]['id']))
+            # Restore protocol name
+            i['security_group_rule']['protocol'] = iprotocol
 
     def get_security_group_rules(self, context, filters=None, fields=None,
                                  sorts=None, limit=None, marker=None,

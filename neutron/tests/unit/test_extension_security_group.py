@@ -802,6 +802,23 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                 self.deserialize(self.fmt, res)
                 self.assertEqual(res.status_int, 409)
 
+    def test_create_security_group_rule_proto_name_num_duplicate(self):
+        name = 'webservers'
+        description = 'my webservers'
+        with self.security_group(name, description) as sg:
+            security_group_id = sg['security_group']['id']
+            rule = self._build_security_group_rule(
+                security_group_id, 'ingress', 'tcp', '22', '22')
+            res = self._create_security_group_rule(self.fmt, rule)
+            self.deserialize(self.fmt, res)
+            self.assertEqual(res.status_int, 201)
+            # Change protocol to number and test for failure
+            rule = self._build_security_group_rule(
+                security_group_id, 'ingress', '6', '22', '22')
+            res = self._create_security_group_rule(self.fmt, rule)
+            self.deserialize(self.fmt, res)
+            self.assertEqual(res.status_int, 409)
+
     def test_create_security_group_rule_min_port_greater_max(self):
         name = 'webservers'
         description = 'my webservers'
