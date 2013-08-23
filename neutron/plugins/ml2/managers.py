@@ -19,6 +19,7 @@ from oslo.config import cfg
 import stevedore
 
 from neutron.common import exceptions as exc
+from neutron.extensions import multiprovidernet as mpnet
 from neutron.openstack.common import log
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api as api
@@ -87,10 +88,11 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             msg = _("network_type value '%s' not supported") % network_type
             raise exc.InvalidInput(error_message=msg)
 
-    def reserve_provider_segment(self, session, segment):
-        network_type = segment.get(api.NETWORK_TYPE)
-        driver = self.drivers.get(network_type)
-        driver.obj.reserve_provider_segment(session, segment)
+    def reserve_provider_segment(self, session, network):
+        for segment in network[mpnet.SEGMENTS]:
+            network_type = segment.get(api.NETWORK_TYPE)
+            driver = self.drivers.get(network_type)
+            driver.obj.reserve_provider_segment(session, segment)
 
     def allocate_tenant_segment(self, session):
         for network_type in self.tenant_network_types:
