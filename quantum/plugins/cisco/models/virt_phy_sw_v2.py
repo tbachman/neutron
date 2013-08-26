@@ -22,6 +22,7 @@
 from copy import deepcopy
 import inspect
 import logging
+import sys
 
 from novaclient.v1_1 import client as nova_client
 from oslo.config import cfg

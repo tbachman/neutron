@@ -242,7 +242,6 @@ def get_network_binding(db_session, network_id):
                        to fetch
     :returns: binding object
     """
-    db_session = db_session or db.get_session()
     try:
         binding = (db_session.query(n1kv_models_v2.N1kvNetworkBinding).
                    filter_by(network_id=network_id).
@@ -337,7 +336,6 @@ def get_port_binding(db_session, port_id):
     :param port_id: UUID representing the port whose binding is to fetch
     :returns: port binding object
     """
-    db_session = db_session or db.get_session()
     try:
         binding = (db_session.query(n1kv_models_v2.N1kvPortBinding).
                    filter_by(port_id=port_id).
@@ -369,18 +367,17 @@ def _get_sorted_vlan_ids(vlan_ranges):
     return sorted(vlan_ids)
 
 
-def sync_vlan_allocations(network_vlan_ranges):
+def sync_vlan_allocations(db_session, network_vlan_ranges):
     """
     Synchronize vlan_allocations table with configured VLAN ranges.
 
     Sync the network profile range with the vlan_allocations table for each
     physical network.
+    :param db_session: database session
     :param network_vlan_ranges: dictionary of network vlan ranges with the
                                 physical network name as key.
     """
-
-    db_session = db.get_session()
-    with db_session.begin():
+    with db_session.begin(subtransactions=True):
         # process vlan ranges for each physical network separately
         for physical_network, vlan_ranges in network_vlan_ranges.iteritems():
 
@@ -390,23 +387,22 @@ def sync_vlan_allocations(network_vlan_ranges):
 
             # add missing allocatable vlans to table
             for vlan_id in vlan_ids:
-                alloc = get_vlan_allocation(physical_network, vlan_id)
+                alloc = get_vlan_allocation(db_session, physical_network, vlan_id)
                 if not alloc:
                     alloc = n1kv_models_v2.N1kvVlanAllocation(physical_network,
                                                               vlan_id)
                     db_session.add(alloc)
 
 
-def delete_vlan_allocations(network_vlan_ranges):
+def delete_vlan_allocations(db_session, network_vlan_ranges):
     """
     Delete vlan_allocations for deleted network profile range.
 
+    :param db_session: database session
     :param network_vlan_ranges: dictionary of network vlan ranges with the
                                 physical network name as key.
     """
-
-    db_session = db.get_session()
-    with db_session.begin():
+    with db_session.begin(subtransactions=True):
         # process vlan ranges for each physical network separately
         for physical_network, vlan_ranges in network_vlan_ranges.iteritems():
             # Determine the set of vlan ids which need to be deleted.
@@ -424,15 +420,15 @@ def delete_vlan_allocations(network_vlan_ranges):
                     db_session.delete(alloc)
 
 
-def get_vlan_allocation(physical_network, vlan_id):
+def get_vlan_allocation(db_session, physical_network, vlan_id):
     """
     Retrieve vlan allocation.
 
+    :param db_session: database session
     :param physical network: string name for the physical network
     :param vlan_id: integer representing the VLAN ID.
     :returns: allocation object for given physical network and VLAN ID
     """
-    db_session = db.get_session()
     try:
         alloc = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
                  filter_by(physical_network=physical_network,
@@ -511,7 +507,7 @@ def alloc_network(db_session, network_profile_id):
     """
     with db_session.begin(subtransactions=True):
         try:
-            network_profile = get_network_profile(network_profile_id)
+            network_profile = get_network_profile(db_session, network_profile_id)
             if network_profile:
                 if network_profile.segment_type == c_const.NETWORK_TYPE_VLAN:
                     return reserve_vlan(db_session, network_profile)
@@ -600,33 +596,32 @@ def _get_sorted_vxlan_ids(vxlan_id_ranges):
     return sorted(vxlan_ids)
 
 
-def sync_vxlan_allocations(vxlan_id_ranges):
+def sync_vxlan_allocations(db_session, vxlan_id_ranges):
     """
     Synchronize vxlan_allocations table with configured vxlan ranges.
 
+    :param db_session = database session
     :param vxlan_id_ranges: list of segment range tuples
     """
-
     vxlan_ids = _get_sorted_vxlan_ids(vxlan_id_ranges)
-    db_session = db.get_session()
-    with db_session.begin():
+    with db_session.begin(subtransactions=True):
         for vxlan_id in vxlan_ids:
-            alloc = get_vxlan_allocation(vxlan_id)
+            alloc = get_vxlan_allocation(db_session, vxlan_id)
             if not alloc:
                 alloc = n1kv_models_v2.N1kvVxlanAllocation(vxlan_id=vxlan_id)
                 db_session.add(alloc)
 
 
-def delete_vxlan_allocations(vxlan_id_ranges):
+def delete_vxlan_allocations(db_session, vxlan_id_ranges):
     """
     Delete vxlan_allocations for deleted network profile range.
 
+    :param db_session: database session
     :param vxlan_id_ranges: list of segment range tuples
     """
 
     vxlan_ids = _get_sorted_vxlan_ids(vxlan_id_ranges)
-    db_session = db.get_session()
-    with db_session.begin():
+    with db_session.begin(subtransactions=True):
         allocs = (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).all())
         for alloc in (a for a in allocs if not a.allocated):
             if alloc.vxlan_id in vxlan_ids:
@@ -635,14 +630,14 @@ def delete_vxlan_allocations(vxlan_id_ranges):
                 db_session.delete(alloc)
 
 
-def get_vxlan_allocation(vxlan_id):
+def get_vxlan_allocation(db_session, vxlan_id):
     """
     Retrieve VXLAN allocation for the given VXLAN ID.
 
+    :param db_session: database session
     :param vxlan_id: integer value representing the segmentation ID
     :returns: allocation object
     """
-    db_session = db.get_session()
     return(db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
            filter_by(vxlan_id=vxlan_id).first())
 
@@ -777,15 +772,15 @@ def add_vxlan_endpoint(ip):
     return vxlan
 
 
-def get_vm_network(policy_profile_id, network_id):
+def get_vm_network(db_session, policy_profile_id, network_id):
     """
     Retrieve a vm_network based on policy profile and network id.
 
+    :param db_session: database session
     :param policy_profile_id: UUID representing policy profile
     :param network_id: UUID representing network
     :returns: VM network object
     """
-    db_session = db.get_session()
     try:
         vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
                       filter_by(profile_id=policy_profile_id,
@@ -795,19 +790,23 @@ def get_vm_network(policy_profile_id, network_id):
         raise c_exc.VMNetworkNotFound(name=None)
 
 
-def add_vm_network(name, policy_profile_id, network_id, port_count):
+def add_vm_network(db_session,
+                   name,
+                   policy_profile_id,
+                   network_id,
+                   port_count):
     """
     Create a VM network.
 
     Add a VM network for a unique combination of network and
     policy profile. All ports having the same policy profile
     on one network will be associated with one VM network.
+    :param db_session: database session
     :param name: string representing the name of the VM network
     :param policy_profile_id: UUID representing policy profile
     :param network_id: UUID representing a network
     :param port_count: integer representing the number of ports on vm network
     """
-    db_session = db.get_session()
     try:
         vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
                       filter_by(name=name).one())
@@ -821,36 +820,37 @@ def add_vm_network(name, policy_profile_id, network_id, port_count):
             db_session.flush()
 
 
-def update_vm_network(name, port_count):
+def update_vm_network(db_session, name, port_count):
     """
     Update a VM network with new port count.
 
+    :param db_session: database session
     :param name: string representing the name of the VM network
     :param port_count: integer representing the number of ports on VM network
     """
-    db_session = db.get_session()
     try:
-        vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
-                      filter_by(name=name).one())
-        if port_count:
-            vm_network['port_count'] = port_count
-        db_session.merge(vm_network)
-        db_session.flush()
-        return vm_network
+        with db_session.begin(subtransactions=True):
+            vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
+                          filter_by(name=name).one())
+            if port_count:
+                vm_network['port_count'] = port_count
+            db_session.merge(vm_network)
+            db_session.flush()
+            return vm_network
     except exc.NoResultFound:
         raise c_exc.VMNetworkNotFound(name=name)
 
 
-def delete_vm_network(policy_profile_id, network_id):
+def delete_vm_network(db_session, policy_profile_id, network_id):
     """
     Delete a VM network.
 
+    :param db_session: database session
     :param policy_profile_id: UUID representing a policy profile
     :param network_id: UUID representing a network
     :returns: deleted VM network object
     """
-    db_session = db.get_session()
-    vm_network = get_vm_network(policy_profile_id, network_id)
+    vm_network = get_vm_network(db_session, policy_profile_id, network_id)
     with db_session.begin(subtransactions=True):
         db_session.delete(vm_network)
         db_session.query(n1kv_models_v2.N1kVmNetwork).filter_by(
@@ -858,10 +858,9 @@ def delete_vm_network(policy_profile_id, network_id):
     return vm_network
 
 
-def create_network_profile(network_profile):
+def create_network_profile(db_session, network_profile):
     """Create network profile."""
     LOG.debug(_("create_network_profile()"))
-    db_session = db.get_session()
     with db_session.begin(subtransactions=True):
         kwargs = {'name': network_profile['name'],
                   'segment_type': network_profile['segment_type']}
@@ -878,14 +877,13 @@ def create_network_profile(network_profile):
             kwargs['sub_type'] = network_profile['sub_type']
         net_profile = n1kv_models_v2.NetworkProfile(**kwargs)
         db_session.add(net_profile)
-        return net_profile
+    return net_profile
 
 
-def delete_network_profile(id):
+def delete_network_profile(db_session, id):
     """Delete network profile."""
     LOG.debug(_("delete_network_profile()"))
-    db_session = db.get_session()
-    network_profile = get_network_profile(id)
+    network_profile = get_network_profile(db_session, id)
     with db_session.begin(subtransactions=True):
         db_session.delete(network_profile)
         db_session.query(n1kv_models_v2.ProfileBinding).filter(
@@ -893,37 +891,24 @@ def delete_network_profile(id):
     return network_profile
 
 
-def update_network_profile(id, network_profile):
+def update_network_profile(db_session, id, network_profile):
     """Update network profile."""
     LOG.debug(_("update_network_profile()"))
-    db_session = db.get_session()
     with db_session.begin(subtransactions=True):
-        _profile = get_network_profile(id)
+        _profile = get_network_profile(db_session, id)
         _profile.update(network_profile)
         db_session.merge(_profile)
         return _profile
 
 
-def get_network_profile(id, fields=None):
+def get_network_profile(db_session, id, fields=None):
     """Get Network Profile."""
     LOG.debug(_("get_network_profile()"))
-    db_session = db.get_session()
     try:
         return db_session.query(
             n1kv_models_v2.NetworkProfile).filter_by(id=id).one()
     except exc.NoResultFound:
         raise c_exc.NetworkProfileIdNotFound(profile_id=id)
-
-
-def get_network_profile_by_name(name):
-    """Get Network Profile by name."""
-    LOG.debug(_("get_network_profile_by_name"))
-    db_session = db.get_session()
-    try:
-        return db_session.query(
-            n1kv_models_v2.NetworkProfile).filter_by(name=name).first()
-    except exc.NoResultFound:
-        return None
 
 
 def _get_network_profiles(**kwargs):
@@ -1129,10 +1114,11 @@ class NetworkProfile_db_mixin(object):
         p = network_profile['network_profile']
         self._validate_network_profile_args(context, p)
         tenant_id = self._get_tenant_id_for_create(context, p)
-        net_profile = create_network_profile(p)
-        create_profile_binding(tenant_id, net_profile.id, 'network')
-        if p.get('add_tenant'):
-            self.add_network_profile_tenant(net_profile.id, p['add_tenant'])
+        with context.session.begin(subtransactions=True):
+            net_profile = create_network_profile(context.session, p)
+            create_profile_binding(tenant_id, net_profile.id, 'network')
+            if p.get('add_tenant'):
+                self.add_network_profile_tenant(net_profile.id, p['add_tenant'])
         return self._make_network_profile_dict(net_profile)
 
     def delete_network_profile(self, context, id):
@@ -1143,7 +1129,7 @@ class NetworkProfile_db_mixin(object):
         :param id: UUID representing network profile to delete
         :returns: deleted network profile dictionary
         """
-        _profile = delete_network_profile(id)
+        _profile = delete_network_profile(context.session, id)
         return self._make_network_profile_dict(_profile)
 
     def update_network_profile(self, context, id, network_profile):
@@ -1160,13 +1146,13 @@ class NetworkProfile_db_mixin(object):
         p = network_profile['network_profile']
         if context.is_admin and 'add_tenant' in p:
             self.add_network_profile_tenant(id, p['add_tenant'])
-            return self._make_network_profile_dict(get_network_profile(id))
+            return self._make_network_profile_dict(get_network_profile(context.session, id))
         elif context.is_admin and 'remove_tenant' in p:
             delete_profile_binding(p['remove_tenant'], id)
-            return self._make_network_profile_dict(get_network_profile(id))
+            return self._make_network_profile_dict(get_network_profile(context.session, id))
         else:
             return self._make_network_profile_dict(
-                update_network_profile(id, p))
+                update_network_profile(context.session, id, p))
 
     def get_network_profile(self, context, id, fields=None):
         """
@@ -1230,7 +1216,7 @@ class NetworkProfile_db_mixin(object):
         :returns: true if network profile exist else raise an exception
         """
         try:
-            get_network_profile(id)
+            get_network_profile(context.session, id)
             return True
         except exc.NoResultFound:
             raise c_exc.NetworkProfileIdNotFound(profile_id=id)
