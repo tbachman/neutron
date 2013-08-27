@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import socket
+
 from abc import ABCMeta
 from abc import abstractmethod
 
@@ -104,6 +106,7 @@ class SecurityGroupRuleExists(qexception.InUse):
 def convert_protocol(value):
     if value is None:
         return
+
     try:
         val = int(value)
         if val >= 0 and val <= 255:
@@ -112,7 +115,7 @@ def convert_protocol(value):
             protocol=value, values=sg_supported_protocols)
     except (ValueError, TypeError):
         if value.lower() in sg_supported_protocols:
-            return value.lower()
+            return socket.getprotobyname(value.lower())
         raise SecurityGroupRuleInvalidProtocol(
             protocol=value, values=sg_supported_protocols)
     except AttributeError:
