@@ -215,7 +215,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         n1kv_db_v2.initialize()
         c_cred.Store.initialize()
-        self._initialize_network_ranges()
         # If no api_extensions_path is provided set the following
         if not q_conf.CONF.api_extensions_path:
             q_conf.CONF.set_override(
@@ -296,27 +295,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 cisco_exceptions.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
 
-    def _initialize_network_ranges(self):
-        self.network_vlan_ranges = {}
-        self.vxlan_id_ranges = []
-        network_profiles = n1kv_db_v2._get_network_profiles()
-        for network_profile in network_profiles:
-            seg_min, seg_max = self.\
-                _get_segment_range(network_profile['segment_range'])
-            if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                self._add_network_vlan_range(network_profile[
-                    'physical_network'], int(seg_min), int(seg_max))
-            elif network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
-                self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
-
-    def _add_network_vlan_range(self, physical_network, vlan_min, vlan_max):
-        self._add_network(physical_network)
-        self.network_vlan_ranges[physical_network].append((vlan_min, vlan_max))
-
-    def _add_network(self, physical_network):
-        if physical_network not in self.network_vlan_ranges:
-            self.network_vlan_ranges[physical_network] = []
-
     def _check_provider_view_auth(self, context, network):
         return policy.check(context,
                             "extension:provider_network:view",
@@ -395,12 +373,14 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
 
         if network_type in [c_const.NETWORK_TYPE_VLAN]:
             if physical_network_set:
-                if physical_network not in self.network_vlan_ranges:
+                network_profiles = n1kv_db_v2._get_network_profiles()
+                for network_profile in network_profiles:
+                    if physical_network == network_profile["physical_network"]:
+                        break
+                else:
                     msg = (_("unknown provider:physical_network %s"),
                            physical_network)
                     raise q_exc.InvalidInput(error_message=msg)
-            elif 'default' in self.network_vlan_ranges:
-                physical_network = 'default'
             else:
                 msg = _("provider:physical_network required")
                 raise q_exc.InvalidInput(error_message=msg)
@@ -661,8 +641,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
                 if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-                    bridge_domain_name = network['name'] + '_bd'
-                    n1kvclient.delete_bridge_domain(bridge_domain_name)
+                    if profile['sub_type'] == c_const.TYPE_VXLAN_MULTICAST:
+                        bridge_domain_name = network['name'] + '_bd'
+                        n1kvclient.delete_bridge_domain(bridge_domain_name)
 
     def _send_update_network_request(self, context, network, add_segments,
                                      del_segments):
@@ -695,7 +676,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         n1kvclient = n1kv_client.Client()
         n1kvclient.update_network_segment(network['name'], body)
 
-    def _send_delete_network_request(self, network):
+    def _send_delete_network_request(self, context, network):
         """
         Send delete network request to VSM
 
@@ -706,8 +687,11 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         n1kvclient = n1kv_client.Client()
         n1kvclient.delete_network_segment(network['name'])
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            name = network['name'] + '_bd'
-            n1kvclient.delete_bridge_domain(name)
+            profile = self.get_network_profile(context,
+                                               network[n1kv_profile.PROFILE_ID])
+            if profile["sub_type"] == c_const.TYPE_VXLAN_MULTICAST:
+                name = network['name'] + '_bd'
+                n1kvclient.delete_bridge_domain(name)
 
     def _send_create_subnet_request(self, context, subnet):
         """
@@ -1088,15 +1072,13 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                         "that is a member of a trunk segment")
                 raise q_exc.InvalidInput(error_message=msg)
             if binding.network_type == c_const.NETWORK_TYPE_VXLAN:
-                n1kv_db_v2.release_vxlan(session, binding.segmentation_id,
-                                         self.vxlan_id_ranges)
+                n1kv_db_v2.release_vxlan(session, binding.segmentation_id)
             elif binding.network_type == c_const.NETWORK_TYPE_VLAN:
                 n1kv_db_v2.release_vlan(session, binding.physical_network,
-                                        binding.segmentation_id,
-                                        self.network_vlan_ranges)
+                                        binding.segmentation_id)
                 # the network_binding record is deleted via cascade from
                 # the network record, so explicit removal is not necessary
-            self._send_delete_network_request(network)
+            self._send_delete_network_request(context, network)
             super(N1kvQuantumPluginV2, self).delete_network(context, id)
             LOG.debug(_("Deleted network: %s"), id)
 
@@ -1346,17 +1328,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         with session.begin(subtransactions=True):
             net_p = (super(N1kvQuantumPluginV2, self).
                     create_network_profile(context, network_profile))
-            if net_p['segment_type'] in [c_const.NETWORK_TYPE_VLAN,
-                                         c_const.NETWORK_TYPE_VXLAN]:
-                seg_min, seg_max = self._get_segment_range(net_p['segment_range'])
-            if net_p['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                self._add_network_vlan_range(net_p['physical_network'],
-                                             int(seg_min),
-                                             int(seg_max))
-                n1kv_db_v2.sync_vlan_allocations(session, self.network_vlan_ranges)
-            elif net_p['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
-                self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
-                n1kv_db_v2.sync_vxlan_allocations(session, self.vxlan_id_ranges)
             try:
                 self._send_create_logical_network_request(net_p)
             except(cisco_exceptions.VSMError,
@@ -1386,17 +1357,5 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         with session.begin(subtransactions=True):
             net_p = (super(N1kvQuantumPluginV2, self).
                      delete_network_profile(context, id))
-            if net_p['segment_type'] in [c_const.NETWORK_TYPE_VLAN,
-                                         c_const.NETWORK_TYPE_VXLAN]:
-                seg_min, seg_max = self._get_segment_range(net_p['segment_range'])
-            if net_p['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                deleted_vlan_ranges = {}
-                deleted_vlan_ranges[net_p["physical_network"]] = []
-                deleted_vlan_ranges[net_p["physical_network"]].append((int(seg_min), int(seg_max)))
-                n1kv_db_v2.delete_vlan_allocations(session, deleted_vlan_ranges)
-            elif net_p['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
-                self.delete_vxlan_ranges = []
-                self.delete_vxlan_ranges.append((int(seg_min), int(seg_max)))
-                n1kv_db_v2.delete_vxlan_allocations(session, self.delete_vxlan_ranges)
             self._send_delete_network_profile_request(net_p)
             self._send_delete_logical_network_request(net_p)

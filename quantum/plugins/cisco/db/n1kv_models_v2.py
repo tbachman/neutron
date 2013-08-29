@@ -49,19 +49,24 @@ class N1kvVlanAllocation(model_base.BASEV2):
     """Represents allocation state of vlan_id on physical network."""
     __tablename__ = 'n1kv_vlan_allocations'
 
+    network_profile_id = Column(String(36),
+                                ForeignKey('network_profiles.id', ondelete="CASCADE"),
+                                primary_key=True)
     physical_network = Column(String(64), nullable=False, primary_key=True)
     vlan_id = Column(Integer, nullable=False, primary_key=True,
                      autoincrement=False)
     allocated = Column(Boolean, nullable=False)
 
-    def __init__(self, physical_network, vlan_id):
+    def __init__(self, network_profile_id, physical_network, vlan_id):
+        self.network_profile_id = network_profile_id
         self.physical_network = physical_network
         self.vlan_id = vlan_id
         self.allocated = False
 
     def __repr__(self):
-        return "<VlanAllocation(%s,%d,%s)>" % (self.physical_network,
-                                               self.vlan_id, self.allocated)
+        return "<VlanAllocation(%s,%s,%d,%s)>" % (self.network_profile_id,
+                                                  self.physical_network,
+                                                  self.vlan_id, self.allocated)
 
 
 class N1kvVxlanAllocation(model_base.BASEV2):
@@ -69,16 +74,22 @@ class N1kvVxlanAllocation(model_base.BASEV2):
     """Represents allocation state of vxlan_id."""
     __tablename__ = 'n1kv_vxlan_allocations'
 
+    network_profile_id = Column(String(36),
+                                ForeignKey('network_profiles.id', ondelete="CASCADE"),
+                                primary_key=True)
     vxlan_id = Column(Integer, nullable=False, primary_key=True,
                       autoincrement=False)
     allocated = Column(Boolean, nullable=False)
 
-    def __init__(self, vxlan_id):
+    def __init__(self, network_profile_id, vxlan_id):
+        self.network_profile_id = network_profile_id
         self.vxlan_id = vxlan_id
         self.allocated = False
 
     def __repr__(self):
-        return "<VxlanAllocation(%d,%s)>" % (self.vxlan_id, self.allocated)
+        return "<VxlanAllocation(%s,%d,%s)>" % (self.network_profile_id,
+                                                self.vxlan_id,
+                                                self.allocated)
 
 
 class N1kvTrunkSegmentBinding(model_base.BASEV2):
