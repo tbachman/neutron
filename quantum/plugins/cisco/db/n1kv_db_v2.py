@@ -18,7 +18,8 @@
 # @author: Rudrajit Tapadar, Cisco Systems Inc.
 # @author: Sergey Sudakovich, Cisco Systems Inc.
 
-
+import netaddr
+from quantum.api.v2 import attributes
 import re
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import and_
@@ -31,7 +32,6 @@ from quantum.openstack.common import log as logging
 from quantum.plugins.cisco.common import cisco_constants as c_const
 from quantum.plugins.cisco.db import n1kv_models_v2
 from quantum.plugins.cisco.common import cisco_exceptions as c_exc
-from quantum.api.v2.attributes import _validate_ip_address
 
 LOG = logging.getLogger(__name__)
 
@@ -1174,6 +1174,34 @@ class NetworkProfile_db_mixin(object):
         self._validate_network_profile(p)
         self._validate_segment_range_uniqueness(context, p)
 
+    def _validate_multicast_ip_range(self, network_profile):
+        """
+        Validate multicast ip range values.
+
+        :param network_profile: network profile object
+        """
+        try:
+            LOG.debug("multicast_ip_range %s",
+                      network_profile['multicast_ip_range'])
+            min_ip, max_ip = network_profile['multicast_ip_range'].split('-')
+            LOG.debug("min_ip %s, max_ip %s", min_ip, max_ip)
+            if not netaddr.IPAddress(min_ip).is_multicast():
+                msg = (_("'%s' is not a valid multicast ip") % min_ip)
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+            if not netaddr.IPAddress(max_ip).is_multicast():
+                msg = (_("'%s' is not a valid multicast ip") % max_ip)
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+        except q_exc.InvalidInput:
+            LOG.exception(msg)
+            raise q_exc.InvalidInput(error_message=msg)
+        except Exception:
+            msg = _("invalid multicast ip address range. "
+                    "example range: 224.1.1.1-224.1.1.10")
+            LOG.exception(msg)
+            raise q_exc.InvalidInput(error_message=msg)
+
     def _validate_segment_range(self, network_profile):
         """
         Validate segment range values.
@@ -1191,8 +1219,8 @@ class NetworkProfile_db_mixin(object):
         :param net_p: network profile object
         """
         if any(net_p[arg] == '' for arg in ['segment_type']):
-            msg = _("arguments segment_type missing"
-                    " for network profile")
+            msg = _("argument segment_type missing "
+                    "for network profile")
             LOG.exception(msg)
             raise q_exc.InvalidInput(error_message=msg)
         _segment_type = net_p['segment_type'].lower()
@@ -1210,26 +1238,36 @@ class NetworkProfile_db_mixin(object):
                         "for network profile")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
-        elif _segment_type == c_const.NETWORK_TYPE_TRUNK:
+        if _segment_type == c_const.NETWORK_TYPE_TRUNK:
             if any(net_p[arg] == '' for arg in ['sub_type']):
-                msg = _("argument sub_type missing"
-                        " for trunk network profile")
+                msg = _("argument sub_type missing "
+                        "for trunk network profile")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
-            elif _segment_type in [c_const.NETWORK_TYPE_VLAN,
-                                   c_const.NETWORK_TYPE_VXLAN]:
-                if any(net_p[arg] == '' for arg in ['segment_range']):
-                    msg = _("argument segment_range missing"
-                            " for network profile")
+        if _segment_type in [c_const.NETWORK_TYPE_VLAN,
+                             c_const.NETWORK_TYPE_VXLAN]:
+            if any(net_p[arg] == '' for arg in ['segment_range']):
+                msg = _("argument segment_range missing"
+                        " for network profile")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+            self._validate_segment_range(net_p)
+        if _segment_type in [c_const.NETWORK_TYPE_VXLAN]:
+            if any(net_p[arg] == '' for arg in ['sub_type']):
+                msg = _("argument sub_type missing "
+                        "for VXLAN network profile.")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+            if net_p['sub_type'] == c_const.TYPE_VXLAN_MULTICAST:
+                multicast_ip_range = net_p.get("multicast_ip_range")
+                if not attributes.is_attr_set(multicast_ip_range):
+                    msg = _("argument multicast_ip_range missing "
+                            "for VXLAN multicast network profile.")
                     LOG.exception(msg)
-                raise q_exc.InvalidInput(error_message=msg)
-                self._validate_segment_range(net_p)
-        elif _segment_type in [c_const.NETWORK_TYPE_VXLAN]:
-            if any(net_p[arg] == '' for arg in ['sub_type']):
-                msg = _("argument sub_type missing"
-                        " for VXLAN network profile.")
-                LOG.exception(msg)
-                raise q_exc.InvalidInput(error_message=msg)
+                    raise q_exc.InvalidInput(error_message=msg)
+                self._validate_multicast_ip_range(net_p)
+            else:
+                net_p['multicast_ip_range'] = '0.0.0.0'
         if _segment_type not in [c_const.NETWORK_TYPE_VXLAN]:
             net_p['multicast_ip_range'] = '0.0.0.0'
 
