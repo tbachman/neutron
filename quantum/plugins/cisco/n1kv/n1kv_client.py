@@ -161,7 +161,8 @@ class Client(object):
 
         :param network: network dict
         """
-        body = {'name': network['name'] + '_bd',
+        body = {'name': network['id'] + '_bd',
+                'tenantId': network['tenant_id'],
                 'segmentId': network[providernet.SEGMENTATION_ID],
                 'subType': vxlan_subtype}
         if vxlan_subtype == c_const.TYPE_VXLAN_MULTICAST:
@@ -235,10 +236,12 @@ class Client(object):
         :param network: network dict
         :param network_profile: network profile dict
         """
-        LOG.debug(_("seg id %s\n"), network_profile['name'])
-        body = {'name': network['name'],
+        LOG.debug(_("seg id %s"), network_profile['name'])
+        body = {'publishName': network['name'],
+                'description': network['name'],
                 'id': network['id'],
-                'networkSegmentPool': network_profile['name'], }
+                'tenantId': network['tenant_id'],
+                'networkSegmentPool': network_profile['id'], }
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VLAN:
             body['vlan'] = network[providernet.SEGMENTATION_ID]
         elif network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
@@ -246,79 +249,90 @@ class Client(object):
         if network_profile['segment_type'] == c_const.NETWORK_TYPE_TRUNK:
             body['mode'] = c_const.NETWORK_TYPE_TRUNK
             body['segmentType'] = network_profile['sub_type']
-            body['add_segments'] = network['add_segment_list']
-            body['del_segments'] = network['del_segment_list']
+            body['addSegments'] = network['add_segment_list']
+            body['delSegments'] = network['del_segment_list']
         else:
             body['mode'] = 'access'
             body['segmentType'] = network_profile['segment_type']
-        return self._post(self.network_segments_path,
+        return self._post(self.network_segment_path % (network['id']),
                           body=body)
 
-    def update_network_segment(self, network_segment_name, body):
+    def update_network_segment(self, network_segment_id, body):
         """
         Update a network segment on the VSM
 
         Network segment on VSM can be updated to associate it with an ip-pool
         or update its description and segment id.
 
-        :param network_segment_name: name of the network segment
+        :param network_segment_id: UUID of the network segment
         :param body: dict of arguments to be updated
         """
-        return self._post(self.network_segment_path % (network_segment_name),
+        return self._post(self.network_segment_path % (network_segment_id),
                           body=body)
 
-    def delete_network_segment(self, network_segment_name):
+    def delete_network_segment(self, network_segment_id):
         """
         Delete a network segment on the VSM
 
         :param network_segment_name: name of the network segment
         """
-        return self._delete(self.network_segment_path % (network_segment_name))
+        return self._delete(self.network_segment_path % (network_segment_id))
 
-    def create_logical_network(self, network_profile):
+    def create_logical_network(self, network_profile, tenant_id):
         """
         Create a logical network on the VSM
 
         :param network_profile: network profile dict
+        :param tenant_id: UUID representing the tenant
         """
         LOG.debug(_("logical network"))
-        body = {'name': network_profile['name']}
-        return self._post(self.logical_networks_path,
+        body = {'description': network_profile['name'],
+                'tenantId': tenant_id}
+        logical_network_name = network_profile['id'] + "_log_net"
+        return self._post(self.logical_network_path % (logical_network_name),
                           body=body)
 
-    def delete_logical_network(self, network_profile):
+    def delete_logical_network(self, logical_network_name):
         """ Delete a logical network on VSM."""
         return self._delete(self.logical_network_path %
-                            (network_profile['name']))
+                            (logical_network_name))
 
-    def create_network_segment_pool(self, network_profile):
+    def create_network_segment_pool(self, network_profile, tenant_id):
         """
         Create a network segment pool on the VSM
 
         :param network_profile: network profile dict
+        :param tenant_id: UUID representing the tenant
         """
         LOG.debug(_("network_segment_pool"))
+        logical_network_name = network_profile['id'] + "_log_net"
         body = {'name': network_profile['name'],
+                'description': network_profile['name'],
                 'id': network_profile['id'],
-                'logicalNetwork': network_profile['name']}
-        return self._post(self.network_segment_pools_path,
+                'logicalNetwork': logical_network_name,
+                'tenantId': tenant_id}
+        return self._post(self.network_segment_pool_path % (network_profile['id']),
                           body=body)
 
-    def update_network_segment_pool(self, network_segment_pool, body):
+    def update_network_segment_pool(self, network_profile):
         """
-        Updates a Network Segment Pool on the VSM
-        """
-        return self._post(self.network_segment_pool_path %
-                          (network_segment_pool), body=body)
+        Update a Network Segment Pool on the VSM
 
-    def delete_network_segment_pool(self, network_segment_pool_name):
+        :param network_profile: network profile dict
+        """
+        body = {'name': network_profile['name'],
+                'description': network_profile['name']}
+        return self._post(self.network_segment_pool_path %
+                          (network_profile['id']), body=body)
+
+    def delete_network_segment_pool(self, network_segment_pool_id):
         """
         Delete a network segment pool on the VSM
 
-        :param network_segment_pool_name: name of the network segment pool
+        :param network_segment_pool_id: UUID representing the network segment pool
         """
         return self._delete(self.network_segment_pool_path %
-                            (network_segment_pool_name))
+                            (network_segment_pool_id))
 
     def create_ip_pool(self, subnet):
         """
@@ -347,28 +361,25 @@ class Client(object):
         body = {'addressRangeStart': address_range_start,
                 'addressRangeEnd': address_range_end,
                 'ipAddressSubnet': netmask,
-                'name': subnet['name'],
+                'description': subnet['name'],
                 'gateway': subnet['gateway_ip'],
-                'networkAddress': network_address}
-        return self._post(self.ip_pools_path,
+                'networkAddress': network_address,
+                'tenantId': subnet['tenant_id']}
+        return self._post(self.ip_pool_path % (subnet['id']),
                           body=body)
 
-    def delete_ip_pool(self, subnet_name):
+    def delete_ip_pool(self, subnet_id):
         """
         Delete an ip-pool on the VSM
 
-        :param subnet_name: name of the subnet
+        :param subnet_id: UUID of the subnet
         """
-        return self._delete(self.ip_pool_path % (subnet_name))
+        return self._delete(self.ip_pool_path % (subnet_id))
 
-    # TODO(abhraut): Removing tenantId from the request as a temp fix to allow
-    #                port create. VSM CLI needs to be fixed. Should not
-    #                interfere since VSM is not using tenantId as of now.
     def create_vm_network(self,
                           port,
                           vm_network_name,
-                          policy_profile,
-                          network_name):
+                          policy_profile):
         """
         Create a VM network on the VSM
 
@@ -377,9 +388,9 @@ class Client(object):
         :param policy_profile: policy profile dict
         """
         body = {'name': vm_network_name,
-                #'tenantId': port['tenant_id'],
+                'tenantId': port['tenant_id'],
                 'networkSegmentId': port['network_id'],
-                'networkSegment': network_name,
+                'networkSegment': port['network_id'],
                 'portProfile': policy_profile['name'],
                 'portProfileId': policy_profile['id'],
                 }
@@ -403,6 +414,8 @@ class Client(object):
         """
         body = {'id': port['id'],
                 'macAddress': port['mac_address']}
+        if port.get('fixed_ips'):
+            body['ipAddress'] = port["fixed_ips"][0]["ip_address"]
         return self._post(self.ports_path % (vm_network_name),
                           body=body)
 

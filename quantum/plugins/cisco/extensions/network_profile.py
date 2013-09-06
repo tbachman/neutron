@@ -30,7 +30,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:regex': attributes.UUID_PATTERN},
                'is_visible': True},
-        'name': {'allow_post': True, 'allow_put': False,
+        'name': {'allow_post': True, 'allow_put': True,
                  'is_visible': True, 'default': ''},
         'segment_type': {'allow_post': True, 'allow_put': False,
                          'is_visible': True, 'default': ''},

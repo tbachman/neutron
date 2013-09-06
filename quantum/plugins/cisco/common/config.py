@@ -82,7 +82,7 @@ cisco_n1k_opts = [
                help=_("N1K Network VLAN Ranges")),
     cfg.StrOpt('default_policy_profile', default='service_profile',
                help=_("N1K default policy profile")),
-    cfg.StrOpt('POLL_DURATION', default='10',
+    cfg.StrOpt('poll_duration', default='10',
                help=_("N1K Policy profile polling duration in seconds")),
 ]
 
