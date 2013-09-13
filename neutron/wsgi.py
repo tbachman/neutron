@@ -37,6 +37,7 @@ import webob.exc
 from neutron.common import constants
 from neutron.common import exceptions as exception
 from neutron import context
+from neutron.openstack.common import gettextutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
@@ -101,7 +102,7 @@ class Server(object):
             family = info[0]
             bind_addr = info[-1]
         except Exception:
-            LOG.exception(_("Unable to listen on %(host)s:%(port)s") %
+            LOG.exception(_("Unable to listen on %(host)s:%(port)s"),
                           {'host': host, 'port': port})
             sys.exit(1)
 
@@ -299,6 +300,17 @@ class Request(webob.Request):
             return _type
         return None
 
+    def best_match_language(self):
+        """Determines best available locale from the Accept-Language header.
+
+        :returns: the best language match or None if the 'Accept-Language'
+                  header was not available in the request.
+        """
+        if not self.accept_language:
+            return None
+        all_languages = gettextutils.get_available_languages('neutron')
+        return self.accept_language.best_match(all_languages)
+
     @property
     def context(self):
         if 'neutron.context' not in self.environ:
@@ -409,9 +421,12 @@ class XMLDictSerializer(DictSerializer):
             node.set(constants.ATOM_XMLNS, constants.ATOM_NAMESPACE)
         node.set(constants.XSI_NIL_ATTR, constants.XSI_NAMESPACE)
         ext_ns = self.metadata.get(constants.EXT_NS, {})
+        ext_ns_bc = self.metadata.get(constants.EXT_NS_COMP, {})
         for prefix in used_prefixes:
             if prefix in ext_ns:
                 node.set('xmlns:' + prefix, ext_ns[prefix])
+            if prefix in ext_ns_bc:
+                node.set('xmlns:' + prefix, ext_ns_bc[prefix])
 
     def _to_xml_node(self, parent, metadata, nodename, data, used_prefixes):
         """Recursive method to convert data members to XML nodes."""
@@ -593,6 +608,10 @@ class XMLDeserializer(TextDeserializer):
             if ns == self.xmlns:
                 return bare_tag
             for prefix, _ns in ext_ns.items():
+                if ns == _ns:
+                    return prefix + ":" + bare_tag
+            ext_ns_bc = self.metadata.get(constants.EXT_NS_COMP, {})
+            for prefix, _ns in ext_ns_bc.items():
                 if ns == _ns:
                     return prefix + ":" + bare_tag
         else:
@@ -945,7 +964,7 @@ class Router(object):
         return self._router
 
     @staticmethod
-    @webob.dec.wsgify
+    @webob.dec.wsgify(RequestClass=Request)
     def _dispatch(req):
         """Dispatch a Request.
 
@@ -955,7 +974,10 @@ class Router(object):
         """
         match = req.environ['wsgiorg.routing_args'][1]
         if not match:
-            return webob.exc.HTTPNotFound()
+            language = req.best_match_language()
+            msg = _('The resource could not be found.')
+            msg = gettextutils.get_localized_message(msg, language)
+            return webob.exc.HTTPNotFound(explanation=msg)
         app = match['controller']
         return app
 
@@ -1160,7 +1182,8 @@ class Controller(object):
         try:
             return serializer.serialize(data, content_type)
         except exception.InvalidContentType:
-            raise webob.exc.HTTPNotAcceptable()
+            msg = _('The requested content type %s is invalid.') % content_type
+            raise webob.exc.HTTPNotAcceptable(msg)
 
     def _deserialize(self, data, content_type):
         """Deserialize the request body to the specefied content type.

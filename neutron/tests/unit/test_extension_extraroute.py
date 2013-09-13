@@ -51,77 +51,71 @@ class ExtraRouteTestExtensionManager(object):
         return []
 
 
-# This plugin class is just for testing
-class TestExtraRoutePlugin(test_l3.TestL3NatPlugin,
-                           extraroute_db.ExtraRoute_db_mixin):
+# This plugin class is for tests with plugin that integrates L3.
+class TestExtraRouteIntPlugin(test_l3.TestL3NatIntPlugin,
+                              extraroute_db.ExtraRoute_db_mixin):
+    supported_extension_aliases = ["external-net", "router", "extraroute"]
+
+
+# A fake l3 service plugin class with extra route capability for
+# plugins that delegate away L3 routing functionality
+class TestExtraRouteL3NatServicePlugin(test_l3.TestL3NatServicePlugin,
+                                       extraroute_db.ExtraRoute_db_mixin):
     supported_extension_aliases = ["router", "extraroute"]
 
 
-class ExtraRouteDBTestCase(test_l3.L3NatDBTestCase):
+class ExtraRouteDBTestCaseBase(object):
+    def _routes_update_prepare(self, router_id, subnet_id,
+                               port_id, routes, skip_add=False):
+        if not skip_add:
+            self._router_interface_action('add', router_id, subnet_id, port_id)
+        self._update('routers', router_id, {'router': {'routes': routes}})
+        return self._show('routers', router_id)
 
-    def setUp(self):
-        test_config['plugin_name_v2'] = (
-            'neutron.tests.unit.'
-            'test_extension_extraroute.TestExtraRoutePlugin')
-        # for these tests we need to enable overlapping ips
-        cfg.CONF.set_default('allow_overlapping_ips', True)
-        cfg.CONF.set_default('max_routes', 3)
-        ext_mgr = ExtraRouteTestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
-        #L3NatDBTestCase will overwrite plugin_name_v2,
-        #so we don't need to setUp on the class here
-        super(test_l3.L3NatTestCaseBase, self).setUp()
-
-        # Set to None to reload the drivers
-        notifier_api._drivers = None
-        cfg.CONF.set_override("notification_driver", [test_notifier.__name__])
+    def _routes_update_cleanup(self, port_id, subnet_id, router_id, routes):
+        self._update('routers', router_id, {'router': {'routes': routes}})
+        self._router_interface_action('remove', router_id, subnet_id, port_id)
 
     def test_route_update_with_one_route(self):
+        routes = [{'destination': '135.207.0.0/16', 'nexthop': '10.0.1.3'}]
         with self.router() as r:
             with self.subnet(cidr='10.0.1.0/24') as s:
                 with self.port(subnet=s, no_delete=True) as p:
-                    body = self._show('routers', r['router']['id'])
-                    body = self._router_interface_action('add',
-                                                         r['router']['id'],
-                                                         None,
-                                                         p['port']['id'])
+                    body = self._routes_update_prepare(r['router']['id'],
+                                                       None, p['port']['id'],
+                                                       routes)
+                    self.assertEqual(body['router']['routes'], routes)
+                    self._routes_update_cleanup(p['port']['id'],
+                                                None, r['router']['id'], [])
 
-                    routes = [{'destination': '135.207.0.0/16',
-                               'nexthop': '10.0.1.3'}]
-
+    def test_route_clear_routes_with_None(self):
+        routes = [{'destination': '135.207.0.0/16',
+                   'nexthop': '10.0.1.3'},
+                  {'destination': '12.0.0.0/8',
+                   'nexthop': '10.0.1.4'},
+                  {'destination': '141.212.0.0/16',
+                   'nexthop': '10.0.1.5'}]
+        with self.router() as r:
+            with self.subnet(cidr='10.0.1.0/24') as s:
+                with self.port(subnet=s, no_delete=True) as p:
+                    self._routes_update_prepare(r['router']['id'],
+                                                None, p['port']['id'], routes)
                     body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes': routes}})
-
-                    body = self._show('routers', r['router']['id'])
-                    self.assertEqual(body['router']['routes'],
-                                     routes)
-                    self._update('routers', r['router']['id'],
-                                 {'router': {'routes': []}})
-                    # clean-up
-                    self._router_interface_action('remove',
-                                                  r['router']['id'],
-                                                  None,
-                                                  p['port']['id'])
+                                        {'router': {'routes': None}})
+                    self.assertEqual(body['router']['routes'], [])
+                    self._routes_update_cleanup(p['port']['id'],
+                                                None, r['router']['id'], [])
 
     def test_router_interface_in_use_by_route(self):
+        routes = [{'destination': '135.207.0.0/16',
+                   'nexthop': '10.0.1.3'}]
         with self.router() as r:
             with self.subnet(cidr='10.0.1.0/24') as s:
                 with self.port(subnet=s, no_delete=True) as p:
-                    body = self._router_interface_action('add',
-                                                         r['router']['id'],
-                                                         None,
-                                                         p['port']['id'])
-
-                    routes = [{'destination': '135.207.0.0/16',
-                               'nexthop': '10.0.1.3'}]
-
-                    body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes': routes}})
-
-                    body = self._show('routers', r['router']['id'])
-                    self.assertEqual(body['router']['routes'],
-                                     routes)
-
+                    body = self._routes_update_prepare(r['router']['id'],
+                                                       None, p['port']['id'],
+                                                       routes)
+                    self.assertEqual(body['router']['routes'], routes)
                     self._router_interface_action(
                         'remove',
                         r['router']['id'],
@@ -129,95 +123,54 @@ class ExtraRouteDBTestCase(test_l3.L3NatDBTestCase):
                         p['port']['id'],
                         expected_code=exc.HTTPConflict.code)
 
-                    self._update('routers', r['router']['id'],
-                                 {'router': {'routes': []}})
-                    # clean-up
-                    self._router_interface_action('remove',
-                                                  r['router']['id'],
-                                                  None,
-                                                  p['port']['id'])
+                    self._routes_update_cleanup(p['port']['id'],
+                                                None, r['router']['id'], [])
 
     def test_route_update_with_multi_routes(self):
+        routes = [{'destination': '135.207.0.0/16',
+                   'nexthop': '10.0.1.3'},
+                  {'destination': '12.0.0.0/8',
+                   'nexthop': '10.0.1.4'},
+                  {'destination': '141.212.0.0/16',
+                   'nexthop': '10.0.1.5'}]
         with self.router() as r:
             with self.subnet(cidr='10.0.1.0/24') as s:
                 with self.port(subnet=s, no_delete=True) as p:
-                    body = self._router_interface_action('add',
-                                                         r['router']['id'],
-                                                         None,
-                                                         p['port']['id'])
-
-                    routes = [{'destination': '135.207.0.0/16',
-                               'nexthop': '10.0.1.3'},
-                              {'destination': '12.0.0.0/8',
-                               'nexthop': '10.0.1.4'},
-                              {'destination': '141.212.0.0/16',
-                               'nexthop': '10.0.1.5'}]
-
-                    body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes': routes}})
-
-                    body = self._show('routers', r['router']['id'])
+                    body = self._routes_update_prepare(r['router']['id'],
+                                                       None, p['port']['id'],
+                                                       routes)
                     self.assertEqual(sorted(body['router']['routes']),
                                      sorted(routes))
-
-                    # clean-up
-                    self._update('routers', r['router']['id'],
-                                 {'router': {'routes': []}})
-                    self._router_interface_action('remove',
-                                                  r['router']['id'],
-                                                  None,
-                                                  p['port']['id'])
+                    self._routes_update_cleanup(p['port']['id'],
+                                                None, r['router']['id'], [])
 
     def test_router_update_delete_routes(self):
+        routes_orig = [{'destination': '135.207.0.0/16',
+                        'nexthop': '10.0.1.3'},
+                       {'destination': '12.0.0.0/8',
+                        'nexthop': '10.0.1.4'},
+                       {'destination': '141.212.0.0/16',
+                        'nexthop': '10.0.1.5'}]
+        routes_left = [{'destination': '135.207.0.0/16',
+                        'nexthop': '10.0.1.3'},
+                       {'destination': '141.212.0.0/16',
+                        'nexthop': '10.0.1.5'}]
         with self.router() as r:
             with self.subnet(cidr='10.0.1.0/24') as s:
                 with self.port(subnet=s, no_delete=True) as p:
-                    body = self._router_interface_action('add',
-                                                         r['router']['id'],
-                                                         None,
-                                                         p['port']['id'])
-
-                    routes_orig = [{'destination': '135.207.0.0/16',
-                                    'nexthop': '10.0.1.3'},
-                                   {'destination': '12.0.0.0/8',
-                                    'nexthop': '10.0.1.4'},
-                                   {'destination': '141.212.0.0/16',
-                                    'nexthop': '10.0.1.5'}]
-
-                    body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes':
-                                                    routes_orig}})
-
-                    body = self._show('routers', r['router']['id'])
+                    body = self._routes_update_prepare(r['router']['id'],
+                                                       None, p['port']['id'],
+                                                       routes_orig)
                     self.assertEqual(sorted(body['router']['routes']),
                                      sorted(routes_orig))
-
-                    routes_left = [{'destination': '135.207.0.0/16',
-                                    'nexthop': '10.0.1.3'},
-                                   {'destination': '141.212.0.0/16',
-                                    'nexthop': '10.0.1.5'}]
-
-                    body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes':
-                                                    routes_left}})
-
-                    body = self._show('routers', r['router']['id'])
+                    body = self._routes_update_prepare(r['router']['id'],
+                                                       None, p['port']['id'],
+                                                       routes_left,
+                                                       skip_add=True)
                     self.assertEqual(sorted(body['router']['routes']),
                                      sorted(routes_left))
-
-                    body = self._update('routers', r['router']['id'],
-                                        {'router': {'routes': []}})
-
-                    body = self._show('routers', r['router']['id'])
-                    self.assertEqual(body['router']['routes'], [])
-
-                    # clean-up
-                    self._update('routers', r['router']['id'],
-                                 {'router': {'routes': []}})
-                    self._router_interface_action('remove',
-                                                  r['router']['id'],
-                                                  None,
-                                                  p['port']['id'])
+                    self._routes_update_cleanup(p['port']['id'],
+                                                None, r['router']['id'], [])
 
     def _test_malformed_route(self, routes):
         with self.router() as r:
@@ -477,5 +430,57 @@ class ExtraRouteDBTestCase(test_l3.L3NatDBTestCase):
                                                     ('name', 'asc'), 2, 2)
 
 
-class ExtraRouteDBTestCaseXML(ExtraRouteDBTestCase):
+class ExtraRouteDBIntTestCase(test_l3.L3NatDBIntTestCase,
+                              ExtraRouteDBTestCaseBase):
+
+    def setUp(self, plugin=None):
+        if not plugin:
+            plugin = ('neutron.tests.unit.test_extension_extraroute.'
+                      'TestExtraRouteIntPlugin')
+        test_config['plugin_name_v2'] = plugin
+        # for these tests we need to enable overlapping ips
+        cfg.CONF.set_default('allow_overlapping_ips', True)
+        cfg.CONF.set_default('max_routes', 3)
+        ext_mgr = ExtraRouteTestExtensionManager()
+        test_config['extension_manager'] = ext_mgr
+        # L3NatDBIntTestCase will overwrite plugin_name_v2,
+        # so we don't need to setUp on the class here
+        super(test_l3.L3BaseForIntTests, self).setUp()
+
+        # Set to None to reload the drivers
+        notifier_api._drivers = None
+        cfg.CONF.set_override("notification_driver", [test_notifier.__name__])
+
+
+class ExtraRouteDBIntTestCaseXML(ExtraRouteDBIntTestCase):
+    fmt = 'xml'
+
+
+class ExtraRouteDBSepTestCase(test_l3.L3NatDBSepTestCase,
+                              ExtraRouteDBTestCaseBase):
+    def setUp(self):
+        # the plugin without L3 support
+        test_config['plugin_name_v2'] = (
+            'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin')
+        # the L3 service plugin
+        l3_plugin = ('neutron.tests.unit.test_extension_extraroute.'
+                     'TestExtraRouteL3NatServicePlugin')
+        service_plugins = {'l3_plugin_name': l3_plugin}
+
+        # for these tests we need to enable overlapping ips
+        cfg.CONF.set_default('allow_overlapping_ips', True)
+        cfg.CONF.set_default('max_routes', 3)
+        ext_mgr = ExtraRouteTestExtensionManager()
+        test_config['extension_manager'] = ext_mgr
+        # L3NatDBSepTestCase will overwrite plugin_name_v2,
+        # so we don't need to setUp on the class here
+        super(test_l3.L3BaseForSepTests, self).setUp(
+            service_plugins=service_plugins)
+
+        # Set to None to reload the drivers
+        notifier_api._drivers = None
+        cfg.CONF.set_override("notification_driver", [test_notifier.__name__])
+
+
+class ExtraRouteDBSepTestCaseXML(ExtraRouteDBSepTestCase):
     fmt = 'xml'

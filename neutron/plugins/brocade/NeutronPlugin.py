@@ -30,6 +30,7 @@ from oslo.config import cfg
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
+from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.common import utils
@@ -38,8 +39,11 @@ from neutron.db import agentschedulers_db
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
+from neutron.db import external_net_db
 from neutron.db import extraroute_db
+from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_rpc_base
+from neutron.db import portbindings_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import portbindings
 from neutron.extensions import securitygroup as ext_sg
@@ -50,6 +54,7 @@ from neutron.openstack.common import rpc
 from neutron.openstack.common.rpc import proxy
 from neutron.plugins.brocade.db import models as brocade_db
 from neutron.plugins.brocade import vlanbm as vbm
+from neutron.plugins.common import constants as svc_constants
 
 
 LOG = logging.getLogger(__name__)
@@ -57,13 +62,19 @@ PLUGIN_VERSION = 0.88
 AGENT_OWNER_PREFIX = "network:"
 NOS_DRIVER = 'neutron.plugins.brocade.nos.nosdriver.NOSdriver'
 
-SWITCH_OPTS = [cfg.StrOpt('address', default=''),
-               cfg.StrOpt('username', default=''),
-               cfg.StrOpt('password', default='', secret=True),
-               cfg.StrOpt('ostype', default='NOS')
+SWITCH_OPTS = [cfg.StrOpt('address', default='',
+                          help=_('The address of the host to SSH to')),
+               cfg.StrOpt('username', default='',
+                          help=_('The SSH username to use')),
+               cfg.StrOpt('password', default='', secret=True,
+                          help=_('The SSH password to use')),
+               cfg.StrOpt('ostype', default='NOS',
+                          help=_('Currently unused'))
                ]
 
-PHYSICAL_INTERFACE_OPTS = [cfg.StrOpt('physical_interface', default='eth0')
+PHYSICAL_INTERFACE_OPTS = [cfg.StrOpt('physical_interface', default='eth0',
+                           help=_('The network interface to use when creating'
+                                  'a port'))
                            ]
 
 cfg.CONF.register_opts(SWITCH_OPTS, "SWITCH")
@@ -195,10 +206,12 @@ class AgentNotifierApi(proxy.RpcProxy,
 
 
 class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
+                      external_net_db.External_net_db_mixin,
                       extraroute_db.ExtraRoute_db_mixin,
                       sg_db_rpc.SecurityGroupServerRpcMixin,
-                      agentschedulers_db.L3AgentSchedulerDbMixin,
-                      agentschedulers_db.DhcpAgentSchedulerDbMixin):
+                      l3_agentschedulers_db.L3AgentSchedulerDbMixin,
+                      agentschedulers_db.DhcpAgentSchedulerDbMixin,
+                      portbindings_base.PortBindingBaseMixin):
     """BrocadePluginV2 is a Neutron plugin.
 
     Provides L2 Virtual Network functionality using VDX. Upper
@@ -213,12 +226,15 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
 
         self.supported_extension_aliases = ["binding", "security-group",
-                                            "router", "extraroute",
-                                            "agent", "l3_agent_scheduler",
+                                            "external-net", "router",
+                                            "extraroute", "agent",
+                                            "l3_agent_scheduler",
                                             "dhcp_agent_scheduler"]
 
         self.physical_interface = (cfg.CONF.PHYSICAL_INTERFACE.
                                    physical_interface)
+        self.base_binding_dict = self._get_base_binding_dict()
+        portbindings_base.register_port_dict_function()
         db.configure_db()
         self.ctxt = context.get_admin_context()
         self.ctxt.session = db.get_session()
@@ -243,19 +259,24 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _setup_rpc(self):
         # RPC support
-        self.topic = topics.PLUGIN
+        self.service_topics = {svc_constants.CORE: topics.PLUGIN,
+                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.rpc_context = context.RequestContext('neutron', 'neutron',
                                                   is_admin=False)
         self.conn = rpc.create_connection(new=True)
         self.callbacks = BridgeRpcCallbacks()
         self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher,
-                                  fanout=False)
+        for svc_topic in self.service_topics.values():
+            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
         self.notifier = AgentNotifierApi(topics.AGENT)
-        self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
-        self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+        self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
+            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        )
+        self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
+            l3_rpc_agent_api.L3AgentNotify
+        )
 
     def create_network(self, context, network):
         """Create network.
@@ -281,7 +302,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 LOG.debug(_("Returning the allocated vlan (%d) to the pool"),
                           vlan_id)
                 self._vlan_bitmap.release_vlan(int(vlan_id))
-                raise Exception("Brocade plugin raised exception, check logs")
+                raise Exception(_("Brocade plugin raised exception, "
+                                  "check logs"))
 
             brocade_db.create_network(context, net_uuid, vlan_id)
             self._process_l3_create(context, net, network['network'])
@@ -321,7 +343,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # Proper formatting
                 LOG.warning(_("Brocade NOS driver:"))
                 LOG.warning(_("%s"), e)
-                raise Exception("Brocade plugin raised exception, check logs")
+                raise Exception(_("Brocade plugin raised exception, "
+                                  "check logs"))
 
             # now ok to delete the network
             brocade_db.delete_network(context, net_id)
@@ -354,6 +377,9 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
             neutron_port = super(BrocadePluginV2, self).create_port(context,
                                                                     port)
+            self._process_portbindings_create_and_update(context,
+                                                         port['port'],
+                                                         neutron_port)
             interface_mac = neutron_port['mac_address']
             port_id = neutron_port['id']
 
@@ -371,7 +397,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # Proper formatting
                 LOG.warning(_("Brocade NOS driver:"))
                 LOG.warning(_("%s"), e)
-                raise Exception("Brocade plugin raised exception, check logs")
+                raise Exception(_("Brocade plugin raised exception, "
+                                  "check logs"))
 
             # save to brocade persistent db
             brocade_db.create_port(context, port_id, network_id,
@@ -379,7 +406,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                    vlan_id, tenant_id, admin_state_up)
 
         # apply any extensions
-        return self._extend_port_dict_binding(context, neutron_port)
+        return neutron_port
 
     def delete_port(self, context, port_id):
         with context.session.begin(subtransactions=True):
@@ -403,10 +430,12 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                     port['port'],
                     port['port'][ext_sg.SECURITYGROUPS])
                 port_updated = True
-
+            port_data = port['port']
             port = super(BrocadePluginV2, self).update_port(
                 context, port_id, port)
-
+            self._process_portbindings_create_and_update(context,
+                                                         port_data,
+                                                         port)
         if original_port['admin_state_up'] != port['admin_state_up']:
             port_updated = True
 
@@ -420,27 +449,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         if port_updated:
             self._notify_port_updated(context, port)
 
-        return self._extend_port_dict_binding(context, port)
-
-    def get_port(self, context, port_id, fields=None):
-        with context.session.begin(subtransactions=True):
-            port = super(BrocadePluginV2, self).get_port(
-                context, port_id, fields)
-            self._extend_port_dict_binding(context, port)
-
-        return self._fields(port, fields)
-
-    def get_ports(self, context, filters=None, fields=None):
-        res_ports = []
-        with context.session.begin(subtransactions=True):
-            ports = super(BrocadePluginV2, self).get_ports(context,
-                                                           filters,
-                                                           fields)
-            for port in ports:
-                self._extend_port_dict_binding(context, port)
-                res_ports.append(self._fields(port, fields))
-
-        return res_ports
+        return port
 
     def _notify_port_updated(self, context, port):
         port_id = port['id']
@@ -449,12 +458,13 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                   bport.physical_interface,
                                   bport.vlan_id)
 
-    def _extend_port_dict_binding(self, context, port):
-        port[portbindings.VIF_TYPE] = portbindings.VIF_TYPE_BRIDGE
-        port[portbindings.CAPABILITIES] = {
-            portbindings.CAP_PORT_FILTER:
-            'security-group' in self.supported_extension_aliases}
-        return port
+    def _get_base_binding_dict(self):
+        binding = {
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_BRIDGE,
+            portbindings.CAPABILITIES: {
+                portbindings.CAP_PORT_FILTER:
+                'security-group' in self.supported_extension_aliases}}
+        return binding
 
     def get_plugin_version(self):
         """Get version number of the plugin."""
