@@ -35,11 +35,8 @@ from quantum.common import topics
 from quantum.common import utils 
 from quantum.db import quota_db
 from quantum.db import agents_db
-from quantum.db import agentschedulers_db
 from quantum.db import db_base_plugin_v2
 from quantum.db import dhcp_rpc_base
-from quantum.db import extraroute_db
-from quantum.db import l3_rpc_base
 from quantum.db import securitygroups_rpc_base as sg_db_rpc
 from quantum.extensions import portbindings
 from quantum.extensions import providernet
@@ -56,6 +53,9 @@ from quantum.plugins.cisco.common import config as c_conf
 from quantum.plugins.cisco.db import n1kv_db_v2
 from quantum.plugins.cisco.db import network_db_v2
 from quantum.plugins.cisco.extensions import n1kv_profile
+from quantum.plugins.cisco.l3.db import composite_agentschedulers_db as agt_sch_db
+from quantum.plugins.cisco.l3.db import l3_cfg_rpc_base
+from quantum.plugins.cisco.l3.db import l3_router_appliance_db
 from quantum.plugins.cisco.n1kv import n1kv_client
 from quantum import policy
 
@@ -66,7 +66,7 @@ pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                       l3_rpc_base.L3RpcCallbackMixin):
+                       l3_cfg_rpc_base.L3CfgRpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
     # Set RPC API version to 1.1 by default.
@@ -83,11 +83,11 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
 
 class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
-                          extraroute_db.ExtraRoute_db_mixin,
+                          l3_router_appliance_db.L3_router_appliance_db_mixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
-                          agentschedulers_db.AgentSchedulerDbMixin):                     
+                          agt_sch_db.CompositeAgentSchedulerDbMixin):
 
     """
     Implement the Quantum abstractions using Cisco Nexus1000V
@@ -105,7 +105,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                    "network_profile_binding", "quotas",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "router", "credential",
-	                               "agent_scheduler"]
+                                   "agent_scheduler"]
 
     binding_view = "extension:port_binding:view"
     binding_set = "extension:port_binding:set"
@@ -126,10 +126,18 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 'extensions:quantum/plugins/cisco/extensions')
         self._setup_vsm()
         self._setup_rpc()
+        #TODO(bobmel): Remove this over-ride of router scheduler default
+        #TODO(bobmel): setting and make it part of installer instead.
+        q_conf.CONF.set_override('router_scheduler_driver',
+                                 'quantum.plugins.cisco.l3.scheduler.'
+                                 'l3_agent_composite_scheduler.'
+                                 'L3AgentCompositeScheduler')
         self.network_scheduler = importutils.import_object(
             q_conf.CONF.network_scheduler_driver)
         self.router_scheduler = importutils.import_object(
             q_conf.CONF.router_scheduler_driver)
+        self.hosting_scheduler = importutils.import_object(
+            q_conf.CONF.hosting_scheduler_driver)
 
     def _setup_rpc(self):
         # RPC support
@@ -1294,7 +1302,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :returns: port dictionary
         """
         LOG.debug(_("Get port: %s"), id)
-        port = super(N1kvQuantumPluginV2, self).get_port(context, id, fields)
+        port = super(N1kvQuantumPluginV2, self).get_port(context, id, None)
         self._extend_port_dict_profile(context, port)
         self._extend_port_dict_binding(context, port)
         return self._fields(port, fields)
@@ -1316,7 +1324,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_("Get ports"))
         ports = super(N1kvQuantumPluginV2, self).get_ports(context, filters,
-                                                           fields)
+                                                           None)
         for port in ports:
             self._extend_port_dict_profile(context, port)
             self._extend_port_dict_binding(context, port)
@@ -1475,21 +1483,3 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                      update_network_profile(context, id, network_profile))
             self._send_update_network_profile_request(net_p)
         return net_p
-    
-    def create_router(self, context, router):
-        """
-        Handle creation of router.
-
-        Schedule router to L3 agent as part of the create handling.
-        :param context: neutron api request context
-        :param router: router dictionary
-        :returns: router object
-        """
-        session = context.session
-        with session.begin(subtransactions=True):
-            rtr = (super(N1kvQuantumPluginV2, self).
-                   create_router(context, router))
-            LOG.debug(_("Scheduling router %s"), rtr['id'])
-            self.schedule_router(context, rtr)
-        return rtr
-

@@ -1,7 +1,6 @@
-#!/usr/bin/env python
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
-# Copyright 2011 Nicira Neworks, Inc.
+# Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -16,19 +15,3 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# Bob: Using a remote interpreter is preferable over remote debugging
-# Bob: so I've disabled the remote debugging changes I did below.
-
-# Bob: Uncomment this line to do remote debugging
-#from quantum.pydev import pydevd
-import eventlet
-eventlet.monkey_patch()
-
-import os
-import sys
-sys.path.insert(0, os.getcwd())
-from quantum.server import main as server
-
-# Bob: Uncomment this line to do remote debugging
-#pydevd.settrace('localhost', port=51234, stdoutToServer=False, stderrToServer=False)
-server()

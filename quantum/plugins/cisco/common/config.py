@@ -93,6 +93,7 @@ cfg.CONF.register_opts(cisco_plugins_opts, "PLUGINS")
 cfg.CONF.register_opts(cisco_test_opts, "CISCO_TEST")
 cfg.CONF.register_opts(scheduler.AGENTS_SCHEDULER_OPTS)
 config.register_root_helper(cfg.CONF)
+cfg.CONF.register_opts(scheduler.AGENTS_SCHEDULER_OPTS)
 
 # shortcuts
 CISCO = cfg.CONF.CISCO
