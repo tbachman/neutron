@@ -642,8 +642,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                            network[n1kv_profile.PROFILE_ID])
         n1kvclient = n1kv_client.Client()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            if profile['sub_type'] == c_const.TYPE_VXLAN_MULTICAST:
-                n1kvclient.create_bridge_domain(network, profile['sub_type'])
+            n1kvclient.create_bridge_domain(network, profile['sub_type'])
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             self._populate_member_segments(context, network, segment_pairs,
                     n1kv_profile.SEGMENT_ADD)
@@ -654,9 +653,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
                 if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-                    if profile['sub_type'] == c_const.TYPE_VXLAN_MULTICAST:
-                        bridge_domain_name = network['name'] + '_bd'
-                        n1kvclient.delete_bridge_domain(bridge_domain_name)
+                    bridge_domain_name = network['id'] + '_bd'
+                    n1kvclient.delete_bridge_domain(bridge_domain_name)
 
     def _send_update_network_request(self, context, network, add_segments,
                                      del_segments):
@@ -702,9 +700,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
             profile = self.get_network_profile(context,
                                                network[n1kv_profile.PROFILE_ID])
-            if profile["sub_type"] == c_const.TYPE_VXLAN_MULTICAST:
-                name = network['id'] + '_bd'
-                n1kvclient.delete_bridge_domain(name)
+            name = network['id'] + '_bd'
+            n1kvclient.delete_bridge_domain(name)
 
     def _send_create_subnet_request(self, context, subnet):
         """

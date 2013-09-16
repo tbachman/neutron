@@ -245,7 +245,7 @@ class Client(object):
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VLAN:
             body['vlan'] = network[providernet.SEGMENTATION_ID]
         elif network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            body['bridgeDomain'] = network['name'] + '_bd'
+            body['bridgeDomain'] = network['id'] + '_bd'
         if network_profile['segment_type'] == c_const.NETWORK_TYPE_TRUNK:
             body['mode'] = c_const.NETWORK_TYPE_TRUNK
             body['segmentType'] = network_profile['sub_type']
