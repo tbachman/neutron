@@ -1131,7 +1131,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         self._add_dummy_profile_only_if_testing(port)
 
         if ('device_id' in port['port'] and port['port']['device_owner'] in
-            ['network:dhcp', 'network:router_interface']):
+            ['network:router_gateway', 'network:floatingip',
+             'network:dhcp', 'network:router_interface']):
             p_profile_name = c_conf.CISCO_N1K.default_policy_profile
             p_profile = self._get_policy_profile_by_name(p_profile_name)
             if p_profile:
@@ -1180,7 +1181,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         self._extend_port_dict_binding(context, port)
         return port
 
-    def delete_port(self, context, id):
+    def delete_port(self, context, id, l3_port_check=True):
         """
         Delete port
 
@@ -1189,6 +1190,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :returns: deleted port object
         """
         with context.session.begin(subtransactions=True):
+            if l3_port_check:
+                self.prevent_l3_port_deletion(context, id)
             self._send_delete_port_request(context, id)
             pt = super(N1kvQuantumPluginV2, self).delete_port(context, id)
             return pt
