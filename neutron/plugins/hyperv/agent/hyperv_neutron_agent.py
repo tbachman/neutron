@@ -21,7 +21,6 @@
 import eventlet
 import platform
 import re
-import sys
 import time
 
 from oslo.config import cfg
@@ -33,6 +32,7 @@ from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.hyperv.agent import utils
+from neutron.plugins.hyperv.agent import utilsfactory
 from neutron.plugins.hyperv.common import constants
 
 LOG = logging.getLogger(__name__)
@@ -51,6 +51,13 @@ agent_opts = [
     cfg.IntOpt('polling_interval', default=2,
                help=_("The number of seconds the agent will wait between "
                       "polling for local device changes.")),
+    cfg.BoolOpt('enable_metrics_collection',
+                default=False,
+                help=_('Enables metrics collections for switch ports by using '
+                       'Hyper-V\'s metric APIs. Collected data can by '
+                       'retrieved by other apps and services, e.g.: '
+                       'Ceilometer. Requires Hyper-V / Windows Server 2012 '
+                       'and above'))
 ]
 
 
@@ -63,7 +70,7 @@ class HyperVNeutronAgent(object):
     RPC_API_VERSION = '1.0'
 
     def __init__(self):
-        self._utils = utils.HyperVUtils()
+        self._utils = utilsfactory.get_hypervutils()
         self._polling_interval = CONF.AGENT.polling_interval
         self._load_physical_network_mappings()
         self._network_vswitch_map = {}
@@ -161,9 +168,9 @@ class HyperVNeutronAgent(object):
             pass
         else:
             raise utils.HyperVException(
-                _("Cannot provision unknown network type %(network_type)s "
-                  "for network %(net_uuid)s"),
-                dict(network_type=network_type, net_uuid=net_uuid))
+                msg=(_("Cannot provision unknown network type %(network_type)s"
+                       " for network %(net_uuid)s") %
+                     dict(network_type=network_type, net_uuid=net_uuid)))
 
         map = {
             'network_type': network_type,
@@ -209,6 +216,9 @@ class HyperVNeutronAgent(object):
         else:
             LOG.error(_('Unsupported network type %s'), network_type)
 
+        if CONF.AGENT.enable_metrics_collection:
+            self._utils.enable_port_metrics_collection(port_id)
+
     def _port_unbound(self, port_id):
         (net_uuid, map) = self._get_network_vswitch_map_by_port_id(port_id)
         if net_uuid not in self._network_vswitch_map:
@@ -247,22 +257,23 @@ class HyperVNeutronAgent(object):
     def _treat_devices_added(self, devices):
         resync = False
         for device in devices:
-            LOG.info(_("Adding port %s") % device)
+            LOG.info(_("Adding port %s"), device)
             try:
                 device_details = self.plugin_rpc.get_device_details(
                     self.context,
                     device,
                     self.agent_id)
             except Exception as e:
-                LOG.debug(_(
-                    "Unable to get port details for device %(device)s: %(e)s"),
-                    dict(device=device, e=e))
+                LOG.debug(
+                    _("Unable to get port details for "
+                      "device %(device)s: %(e)s"),
+                    {'device': device, 'e': e})
                 resync = True
                 continue
             if 'port_id' in device_details:
-                LOG.info(_(
-                    "Port %(device)s updated. Details: %(device_details)s") %
-                    dict(device=device, device_details=device_details))
+                LOG.info(
+                    _("Port %(device)s updated. Details: %(device_details)s"),
+                    {'device': device, 'device_details': device_details})
                 self._treat_vif_port(
                     device_details['port_id'],
                     device_details['network_id'],
@@ -344,4 +355,3 @@ def main():
     # Start everything.
     LOG.info(_("Agent initialized successfully, now running... "))
     plugin.daemon_loop()
-    sys.exit(0)

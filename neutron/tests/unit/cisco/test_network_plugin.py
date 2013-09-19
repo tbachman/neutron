@@ -18,6 +18,7 @@ import inspect
 import logging
 import mock
 
+from oslo.config import cfg
 import webob.exc as wexc
 
 from neutron.api.v2 import base
@@ -25,6 +26,8 @@ from neutron.common import exceptions as q_exc
 from neutron import context
 from neutron.db import db_base_plugin_v2 as base_plugin
 from neutron.db import l3_db
+from neutron.extensions import portbindings
+from neutron.extensions import providernet as provider
 from neutron.manager import NeutronManager
 from neutron.plugins.cisco.common import cisco_constants as const
 from neutron.plugins.cisco.common import cisco_exceptions as c_exc
@@ -33,9 +36,11 @@ from neutron.plugins.cisco.db import nexus_db_v2
 from neutron.plugins.cisco.models import virt_phy_sw_v2
 from neutron.plugins.openvswitch.common import config as ovs_config
 from neutron.plugins.openvswitch import ovs_db_v2
+from neutron.tests.unit import _test_extension_portbindings as test_bindings
 from neutron.tests.unit import test_db_plugin
 
 LOG = logging.getLogger(__name__)
+NEXUS_PLUGIN = 'neutron.plugins.cisco.nexus.cisco_nexus_plugin_v2.NexusPlugin'
 
 
 class CiscoNetworkPluginV2TestCase(test_db_plugin.NeutronDbPluginV2TestCase):
@@ -48,6 +53,10 @@ class CiscoNetworkPluginV2TestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         self.patch_obj = mock.patch.dict('sys.modules',
                                          {'ncclient': self.mock_ncclient})
         self.patch_obj.start()
+
+        cisco_config.cfg.CONF.set_override('nexus_plugin', NEXUS_PLUGIN,
+                                           'CISCO_PLUGINS')
+        self.addCleanup(cisco_config.cfg.CONF.reset)
 
         super(CiscoNetworkPluginV2TestCase, self).setUp(self._plugin_name)
         self.port_create_status = 'DOWN'
@@ -76,7 +85,8 @@ class TestCiscoV2HTTPResponse(CiscoNetworkPluginV2TestCase,
 
 
 class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
-                       test_db_plugin.TestPortsV2):
+                       test_db_plugin.TestPortsV2,
+                       test_bindings.PortBindingsHostTestCaseMixin):
 
     def setUp(self):
         """Configure for end-to-end neutron testing using a mock ncclient.
@@ -105,6 +115,7 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
             },
             cisco_config: {
                 'CISCO': {'nexus_driver': nexus_driver},
+                'CISCO_PLUGINS': {'nexus_plugin': NEXUS_PLUGIN},
             }
         }
 
@@ -116,22 +127,16 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
                                                  group)
             self.addCleanup(module.cfg.CONF.reset)
 
+        # TODO(Henry): add tests for other devices
+        self.dev_id = 'NEXUS_SWITCH'
         self.switch_ip = '1.1.1.1'
-        nexus_config = {(self.switch_ip, 'username'): 'admin',
-                        (self.switch_ip, 'password'): 'mySecretPassword',
-                        (self.switch_ip, 'ssh_port'): 22,
-                        (self.switch_ip, 'testhost'): '1/1'}
-        mock.patch.dict(cisco_config.nexus_dictionary, nexus_config).start()
-
-        patches = {
-            '_should_call_create_net': True,
-            '_get_instance_host': 'testhost'
+        nexus_config = {
+            (self.dev_id, self.switch_ip, 'username'): 'admin',
+            (self.dev_id, self.switch_ip, 'password'): 'mySecretPassword',
+            (self.dev_id, self.switch_ip, 'ssh_port'): 22,
+            (self.dev_id, self.switch_ip, 'testhost'): '1/1',
         }
-        for func in patches:
-            mock_sw = mock.patch.object(
-                virt_phy_sw_v2.VirtualPhysicalSwitchModelV2,
-                func).start()
-            mock_sw.return_value = patches[func]
+        mock.patch.dict(cisco_config.device_dictionary, nexus_config).start()
 
         super(TestCiscoPortsV2, self).setUp()
 
@@ -157,7 +162,7 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
 
     @contextlib.contextmanager
     def _create_port_res(self, name='myname', cidr='1.0.0.0/24',
-                         do_delete=True):
+                         do_delete=True, host_id='testhost'):
         """Create a network, subnet, and port and yield the result.
 
         Create a network, subnet, and port, yield the result,
@@ -169,10 +174,16 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
                           end of testing
 
         """
+        ctx = context.get_admin_context()
         with self.network(name=name) as network:
             with self.subnet(network=network, cidr=cidr) as subnet:
                 net_id = subnet['subnet']['network_id']
-                res = self._create_port(self.fmt, net_id)
+                args = (portbindings.HOST_ID, 'device_id', 'device_owner')
+                port_dict = {portbindings.HOST_ID: host_id,
+                             'device_id': 'testdev',
+                             'device_owner': 'compute:None'}
+                res = self._create_port(self.fmt, net_id, arg_list=args,
+                                        context=ctx, **port_dict)
                 port = self.deserialize(self.fmt, res)
                 try:
                     yield res
@@ -391,12 +402,9 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
         a fictitious host name during port creation.
 
         """
-        with mock.patch.object(virt_phy_sw_v2.VirtualPhysicalSwitchModelV2,
-                               '_get_instance_host') as mock_get_instance:
-            mock_get_instance.return_value = 'fictitious_host'
-            with self._create_port_res(do_delete=False) as res:
-                self._assertExpectedHTTP(res.status_int,
-                                         c_exc.NexusComputeHostNotConfigured)
+        with self._create_port_res(do_delete=False, host_id='fakehost') as res:
+            self._assertExpectedHTTP(res.status_int,
+                                     c_exc.NexusComputeHostNotConfigured)
 
     def test_nexus_bind_fail_rollback(self):
         """Test for proper rollback following add Nexus DB binding failure.
@@ -436,7 +444,8 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
                 device_id = "00fff4d0-e4a8-4a3a-8906-4c4cdafb59f1"
                 if orig_port['port']['device_id'] == device_id:
                     device_id = "600df00d-e4a8-4a3a-8906-feed600df00d"
-                data = {'port': {'device_id': device_id}}
+                data = {'port': {'device_id': device_id,
+                                 portbindings.HOST_ID: 'testhost'}}
                 port_id = orig_port['port']['id']
                 req = self.new_update_request('ports', data, port_id)
                 res = req.get_response(self.api)
@@ -519,6 +528,16 @@ class TestCiscoPortsV2(CiscoNetworkPluginV2TestCase,
 class TestCiscoNetworksV2(CiscoNetworkPluginV2TestCase,
                           test_db_plugin.TestNetworksV2):
 
+    def setUp(self):
+        self.physnet = 'testphys1'
+        self.vlan_range = '100:199'
+        phys_vrange = ':'.join([self.physnet, self.vlan_range])
+        cfg.CONF.set_override('tenant_network_type', 'vlan', 'OVS')
+        cfg.CONF.set_override('network_vlan_ranges', [phys_vrange], 'OVS')
+        self.addCleanup(cfg.CONF.reset)
+
+        super(TestCiscoNetworksV2, self).setUp()
+
     def test_create_networks_bulk_emulated_plugin_failure(self):
         real_has_attr = hasattr
 
@@ -565,6 +584,24 @@ class TestCiscoNetworksV2(CiscoNetworkPluginV2TestCase,
                 res,
                 'networks',
                 wexc.HTTPInternalServerError.code)
+
+    def test_create_provider_vlan_network(self):
+        provider_attrs = {provider.NETWORK_TYPE: 'vlan',
+                          provider.PHYSICAL_NETWORK: self.physnet,
+                          provider.SEGMENTATION_ID: '1234'}
+        arg_list = tuple(provider_attrs.keys())
+        res = self._create_network(self.fmt, 'pvnet1', True,
+                                   arg_list=arg_list, **provider_attrs)
+        net = self.deserialize(self.fmt, res)
+        expected = [('name', 'pvnet1'),
+                    ('admin_state_up', True),
+                    ('status', 'ACTIVE'),
+                    ('shared', False),
+                    (provider.NETWORK_TYPE, 'vlan'),
+                    (provider.PHYSICAL_NETWORK, self.physnet),
+                    (provider.SEGMENTATION_ID, 1234)]
+        for k, v in expected:
+            self.assertEqual(net['network'][k], v)
 
 
 class TestCiscoSubnetsV2(CiscoNetworkPluginV2TestCase,

@@ -26,12 +26,12 @@ import sys
 import time
 
 import eventlet
-import netifaces
 from oslo.config import cfg
 from ryu.app import client
 from ryu.app import conf_switch_key
 from ryu.app import rest_nw_id
 
+from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ovs_lib
 from neutron.agent.linux.ovs_lib import VifPort
 from neutron.agent import rpc as agent_rpc
@@ -66,6 +66,15 @@ def _get_my_ip():
     return addr
 
 
+def _get_ip_from_nic(nic):
+    ip_wrapper = ip_lib.IPWrapper()
+    dev = ip_wrapper.device(nic)
+    addrs = dev.addr.list(scope='global')
+    for addr in addrs:
+        if addr['ip_version'] == 4:
+            return addr['cidr'].split('/')[0]
+
+
 def _get_ip(cfg_ip_str, cfg_interface_str):
     ip = None
     try:
@@ -81,8 +90,11 @@ def _get_ip(cfg_ip_str, cfg_interface_str):
     except (cfg.NoSuchOptError, cfg.NoSuchGroupError):
         pass
     if iface:
-        iface = netifaces.ifaddresses(iface)[netifaces.AF_INET][0]
-        return iface['addr']
+        ip = _get_ip_from_nic(iface)
+        if ip:
+            return ip
+        LOG.warning(_('Could not get IPv4 address from %(nic)s: %(cfg)s'),
+                    {'nic': iface, 'cfg': cfg_interface_str})
 
     return _get_my_ip()
 
@@ -223,7 +235,7 @@ class OVSNeutronOFPRyuAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
                           'tcp:%s:%d' % (ovsdb_ip, ovsdb_port))
 
     def port_update(self, context, **kwargs):
-        LOG.debug(_("port update received"))
+        LOG.debug(_("Port update received"))
         port = kwargs.get('port')
         vif_port = self.int_br.get_vif_port_by_id(port['id'])
         if not vif_port:

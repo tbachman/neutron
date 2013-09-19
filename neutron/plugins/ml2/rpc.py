@@ -20,8 +20,8 @@ from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import api as db_api
 from neutron.db import dhcp_rpc_base
-from neutron.db import l3_rpc_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
+from neutron import manager
 from neutron.openstack.common import log
 from neutron.openstack.common.rpc import proxy
 from neutron.plugins.ml2 import db
@@ -37,7 +37,6 @@ TAP_DEVICE_PREFIX_LENGTH = 3
 
 
 class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                   l3_rpc_base.L3RpcCallbackMixin,
                    sg_db_rpc.SecurityGroupServerRpcCallbackMixin,
                    type_tunnel.TunnelRpcCallbackMixin):
 
@@ -97,18 +96,40 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                               "%(agent_id)s not found in database"),
                             {'device': device, 'agent_id': agent_id})
                 return {'device': device}
+
             segments = db.get_network_segments(session, port.network_id)
             if not segments:
                 LOG.warning(_("Device %(device)s requested by agent "
-                              "%(agent_id)s has network %(network_id) with "
+                              "%(agent_id)s has network %(network_id)s with "
                               "no segments"),
                             {'device': device,
                              'agent_id': agent_id,
                              'network_id': port.network_id})
                 return {'device': device}
-            #TODO(rkukura): Use/create port binding
-            segment = segments[0]
-            new_status = (q_const.PORT_STATUS_ACTIVE if port.admin_state_up
+
+            binding = db.ensure_port_binding(session, port.id)
+            if not binding.segment:
+                LOG.warning(_("Device %(device)s requested by agent "
+                              "%(agent_id)s on network %(network_id)s not "
+                              "bound, vif_type: %(vif_type)s"),
+                            {'device': device,
+                             'agent_id': agent_id,
+                             'network_id': port.network_id,
+                             'vif_type': binding.vif_type})
+                return {'device': device}
+
+            segment = self._find_segment(segments, binding.segment)
+            if not segment:
+                LOG.warning(_("Device %(device)s requested by agent "
+                              "%(agent_id)s on network %(network_id)s "
+                              "invalid segment, vif_type: %(vif_type)s"),
+                            {'device': device,
+                             'agent_id': agent_id,
+                             'network_id': port.network_id,
+                             'vif_type': binding.vif_type})
+                return {'device': device}
+
+            new_status = (q_const.PORT_STATUS_BUILD if port.admin_state_up
                           else q_const.PORT_STATUS_DOWN)
             if port.status != new_status:
                 port.status = new_status
@@ -122,6 +143,11 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
             LOG.debug(_("Returning: %s"), entry)
             return entry
 
+    def _find_segment(self, segments, segment_id):
+        for segment in segments:
+            if segment[api.ID] == segment_id:
+                return segment
+
     def update_device_down(self, rpc_context, **kwargs):
         """Device no longer exists on agent."""
         # TODO(garyk) - live migration and port status
@@ -132,19 +158,12 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                   {'device': device, 'agent_id': agent_id})
         port_id = self._device_to_port_id(device)
 
-        session = db_api.get_session()
-        with session.begin(subtransactions=True):
-            port = db.get_port(session, port_id)
-            if not port:
-                LOG.warning(_("Device %(device)s updated down by agent "
-                              "%(agent_id)s not found in database"),
-                            {'device': device, 'agent_id': agent_id})
-                return {'device': device,
-                        'exists': False}
-            if port.status != q_const.PORT_STATUS_DOWN:
-                port.status = q_const.PORT_STATUS_DOWN
-            return {'device': device,
-                    'exists': True}
+        plugin = manager.NeutronManager.get_plugin()
+        port_exists = plugin.update_port_status(rpc_context, port_id,
+                                                q_const.PORT_STATUS_DOWN)
+
+        return {'device': device,
+                'exists': port_exists}
 
     def update_device_up(self, rpc_context, **kwargs):
         """Device is up on agent."""
@@ -154,15 +173,9 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                   {'device': device, 'agent_id': agent_id})
         port_id = self._device_to_port_id(device)
 
-        session = db_api.get_session()
-        with session.begin(subtransactions=True):
-            port = db.get_port(session, port_id)
-            if not port:
-                LOG.warning(_("Device %(device)s updated up by agent "
-                              "%(agent_id)s not found in database"),
-                            {'device': device, 'agent_id': agent_id})
-            if port.status != q_const.PORT_STATUS_ACTIVE:
-                port.status = q_const.PORT_STATUS_ACTIVE
+        plugin = manager.NeutronManager.get_plugin()
+        plugin.update_port_status(rpc_context, port_id,
+                                  q_const.PORT_STATUS_ACTIVE)
 
 
 class AgentNotifierApi(proxy.RpcProxy,

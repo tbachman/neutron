@@ -49,6 +49,8 @@ class OVSBridge:
         self.br_name = br_name
         self.root_helper = root_helper
         self.re_id = self.re_compile_id()
+        self.defer_apply_flows = False
+        self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
 
     def re_compile_id(self):
         external = 'external_ids\s*'
@@ -92,10 +94,11 @@ class OVSBridge:
         args = ["clear", table_name, record, column]
         self.run_vsctl(args)
 
-    def run_ofctl(self, cmd, args):
+    def run_ofctl(self, cmd, args, process_input=None):
         full_args = ["ovs-ofctl", cmd, self.br_name] + args
         try:
-            return utils.execute(full_args, root_helper=self.root_helper)
+            return utils.execute(full_args, root_helper=self.root_helper,
+                                 process_input=process_input)
         except Exception as e:
             LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
                       {'cmd': full_args, 'exception': e})
@@ -126,6 +129,8 @@ class OVSBridge:
         elif 'priority' in kwargs:
             raise Exception(_("Cannot match priority on flow deletion"))
 
+        table = ('table' in kwargs and ",table=%s" %
+                 kwargs['table'] or '')
         in_port = ('in_port' in kwargs and ",in_port=%s" %
                    kwargs['in_port'] or '')
         dl_type = ('dl_type' in kwargs and ",dl_type=%s" %
@@ -139,14 +144,14 @@ class OVSBridge:
         tun_id = 'tun_id' in kwargs and ",tun_id=%s" % kwargs['tun_id'] or ''
         proto = 'proto' in kwargs and ",%s" % kwargs['proto'] or ''
         ip = ('nw_src' in kwargs or 'nw_dst' in kwargs) and ',ip' or ''
-        match = (in_port + dl_type + dl_vlan + dl_src + dl_dst +
-                (ip or proto) + nw_src + nw_dst + tun_id)
+        match = (table + in_port + dl_type + dl_vlan + dl_src + dl_dst +
+                (proto or ip) + nw_src + nw_dst + tun_id)
         if match:
             match = match[1:]  # strip leading comma
             flow_expr_arr.append(match)
         return flow_expr_arr
 
-    def add_flow(self, **kwargs):
+    def add_or_mod_flow_str(self, **kwargs):
         if "actions" not in kwargs:
             raise Exception(_("Must specify one or more actions"))
         if "priority" not in kwargs:
@@ -155,7 +160,21 @@ class OVSBridge:
         flow_expr_arr = self._build_flow_expr_arr(**kwargs)
         flow_expr_arr.append("actions=%s" % (kwargs["actions"]))
         flow_str = ",".join(flow_expr_arr)
-        self.run_ofctl("add-flow", [flow_str])
+        return flow_str
+
+    def add_flow(self, **kwargs):
+        flow_str = self.add_or_mod_flow_str(**kwargs)
+        if self.defer_apply_flows:
+            self.deferred_flows['add'] += flow_str + '\n'
+        else:
+            self.run_ofctl("add-flow", [flow_str])
+
+    def mod_flow(self, **kwargs):
+        flow_str = self.add_or_mod_flow_str(**kwargs)
+        if self.defer_apply_flows:
+            self.deferred_flows['mod'] += flow_str + '\n'
+        else:
+            self.run_ofctl("mod-flows", [flow_str])
 
     def delete_flows(self, **kwargs):
         kwargs['delete'] = True
@@ -163,12 +182,33 @@ class OVSBridge:
         if "actions" in kwargs:
             flow_expr_arr.append("actions=%s" % (kwargs["actions"]))
         flow_str = ",".join(flow_expr_arr)
-        self.run_ofctl("del-flows", [flow_str])
+        if self.defer_apply_flows:
+            self.deferred_flows['del'] += flow_str + '\n'
+        else:
+            self.run_ofctl("del-flows", [flow_str])
 
-    def add_tunnel_port(self, port_name, remote_ip,
+    def defer_apply_on(self):
+        LOG.debug(_('defer_apply_on'))
+        self.defer_apply_flows = True
+
+    def defer_apply_off(self):
+        LOG.debug(_('defer_apply_off'))
+        for action, flows in self.deferred_flows.items():
+            if flows:
+                LOG.debug(_('Applying following deferred flows '
+                            'to bridge %s'), self.br_name)
+                for line in flows.splitlines():
+                    LOG.debug(_('%(action)s: %(flow)s'),
+                              {'action': action, 'flow': line})
+                self.run_ofctl('%s-flows' % action, ['-'], flows)
+        self.defer_apply_flows = False
+        self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
+
+    def add_tunnel_port(self, port_name, remote_ip, local_ip,
                         tunnel_type=constants.TYPE_GRE,
                         vxlan_udp_port=constants.VXLAN_UDP_PORT):
-        self.run_vsctl(["add-port", self.br_name, port_name])
+        self.run_vsctl(["--", "--may-exist", "add-port", self.br_name,
+                       port_name])
         self.set_db_attribute("Interface", port_name, "type", tunnel_type)
         if tunnel_type == constants.TYPE_VXLAN:
             # Only set the VXLAN UDP port if it's not the default
@@ -178,6 +218,8 @@ class OVSBridge:
                                       vxlan_udp_port)
         self.set_db_attribute("Interface", port_name, "options:remote_ip",
                               remote_ip)
+        self.set_db_attribute("Interface", port_name, "options:local_ip",
+                              local_ip)
         self.set_db_attribute("Interface", port_name, "options:in_key", "flow")
         self.set_db_attribute("Interface", port_name, "options:out_key",
                               "flow")
@@ -350,3 +392,13 @@ def get_installed_ovs_klm_version():
                 return ver[0]
     except Exception:
         LOG.exception(_("Unable to retrieve OVS kernel module version."))
+
+
+def get_bridge_external_bridge_id(root_helper, bridge):
+    args = ["ovs-vsctl", "--timeout=2", "br-get-external-id",
+            bridge, "bridge-id"]
+    try:
+        return utils.execute(args, root_helper=root_helper).strip()
+    except Exception:
+        LOG.exception(_("Bridge %s not found."), bridge)
+        return None

@@ -26,8 +26,8 @@ from oslo.config import cfg
 from webob import exc
 
 from neutron.common import constants
-from neutron.common.test_lib import test_config
 from neutron.db import api as db_api
+from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import l3_gwmode_db
 from neutron.db import models_v2
@@ -85,8 +85,17 @@ class TestExtensionManager(object):
 
 
 # A simple class for making a concrete class out of the mixin
-class TestDbPlugin(test_l3_plugin.TestL3NatPlugin,
-                   l3_gwmode_db.L3_NAT_db_mixin):
+# for the case of a plugin that integrates l3 routing.
+class TestDbIntPlugin(test_l3_plugin.TestL3NatIntPlugin,
+                      l3_gwmode_db.L3_NAT_db_mixin):
+
+    supported_extension_aliases = ["external-net", "router", "ext-gw-mode"]
+
+
+# A simple class for making a concrete class out of the mixin
+# for the case of a l3 router service plugin
+class TestDbSepPlugin(test_l3_plugin.TestL3NatServicePlugin,
+                      l3_gwmode_db.L3_NAT_db_mixin):
 
     supported_extension_aliases = ["router", "ext-gw-mode"]
 
@@ -97,7 +106,7 @@ class TestL3GwModeMixin(base.BaseTestCase):
         super(TestL3GwModeMixin, self).setUp()
         stubout_fixture = self.useFixture(StuboutFixture())
         self.stubs = stubout_fixture.stubs
-        self.target_object = TestDbPlugin()
+        self.target_object = TestDbIntPlugin()
         # Patch the context
         ctx_patcher = mock.patch('neutron.context', autospec=True)
         mock_context = ctx_patcher.start()
@@ -117,7 +126,8 @@ class TestL3GwModeMixin(base.BaseTestCase):
             tenant_id=self.tenant_id,
             admin_state_up=True,
             status=constants.NET_STATUS_ACTIVE)
-        self.net_ext = l3_db.ExternalNetwork(network_id=self.ext_net_id)
+        self.net_ext = external_net_db.ExternalNetwork(
+            network_id=self.ext_net_id)
         self.context.session.add(self.network)
         # The following is to avoid complains from sqlite on
         # foreign key violations
@@ -298,35 +308,38 @@ class TestL3GwModeMixin(base.BaseTestCase):
         self.assertFalse(router.get('enable_snat'))
 
 
-class ExtGwModeTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
-                        test_l3_plugin.L3NatTestCaseMixin):
+class ExtGwModeIntTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
+                           test_l3_plugin.L3NatTestCaseMixin):
 
-    def setUp(self):
+    def setUp(self, plugin=None, svc_plugins=None, ext_mgr=None):
         # Store l3 resource attribute map as it will be updated
         self._l3_attribute_map_bk = {}
         for item in l3.RESOURCE_ATTRIBUTE_MAP:
             self._l3_attribute_map_bk[item] = (
                 l3.RESOURCE_ATTRIBUTE_MAP[item].copy())
-        test_config['plugin_name_v2'] = (
-            'neutron.tests.unit.test_extension_ext_gw_mode.TestDbPlugin')
-        test_config['extension_manager'] = TestExtensionManager()
+        plugin = plugin or (
+            'neutron.tests.unit.test_extension_ext_gw_mode.TestDbIntPlugin')
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
-        super(ExtGwModeTestCase, self).setUp()
+        ext_mgr = ext_mgr or TestExtensionManager()
+        super(ExtGwModeIntTestCase, self).setUp(plugin=plugin,
+                                                ext_mgr=ext_mgr,
+                                                service_plugins=svc_plugins)
         self.addCleanup(self.restore_l3_attribute_map)
 
     def restore_l3_attribute_map(self):
         l3.RESOURCE_ATTRIBUTE_MAP = self._l3_attribute_map_bk
 
     def tearDown(self):
-        super(ExtGwModeTestCase, self).tearDown()
+        super(ExtGwModeIntTestCase, self).tearDown()
 
     def _set_router_external_gateway(self, router_id, network_id,
                                      snat_enabled=None,
                                      expected_code=exc.HTTPOk.code,
                                      neutron_context=None):
         ext_gw_info = {'network_id': network_id}
-        if snat_enabled in (True, False):
+        # Need to set enable_snat also if snat_enabled == False
+        if snat_enabled is not None:
             ext_gw_info['enable_snat'] = snat_enabled
         return self._update('routers', router_id,
                             {'router': {'external_gateway_info':
@@ -378,21 +391,27 @@ class ExtGwModeTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
         self._test_router_create_show_ext_gwinfo(False, False)
 
     def _test_router_update_ext_gwinfo(self, snat_input_value,
-                                       snat_expected_value):
+                                       snat_expected_value=False,
+                                       expected_http_code=exc.HTTPOk.code):
         with self.router() as r:
             with self.subnet() as s:
-                ext_net_id = s['subnet']['network_id']
-                self._set_net_external(ext_net_id)
-                self._set_router_external_gateway(
-                    r['router']['id'], ext_net_id,
-                    snat_enabled=snat_input_value)
-                body = self._show('routers', r['router']['id'])
-                res_gw_info = body['router']['external_gateway_info']
-                self.assertEqual(res_gw_info['network_id'], ext_net_id)
-                self.assertEqual(res_gw_info['enable_snat'],
-                                 snat_expected_value)
-                self._remove_external_gateway_from_router(
-                    r['router']['id'], ext_net_id)
+                try:
+                    ext_net_id = s['subnet']['network_id']
+                    self._set_net_external(ext_net_id)
+                    self._set_router_external_gateway(
+                        r['router']['id'], ext_net_id,
+                        snat_enabled=snat_input_value,
+                        expected_code=expected_http_code)
+                    if expected_http_code != exc.HTTPOk.code:
+                        return
+                    body = self._show('routers', r['router']['id'])
+                    res_gw_info = body['router']['external_gateway_info']
+                    self.assertEqual(res_gw_info['network_id'], ext_net_id)
+                    self.assertEqual(res_gw_info['enable_snat'],
+                                     snat_expected_value)
+                finally:
+                    self._remove_external_gateway_from_router(
+                        r['router']['id'], ext_net_id)
 
     def test_router_update_ext_gwinfo_default(self):
         self._test_router_update_ext_gwinfo(None, True)
@@ -402,3 +421,28 @@ class ExtGwModeTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
 
     def test_router_update_ext_gwinfo_with_snat_disabled(self):
         self._test_router_update_ext_gwinfo(False, False)
+
+    def test_router_update_ext_gwinfo_with_invalid_snat_setting(self):
+        self._test_router_update_ext_gwinfo(
+            'xxx', None, expected_http_code=exc.HTTPBadRequest.code)
+
+
+class ExtGwModeSepTestCase(ExtGwModeIntTestCase):
+
+    def setUp(self, plugin=None):
+        # Store l3 resource attribute map as it will be updated
+        self._l3_attribute_map_bk = {}
+        for item in l3.RESOURCE_ATTRIBUTE_MAP:
+            self._l3_attribute_map_bk[item] = (
+                l3.RESOURCE_ATTRIBUTE_MAP[item].copy())
+        plugin = plugin or (
+            'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin')
+        # the L3 service plugin
+        l3_plugin = ('neutron.tests.unit.test_extension_ext_gw_mode.'
+                     'TestDbSepPlugin')
+        svc_plugins = {'l3_plugin_name': l3_plugin}
+        # for these tests we need to enable overlapping ips
+        cfg.CONF.set_default('allow_overlapping_ips', True)
+        super(ExtGwModeSepTestCase, self).setUp(plugin=plugin,
+                                                svc_plugins=svc_plugins)
+        self.addCleanup(self.restore_l3_attribute_map)

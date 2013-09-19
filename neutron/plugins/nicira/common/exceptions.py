@@ -48,13 +48,31 @@ class NvpNoMorePortsException(NvpPluginException):
                 "Maximum number of ports reached")
 
 
-class NvpPortAlreadyAttached(q_exc.Conflict):
-    message = _("Unable to plug an interface into the port %(port_id)s "
-                "for network %(net_id)s. This interface is already plugged "
-                "into port %(att_port_id)s")
-
-
 class NvpNatRuleMismatch(NvpPluginException):
     message = _("While retrieving NAT rules, %(actual_rules)s were found "
                 "whereas rules in the (%(min_rules)s,%(max_rules)s) interval "
                 "were expected")
+
+
+class NvpInvalidAttachmentType(NvpPluginException):
+    message = _("Invalid NVP attachment type '%(attachment_type)s'")
+
+
+class MaintenanceInProgress(NvpPluginException):
+    message = _("The networking backend is currently in maintenance mode and "
+                "therefore unable to accept requests which modify its state. "
+                "Please try later.")
+
+
+class NvpServicePluginException(q_exc.NeutronException):
+    """NVP Service Plugin exceptions."""
+    message = _("An unexpected error happened "
+                "in the NVP Service Plugin: %(err_msg)s")
+
+
+class NvpServiceOverQuota(q_exc.Conflict):
+    message = _("Quota exceeded for Vcns resource: %(overs)s: %(err_msg)s")
+
+
+class NvpVcnsDriverException(NvpServicePluginException):
+    message = _("Error happened in NVP VCNS Driver: %(err_msg)s")

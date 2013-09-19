@@ -1,4 +1,3 @@
-
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
 # Copyright 2011 OpenStack Foundation.
@@ -34,7 +33,7 @@ from neutron.openstack.common import log as logging
 from neutron import wsgi
 
 
-LOG = logging.getLogger('neutron.api.extensions')
+LOG = logging.getLogger(__name__)
 
 
 class PluginInterface(object):
@@ -63,14 +62,12 @@ class ExtensionDescriptor(object):
 
     Note that you don't have to derive from this class to have a valid
     extension; it is purely a convenience.
-
     """
 
     def get_name(self):
         """The name of the extension.
 
         e.g. 'Fox In Socks'
-
         """
         raise NotImplementedError()
 
@@ -78,7 +75,6 @@ class ExtensionDescriptor(object):
         """The alias for the extension.
 
         e.g. 'FOXNSOX'
-
         """
         raise NotImplementedError()
 
@@ -86,7 +82,6 @@ class ExtensionDescriptor(object):
         """Friendly description for the extension.
 
         e.g. 'The Fox In Socks Extension'
-
         """
         raise NotImplementedError()
 
@@ -94,7 +89,6 @@ class ExtensionDescriptor(object):
         """The XML namespace for the extension.
 
         e.g. 'http://www.fox.in.socks/api/ext/pie/v1.0'
-
         """
         raise NotImplementedError()
 
@@ -102,7 +96,6 @@ class ExtensionDescriptor(object):
         """The timestamp when the extension was last updated.
 
         e.g. '2011-01-22T13:25:27-06:00'
-
         """
         # NOTE(justinsb): Not sure of the purpose of this is, vs the XML NS
         raise NotImplementedError()
@@ -111,7 +104,6 @@ class ExtensionDescriptor(object):
         """List of extensions.ResourceExtension extension objects.
 
         Resources define new nouns, and are accessible through URLs.
-
         """
         resources = []
         return resources
@@ -120,7 +112,6 @@ class ExtensionDescriptor(object):
         """List of extensions.ActionExtension extension objects.
 
         Actions are verbs callable from the API.
-
         """
         actions = []
         return actions
@@ -129,7 +120,6 @@ class ExtensionDescriptor(object):
         """List of extensions.RequestException extension objects.
 
         Request extensions are used to handle custom request data.
-
         """
         request_exts = []
         return request_exts
@@ -179,11 +169,22 @@ class ExtensionDescriptor(object):
             if extended_attrs:
                 attrs.update(extended_attrs)
 
+    def get_alias_namespace_compatibility_map(self):
+        """Returns mappings between extension aliases and XML namespaces.
+
+        The mappings are XML namespaces that should, for backward compatibility
+        reasons, be added to the XML serialization of extended attributes.
+        This allows an established extended attribute to be provided by
+        another extension than the original one while keeping its old alias
+        in the name.
+        :return: A dictionary of extension_aliases and namespace strings.
+        """
+        return {}
+
 
 class ActionExtensionController(wsgi.Controller):
 
     def __init__(self, application):
-
         self.application = application
         self.action_handlers = {}
 
@@ -191,7 +192,6 @@ class ActionExtensionController(wsgi.Controller):
         self.action_handlers[action_name] = handler
 
     def action(self, request, id):
-
         input_dict = self._deserialize(request.body,
                                        request.get_content_type())
         for action_name, handler in self.action_handlers.iteritems():
@@ -249,17 +249,19 @@ class ExtensionController(wsgi.Controller):
         return dict(extension=self._translate(ext))
 
     def delete(self, request, id):
-        raise webob.exc.HTTPNotFound()
+        msg = _('Resource not found.')
+        raise webob.exc.HTTPNotFound(msg)
 
     def create(self, request):
-        raise webob.exc.HTTPNotFound()
+        msg = _('Resource not found.')
+        raise webob.exc.HTTPNotFound(msg)
 
 
 class ExtensionMiddleware(wsgi.Middleware):
     """Extensions middleware for WSGI."""
+
     def __init__(self, application,
                  ext_mgr=None):
-
         self.ext_mgr = (ext_mgr
                         or ExtensionManager(
                         get_extensions_path()))
@@ -370,7 +372,6 @@ class ExtensionMiddleware(wsgi.Middleware):
 
         Returns the routed WSGI app's response or defers to the extended
         application.
-
         """
         match = req.environ['wsgiorg.routing_args'][1]
         if not match:
@@ -392,8 +393,8 @@ class ExtensionManager(object):
 
     See tests/unit/extensions/foxinsocks.py for an
     example extension implementation.
-
     """
+
     def __init__(self, path):
         LOG.info(_('Initializing extension manager.'))
         self.path = path
@@ -479,18 +480,25 @@ class ExtensionManager(object):
                 except AttributeError:
                     LOG.exception(_("Error fetching extended attributes for "
                                     "extension '%s'"), ext.get_name())
+                try:
+                    comp_map = ext.get_alias_namespace_compatibility_map()
+                    attributes.EXT_NSES_BC.update(comp_map)
+                except AttributeError:
+                    LOG.info(_("Extension '%s' provides no backward "
+                               "compatibility map for extended attributes"),
+                             ext.get_name())
                 processed_exts.add(ext_name)
                 del exts_to_process[ext_name]
             if len(processed_exts) == processed_ext_count:
                 # Exit loop as no progress was made
                 break
         if exts_to_process:
-            # NOTE(salv-orlando): Consider wheter this error should be fatal
+            # NOTE(salv-orlando): Consider whether this error should be fatal
             LOG.error(_("It was impossible to process the following "
                         "extensions: %s because of missing requirements."),
                       ','.join(exts_to_process.keys()))
 
-        """Extending extensions' attributes map."""
+        # Extending extensions' attributes map.
         for ext in update_exts:
             ext.update_attributes_map(attr_map)
 
@@ -516,14 +524,12 @@ class ExtensionManager(object):
     def _load_all_extensions(self):
         """Load extensions from the configured path.
 
-        Load extensions from the configured path. The extension name is
-        constructed from the module_name. If your extension module was named
-        widgets.py the extension class within that module should be
-        'Widgets'.
+        The extension name is constructed from the module_name. If your
+        extension module is named widgets.py, the extension class within that
+        module should be 'Widgets'.
 
-        See tests/unit/extensions/foxinsocks.py for an example
-        extension implementation.
-
+        See tests/unit/extensions/foxinsocks.py for an example extension
+        implementation.
         """
         for path in self.path.split(':'):
             if os.path.exists(path):
@@ -576,9 +582,7 @@ class PluginAwareExtensionManager(ExtensionManager):
         super(PluginAwareExtensionManager, self).__init__(path)
 
     def _check_extension(self, extension):
-        """Checks if any of plugins supports extension and implements the
-        extension contract.
-        """
+        """Check if an extension is supported by any plugin."""
         extension_is_valid = super(PluginAwareExtensionManager,
                                    self)._check_extension(extension)
         return (extension_is_valid and
@@ -620,8 +624,8 @@ class RequestExtension(object):
 
     Provide a way to add data to responses and handle custom request data
     that is sent to core Neutron OpenStack API controllers.
-
     """
+
     def __init__(self, method, url_route, handler):
         self.url_route = url_route
         self.handler = handler

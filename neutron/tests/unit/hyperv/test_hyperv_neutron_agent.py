@@ -24,6 +24,7 @@ import mock
 from oslo.config import cfg
 
 from neutron.plugins.hyperv.agent import hyperv_neutron_agent
+from neutron.plugins.hyperv.agent import utilsfactory
 from neutron.tests import base
 
 
@@ -35,11 +36,13 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
         # Avoid rpc initialization for unit tests
         cfg.CONF.set_override('rpc_backend',
                               'neutron.openstack.common.rpc.impl_fake')
+
+        utilsfactory._get_windows_version = mock.MagicMock(
+            return_value='6.2.0')
         self.agent = hyperv_neutron_agent.HyperVNeutronAgent()
         self.agent.plugin_rpc = mock.Mock()
         self.agent.context = mock.Mock()
         self.agent.agent_id = mock.Mock()
-        self.agent._utils = mock.Mock()
 
     def test_port_bound(self):
         port = mock.Mock()
@@ -108,3 +111,19 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
 
     def test_treat_devices_removed_ignores_missing_port(self):
         self.mock_treat_devices_removed(False)
+
+    def test_main(self):
+        with mock.patch.object(hyperv_neutron_agent,
+                               'HyperVNeutronAgent') as plugin:
+            with mock.patch.object(hyperv_neutron_agent.cfg, 'CONF') as cfg:
+                with mock.patch('eventlet.monkey_patch') as eventlet:
+                    with mock.patch.object(
+                        hyperv_neutron_agent,
+                        'logging_config') as logging_config:
+
+                        hyperv_neutron_agent.main()
+
+                        self.assertTrue(cfg.called)
+                        self.assertTrue(eventlet.called)
+                        self.assertTrue(logging_config.setup_logging.called)
+                        plugin.assert_has_calls([mock.call().daemon_loop()])

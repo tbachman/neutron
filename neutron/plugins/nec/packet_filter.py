@@ -89,7 +89,7 @@ class PacketFilterMixin(pf_db.PacketFilterDbMixin):
 
         pf = self.deactivate_packet_filter(context, pf)
         if pf['status'] == pf_db.PF_STATUS_ERROR:
-            msg = _("failed to delete packet_filter id=%s which remains in "
+            msg = _("Failed to delete packet_filter id=%s which remains in "
                     "error status.") % id
             LOG.error(msg)
             raise nexc.OFCException(reason=msg)
@@ -128,7 +128,7 @@ class PacketFilterMixin(pf_db.PacketFilterDbMixin):
                                                   packet_filter)
                 pf_status = pf_db.PF_STATUS_ACTIVE
             except (nexc.OFCException, nexc.OFCConsistencyBroken) as exc:
-                LOG.error(_("failed to create packet_filter id=%(id)s on "
+                LOG.error(_("Failed to create packet_filter id=%(id)s on "
                             "OFC: %(exc)s"), {'id': pf_id, 'exc': str(exc)})
                 pf_status = pf_db.PF_STATUS_ERROR
 
@@ -154,7 +154,7 @@ class PacketFilterMixin(pf_db.PacketFilterDbMixin):
                 self.ofc.delete_ofc_packet_filter(context, pf_id)
                 pf_status = pf_db.PF_STATUS_DOWN
             except (nexc.OFCException, nexc.OFCConsistencyBroken) as exc:
-                LOG.error(_("failed to delete packet_filter id=%(id)s from "
+                LOG.error(_("Failed to delete packet_filter id=%(id)s from "
                             "OFC: %(exc)s"), {'id': pf_id, 'exc': str(exc)})
                 pf_status = pf_db.PF_STATUS_ERROR
         else:
@@ -168,3 +168,22 @@ class PacketFilterMixin(pf_db.PacketFilterDbMixin):
             packet_filter.update({'status': pf_status})
 
         return packet_filter
+
+    def activate_packet_filters_by_port(self, context, port_id):
+        if not self.packet_filter_enabled:
+            return
+
+        filters = {'in_port': [port_id], 'admin_state_up': [True],
+                   'status': [pf_db.PF_STATUS_DOWN]}
+        pfs = self.get_packet_filters(context, filters=filters)
+        for pf in pfs:
+            self.activate_packet_filter_if_ready(context, pf)
+
+    def deactivate_packet_filters_by_port(self, context, port_id):
+        if not self.packet_filter_enabled:
+            return
+
+        filters = {'in_port': [port_id], 'status': [pf_db.PF_STATUS_ACTIVE]}
+        pfs = self.get_packet_filters(context, filters=filters)
+        for pf in pfs:
+            self.deactivate_packet_filter(context, pf)

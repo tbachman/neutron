@@ -24,17 +24,16 @@ import hashlib
 import inspect
 import json
 
-from oslo.config import cfg
-
 #FIXME(danwent): I'd like this file to get to the point where it has
 # no neutron-specific logic in it
 from neutron.common import constants
 from neutron.common import exceptions as exception
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log
-from neutron.plugins.nicira.common import (
-    exceptions as nvp_exc)
+from neutron.plugins.nicira.common import exceptions as nvp_exc
+from neutron.plugins.nicira.common import utils
 from neutron.plugins.nicira import NvpApiClient
+from neutron.version import version_info
 
 
 LOG = log.getLogger(__name__)
@@ -55,9 +54,7 @@ LROUTERNAT_RESOURCE = "nat/lrouter"
 LQUEUE_RESOURCE = "lqueue"
 GWSERVICE_RESOURCE = "gateway-service"
 # Current neutron version
-NEUTRON_VERSION = "2013.1"
-# Other constants for NVP resource
-MAX_DISPLAY_NAME_LEN = 40
+NEUTRON_VERSION = version_info.release_string()
 # Constants for NAT rules
 MATCH_KEYS = ["destination_ip_addresses", "destination_port_max",
               "destination_port_min", "source_ip_addresses",
@@ -67,13 +64,31 @@ SNAT_KEYS = ["to_src_port_min", "to_src_port_max", "to_src_ip_min",
              "to_src_ip_max"]
 
 DNAT_KEYS = ["to_dst_port", "to_dst_ip_min", "to_dst_ip_max"]
-
+# Maximum page size for a single request
+# NOTE(salv-orlando): This might become a version-dependent map should the
+# limit be raised in future versions
+MAX_PAGE_SIZE = 5000
 
 # TODO(bgh): it would be more efficient to use a bitmap
 taken_context_ids = []
 
 # XXX Only cache default for now
 _lqueue_cache = {}
+
+
+def device_id_to_vm_id(device_id, obfuscate=False):
+    # device_id can be longer than 40 characters, for example
+    # a device_id for a dhcp port is like the following:
+    #
+    # dhcp83b5fdeb-e3b4-5e18-ac5f-55161...80747326-47d7-46c2-a87a-cf6d5194877c
+    #
+    # To fit it into an NVP tag we need to hash it, however device_id
+    # used for ports associated to VM's are small enough so let's skip the
+    # hashing
+    if len(device_id) > utils.MAX_DISPLAY_NAME_LEN or obfuscate:
+        return hashlib.sha1(device_id).hexdigest()
+    else:
+        return device_id
 
 
 def version_dependent(wrapped_func):
@@ -85,18 +100,7 @@ def version_dependent(wrapped_func):
         # should return the NVP version
         v = (wrapped_func(cluster, *args, **kwargs) or
              cluster.api_client.get_nvp_version())
-        if v:
-            func = (NVPLIB_FUNC_DICT[func_name][v.major].get(v.minor) or
-                    NVPLIB_FUNC_DICT[func_name][v.major]['default'])
-            if func is None:
-                LOG.error(_('NVP version %(ver)s does not support method '
-                          '%(fun)s.') % {'ver': v, 'fun': func_name})
-                raise NotImplementedError()
-        else:
-            raise NvpApiClient.ServiceUnavailable('NVP version is not set. '
-                                                  'Unable to complete request'
-                                                  'correctly. Check log for '
-                                                  'NVP communication errors.')
+        func = get_function_by_version(func_name, v)
         func_kwargs = kwargs
         arg_spec = inspect.getargspec(func)
         if not arg_spec.keywords and not arg_spec.varargs:
@@ -143,14 +147,6 @@ def _build_uri_path(resource,
     return uri_path
 
 
-def _check_and_truncate_name(display_name):
-    if display_name and len(display_name) > MAX_DISPLAY_NAME_LEN:
-        LOG.debug(_("Specified name:'%s' exceeds maximum length. "
-                    "It will be truncated on NVP"), display_name)
-        return display_name[:MAX_DISPLAY_NAME_LEN]
-    return display_name
-
-
 def get_cluster_version(cluster):
     """Return major/minor version #."""
     # Get control-cluster nodes
@@ -169,21 +165,34 @@ def get_cluster_version(cluster):
     return version
 
 
+def get_single_query_page(path, cluster, page_cursor=None,
+                          page_length=1000, neutron_only=True):
+    params = []
+    if page_cursor:
+        params.append("_page_cursor=%s" % page_cursor)
+    params.append("_page_length=%s" % page_length)
+    # NOTE(salv-orlando): On the NVP backend the 'Quantum' tag is still
+    # used for marking Neutron entities in order to preserve compatibility
+    if neutron_only:
+        params.append("tag_scope=quantum")
+    query_params = "&".join(params)
+    path = "%s%s%s" % (path, "&" if (path.find("?") != -1) else "?",
+                       query_params)
+    body = do_request(HTTP_GET, path, cluster=cluster)
+    # Result_count won't be returned if _page_cursor is supplied
+    return body['results'], body.get('page_cursor'), body.get('result_count')
+
+
 def get_all_query_pages(path, c):
     need_more_results = True
     result_list = []
     page_cursor = None
-    query_marker = "&" if (path.find("?") != -1) else "?"
     while need_more_results:
-        page_cursor_str = (
-            "_page_cursor=%s" % page_cursor if page_cursor else "")
-        body = do_request(HTTP_GET,
-                          "%s%s%s" % (path, query_marker, page_cursor_str),
-                          cluster=c)
-        page_cursor = body.get('page_cursor')
+        results, page_cursor = get_single_query_page(
+            path, c, page_cursor)[:2]
         if not page_cursor:
             need_more_results = False
-        result_list.extend(body['results'])
+        result_list.extend(results)
     return result_list
 
 
@@ -216,27 +225,14 @@ def get_lswitches(cluster, neutron_net_id):
 
 
 def create_lswitch(cluster, tenant_id, display_name,
-                   transport_type=None,
-                   transport_zone_uuid=None,
-                   vlan_id=None,
+                   transport_zones_config,
                    neutron_net_id=None,
                    shared=None,
                    **kwargs):
-    nvp_binding_type = transport_type
-    if transport_type in ('flat', 'vlan'):
-        nvp_binding_type = 'bridge'
-    transport_zone_config = (
-        {"zone_uuid": (transport_zone_uuid or
-                       cluster.default_tz_uuid),
-         "transport_type": (nvp_binding_type or
-                            cfg.CONF.NVP.default_transport_type)})
-    lswitch_obj = {"display_name": _check_and_truncate_name(display_name),
-                   "transport_zones": [transport_zone_config],
+    lswitch_obj = {"display_name": utils.check_and_truncate(display_name),
+                   "transport_zones": transport_zones_config,
                    "tags": [{"tag": tenant_id, "scope": "os_tid"},
                             {"tag": NEUTRON_VERSION, "scope": "quantum"}]}
-    if nvp_binding_type == 'bridge' and vlan_id:
-        transport_zone_config["binding_config"] = {"vlan_translation":
-                                                   [{"transport": vlan_id}]}
     if neutron_net_id:
         lswitch_obj["tags"].append({"tag": neutron_net_id,
                                     "scope": "quantum_net_id"})
@@ -255,7 +251,7 @@ def create_lswitch(cluster, tenant_id, display_name,
 def update_lswitch(cluster, lswitch_id, display_name,
                    tenant_id=None, **kwargs):
     uri = _build_uri_path(LSWITCH_RESOURCE, resource_id=lswitch_id)
-    lswitch_obj = {"display_name": _check_and_truncate_name(display_name),
+    lswitch_obj = {"display_name": utils.check_and_truncate(display_name),
                    "tags": [{"tag": tenant_id, "scope": "os_tid"},
                             {"tag": NEUTRON_VERSION, "scope": "quantum"}]}
     if "tags" in kwargs:
@@ -289,7 +285,7 @@ def create_l2_gw_service(cluster, tenant_id, display_name, devices):
                  "device_id": device['interface_name'],
                  "type": "L2Gateway"} for device in devices]
     gwservice_obj = {
-        "display_name": _check_and_truncate_name(display_name),
+        "display_name": utils.check_and_truncate(display_name),
         "tags": tags,
         "gateways": gateways,
         "type": "L2GatewayServiceConfig"
@@ -299,9 +295,10 @@ def create_l2_gw_service(cluster, tenant_id, display_name, devices):
         json.dumps(gwservice_obj), cluster=cluster)
 
 
-def _prepare_lrouter_body(name, tenant_id, router_type, **kwargs):
+def _prepare_lrouter_body(name, tenant_id, router_type,
+                          distributed=None, **kwargs):
     body = {
-        "display_name": _check_and_truncate_name(name),
+        "display_name": utils.check_and_truncate(name),
         "tags": [{"tag": tenant_id, "scope": "os_tid"},
                  {"tag": NEUTRON_VERSION, "scope": "quantum"}],
         "routing_config": {
@@ -309,12 +306,34 @@ def _prepare_lrouter_body(name, tenant_id, router_type, **kwargs):
         },
         "type": "LogicalRouterConfig"
     }
+    # add the distributed key only if not None (ie: True or False)
+    if distributed is not None:
+        body['distributed'] = distributed
     if kwargs:
         body["routing_config"].update(kwargs)
     return body
 
 
-def create_implicit_routing_lrouter(cluster, tenant_id, display_name, nexthop):
+def _create_implicit_routing_lrouter(cluster, tenant_id,
+                                     display_name, nexthop,
+                                     distributed=None):
+    implicit_routing_config = {
+        "default_route_next_hop": {
+            "gateway_ip_address": nexthop,
+            "type": "RouterNextHop"
+        },
+    }
+    lrouter_obj = _prepare_lrouter_body(
+        display_name, tenant_id,
+        "SingleDefaultRouteImplicitRoutingConfig",
+        distributed=distributed,
+        **implicit_routing_config)
+    return do_request(HTTP_POST, _build_uri_path(LROUTER_RESOURCE),
+                      json.dumps(lrouter_obj), cluster=cluster)
+
+
+def create_implicit_routing_lrouter(cluster, tenant_id,
+                                    display_name, nexthop):
     """Create a NVP logical router on the specified cluster.
 
         :param cluster: The target NVP cluster
@@ -325,24 +344,34 @@ def create_implicit_routing_lrouter(cluster, tenant_id, display_name, nexthop):
         :raise NvpApiException: if there is a problem while communicating
         with the NVP controller
     """
-    implicit_routing_config = {
-        "default_route_next_hop": {
-            "gateway_ip_address": nexthop,
-            "type": "RouterNextHop"
-        },
-    }
-    lrouter_obj = _prepare_lrouter_body(
-        display_name, tenant_id,
-        "SingleDefaultRouteImplicitRoutingConfig",
-        **implicit_routing_config)
-    return do_request(HTTP_POST, _build_uri_path(LROUTER_RESOURCE),
-                      json.dumps(lrouter_obj), cluster=cluster)
+    return _create_implicit_routing_lrouter(
+        cluster, tenant_id, display_name, nexthop)
+
+
+def create_implicit_routing_lrouter_with_distribution(
+    cluster, tenant_id, display_name, nexthop, distributed=None):
+    """Create a NVP logical router on the specified cluster.
+
+    This function also allows for creating distributed lrouters
+    :param cluster: The target NVP cluster
+    :param tenant_id: Identifier of the Openstack tenant for which
+    the logical router is being created
+    :param display_name: Descriptive name of this logical router
+    :param nexthop: External gateway IP address for the logical router
+    :param distributed: True for distributed logical routers
+    :raise NvpApiException: if there is a problem while communicating
+    with the NVP controller
+    """
+    return _create_implicit_routing_lrouter(
+        cluster, tenant_id, display_name, nexthop, distributed)
 
 
 def create_explicit_routing_lrouter(cluster, tenant_id,
-                                    display_name, nexthop):
+                                    display_name, nexthop,
+                                    distributed=None):
     lrouter_obj = _prepare_lrouter_body(
-        display_name, tenant_id, "RoutingTableRoutingConfig")
+        display_name, tenant_id, "RoutingTableRoutingConfig",
+        distributed=distributed)
     router = do_request(HTTP_POST, _build_uri_path(LROUTER_RESOURCE),
                         json.dumps(lrouter_obj), cluster=cluster)
     default_gw = {'prefix': '0.0.0.0/0', 'next_hop_ip': nexthop}
@@ -352,7 +381,11 @@ def create_explicit_routing_lrouter(cluster, tenant_id,
 
 @version_dependent
 def create_lrouter(cluster, *args, **kwargs):
-    pass
+    if kwargs.get('distributed', None):
+        v = cluster.api_client.get_nvp_version()
+        if (v.major < 3) or (v.major >= 3 and v.minor < 1):
+            raise nvp_exc.NvpInvalidVersion(version=v)
+        return v
 
 
 def delete_lrouter(cluster, lrouter_id):
@@ -416,7 +449,7 @@ def update_l2_gw_service(cluster, gateway_id, display_name):
     if not display_name:
         # Nothing to update
         return gwservice_obj
-    gwservice_obj["display_name"] = _check_and_truncate_name(display_name)
+    gwservice_obj["display_name"] = utils.check_and_truncate(display_name)
     return do_request("PUT", _build_uri_path(GWSERVICE_RESOURCE,
                                              resource_id=gateway_id),
                       json.dumps(gwservice_obj), cluster=cluster)
@@ -428,7 +461,7 @@ def update_implicit_routing_lrouter(cluster, r_id, display_name, nexthop):
         # Nothing to update
         return lrouter_obj
     # It seems that this is faster than the doing an if on display_name
-    lrouter_obj["display_name"] = (_check_and_truncate_name(display_name) or
+    lrouter_obj["display_name"] = (utils.check_and_truncate(display_name) or
                                    lrouter_obj["display_name"])
     if nexthop:
         nh_element = lrouter_obj["routing_config"].get(
@@ -502,9 +535,9 @@ def update_explicit_routes_lrouter(cluster, router_id, routes):
                                                      router_id, route)
                 added_routes.append(uuid)
     except NvpApiClient.NvpApiException:
-        LOG.exception(_('Cannot update NVP routes %(routes)s for'
-                      'router %(router_id)s') % {'routes': routes,
-                                                 'router_id': router_id})
+        LOG.exception(_('Cannot update NVP routes %(routes)s for '
+                        'router %(router_id)s'),
+                      {'routes': routes, 'router_id': router_id})
         # Roll back to keep NVP in consistent state
         with excutils.save_and_reraise_exception():
             if nvp_routes:
@@ -619,10 +652,75 @@ def delete_port(cluster, switch, port):
         do_request(HTTP_DELETE, uri, cluster=cluster)
     except exception.NotFound:
         LOG.exception(_("Port or Network not found"))
-        raise exception.PortNotFound(net_id=switch,
-                                     port_id=port)
+        raise exception.PortNotFoundOnNetwork(
+            net_id=switch, port_id=port)
     except NvpApiClient.NvpApiException:
         raise exception.NeutronException()
+
+
+def get_ports(cluster, networks=None, devices=None, tenants=None):
+    vm_filter_obsolete = ""
+    vm_filter = ""
+    tenant_filter = ""
+    # This is used when calling delete_network. Neutron checks to see if
+    # the network has any ports.
+    if networks:
+        # FIXME (Aaron) If we get more than one network_id this won't work
+        lswitch = networks[0]
+    else:
+        lswitch = "*"
+    if devices:
+        for device_id in devices:
+            vm_filter_obsolete = '&'.join(
+                ["tag_scope=vm_id",
+                 "tag=%s" % device_id_to_vm_id(device_id, obfuscate=True),
+                 vm_filter_obsolete])
+            vm_filter = '&'.join(
+                ["tag_scope=vm_id",
+                 "tag=%s" % device_id_to_vm_id(device_id),
+                 vm_filter])
+    if tenants:
+        for tenant in tenants:
+            tenant_filter = '&'.join(
+                ["tag_scope=os_tid",
+                 "tag=%s" % tenant,
+                 tenant_filter])
+
+    nvp_lports = {}
+    lport_fields_str = ("tags,admin_status_enabled,display_name,"
+                        "fabric_status_up")
+    try:
+        lport_query_path_obsolete = (
+            "/ws.v1/lswitch/%s/lport?fields=%s&%s%stag_scope=q_port_id"
+            "&relations=LogicalPortStatus" %
+            (lswitch, lport_fields_str, vm_filter_obsolete, tenant_filter))
+        lport_query_path = (
+            "/ws.v1/lswitch/%s/lport?fields=%s&%s%stag_scope=q_port_id"
+            "&relations=LogicalPortStatus" %
+            (lswitch, lport_fields_str, vm_filter, tenant_filter))
+        try:
+            # NOTE(armando-migliaccio): by querying with obsolete tag first
+            # current deployments won't take the performance hit of a double
+            # call. In release L-** or M-**, we might want to swap the calls
+            # as it's likely that ports with the new tag would outnumber the
+            # ones with the old tag
+            ports = get_all_query_pages(lport_query_path_obsolete, cluster)
+            if not ports:
+                ports = get_all_query_pages(lport_query_path, cluster)
+        except exception.NotFound:
+            LOG.warn(_("Lswitch %s not found in NVP"), lswitch)
+            ports = None
+
+        if ports:
+            for port in ports:
+                for tag in port["tags"]:
+                    if tag["scope"] == "q_port_id":
+                        nvp_lports[tag["tag"]] = port
+    except Exception:
+        err_msg = _("Unable to get ports")
+        LOG.exception(err_msg)
+        raise nvp_exc.NvpPluginException(err_msg=err_msg)
+    return nvp_lports
 
 
 def get_port_by_neutron_tag(cluster, lswitch_uuid, neutron_port_id):
@@ -637,7 +735,7 @@ def get_port_by_neutron_tag(cluster, lswitch_uuid, neutron_port_id):
                           filters={'tag': neutron_port_id,
                                    'tag_scope': 'q_port_id'})
     LOG.debug(_("Looking for port with q_port_id tag '%(neutron_port_id)s' "
-                "on: '%(lswitch_uuid)s'") %
+                "on: '%(lswitch_uuid)s'"),
               {'neutron_port_id': neutron_port_id,
                'lswitch_uuid': lswitch_uuid})
     res = do_request(HTTP_GET, uri, cluster=cluster)
@@ -646,7 +744,7 @@ def get_port_by_neutron_tag(cluster, lswitch_uuid, neutron_port_id):
         if num_results > 1:
             LOG.warn(_("Found '%(num_ports)d' ports with "
                        "q_port_id tag: '%(neutron_port_id)s'. "
-                       "Only 1 was expected.") %
+                       "Only 1 was expected."),
                      {'num_ports': num_results,
                       'neutron_port_id': neutron_port_id})
         return res["results"][0]
@@ -662,12 +760,14 @@ def get_port(cluster, network, port, relations=None):
         return do_request(HTTP_GET, uri, cluster=cluster)
     except exception.NotFound as e:
         LOG.error(_("Port or Network not found, Error: %s"), str(e))
-        raise exception.PortNotFound(port_id=port, net_id=network)
+        raise exception.PortNotFoundOnNetwork(
+            port_id=port, net_id=network)
 
 
 def _configure_extensions(lport_obj, mac_address, fixed_ips,
                           port_security_enabled, security_profiles,
-                          queue_id, mac_learning_enabled):
+                          queue_id, mac_learning_enabled,
+                          allowed_address_pairs):
     lport_obj['allowed_address_pairs'] = []
     if port_security_enabled:
         for fixed_ip in fixed_ips:
@@ -685,26 +785,29 @@ def _configure_extensions(lport_obj, mac_address, fixed_ips,
     if mac_learning_enabled is not None:
         lport_obj["mac_learning"] = mac_learning_enabled
         lport_obj["type"] = "LogicalSwitchPortConfig"
+    for address_pair in list(allowed_address_pairs or []):
+        lport_obj['allowed_address_pairs'].append(
+            {'mac_address': address_pair['mac_address'],
+             'ip_address': address_pair['ip_address']})
 
 
 def update_port(cluster, lswitch_uuid, lport_uuid, neutron_port_id, tenant_id,
                 display_name, device_id, admin_status_enabled,
                 mac_address=None, fixed_ips=None, port_security_enabled=None,
                 security_profiles=None, queue_id=None,
-                mac_learning_enabled=None):
-    # device_id can be longer than 40 so we rehash it
-    hashed_device_id = hashlib.sha1(device_id).hexdigest()
+                mac_learning_enabled=None, allowed_address_pairs=None):
     lport_obj = dict(
         admin_status_enabled=admin_status_enabled,
-        display_name=_check_and_truncate_name(display_name),
+        display_name=utils.check_and_truncate(display_name),
         tags=[dict(scope='os_tid', tag=tenant_id),
               dict(scope='q_port_id', tag=neutron_port_id),
-              dict(scope='vm_id', tag=hashed_device_id),
+              dict(scope='vm_id', tag=device_id_to_vm_id(device_id)),
               dict(scope='quantum', tag=NEUTRON_VERSION)])
 
     _configure_extensions(lport_obj, mac_address, fixed_ips,
                           port_security_enabled, security_profiles,
-                          queue_id, mac_learning_enabled)
+                          queue_id, mac_learning_enabled,
+                          allowed_address_pairs)
 
     path = "/ws.v1/lswitch/" + lswitch_uuid + "/lport/" + lport_uuid
     try:
@@ -716,37 +819,37 @@ def update_port(cluster, lswitch_uuid, lport_uuid, neutron_port_id, tenant_id,
         return result
     except exception.NotFound as e:
         LOG.error(_("Port or Network not found, Error: %s"), str(e))
-        raise exception.PortNotFound(port_id=lport_uuid, net_id=lswitch_uuid)
+        raise exception.PortNotFoundOnNetwork(
+            port_id=lport_uuid, net_id=lswitch_uuid)
 
 
 def create_lport(cluster, lswitch_uuid, tenant_id, neutron_port_id,
                  display_name, device_id, admin_status_enabled,
                  mac_address=None, fixed_ips=None, port_security_enabled=None,
                  security_profiles=None, queue_id=None,
-                 mac_learning_enabled=None):
+                 mac_learning_enabled=None, allowed_address_pairs=None):
     """Creates a logical port on the assigned logical switch."""
-    # device_id can be longer than 40 so we rehash it
-    hashed_device_id = hashlib.sha1(device_id).hexdigest()
-    display_name = _check_and_truncate_name(display_name)
+    display_name = utils.check_and_truncate(display_name)
     lport_obj = dict(
         admin_status_enabled=admin_status_enabled,
         display_name=display_name,
         tags=[dict(scope='os_tid', tag=tenant_id),
               dict(scope='q_port_id', tag=neutron_port_id),
-              dict(scope='vm_id', tag=hashed_device_id),
+              dict(scope='vm_id', tag=device_id_to_vm_id(device_id)),
               dict(scope='quantum', tag=NEUTRON_VERSION)],
     )
 
     _configure_extensions(lport_obj, mac_address, fixed_ips,
                           port_security_enabled, security_profiles,
-                          queue_id, mac_learning_enabled)
+                          queue_id, mac_learning_enabled,
+                          allowed_address_pairs)
 
     path = _build_uri_path(LSWITCHPORT_RESOURCE,
                            parent_resource_id=lswitch_uuid)
     result = do_request(HTTP_POST, path, json.dumps(lport_obj),
                         cluster=cluster)
 
-    LOG.debug(_("Created logical port %(result)s on logical swtich %(uuid)s"),
+    LOG.debug(_("Created logical port %(result)s on logical switch %(uuid)s"),
               {'result': result['uuid'], 'uuid': lswitch_uuid})
     return result
 
@@ -864,9 +967,8 @@ def plug_router_port_attachment(cluster, router_id, port_id,
         if attachment_vlan:
             attach_obj['vlan_id'] = attachment_vlan
     else:
-        # TODO(salv-orlando): avoid raising generic exception
-        raise Exception(_("Invalid NVP attachment type '%s'"),
-                        nvp_attachment_type)
+        raise nvp_exc.NvpInvalidAttachmentType(
+            attachment_type=nvp_attachment_type)
     return do_request(HTTP_PUT, uri, json.dumps(attach_obj), cluster=cluster)
 
 
@@ -878,7 +980,8 @@ def get_port_status(cluster, lswitch_id, port_id):
                        (lswitch_id, port_id), cluster=cluster)
     except exception.NotFound as e:
         LOG.error(_("Port not found, Error: %s"), str(e))
-        raise exception.PortNotFound(port_id=port_id, net_id=lswitch_id)
+        raise exception.PortNotFoundOnNetwork(
+            port_id=port_id, net_id=lswitch_id)
     if r['link_status_up'] is True:
         return constants.PORT_STATUS_ACTIVE
     else:
@@ -926,10 +1029,11 @@ def format_exception(etype, e, exception_locals):
     :param execption_locals: calling context local variable dict.
     :returns: a formatted string.
     """
-    msg = ["Error. %s exception: %s." % (etype, e)]
+    msg = [_("Error. %(type)s exception: %(exc)s.") %
+           {'type': etype, 'exc': e}]
     l = dict((k, v) for k, v in exception_locals.iteritems()
              if k != 'request')
-    msg.append("locals=[%s]" % str(l))
+    msg.append(_("locals=[%s]") % str(l))
     return ' '.join(msg)
 
 
@@ -948,6 +1052,8 @@ def do_request(*args, **kwargs):
             return json.loads(res)
     except NvpApiClient.ResourceNotFound:
         raise exception.NotFound()
+    except NvpApiClient.ReadOnlyMode:
+        raise nvp_exc.MaintenanceInProgress()
 
 
 def mk_body(**kwargs):
@@ -976,7 +1082,7 @@ def create_security_profile(cluster, tenant_id, security_profile):
                      {'ethertype': 'IPv6'}]}
     tags = [dict(scope='os_tid', tag=tenant_id),
             dict(scope='quantum', tag=NEUTRON_VERSION)]
-    display_name = _check_and_truncate_name(security_profile.get('name'))
+    display_name = utils.check_and_truncate(security_profile.get('name'))
     body = mk_body(
         tags=tags, display_name=display_name,
         logical_port_ingress_rules=(
@@ -1065,6 +1171,11 @@ def create_lrouter_nosnat_rule_v2(cluster, _router_id, _match_criteria=None):
                "this version of the NVP platform"))
 
 
+def create_lrouter_nodnat_rule_v2(cluster, _router_id, _match_criteria=None):
+    LOG.info(_("No DNAT rules cannot be applied as they are not available in "
+               "this version of the NVP platform"))
+
+
 def create_lrouter_snat_rule_v2(cluster, router_id,
                                 min_src_ip, max_src_ip, match_criteria=None):
 
@@ -1093,6 +1204,18 @@ def create_lrouter_nosnat_rule_v3(cluster, router_id, order=None,
     nat_match_obj = _create_nat_match_obj(**match_criteria)
     nat_rule_obj = {
         "type": "NoSourceNatRule",
+        "match": nat_match_obj
+    }
+    if order:
+        nat_rule_obj['order'] = order
+    return _create_lrouter_nat_rule(cluster, router_id, nat_rule_obj)
+
+
+def create_lrouter_nodnat_rule_v3(cluster, router_id, order=None,
+                                  match_criteria=None):
+    nat_match_obj = _create_nat_match_obj(**match_criteria)
+    nat_rule_obj = {
+        "type": "NoDestinationNatRule",
         "match": nat_match_obj
     }
     if order:
@@ -1137,6 +1260,11 @@ def create_lrouter_snat_rule(cluster, *args, **kwargs):
 
 @version_dependent
 def create_lrouter_nosnat_rule(cluster, *args, **kwargs):
+    pass
+
+
+@version_dependent
+def create_lrouter_nodnat_rule(cluster, *args, **kwargs):
     pass
 
 
@@ -1207,28 +1335,52 @@ def update_lrouter_port_ips(cluster, lrouter_id, lport_id,
         raise nvp_exc.NvpPluginException(err_msg=msg)
 
 
+DEFAULT = -1
 NVPLIB_FUNC_DICT = {
     'create_lrouter': {
-        2: {'default': create_implicit_routing_lrouter, },
-        3: {'default': create_implicit_routing_lrouter,
+        2: {DEFAULT: create_implicit_routing_lrouter, },
+        3: {DEFAULT: create_implicit_routing_lrouter,
+            1: create_implicit_routing_lrouter_with_distribution,
             2: create_explicit_routing_lrouter, }, },
     'update_lrouter': {
-        2: {'default': update_implicit_routing_lrouter, },
-        3: {'default': update_implicit_routing_lrouter,
+        2: {DEFAULT: update_implicit_routing_lrouter, },
+        3: {DEFAULT: update_implicit_routing_lrouter,
             2: update_explicit_routing_lrouter, }, },
     'create_lrouter_dnat_rule': {
-        2: {'default': create_lrouter_dnat_rule_v2, },
-        3: {'default': create_lrouter_dnat_rule_v3, }, },
+        2: {DEFAULT: create_lrouter_dnat_rule_v2, },
+        3: {DEFAULT: create_lrouter_dnat_rule_v3, }, },
     'create_lrouter_snat_rule': {
-        2: {'default': create_lrouter_snat_rule_v2, },
-        3: {'default': create_lrouter_snat_rule_v3, }, },
+        2: {DEFAULT: create_lrouter_snat_rule_v2, },
+        3: {DEFAULT: create_lrouter_snat_rule_v3, }, },
     'create_lrouter_nosnat_rule': {
-        2: {'default': create_lrouter_nosnat_rule_v2, },
-        3: {'default': create_lrouter_nosnat_rule_v3, }, },
+        2: {DEFAULT: create_lrouter_nosnat_rule_v2, },
+        3: {DEFAULT: create_lrouter_nosnat_rule_v3, }, },
+    'create_lrouter_nodnat_rule': {
+        2: {DEFAULT: create_lrouter_nodnat_rule_v2, },
+        3: {DEFAULT: create_lrouter_nodnat_rule_v3, }, },
     'get_default_route_explicit_routing_lrouter': {
-        3: {2: get_default_route_explicit_routing_lrouter_v32,
-            3: get_default_route_explicit_routing_lrouter_v33, }, },
+        3: {DEFAULT: get_default_route_explicit_routing_lrouter_v32,
+            2: get_default_route_explicit_routing_lrouter_v32, }, },
 }
+
+
+def get_function_by_version(func_name, nvp_ver):
+    if nvp_ver:
+        if nvp_ver.major not in NVPLIB_FUNC_DICT[func_name]:
+            major = max(NVPLIB_FUNC_DICT[func_name].keys())
+            minor = max(NVPLIB_FUNC_DICT[func_name][major].keys())
+            if major > nvp_ver.major:
+                raise NotImplementedError(_("Operation may not be supported"))
+        else:
+            major = nvp_ver.major
+            minor = nvp_ver.minor
+            if nvp_ver.minor not in NVPLIB_FUNC_DICT[func_name][major]:
+                minor = DEFAULT
+        return NVPLIB_FUNC_DICT[func_name][major][minor]
+    else:
+        msg = _('NVP version is not set. Unable to complete request '
+                'correctly. Check log for NVP communication errors.')
+        raise NvpApiClient.ServiceUnavailable(message=msg)
 
 
 # -----------------------------------------------------------------------------
@@ -1266,8 +1418,8 @@ def config_helper(http_method, http_uri, cluster):
                           http_uri,
                           cluster=cluster)
     except Exception as e:
-        msg = ("Error '%s' when connecting to controller(s): %s."
-               % (str(e), ', '.join(cluster.nvp_controllers)))
+        msg = (_("Error '%(err)s' when connecting to controller(s): %(ctl)s.")
+               % {'err': str(e), 'ctl': ', '.join(cluster.nvp_controllers)})
         raise Exception(msg)
 
 

@@ -38,7 +38,7 @@ BALANCE_MAP = {
 }
 
 STATS_MAP = {
-    constants.STATS_CURRENT_CONNECTIONS: 'qcur',
+    constants.STATS_ACTIVE_CONNECTIONS: 'qcur',
     constants.STATS_MAX_CONNECTIONS: 'qmax',
     constants.STATS_CURRENT_SESSIONS: 'scur',
     constants.STATS_MAX_SESSIONS: 'smax',
@@ -50,6 +50,7 @@ STATS_MAP = {
 }
 
 ACTIVE = qconstants.ACTIVE
+INACTIVE = qconstants.INACTIVE
 
 
 def save_config(conf_path, logical_config, socket_path=None):
@@ -137,7 +138,7 @@ def _build_backend(config):
 
     # add the members
     for member in config['members']:
-        if member['status'] == ACTIVE and member['admin_state_up']:
+        if member['status'] in (ACTIVE, INACTIVE) and member['admin_state_up']:
             server = (('server %(id)s %(address)s:%(protocol_port)s '
                        'weight %(weight)s') % member) + server_addon
             if _has_http_cookie_persistence(config):
@@ -158,7 +159,11 @@ def _get_first_ip_from_port(port):
 def _get_server_health_option(config):
     """return the first active health option."""
     for monitor in config['healthmonitors']:
-        if monitor['status'] == ACTIVE and monitor['admin_state_up']:
+        # not checking the status of healthmonitor for two reasons:
+        # 1) status field is absent in HealthMonitor model
+        # 2) only active HealthMonitors are fetched with
+        # LoadBalancerCallbacks.get_logical_device
+        if monitor['admin_state_up']:
             break
     else:
         return '', []

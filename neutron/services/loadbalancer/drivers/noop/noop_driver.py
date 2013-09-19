@@ -58,7 +58,7 @@ class NoopLbaaSDriver(abstract_driver.LoadBalancerAbstractDriver):
 
     @log.log
     def delete_pool(self, context, pool):
-        pass
+        self.plugin._delete_db_pool(context, pool["id"])
 
     @log.log
     def stats(self, context, pool_id):
@@ -78,10 +78,6 @@ class NoopLbaaSDriver(abstract_driver.LoadBalancerAbstractDriver):
     @log.log
     def delete_member(self, context, member):
         self.plugin._delete_db_member(context, member["id"])
-
-    @log.log
-    def create_health_monitor(self, context, health_monitor):
-        pass
 
     @log.log
     def update_health_monitor(self, context, old_health_monitor,
