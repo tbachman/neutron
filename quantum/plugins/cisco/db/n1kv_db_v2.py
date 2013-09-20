@@ -43,34 +43,30 @@ def initialize():
 
 def del_trunk_segment_binding(db_session, trunk_segment_id, segment_pairs):
     """
-    Delete a trunk network binding
+    Delete a trunk network binding.
 
     :param db_session: database session
     :param trunk_segment_id: UUID representing the trunk network
     :param segment_pairs: List of segment UUIDs in pair
-    representing the segments that are trunked
+                          representing the segments that are trunked
     """
     with db_session.begin(subtransactions=True):
         for (segment_id, dot1qtag) in segment_pairs:
-            alloc = (db_session.query(n1kv_models_v2.
-                     N1kvTrunkSegmentBinding).
-                     filter_by(trunk_segment_id=trunk_segment_id,
-                               segment_id=segment_id,
-                               dot1qtag=dot1qtag).one())
-            db_session.delete(alloc)
-
-            alloc = (db_session.query(n1kv_models_v2.
-                     N1kvTrunkSegmentBinding).
-                     filter_by(trunk_segment_id=trunk_segment_id).first())
-            if not alloc:
-                binding = get_network_binding(db_session, trunk_segment_id)
-                binding['physical_network'] = ""
-                db_session.merge(binding)
+            (db_session.query(n1kv_models_v2.N1kvTrunkSegmentBinding).
+             filter_by(trunk_segment_id=trunk_segment_id,
+                       segment_id=segment_id,
+                       dot1qtag=dot1qtag).delete())
+        alloc = (db_session.query(n1kv_models_v2.
+                 N1kvTrunkSegmentBinding).
+                 filter_by(trunk_segment_id=trunk_segment_id).first())
+        if not alloc:
+            binding = get_network_binding(db_session, trunk_segment_id)
+            binding.physical_network = None
 
 
 def del_multi_segment_binding(db_session, multi_segment_id, segment_pairs):
     """
-    Delete a multi-segment network binding
+    Delete a multi-segment network binding.
 
     :param db_session: database session
     :param multi_segment_id: UUID representing the multi-segment network
@@ -79,43 +75,39 @@ def del_multi_segment_binding(db_session, multi_segment_id, segment_pairs):
     """
     with db_session.begin(subtransactions=True):
         for (segment1_id, segment2_id) in segment_pairs:
-            alloc = (db_session.query(n1kv_models_v2.
-                     N1kvMultiSegmentNetworkBinding).filter_by(
-                         multi_segment_id=multi_segment_id,
-                         segment1_id=segment1_id,
-                         segment2_id=segment2_id).
-                     one())
-            db_session.delete(alloc)
+            (db_session.query(n1kv_models_v2.
+             N1kvMultiSegmentNetworkBinding).filter_by(
+             multi_segment_id=multi_segment_id,
+             segment1_id=segment1_id,
+             segment2_id=segment2_id).delete())
 
 
 def add_trunk_segment_binding(db_session, trunk_segment_id, segment_pairs):
     """
-    Create a trunk network binding
+    Create a trunk network binding.
 
     :param db_session: database session
     :param trunk_segment_id: UUID representing the multi-segment network
     :param segment_pairs: List of segment UUIDs in pair
                           representing the segments to be trunked
     """
-    LOG.debug("inside add trunk")
     with db_session.begin(subtransactions=True):
         binding = get_network_binding(db_session, trunk_segment_id)
         for (segment_id, tag) in segment_pairs:
-            if binding.physical_network == "":
+            if not binding.physical_network:
                 member_seg_binding = get_network_binding(db_session,
                                                          segment_id)
-                binding['physical_network'] = \
-                        member_seg_binding.physical_network
-                db_session.merge(binding)
-            trunk_segment_binding = \
-                n1kv_models_v2.N1kvTrunkSegmentBinding(trunk_segment_id,
-                                                       segment_id, tag)
+                binding.physical_network = member_seg_binding.physical_network
+            trunk_segment_binding = (
+                n1kv_models_v2.N1kvTrunkSegmentBinding(
+                    trunk_segment_id=trunk_segment_id,
+                    segment_id=segment_id, dot1qtag=tag))
             db_session.add(trunk_segment_binding)
 
 
 def add_multi_segment_binding(db_session, multi_segment_id, segment_pairs):
     """
-    Create a multi-segment network binding
+    Create a multi-segment network binding.
 
     :param db_session: database session
     :param multi_segment_id: UUID representing the multi-segment network
@@ -124,17 +116,34 @@ def add_multi_segment_binding(db_session, multi_segment_id, segment_pairs):
     """
     with db_session.begin(subtransactions=True):
         for (segment1_id, segment2_id) in segment_pairs:
-            multi_segment_binding = \
-                n1kv_models_v2.N1kvMultiSegmentNetworkBinding(multi_segment_id,
-                                                              segment1_id,
-                                                              segment2_id)
+            multi_segment_binding = (
+                n1kv_models_v2.N1kvMultiSegmentNetworkBinding(
+                    multi_segment_id=multi_segment_id,
+                    segment1_id=segment1_id,
+                    segment2_id=segment2_id))
             db_session.add(multi_segment_binding)
+
+
+def add_multi_segment_encap_profile_name(db_session, multi_segment_id,
+                                         segment_pair, profile_name):
+    """
+    Add the encapsulation profile name to the multi-segment network binding.
+
+    :param db_session: database session
+    :param multi_segment_id: UUID representing the multi-segment network
+    :param segment_pair: set containing the segment UUIDs that are bridged
+    """
+    with db_session.begin(subtransactions=True):
+        binding = get_multi_segment_network_binding(db_session,
+                                                    multi_segment_id,
+                                                    segment_pair)
+        binding.encap_profile_name = profile_name
 
 
 def get_multi_segment_network_binding(db_session,
                                       multi_segment_id, segment_pair):
     """
-    Retrieve multi-segment network binding
+    Retrieve multi-segment network binding.
 
     :param db_session: database session
     :param multi_segment_id: UUID representing the trunk network whose binding
@@ -142,41 +151,56 @@ def get_multi_segment_network_binding(db_session,
     :param segment_pair: set containing the segment UUIDs that are bridged
     :returns: binding object
     """
-    db_session = db_session or db.get_session()
     try:
         (segment1_id, segment2_id) = segment_pair
-        binding = (db_session.query(
-                   n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
-                   filter_by(multi_segment_id=multi_segment_id,
-                             segment1_id=segment1_id,
-                             segment2_id=segment2_id).one())
-        return binding
+        return (db_session.query(
+                n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
+                filter_by(multi_segment_id=multi_segment_id,
+                          segment1_id=segment1_id,
+                          segment2_id=segment2_id)).one()
     except exc.NoResultFound:
-        raise c_exc.N1kvNetworkBindingNotFound(network_id=multi_segment_id)
+        raise c_exc.NetworkBindingNotFound(network_id=multi_segment_id)
 
 
 def get_multi_segment_members(db_session, multi_segment_id):
     """
-    Retrieve all the member segments of a multi-segment network
+    Retrieve all the member segments of a multi-segment network.
 
     :param db_session: database session
-    :param trunk_segment_id: UUID representing the multi-segment network
+    :param multi_segment_id: UUID representing the multi-segment network
     :returns: a list of tuples representing the mapped segments
     """
-    db_session = db_session or db.get_session()
     with db_session.begin(subtransactions=True):
-        member_list = []
         allocs = (db_session.query(
                   n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
-                  filter_by(multi_segment_id=multi_segment_id)).all()
+                  filter_by(multi_segment_id=multi_segment_id))
+        return [(a.segment1_id, a.segment2_id) for a in allocs]
+
+
+def get_multi_segment_encap_dict(db_session, multi_segment_id):
+    """
+    Retrieve the encapsulation profiles for every segment pairs bridged.
+
+    :param db_session: database session
+    :param multi_segment_id: UUID representing the multi-segment network
+    :returns: a dictionary of lists containing the segment pairs in sets
+    """
+    with db_session.begin(subtransactions=True):
+        encap_dict = {}
+        allocs = (db_session.query(
+                  n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
+                  filter_by(multi_segment_id=multi_segment_id))
         for alloc in allocs:
-            member_list.append((alloc.segment1_id, alloc.segment2_id))
-        return member_list
+            if alloc.encap_profile_name not in encap_dict:
+                encap_dict[alloc.encap_profile_name] = []
+            seg_pair = (alloc.segment1_id, alloc.segment2_id)
+            encap_dict[alloc.encap_profile_name].append(seg_pair)
+        return encap_dict
 
 
 def get_trunk_network_binding(db_session, trunk_segment_id, segment_pair):
     """
-    Retrieve trunk network binding
+    Retrieve trunk network binding.
 
     :param db_session: database session
     :param trunk_segment_id: UUID representing the trunk network whose binding
@@ -184,53 +208,61 @@ def get_trunk_network_binding(db_session, trunk_segment_id, segment_pair):
     :param segment_pair: set containing the segment_id and dot1qtag
     :returns: binding object
     """
-    db_session = db_session or db.get_session()
     try:
         (segment_id, dot1qtag) = segment_pair
-        binding = (db_session.query(n1kv_models_v2.N1kvTrunkSegmentBinding).
-                   filter_by(trunk_segment_id=trunk_segment_id,
-                             segment_id=segment_id,
-                             dot1qtag=dot1qtag).one())
-        return binding
+        return (db_session.query(n1kv_models_v2.N1kvTrunkSegmentBinding).
+                filter_by(trunk_segment_id=trunk_segment_id,
+                          segment_id=segment_id,
+                          dot1qtag=dot1qtag)).one()
     except exc.NoResultFound:
-        raise c_exc.N1kvNetworkBindingNotFound(network_id=trunk_segment_id)
+        raise c_exc.NetworkBindingNotFound(network_id=trunk_segment_id)
 
 
 def get_trunk_members(db_session, trunk_segment_id):
     """
-    Retrieve all the member segments of a trunk network
+    Retrieve all the member segments of a trunk network.
 
     :param db_session: database session
     :param trunk_segment_id: UUID representing the trunk network
     :returns: a list of tuples representing the segment and their
               corresponding dot1qtag
     """
-    db_session = db_session or db.get_session()
     with db_session.begin(subtransactions=True):
-        member_list = []
         allocs = (db_session.query(n1kv_models_v2.N1kvTrunkSegmentBinding).
-                  filter_by(trunk_segment_id=trunk_segment_id)).all()
-        for alloc in allocs:
-            member_list.append((alloc.segment_id, alloc.dot1qtag))
-        return member_list
+                  filter_by(trunk_segment_id=trunk_segment_id))
+        return [(a.segment_id, a.dot1qtag) for a in allocs]
 
 
 def is_trunk_member(db_session, segment_id):
     """
-    Checks if a segment is a member of a trunk segment
+    Checks if a segment is a member of a trunk segment.
 
     :param db_session: database session
     :param segment_id: UUID of the segment to be checked
     :returns: boolean
     """
-    db_session = db_session or db.get_session()
     with db_session.begin(subtransactions=True):
         ret = (db_session.query(n1kv_models_v2.N1kvTrunkSegmentBinding).
-                filter_by(segment_id=segment_id).first())
-        if ret:
-            return True
-        else:
-            return False
+               filter_by(segment_id=segment_id).first())
+        return bool(ret)
+
+
+def is_multi_segment_member(db_session, segment_id):
+    """
+    Checks if a segment is a member of a multi-segment network.
+
+    :param db_session: database session
+    :param segment_id: UUID of the segment to be checked
+    :returns: boolean
+    """
+    with db_session.begin(subtransactions=True):
+        ret1 = (db_session.query(
+                n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
+                filter_by(segment1_id=segment_id).first())
+        ret2 = (db_session.query(
+                n1kv_models_v2.N1kvMultiSegmentNetworkBinding).
+                filter_by(segment2_id=segment_id).first())
+        return bool(ret1 or ret2)
 
 
 def get_network_binding(db_session, network_id):
@@ -281,12 +313,11 @@ def add_network_binding(db_session, network_id, network_type,
                                                     multicast_ip,
                                                     network_profile_id)
         db_session.add(binding)
-        if network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT \
-                and add_segments != None:
+        if add_segments is None:
+            pass
+        elif network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT:
             add_multi_segment_binding(db_session, network_id, add_segments)
-        elif network_type == c_const.NETWORK_TYPE_TRUNK \
-                and add_segments != None:
-            LOG.debug("calling add trunk")
+        elif network_type == c_const.NETWORK_TYPE_TRUNK:
             add_trunk_segment_binding(db_session, network_id, add_segments)
 
 
@@ -480,15 +511,14 @@ def alloc_network(db_session, network_profile_id):
     """
     with db_session.begin(subtransactions=True):
         try:
-            network_profile = get_network_profile(db_session, network_profile_id)
+            network_profile = get_network_profile(db_session,
+                                                  network_profile_id)
             if network_profile:
                 if network_profile.segment_type == c_const.NETWORK_TYPE_VLAN:
                     return reserve_vlan(db_session, network_profile)
-                elif network_profile.segment_type == \
-                        c_const.NETWORK_TYPE_VXLAN:
+                if network_profile.segment_type == c_const.NETWORK_TYPE_VXLAN:
                     return reserve_vxlan(db_session, network_profile)
-                else:
-                    return ('', network_profile.segment_type, 0, '0.0.0.0')
+                return (None, network_profile.segment_type, 0, "0.0.0.0")
         except q_exc.NotFound:
             LOG.debug(_("NetworkProfile not found"))
 

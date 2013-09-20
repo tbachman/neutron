@@ -137,8 +137,12 @@ NETWORK_TYPE_VLAN = 'vlan'
 NETWORK_TYPE_VXLAN = 'vxlan'
 NETWORK_TYPE_LOCAL = 'local'
 NETWORK_TYPE_NONE = 'none'
-NETWORK_TYPE_MULTI_SEGMENT = 'multi-segment'
 NETWORK_TYPE_TRUNK = 'trunk'
+NETWORK_TYPE_MULTI_SEGMENT = 'multi-segment'
+
+# Values for network subtypes
+NETWORK_SUBTYPE_TRUNK_VLAN = NETWORK_TYPE_VLAN
+NETWORK_SUBTYPE_TRUNK_VXLAN = NETWORK_TYPE_VXLAN
 
 # Values for VXLAN subtypes
 TYPE_VXLAN_UNICAST = 'unicast'
@@ -152,6 +156,14 @@ ID = 'id'
 POLICY = 'policy'
 DEFAULT_TENANT_ID = '000'
 URL = 'url'
-SERVICEINSTANCE = 'serviceInstance'
-SERVICEINSTANCES = 'serviceInstances'
 ENCAPSULATIONS = 'encapsulations'
+STATE = 'state'
+ONLINE = 'online'
+MAPPINGS = 'mappings'
+MAPPING = 'mapping'
+SEGMENTS = 'segments'
+SEGMENT = 'segment'
+BRIDGE_DOMAIN_SUFFIC = '_bd'
+ENCAPSULATION_PROFILE_SUFFIX = '_profile'
+
+UUID_LENGTH = 36
