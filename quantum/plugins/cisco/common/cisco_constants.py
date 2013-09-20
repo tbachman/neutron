@@ -144,6 +144,8 @@ NETWORK_TYPE_TRUNK = 'trunk'
 TYPE_VXLAN_UNICAST = 'unicast'
 TYPE_VXLAN_MULTICAST = 'multicast'
 
+HTTP_POOL_SIZE = 1
+
 SET = 'set'
 INSTANCE = 'instance'
 PROPERTIES = 'properties'

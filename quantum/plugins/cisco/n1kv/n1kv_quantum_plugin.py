@@ -59,6 +59,8 @@ from quantum import policy
 
 
 LOG = logging.getLogger(__name__)
+pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
+
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
@@ -247,6 +249,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_setup_vsm'))
         self.agent_vsm = True
+        self.n1kvclient = n1kv_client.Client()
         # Poll VSM for create/delete of policy profiles.
         eventlet.spawn(self._poll_policy_profiles)
 
@@ -267,8 +270,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_populate_policy_profiles'))
         try:
-            n1kvclient = n1kv_client.Client()
-            policy_profiles = n1kvclient.list_port_profiles()
+            policy_profiles = pool.spawn(self.n1kvclient.list_port_profiles).wait()
             vsm_profiles = {}
             plugin_profiles = {}
             # Fetch policy profiles from VSM
@@ -421,14 +423,14 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             return
 
         # GET list of VXLAN gateway clusters
-        n1kvclient = n1kv_client.Client()
-        clusters = n1kvclient.get_vxlan_gw_clusters()
+        clusters = pool.spawn(self.n1kvclient.get_vxlan_gw_clusters).wait()
         #FIXME: Below six lines to be removed
         encap_dict = {}
         encap_dict['serviceInstance'] = 1
         encap_dict['segment1'] = 100
         encap_dict['segment2'] = 200
-        n1kvclient.add_multi_segment(context, 0, encap_dict)
+        pool.spawn(self.n1kvclient.add_multi_segment,
+                   context, 0, encap_dict).wait()
         return
         # Select the first cluster with no encapsulation
         for cluster in clusters['body'][c_const.SET]:
@@ -448,7 +450,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             encap_dict['serviceInstance'] = service_instance
             encap_dict['segment1'] = segment1
             encap_dict['segment2'] = segment2
-            n1kvclient.add_multi_segment(context, cluster_id, encap_dict)
+            pool.spawn(self.n1kvclient.add_multi_segment,
+                       context, cluster_id, encap_dict).wait()
             LOG.debug('_send_add_multi_segment_request: %s '
                       'cluster_id %s', segment_pairs, cluster_id)
 
@@ -463,10 +466,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         if segment_pairs == []:
             return
         # Check on which cluster segments are mapped
-        n1kvclient = n1kv_client.Client()
-        clusters = n1kvclient.get_vxlan_gw_clusters()
+        clusters = pool.spawn(self.n1kvclient.get_vxlan_gw_clusters).wait()
         #FIXME: Following two lines to be deleted
-        n1kvclient.del_multi_segment(context, 0, 1)
+        pool.spawn(self.n1kvclient.del_multi_segment,
+                   context, 0, 1).wait()
         return
         for (segment1, segment2) in segment_pairs:
             for cluster in clusters['body'][c_const.SET]:
@@ -479,8 +482,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                     cluster_id = cluster[c_const.NAME]
                     service_instance = \
                         service_instances[c_const.SERVICEINSTANCE][c_const.ID]
-                    n1kvclient.del_multi_segment(context,
-                                                 cluster_id, service_instance)
+                    pool.spawn(self.n1kvclient.del_multi_segment, context,
+                               cluster_id, service_instance).wait()
                     LOG.debug('_send_del_multi_segment_request:'
                               ' cluster_id %s segments %s %s',
                               cluster_id, segment1, segment2)
@@ -554,25 +557,25 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param tenant_id: UUID representing tenant
         """
         LOG.debug(_('_send_create_logical_network'))
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_logical_network(network_profile, tenant_id)
+        pool.spawn(self.n1kvclient.create_logical_network,
+                   network_profile,
+                   tenant_id).wait()
 
     def _send_delete_logical_network_request(self, network_profile):
         """
         Send delete logical network request to VSM.
         """
         LOG.debug(_('_send_delete_logical_network'))
-        n1kvclient = n1kv_client.Client()
         logical_network_name = network_profile['id'] + "_log_net"
-        n1kvclient.delete_logical_network(logical_network_name)
+        pool.spawn(self.n1kvclient.delete_logical_network,
+                   logical_network_name).wait()
 
     def _send_delete_fabric_network_request(self, profile):
         """
         Send delete fabric network request to VSM.
         """
         LOG.debug('_send_delete_fabric_network')
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.delete_fabric_network(profile)
+        pool.spawn(self.n1kvclient.delete_fabric_network, profile).wait()
 
     def _send_create_network_profile_request(self, context, profile):
         """
@@ -582,8 +585,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param profile: network profile dictionary
         """
         LOG.debug(_('_send_create_network_profile_request: %s'), profile['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_network_segment_pool(profile, context.tenant_id)
+        pool.spawn(self.n1kvclient.create_network_segment_pool,
+                   profile, context.tenant_id).wait()
 
     def _send_update_network_profile_request(self, profile):
         """
@@ -592,8 +595,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param profile: network profile dictionary
         """
         LOG.debug(_('_send_update_network_profile_request: %s'), profile['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_network_segment_pool(profile)
+        pool.spawn(self.n1kvclient.update_network_segment_pool, profile).wait()
 
     def _send_delete_network_profile_request(self, profile):
         """
@@ -603,8 +605,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_send_delete_network_profile_request: %s'),
                   profile['name'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.delete_network_segment_pool(profile['id'])
+        pool.spawn(self.n1kvclient.delete_network_segment_pool,
+                   profile['id']).wait()
 
     def _populate_member_segments(self, context, network, segment_pairs, oper):
         """
@@ -640,21 +642,23 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         LOG.debug(_('_send_create_network_request: %s'), network['id'])
         profile = self.get_network_profile(context,
                                            network[n1kv_profile.PROFILE_ID])
-        n1kvclient = n1kv_client.Client()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            n1kvclient.create_bridge_domain(network, profile['sub_type'])
+            pool.spawn(self.n1kvclient.create_bridge_domain,
+                       network, profile['sub_type']).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             self._populate_member_segments(context, network, segment_pairs,
                     n1kv_profile.SEGMENT_ADD)
             network['del_segment_list'] = []
         try:
-            n1kvclient.create_network_segment(network, profile)
+            pool.spawn(self.n1kvclient.create_network_segment,
+                       network, profile).wait()
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
                 if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
                     bridge_domain_name = network['id'] + '_bd'
-                    n1kvclient.delete_bridge_domain(bridge_domain_name)
+                    pool.spawn(self.n1kvclient.delete_bridge_domain,
+                               bridge_domain_name).wait()
 
     def _send_update_network_request(self, context, network, add_segments,
                                      del_segments):
@@ -684,8 +688,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         else:
             body['mode'] = 'access'
             body['segmentType'] = profile['segment_type']
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_network_segment(network['id'], body)
+        pool.spawn(self.n1kvclient.update_network_segment,
+                   network['id'], body).wait()
 
     def _send_delete_network_request(self, context, network):
         """
@@ -695,13 +699,12 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param network: network dictionary
         """
         LOG.debug(_('_send_delete_network_request: %s'), network['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.delete_network_segment(network['id'])
+        pool.spawn(self.n1kvclient.delete_network_segment, network['id']).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
             profile = self.get_network_profile(context,
                                                network[n1kv_profile.PROFILE_ID])
             name = network['id'] + '_bd'
-            n1kvclient.delete_bridge_domain(name)
+            pool.spawn(self.n1kvclient.delete_bridge_domain, name).wait()
 
     def _send_create_subnet_request(self, context, subnet):
         """
@@ -711,15 +714,12 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         """
         LOG.debug(_('_send_create_subnet_request: %s'), subnet['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_ip_pool(subnet)
-        body = {'ipPool': subnet['id']}
         try:
-            n1kvclient.update_network_segment(subnet['network_id'], body=body)
+            pool.spawn(self.n1kvclient.create_ip_pool, subnet).wait()
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
-                n1kvclient.delete_ip_pool(subnet['id'])
+                super(N1kvQuantumPluginV2, self).delete_subnet(context, subnet['id'])
 
     # TBD Begin : Need to implement this function
     def _send_update_subnet_request(self, subnet):
@@ -739,15 +739,16 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_send_delete_subnet_request: %s'), subnet)
         body = {'ipPool': subnet['id'], 'deleteSubnet': True}
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_network_segment(subnet['network_id'], body=body)
+        pool.spawn(self.n1kvclient.update_network_segment,
+                   subnet['network_id'], body).wait()
         try:
-            n1kvclient.delete_ip_pool(subnet['id'])
+            pool.spawn(self.n1kvclient.delete_ip_pool, subnet['id']).wait()
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
                 body['deleteSubnet'] = False
-                n1kvclient.update_network_segment(subnet['network_id'], body=body)
+                pool.spawn(self.n1kvclient.update_network_segment,
+                           subnet['network_id'], body).wait()
 
     def _send_create_port_request(self, context, port):
         """
@@ -760,7 +761,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param port: port dictionary
         """
         LOG.debug(_('_send_create_port_request: %s'), port)
-        n1kvclient = n1kv_client.Client()
         with context.session.begin(subtransactions=True):
             try:
                 vm_network = n1kv_db_v2.get_vm_network(
@@ -778,23 +778,26 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                           port[n1kv_profile.PROFILE_ID],
                                           port['network_id'],
                                           port_count)
-                n1kvclient.create_vm_network(port,
-                                             vm_network_name,
-                                             policy_profile)
                 try:
-                    n1kvclient.create_n1kv_port(port, vm_network_name)
+                    pool.spawn(self.n1kvclient.create_vm_network,
+                               port, vm_network_name, policy_profile).wait()
                 except(cisco_exceptions.VSMError,
                        cisco_exceptions.VSMConnectionFailed):
                     with excutils.save_and_reraise_exception():
-                        n1kvclient.delete_vm_network(vm_network_name)
+                        super(N1kvQuantumPluginV2, self).delete_port(context, port['id'])
             else:
                 vm_network_name = vm_network['name']
                 vm_network['port_count'] += 1
                 n1kv_db_v2.update_vm_network(context.session,
                                              vm_network_name,
                                              vm_network['port_count'])
-                LOG.debug(_('Abhishek: %s'), port["fixed_ips"][0]["ip_address"])
-                n1kvclient.create_n1kv_port(port, vm_network_name)
+                try:
+                    pool.spawn(self.n1kvclient.create_n1kv_port,
+                               port, vm_network_name).wait()
+                except(cisco_exceptions.VSMError,
+                       cisco_exceptions.VSMConnectionFailed):
+                    with excutils.save_and_reraise_exception():
+                        super(N1kvQuantumPluginV2, self).delete_port(context, port['id'])
 
     def _send_update_port_request(self, port_id, mac_address, vm_network_name):
         """
@@ -807,8 +810,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         LOG.debug(_('_send_update_port_request: %s'), port_id)
         body = {'portId': port_id,
                 'macAddress': mac_address}
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_n1kv_port(vm_network_name, port_id, body)
+        pool.spawn(self.n1kvclient.update_n1kv_port,
+                   vm_network_name, port_id, body).wait()
 
     def _send_delete_port_request(self, context, id):
         """
@@ -829,18 +832,20 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             n1kv_db_v2.update_vm_network(context.session,
                                          vm_network['name'],
                                          vm_network['port_count'])
-            n1kvclient = n1kv_client.Client()
-            n1kvclient.delete_n1kv_port(vm_network['name'], id)
+            pool.spawn(self.n1kvclient.delete_n1kv_port,
+                       vm_network['name'], id).wait()
             if vm_network['port_count'] == 0:
                 n1kv_db_v2.delete_vm_network(context.session,
                                              port[n1kv_profile.PROFILE_ID],
                                              port['network_id'])
                 try:
-                    n1kvclient.delete_vm_network(vm_network['name'])
+                    pool.spawn(self.n1kvclient.delete_vm_network,
+                               vm_network['name']).wait()
                 except(cisco_exceptions.VSMError,
                        cisco_exceptions.VSMConnectionFailed):
                     with excutils.save_and_reraise_exception():
-                        n1kvclient.create_n1kv_port(port, vm_network['name'])
+                        pool.spawn(self.n1kvclient.create_n1kv_port,
+                                   port, vm_network['name']).wait()
 
     def _get_segmentation_id(self, context, id):
         """
@@ -1153,9 +1158,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                                                   port)
                 n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
                 self._extend_port_dict_profile(context, pt)
-                self._send_create_port_request(context, pt)
-                LOG.debug(_("Created port: %s"), pt)
-                self._extend_port_dict_binding(context, pt)
+            self._send_create_port_request(context, pt)
+            LOG.debug(_("Created port: %s"), pt)
+            self._extend_port_dict_binding(context, pt)
             return pt
 
     def _add_dummy_profile_only_if_testing(self, obj):
@@ -1243,6 +1248,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         :returns: subnet object
         """
+        LOG.debug(_('ABHISHEK IN SUBNET CONNS %s'), pool.running())
         LOG.debug(_('Create subnet'))
         # Verify whether subnet name is populated.
         if not subnet['subnet']['name']:
@@ -1252,9 +1258,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         session = context.session
         with session.begin(subtransactions=True):
             sub = super(N1kvQuantumPluginV2, self).create_subnet(context, subnet)
-            self._send_create_subnet_request(context, sub)
-            LOG.debug(_("Created subnet: %s"), sub['id'])
-            return sub
+        self._send_create_subnet_request(context, sub)
+        LOG.debug(_("Created subnet: %s"), sub['id'])
+        return sub
 
     def update_subnet(self, context, id, subnet):
         """

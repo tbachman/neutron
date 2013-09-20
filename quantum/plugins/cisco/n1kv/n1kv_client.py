@@ -140,6 +140,7 @@ class Client(object):
         self.hosts = self._get_vsm_hosts()
         self.action_prefix = 'http://%s/api/n1k' % self.hosts[0]
         self.timeout = 15
+        self.request_number = 0
 
     def list_port_profiles(self):
         """
@@ -162,7 +163,7 @@ class Client(object):
         :param network: network dict
         """
         body = {'name': network['id'] + '_bd',
-                'tenantId': network['tenant_id'],
+                #'tenantId': network['tenant_id'],
                 'segmentId': network[providernet.SEGMENTATION_ID],
                 'subType': vxlan_subtype}
         if vxlan_subtype == c_const.TYPE_VXLAN_MULTICAST:
@@ -364,6 +365,8 @@ class Client(object):
                 'description': subnet['name'],
                 'gateway': subnet['gateway_ip'],
                 'networkAddress': network_address,
+                'netSegmentName': subnet['network_id'],
+                'id': subnet['id'],
                 'tenantId': subnet['tenant_id']}
         return self._post(self.ip_pool_path % (subnet['id']),
                           body=body)
@@ -393,6 +396,8 @@ class Client(object):
                 'networkSegment': port['network_id'],
                 'portProfile': policy_profile['name'],
                 'portProfileId': policy_profile['id'],
+                'portId': port['id'],
+                'macAddress': port['mac_address'],
                 }
         return self._post(self.vm_networks_path,
                           body=body)
@@ -414,8 +419,6 @@ class Client(object):
         """
         body = {'id': port['id'],
                 'macAddress': port['mac_address']}
-        if port.get('fixed_ips'):
-            body['ipAddress'] = port["fixed_ips"][0]["ip_address"]
         return self._post(self.ports_path % (vm_network_name),
                           body=body)
 
@@ -463,15 +466,16 @@ class Client(object):
         if not headers and self.hosts:
             headers = self._get_auth_header(self.hosts[0])
         headers['Content-Type'] = self._set_content_type('json')
+        headers['cache-control'] = 'no-cache'
+        headers['Connection'] = 'close'
         if body:
             body = self._serialize(body)
             LOG.debug(_("req: %s"), body)
         try:
-            resp, replybody = (httplib2.Http(timeout=self.timeout).
-                                             request(action,
-                                                     method,
-                                                     body=body,
-                                                     headers=headers))
+            h = httplib2.Http(timeout=self.timeout)
+            resp, replybody = (h.request(action, method, body=body,
+                                         headers=headers))
+            h.connections.clear()
         except Exception as e:
             raise c_exc.VSMConnectionFailed(reason=e)
         LOG.debug(_("status_code %s"), resp.status)
