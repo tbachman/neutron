@@ -206,3 +206,8 @@ class N1kvPortBindingNotFound(exceptions.QuantumException):
     """Port Binding for port cannot be found."""
     message = _("Port Binding for port %(port_id)s could "
                 "not be found.")
+
+
+class NoClusterFound(exceptions.NotFound):
+    """No service cluster found to perform multi-segment bridging."""
+    message = _("No service cluster found to perform multi-segment bridging.")
