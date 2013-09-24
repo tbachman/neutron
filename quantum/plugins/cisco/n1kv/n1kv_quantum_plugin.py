@@ -820,7 +820,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                   self._get_encap_segments(context,
                                                            segment_pairs)),
                               'del_segment_list': []}
-                n1kvclient.create_encapsulation_profile(encap_dict)
+                pool.spawn(self.n1kvclient.create_encapsulation_profile,
+                           encap_dict).wait()
         try:
             pool.spawn(self.n1kvclient.create_network_segment,
                        network, profile).wait()
@@ -848,7 +849,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         db_session = context.session
         profile = n1kv_db_v2.get_network_profile(db_session,
                                                  network[n1kv_profile.PROFILE_ID])
-        n1kvclient = n1kv_client.Client()
         body = {'publishName': network['name'],
                 'id': network['id'],
                 'networkSegmentPool': profile['id'],
@@ -895,7 +895,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         """
         LOG.debug(_('_send_delete_network_request: %s'), network['id'])
         session = context.session
-        n1kvclient.delete_network_segment(network['name'])
         pool.spawn(self.n1kvclient.delete_network_segment, network['id']).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
             profile = self.get_network_profile(context,
