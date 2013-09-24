@@ -199,7 +199,7 @@ class Client(object):
                 body['addSegments'] = network['add_segment_list']
                 body['delSegments'] = network['del_segment_list']
             else:
-                body['encapProfile'] = (network['name'] +
+                body['encapProfile'] = (network['id'] +
                                         c_const.ENCAPSULATION_PROFILE_SUFFIX)
         else:
             body['mode'] = 'access'
