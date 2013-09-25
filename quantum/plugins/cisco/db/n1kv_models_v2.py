@@ -101,14 +101,17 @@ class N1kvPortBinding(model_base.BASEV2):
                      ForeignKey('ports.id', ondelete="CASCADE"),
                      primary_key=True)
     profile_id = Column(String(36))
+    service_chain_id = Column(String(36))
 
-    def __init__(self, port_id, profile_id):
+    def __init__(self, port_id, profile_id, service_chain_id):
         self.port_id = port_id
         self.profile_id = profile_id
+        self.service_chain_id = service_chain_id
 
     def __repr__(self):
-        return "<PortBinding(%s,%s)>" % (self.port_id,
-                                         self.profile_id)
+        return "<PortBinding(%s,%s,%s)>" % (self.port_id,
+                                            self.profile_id,
+                                            self.service_chain_id)
 
 
 class N1kvNetworkBinding(model_base.BASEV2):

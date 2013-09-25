@@ -21,6 +21,7 @@
 
 
 import eventlet
+import json
 
 from oslo.config import cfg as q_conf
 
@@ -57,7 +58,15 @@ from quantum.plugins.cisco.extensions import n1kv_profile
 from quantum.plugins.cisco.n1kv import n1kv_client
 from quantum import policy
 from quantum import policy
+from quantum import context as qcontext
+from quantum.db import servicechain_db
+from quantum.extensions import servicechain
+from quantum.plugins.common import constants
 
+SERVICE_CHAIN = "service_chain"
+SERVICE_CHAIN_TEMPLATE = "service_chain_template"
+SERVICE_CHAIN_RESOURCE_PATH = "/tenants/%s/service_chains"
+service_chain_templates={"n1kv-chain": {"description": "vPath service chain with Nexus 1000v VSG", "services_types_list": ["L3"]}, "lb-chain": {"description": "Service chain with F5 loadbalancer", "services_types_list": ["L3"]}, "fw-chain": {"description": "Service Chain with Palo Alto Firewall", "services_types_list": ["BumpInTheWire"]}}
 
 LOG = logging.getLogger(__name__)
 pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
@@ -187,6 +196,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
+                          servicechain_db.ServiceChain_db_mixin,
                           agentschedulers_db.AgentSchedulerDbMixin):
 
     """
@@ -200,7 +210,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
     # This attribute specifies whether the plugin supports or not
     # bulk operations.
     __native_bulk_support = False
-    supported_extension_aliases = ["provider", "agent", "binding",
+    supported_extension_aliases = ["service-chain", "provider", "agent", "binding",
                                    "policy_profile_binding",
                                    "network_profile_binding",
                                    "n1kv_profile", "network_profile",
@@ -208,6 +218,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
 
     binding_view = "extension:port_binding:view"
     binding_set = "extension:port_binding:set"
+    _template_dict = service_chain_templates
 
     def __init__(self, configfile=None):
         """
@@ -225,6 +236,35 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 'extensions:quantum/plugins/cisco/extensions')
         self._setup_vsm()
         self._setup_rpc()
+        self._init_service_chain_templates(self._template_dict)
+
+    def _get_default_chain_template_dict(self, tenant_id):
+        return {'name': '',
+                'description': '',
+                'tenant_id': tenant_id,
+                'shared': True,
+                'services_types_list': []}
+
+    def _init_service_chain_templates(self, template_dict):
+        context = qcontext.get_admin_context()
+        tenant_id = context.tenant_id
+        for tmpl_name, tmpl in template_dict.iteritems():
+            template = self._get_default_chain_template_dict(tenant_id)
+            template['name'] = tmpl_name
+            for k1, v1 in tmpl.iteritems():
+                template[k1] = v1
+            # TODO (Sumit): check if shared attr needs to be set
+            sc_tmpl = {SERVICE_CHAIN_TEMPLATE: template}
+            filter = {'name': [tmpl_name]}
+            # note we are assuming if the template is present there is only one
+            orig_tmpl = self.get_service_chain_templates(context,
+                                                         filters=filter)
+            if orig_tmpl and orig_tmpl[0] and orig_tmpl[0]['id']:
+                self.update_service_chain_template(context,
+                                                   orig_tmpl[0]['id'],
+                                                   sc_tmpl)
+            else:
+                self.create_service_chain_template(context, sc_tmpl)
 
     def _setup_rpc(self):
         # RPC support
@@ -697,6 +737,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         binding = n1kv_db_v2.get_port_binding(context.session,
                                               port['id'])
         port[n1kv_profile.PROFILE_ID] = binding.profile_id
+        port[n1kv_profile.SERVICE_CHAIN] = binding.service_chain_id
 
     def _process_network_profile(self, context, attrs):
         """Validate network profile exists."""
@@ -1310,9 +1351,14 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 port['port']['n1kv:profile_id'] = p_profile['id']
 
         profile_id_set = False
+        service_chain_id_set = False
         if n1kv_profile.PROFILE_ID in port['port']:
             profile_id = port['port'].get(n1kv_profile.PROFILE_ID)
             profile_id_set = attributes.is_attr_set(profile_id)
+
+        if n1kv_profile.SERVICE_CHAIN in port['port']:
+            service_chain_id = port['port'].get(n1kv_profile.SERVICE_CHAIN)
+            service_chain_id_set = attributes.is_attr_set(profile_id)
 
         if profile_id_set:
             profile_id = self._process_policy_profile(context,
@@ -1322,7 +1368,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             with session.begin(subtransactions=True):
                 pt = super(N1kvQuantumPluginV2, self).create_port(context,
                                                                   port)
-                n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
+                if not service_chain_id_set:
+                    service_chain_id = None
+                n1kv_db_v2.add_port_binding(session, pt['id'], profile_id,
+                                            service_chain_id)
                 self._extend_port_dict_profile(context, pt)
             self._send_create_port_request(context, pt)
             LOG.debug(_("Created port: %s"), pt)
@@ -1556,3 +1605,83 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                      update_network_profile(context, id, network_profile))
             self._send_update_network_profile_request(net_p)
         return net_p
+
+    """
+    Service Chain API implementation.
+    """
+    def _create_resource(self, context, resource, resource_name,
+                         controller_uri):
+        """Creates a resource in the DB and in the backend controller"""
+        LOG.error(_("N1kvQuantumPluginV2: create_%s() called for %s"),
+                    resource_name, resource)
+        create_db = getattr(super(N1kvQuantumPluginV2, self),
+                              'create_' + resource_name)
+        new_resource = create_db(context, resource)
+        LOG.debug("new_res %s", new_resource)
+        # create resource on VSM 
+        try:
+            sc =  {'id': new_resource['id'],
+                   'serviceName': new_resource['services_list'][0]}
+            pool.spawn(self.n1kvclient.create_service_chain, sc).wait()
+        except(cisco_exceptions.VSMError,
+               cisco_exceptions.VSMConnectionFailed):
+            LOG.error(_("N1kvQuantumPluginV2: Unable to create resource on "
+                        "controller %s"), (resource_name))
+            # rollback creation of resource
+            delete_db = getattr(super(N1kvQuantumPluginV2, self),
+                                'delete_' + resource_name)
+            delete_db(context, new_resource['id'])
+            #TODO(rtapadar)raise
+        return new_resource
+
+    def get_service_chains(self, context, filters=None, fields=None):
+        LOG.debug(_("N1kvQuantumPluginV2: get_service_chains() called"))
+        return super(N1kvQuantumPluginV2, self).get_service_chains(context,
+                                                                  filters,
+                                                                  fields)
+
+    def get_service_chain(self, context, id, fields=None):
+        LOG.debug(_("N1kvQuantumPluginV2: get_service_chain() called"))
+        return super(N1kvQuantumPluginV2, self).get_service_chain(context, id,
+                                                                 fields)
+
+    def create_service_chain(self, context, service_chain):
+        session = context.session
+        with session.begin(subtransactions=True):
+            return self._create_resource(context, service_chain, SERVICE_CHAIN,
+                                         SERVICE_CHAIN_RESOURCE_PATH)
+
+    def update_service_chain(self, context, id, service_chain):
+        return self._update_resource(context, id, service_chain, SERVICE_CHAIN,
+                                     SERVICE_CHAINS_PATH)
+
+    def delete_service_chain(self, context, id):
+        return self._delete_resource(context, id, SERVICE_CHAIN,
+                                     SERVICE_CHAINS_PATH)
+
+    def get_service_chain_templates(self, context, filters=None, fields=None):
+        LOG.debug(_("N1kvQuantumPluginV2: get_service_chain_templates() called"))
+        return super(N1kvQuantumPluginV2,
+                     self).get_service_chain_templates(context, filters, fields)
+
+    def get_service_chain_template(self, context, id, fields=None):
+        LOG.debug(_("N1kvQuantumPluginV2: get_service_chain_template() called"))
+        return super(N1kvQuantumPluginV2,
+                     self).get_service_chain_template(context, id, fields)
+
+    def create_service_chain_template(self, context, service_chain_template):
+        LOG.debug(_("create_service_chain_template() called"))
+        return super(N1kvQuantumPluginV2,
+                     self).create_service_chain_template(context,
+                                                         service_chain_template)
+
+    def update_service_chain_template(self, context, id,
+                                      service_chain_template):
+        LOG.debug(_("update_service_chain_template() called"))
+        return super(N1kvQuantumPluginV2,
+                     self).update_service_chain_template(context, id,
+                                                         service_chain_template)
+
+    def delete_service_chain_template(self, context, id):
+        return super(N1kvQuantumPluginV2,
+                     self).delete_service_chain_template(context, id)

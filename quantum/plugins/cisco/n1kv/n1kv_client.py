@@ -135,6 +135,7 @@ class Client(object):
     clusters_path = "/cluster"
     encap_profiles_path = "/encapsulation-profile"
     encap_profile_path = "/encapsulation-profile/%s"
+    service_chains_path = "/service-chain"
 
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
@@ -348,6 +349,8 @@ class Client(object):
                 'portId': port['id'],
                 'macAddress': port['mac_address'],
                 }
+        if port[n1kv_profile.SERVICE_CHAIN] is not None:
+            body['serviceChainId'] = port[n1kv_profile.SERVICE_CHAIN]
         return self._post(self.vm_networks_path,
                           body=body)
 
@@ -545,3 +548,14 @@ class Client(object):
         :param name: name of the encapsulation profile to be deleted
         """
         return self._delete(self.encap_profile_path % (name))
+
+    def create_service_chain(self, service_chain):
+        """
+        Create a service chain on VSM.
+
+        :param service_chain: service chain dict
+        """
+        body = {'name': service_chain['id'],
+                'serviceName': service_chain['serviceName']}
+        return self._post(self.service_chains_path,
+                          body=body)

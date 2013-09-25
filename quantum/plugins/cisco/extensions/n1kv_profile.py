@@ -27,6 +27,7 @@ MULTICAST_IP = 'n1kv:multicast_ip'
 SEGMENT_ADD = 'n1kv:segment_add'
 SEGMENT_DEL = 'n1kv:segment_del'
 MEMBER_SEGMENTS = 'n1kv:member_segments'
+SERVICE_CHAIN = 'n1kv:service_chain'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     'networks': {
@@ -51,7 +52,11 @@ EXTENDED_ATTRIBUTES_2_0 = {
         PROFILE_ID: {'allow_post': True, 'allow_put': True,
                      'validate': {'type:regex': attributes.UUID_PATTERN},
                      'default': attributes.ATTR_NOT_SPECIFIED,
-                     'is_visible': True}
+                     'is_visible': True},
+        SERVICE_CHAIN: {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:regex': attributes.UUID_PATTERN},
+                        'default': attributes.ATTR_NOT_SPECIFIED,
+                        'is_visible': True}
     }
 }
 

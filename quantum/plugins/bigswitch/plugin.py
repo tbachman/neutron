@@ -63,12 +63,18 @@ from quantum.db import api as db
 from quantum.db import db_base_plugin_v2
 from quantum.db import dhcp_rpc_base
 from quantum.db import l3_db
+from quantum.db.firewall import firewall_db
+from quantum.db.loadbalancer import loadbalancer_db
+from quantum.db import servicechain_db
+from quantum.extensions import firewall
 from quantum.extensions import l3
 from quantum.extensions import portbindings
+from quantum.extensions import servicechain
 from quantum.openstack.common import lockutils
 from quantum.openstack.common import log as logging
 from quantum.openstack.common import rpc
 from quantum.plugins.bigswitch.version import version_string_with_vcs
+from quantum.plugins.common import constants
 from quantum import policy
 
 
@@ -93,6 +99,10 @@ restproxy_opts = [
     cfg.BoolOpt('add_meta_server_route', default=True,
                 help=_("Flag to decide if a route to the metadata server "
                        "should be injected into the VM")),
+    cfg.StrOpt('firewall_policies', default='{}',
+               help=_("Firewall policies and rules to load from config")),
+    cfg.StrOpt('service_chain_templates', default='{}',
+               help=_("Service chain tempaltes to load from config")),
 ]
 
 
@@ -104,11 +114,42 @@ NET_RESOURCE_PATH = "/tenants/%s/networks"
 PORT_RESOURCE_PATH = "/tenants/%s/networks/%s/ports"
 ROUTER_RESOURCE_PATH = "/tenants/%s/routers"
 ROUTER_INTF_OP_PATH = "/tenants/%s/routers/%s/interfaces"
+VIP_RESOURCE_PATH = "/tenants/%s/vips"
+POOL_RESOURCE_PATH = "/tenants/%s/pools"
+MEMBER_RESOURCE_PATH = "/tenants/%s/pools/%s/members"
+HMONITOR_RESOURCE_PATH = "/tenants/%s/health_monitors"
+LOADBALANCER_RESOURCE_PATH = "/tenants/%s/loadbalancers"
+FIREWALL_RESOURCE_PATH = "/tenants/%s/firewalls"
+FIREWALL_RULE_RESOURCE_PATH = "/tenants/%s/firewall_rules"
+FIREWALL_POLICY_RESOURCE_PATH = "/tenants/%s/firewall_policies"
+SERVICE_CHAIN_RESOURCE_PATH = "/tenants/%s/service_chains"
 NETWORKS_PATH = "/tenants/%s/networks/%s"
 PORTS_PATH = "/tenants/%s/networks/%s/ports/%s"
 ATTACHMENT_PATH = "/tenants/%s/networks/%s/ports/%s/attachment"
 ROUTERS_PATH = "/tenants/%s/routers/%s"
 ROUTER_INTF_PATH = "/tenants/%s/routers/%s/interfaces/%s"
+VIPS_PATH = "/tenants/%s/vips/%s"
+POOLS_PATH = "/tenants/%s/pools/%s"
+MEMBERS_PATH = "/tenants/%s/pools/%s/members/%s"
+HMONITORS_PATH = "/tenants/%s/health_monitors/%s"
+ASSC_POOL_HMONITOR_PATH = "/tenants/%s/pools/%s/health_monitors"
+DISASSC_POOL_HMONITOR_PATH = "/tenants/%s/pools/%s/health_monitors/%s"
+LOADBALANCERS_PATH = "/tenants/%s/loadbalancers/%s"
+FIREWALLS_PATH = "/tenants/%s/firewalls/%s"
+FIREWALL_RULES_PATH = "/tenants/%s/firewall_rules/%s"
+FIREWALL_POLICIES_PATH = "/tenants/%s/firewall_policies/%s"
+SERVICE_CHAINS_PATH = "/tenants/%s/service_chains/%s"
+LOADBALANCER = "loadbalancer"
+FIREWALL = "firewall"
+VIP = "vip"
+POOL = "pool"
+MEMBER = "member"
+HEALTHMONITOR = "health_monitor"
+FIREWALL_RULE = "firewall_rule"
+FIREWALL_POLICY = "firewall_policy"
+SERVICE_CHAIN = "service_chain"
+SERVICE_CHAIN_TEMPLATE = "service_chain_template"
+MEMBER_ID = "%s-%s"
 SUCCESS_CODES = range(200, 207)
 FAILURE_CODES = [0, 301, 302, 303, 400, 401, 403, 404, 500, 501, 502, 503,
                  504, 505]
@@ -282,9 +323,13 @@ class RpcProxy(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
 
 class QuantumRestProxyV2(db_base_plugin_v2.QuantumDbPluginV2,
-                         l3_db.L3_NAT_db_mixin):
+                         l3_db.L3_NAT_db_mixin,
+                         firewall_db.Firewall_db_mixin,
+                         loadbalancer_db.LoadBalancerPluginDb,
+                         servicechain_db.ServiceChain_db_mixin):
 
-    supported_extension_aliases = ["router", "binding"]
+    supported_extension_aliases = ["router", "binding", "firewall", "lbaas",
+                                   "service-chain"]
 
     binding_view = "extension:port_binding:view"
     binding_set = "extension:port_binding:set"
@@ -330,7 +375,114 @@ class QuantumRestProxyV2(db_base_plugin_v2.QuantumDbPluginV2,
             self._send_all_data()
 
         self._dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+
+        # We run the firewall policies from the config file
+        self._firewall_dict = json.loads(cfg.CONF.RESTPROXY.firewall_policies)
+        LOG.debug(_("QuantumRestProxyV2: Read form config firewall dict: %s"),
+                     self._firewall_dict)
+        self._init_firewall_policies(self._firewall_dict)
+        self._template_dict = json.loads(cfg.CONF.RESTPROXY.service_chain_templates)
+        LOG.debug(_("QuantumRestProxyV2: Read form config service chain template "
+                    "dict: %s"), self._template_dict)
+        self._init_service_chain_templates(self._template_dict)
         LOG.debug(_("QuantumRestProxyV2: initialization done"))
+
+    def _get_default_fwrule_dict(self, tenant_id):
+        return {'description': '',
+                'direction': 'ingress',
+                'tenant_id': tenant_id,
+                'protocol': None,
+                'source_ip_address': '',
+                'destination_ip_address': '',
+                'port_range_min': 0,
+                'port_range_max': 0,
+                'application': '',
+                'action': 'deny',
+                'dynamic_attributes': ''}
+
+    def _get_default_fwpolicy_dict(self, tenant_id):
+        return {'name': '',
+                'description': '',
+                'tenant_id': tenant_id,
+                'audited': True,
+                'firewall_rules_list': []}
+
+    def _init_firewall_policies(self, firewall_dict):
+        context = qcontext.get_admin_context()
+        tenant_id = context.tenant_id
+        for fwp_name, fwp in firewall_dict.iteritems():
+            fw_policy = self._get_default_fwpolicy_dict(tenant_id)
+            fw_policy['name'] = fwp_name
+            for k1, v1 in fwp.iteritems():
+                if k1 == 'firewall_rules_list':
+                    rules_list = []
+                    for fwr_desc, fwr in v1.iteritems():
+                        fw_rule = self._get_default_fwrule_dict(tenant_id)
+                        fw_rule['description'] = fwr_desc
+                        for k2, v2 in fwr.iteritems():
+                            fw_rule[k2] = v2
+                        # TODO (Sumit): check if shared attr needs to be set
+                        # for rule
+                        rule = {FIREWALL_RULE: fw_rule}
+                        filter = {'description': [fwr_desc]}
+                        # note we are assuming that if the rule is present
+                        # there is only one
+                        orig_rules = self.get_firewall_rules(context,
+                                                            filters=filter)
+                        if orig_rules and orig_rules[0] and orig_rules[0]['id']:
+                            rule_id = orig_rules[0]['id']
+                            self.update_firewall_rule(context, rule_id,
+                                                      rule)
+                        else:
+                            new_rule = self.create_firewall_rule(context, rule)
+                            rule_id = new_rule['id']
+                        rules_list.append(rule_id)
+                    fw_policy['firewall_rules_list'] = rules_list
+                else:
+                    fw_policy[k1] = v1
+            # TODO (Sumit): check if shared attr needs to be set for policy
+            policy = {FIREWALL_POLICY: fw_policy}
+            filter = {'name': [fwp_name]}
+            # note we are assuming if the policy is present there is only one
+            orig_policy = self.get_firewall_policies(context, filters=filter)
+            if orig_policy and orig_policy[0] and orig_policy[0]['id']:
+                self.update_firewall_policy(context, orig_policy[0]['id'],
+                                            policy)
+            else:
+                self.create_firewall_policy(context, policy)
+
+    def _get_default_chain_template_dict(self, tenant_id):
+        return {'name': '',
+                'description': '',
+                'tenant_id': tenant_id,
+                'shared': True,
+                'services_types_list': []}
+
+    def _init_service_chain_templates(self, template_dict):
+        context = qcontext.get_admin_context()
+        tenant_id = context.tenant_id
+        for tmpl_name, tmpl in template_dict.iteritems():
+            template = self._get_default_chain_template_dict(tenant_id)
+            template['name'] = tmpl_name
+            for k1, v1 in tmpl.iteritems():
+                template[k1] = v1
+            # TODO (Sumit): check if shared attr needs to be set
+            sc_tmpl = {SERVICE_CHAIN_TEMPLATE: template}
+            filter = {'name': [tmpl_name]}
+            # note we are assuming if the template is present there is only one
+            orig_tmpl = self.get_service_chain_templates(context,
+                                                         filters=filter)
+            if orig_tmpl and orig_tmpl[0] and orig_tmpl[0]['id']:
+                self.update_service_chain_template(context,
+                                                   orig_tmpl[0]['id'],
+                                                   sc_tmpl)
+            else:
+                self.create_service_chain_template(context, sc_tmpl)
+
+    def get_plugin_services(self):
+        supported_svcs = {constants.FIREWALL:'Firewall service plugin',
+                          constants.LOADBALANCER:'Loadbalancer service plugin'}
+        return supported_svcs
 
     def create_network(self, context, network):
         """Create a network, which represents an L2 network segment which
@@ -1242,3 +1394,578 @@ class QuantumRestProxyV2(db_base_plugin_v2.QuantumDbPluginV2,
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}
         return port
+
+    def _create_resource(self, context, resource, resource_name,
+                         controller_uri):
+        """Creates a resource in the DB and in the backend controller"""
+        LOG.error(_("QuantumRestProxyV2: create_%s() called for %s"),
+                    resource_name, resource)
+        create_db = getattr(super(QuantumRestProxyV2, self),
+                              'create_' + resource_name)
+        new_resource = create_db(context, resource)
+        # create resource on network controller
+        try:
+            resource_uri = controller_uri % new_resource['tenant_id']
+            data = {
+                resource_name: new_resource
+                #TODO (Sumit): Add vendor
+            }
+            ret = self.servers.post(resource_uri, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to create resource on "
+                        "controller %s: %s"), (resource_name, e.message))
+            # rollback creation of resource
+            delete_db = getattr(super(QuantumRestProxyV2, self),
+                                'delete_' + resource_name)
+            delete_db(context, new_resource['id'])
+            raise
+        return new_resource
+
+    def _update_resource(self, context, id, resource, resource_name,
+                         controller_uri):
+        """Updates a resource in the DB and in the backend controller"""
+        LOG.error(_("QuantumRestProxyV2: update_%s() called"), resource_name)
+        get_from_db = getattr(super(QuantumRestProxyV2, self),
+                              'get_' + resource_name)
+        orig_resource = get_from_db(context, id)
+        update_db = getattr(super(QuantumRestProxyV2, self),
+                            'update_' + resource_name)
+        updated_resource = update_db(context, id, resource)
+
+        # update on networl controller
+        try:
+            resource_uri = controller_uri % (orig_resource["tenant_id"], id)
+            data = {resource_name: updated_resource}
+            ret = self.servers.put(resource_uri, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            # reset to original state
+            LOG.error(_("QuantumRestProxyV2: Unable to update resource on "
+                        "controller %s: %s"), (resource_name, e.message))
+            updated_resource = update_db(context, id, orig_resource)
+            raise
+
+        return updated_resource
+
+    def _delete_resource(self, context, id, resource_name, controller_uri):
+        """Deletes a resource in the DB and in the backend controller"""
+        LOG.error(_("QuantumRestProxyV2: delete_%s() called"), resource_name)
+        get_from_db = getattr(super(QuantumRestProxyV2, self),
+                              'get_' + resource_name)
+        orig_resource = get_from_db(context, id)
+        # delete from network controller, remote error on delete is ignored
+        try:
+            resource_uri = controller_uri % (orig_resource["tenant_id"], id)
+            ret = self.servers.delete(resource_uri)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            delete_db = getattr(super(QuantumRestProxyV2, self),
+                                'delete_' + resource_name)
+            return_val = delete_db(context, id)
+            return return_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete resource on "
+                        "controller %s: %s"), (resource_name, e.message))
+            raise
+
+    """
+    Firewall API implementation.
+    """
+    def get_firewalls(self, context, filters=None, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewalls() called"))
+        return super(QuantumRestProxyV2, self).get_firewalls(context, filters,
+                                                             fields)
+
+    def get_firewall(self, context, id, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewall() called"))
+        return super(QuantumRestProxyV2, self).get_firewall(context, id,
+                                                            fields)
+
+    def create_firewall(self, context, firewall):
+        return self._create_resource(context, firewall, FIREWALL,
+                                     FIREWALL_RESOURCE_PATH)
+
+    def update_firewall(self, context, id, firewall):
+        return self._update_resource(context, id, firewall, FIREWALL,
+                                     FIREWALLS_PATH)
+
+    def delete_firewall(self, context, id):
+        return self._delete_resource(context, id, FIREWALL, FIREWALLS_PATH)
+
+    def get_firewall_rules(self, context, filters=None, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewall_rules() called"))
+        return super(QuantumRestProxyV2, self).get_firewall_rules(context,
+                                                                  filters,
+                                                                  fields)
+
+    def get_firewall_rule(self, context, id, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewall_rule() called"))
+        return super(QuantumRestProxyV2, self).get_firewall_rule(context, id,
+                                                                 fields)
+
+    def create_firewall_rule(self, context, firewall_rule):
+        return self._create_resource(context, firewall_rule, FIREWALL_RULE,
+                                     FIREWALL_RULE_RESOURCE_PATH)
+
+    def update_firewall_rule(self, context, id, firewall_rule):
+        return self._update_resource(context, id, firewall_rule, FIREWALL_RULE,
+                                     FIREWALL_RULES_PATH)
+
+    def delete_firewall_rule(self, context, id):
+        return self._delete_resource(context, id, FIREWALL_RULE,
+                                     FIREWALL_RULES_PATH)
+
+    def get_firewall_policies(self, context, filters=None, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewall_policies() called"))
+        return super(QuantumRestProxyV2, self).get_firewall_policies(context,
+                                                                     filters,
+                                                                     fields)
+
+    def get_firewall_policy(self, context, id, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_firewall_policy() called"))
+        return super(QuantumRestProxyV2, self).get_firewall_policy(context, id,
+                                                                   fields)
+
+    def create_firewall_policy(self, context, firewall_policy):
+        return self._create_resource(context, firewall_policy, FIREWALL_POLICY,
+                                     FIREWALL_POLICY_RESOURCE_PATH)
+
+    def update_firewall_policy(self, context, id, firewall_policy):
+        return self._update_resource(context, id, firewall_policy,
+                                     FIREWALL_POLICY, FIREWALL_POLICIES_PATH)
+
+    def delete_firewall_policy(self, context, id):
+        return self._delete_resource(context, id, FIREWALL_POLICY,
+                                     FIREWALL_POLICIES_PATH)
+
+    """
+    Loadbalancer API implementation.
+    """
+    def create_vip(self, context, vip):
+        LOG.debug(_("QuantumRestProxyV2: LB create_vip() called"))
+        new_vip = super(QuantumRestProxyV2, self).create_vip(context, vip)
+        # create vip on network controller
+        try:
+            resource = VIP_RESOURCE_PATH % new_vip['tenant_id']
+            data = {
+                "vip": new_vip
+                #TODO (Sumit): Add vendor
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "vip: %s"), e.message)
+            # rollback creation of vip
+            super(QuantumRestProxyV2, self).delete_vip(context, new_vip['id'])
+            raise
+        return new_vip
+
+    def update_vip(self, context, id, vip):
+        LOG.debug(_("QuantumRestProxyV2: LB update_vip() called"))
+        orig_vip = super(QuantumRestProxyV2, self).get_vip(context, id)
+        new_vip = super(QuantumRestProxyV2, self).update_vip(context, id, vip)
+
+        # update on networl ctrl
+        try:
+            resource = VIPS_PATH % (orig_vip["tenant_id"], id)
+            data = {"vip": new_vip}
+            ret = self.servers.put(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to update remote vip: "
+                        "%s"), e.message)
+            # reset to original state
+            super(QuantumRestProxyV2, self).update_vip(context, id, orig_vip)
+            raise
+
+        return new_vip
+
+    def delete_vip(self, context, id):
+        LOG.debug(_("QuantumRestProxyV2: LB delete_vip() called"))
+        vip = self.get_vip(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            resource = VIPS_PATH % (vip['tenant_id'], id)
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2, self).delete_vip(context, id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "vip: %s"), e.message)
+            raise
+
+    def create_pool(self, context, pool):
+        LOG.debug(_("QuantumRestProxyV2: LB create_pool() called"))
+        new_pool = super(QuantumRestProxyV2, self).create_pool(context, pool)
+        # create pool on network controller
+        try:
+            resource = POOL_RESOURCE_PATH % new_pool['tenant_id']
+            data = {
+                "pool": new_pool
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "pool: %s"), e.message)
+            # rollback creation of pool
+            super(QuantumRestProxyV2, self).delete_pool(context, new_pool['id'])
+            raise
+        return new_pool
+
+    def update_pool(self, context, id, pool):
+        LOG.debug(_("QuantumRestProxyV2: LB update_pool() called"))
+        orig_pool = super(QuantumRestProxyV2, self).get_pool(context, id)
+        new_pool = super(QuantumRestProxyV2, self).update_pool(context, id,
+                                                               pool)
+
+        # update on networl ctrl
+        try:
+            resource = POOLS_PATH % (orig_pool["tenant_id"], id)
+            data = {"pool": new_pool}
+            ret = self.servers.put(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to update remote pool: "
+                        "%s"), e.message)
+            # reset to original state
+            super(QuantumRestProxyV2, self).update_pool(context, id, orig_pool)
+            raise
+
+        return new_pool
+
+    def delete_pool(self, context, id):
+        LOG.debug(_("QuantumRestProxyV2: LB delete_pool() called"))
+        pool = self.get_pool(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            resource = POOLS_PATH % (pool['tenant_id'], id)
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2, self).delete_pool(context, id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "pool: %s"), e.message)
+            raise
+
+    def _map_member_id(self, member):
+        new_id = MEMBER_ID % (member['address'], member['protocol_port'])
+        return new_id
+
+    def _get_mapped_member(self, member):
+        mapped_member = copy.copy(member)
+        mapped_member['id'] = self._map_member_id(mapped_member)
+        return mapped_member
+
+    def create_member(self, context, member):
+        LOG.debug(_("QuantumRestProxyV2: LB create_member() called"))
+        new_member = super(QuantumRestProxyV2, self).create_member(context,
+                                                                   member)
+        # create member on network controller
+        try:
+            resource = MEMBER_RESOURCE_PATH % (new_member['tenant_id'],
+                                               new_member['pool_id'])
+            data = {
+                "member": self._get_mapped_member(new_member)
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "member: %s"), e.message)
+            # rollback creation of member
+            super(QuantumRestProxyV2, self).delete_member(context,
+                                                          new_member['id'])
+            raise
+        return new_member
+
+    def update_member(self, context, id, member):
+        LOG.debug(_("QuantumRestProxyV2: LB update_member() called"))
+        orig_member = super(QuantumRestProxyV2, self).get_member(context, id)
+        new_member = super(QuantumRestProxyV2, self).update_member(context, id,
+                                                                   member)
+
+        # update on networl ctrl
+        try:
+            mapped_member = self._get_mapped_member(new_member)
+            resource = MEMBERS_PATH % (mapped_member['tenant_id'],
+                                       mapped_member['pool_id'],
+                                       mapped_member['id'])
+            data = {
+                "member": mapped_member
+            }
+            ret = self.servers.put(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to update remote member: "
+                        "%s"), e.message)
+            # reset to original state
+            super(QuantumRestProxyV2, self).update_member(context, id,
+                                                          orig_member)
+            raise
+
+        return new_member
+
+    def delete_member(self, context, id):
+        LOG.debug(_("QuantumRestProxyV2: LB delete_member() called"))
+        member = self.get_member(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            mapped_member = self._get_mapped_member(member)
+            resource = MEMBERS_PATH % (mapped_member['tenant_id'],
+                                       mapped_member['pool_id'],
+                                       mapped_member['id'])
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2, self).delete_member(context,
+                                                                    id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "member: %s"), e.message)
+            raise
+
+    def create_health_monitor(self, context, health_monitor):
+        LOG.debug(_("QuantumRestProxyV2: LB create_health_monitor() called"))
+        new_hmonitor = super(QuantumRestProxyV2,
+                             self).create_health_monitor(context,
+                                                         health_monitor)
+        # create member on network controller
+        try:
+            resource = HMONITOR_RESOURCE_PATH % new_hmonitor['tenant_id']
+            data = {
+                "health_monitor": new_hmonitor
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "health_monitor: %s"), e.message)
+            # rollback creation of health_monitor
+            super(QuantumRestProxyV2,
+                  self).delete_health_monitor(context, new_hmonitor['id'])
+            raise
+        return new_hmonitor
+
+    def update_health_monitor(self, context, id, health_monitor):
+        LOG.debug(_("QuantumRestProxyV2: LB update_health_monitor() called"))
+        orig_hm = super(QuantumRestProxyV2, self).get_health_monitor(context,
+                                                                     id)
+        new_hm = super(QuantumRestProxyV2,
+                       self).update_health_monitor(context, id, health_monitor)
+
+        # update on networl ctrl
+        try:
+            resource = HMONITORS_PATH % (orig_hm["tenant_id"], id)
+            data = {"health_monitor": new_hm}
+            ret = self.servers.put(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to update remote "
+                        "health monitor: %s"), e.message)
+            # reset to original state
+            super(QuantumRestProxyV2, self).update_health_monitor(context, id,
+                                                                  orig_hm)
+            raise
+
+        return new_hm
+
+    def delete_health_monitor(self, context, id):
+        LOG.debug(_("QuantumRestProxyV2: LB delete_health_monitor() called"))
+        hmonitor = self.get_health_monitor(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            resource = HMONITORS_PATH % (hmonitor['tenant_id'], id)
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2,
+                            self).delete_health_monitor(context, id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "health monitor: %s"), e.message)
+            raise
+
+    def create_pool_health_monitor(self, context, health_monitor, pool_id):
+        LOG.debug(_("QuantumRestProxyV2: create_pool_health_monitor() called"))
+        pool_hmonitor = super(QuantumRestProxyV2,
+                             self).create_pool_health_monitor(context,
+                                                              health_monitor,
+                                                              pool_id)
+        tenant_id = health_monitor['health_monitor']['tenant_id']
+        monitor_id = health_monitor['health_monitor']['id']
+        try:
+            resource = ASSC_POOL_HMONITOR_PATH % (tenant_id, pool_id)
+            data = {
+                "id": monitor_id
+                #TODO (Sumit): Add vendor
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "health monitor to pool association: %s"), e.message)
+            # rollback assocaition of health_monitor to pool
+            super(QuantumRestProxyV2,
+                  self).delete_pool_health_monitor(context, monitor_id,
+                                                   pool_id)
+            raise
+        return pool_hmonitor
+
+    def delete_pool_health_monitor(self, context, id, pool_id):
+        LOG.debug(_("QuantumRestProxyV2: delete_pool_health_monitor() called"))
+        hmonitor = self.get_health_monitor(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            resource = DISASSC_POOL_HMONITOR_PATH % (hmonitor['tenant_id'], id)
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2,
+                            self).delete_pool_health_monitor(context, id,
+                                                             pool_id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "health_monitor pool association: %s"), e.message)
+            raise
+
+    def create_loadbalancer(self, context, loadbalancer):
+        LOG.debug(_("QuantumRestProxyV2: LB create_loadbalancer() called"))
+        new_lb = super(QuantumRestProxyV2,
+                       self).create_loadbalancer(context, loadbalancer)
+        # create loadbalancer on network controller
+        try:
+            resource = LOADBALANCER_RESOURCE_PATH % new_lb['tenant_id']
+            data = {
+                "loadbalancer": new_lb
+                #TODO (Sumit): Add vendor
+            }
+            ret = self.servers.post(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2:Unable to create remote "
+                        "loadbalancer: %s"), e.message)
+            # rollback creation of loadbalancer
+            super(QuantumRestProxyV2, self).delete_loadbalancer(context,
+                                                                new_lb['id'])
+            raise
+        return new_lb
+
+    def update_loadbalancer(self, context, id, loadbalancer):
+        LOG.debug(_("QuantumRestProxyV2: LB update_loadbalancer() called"))
+        orig_lb = super(QuantumRestProxyV2, self).get_loadbalancer(context, id)
+        new_lb = super(QuantumRestProxyV2,
+                       self).update_loadbalancer(context, id, loadbalancer)
+
+        # update on networl ctrl
+        try:
+            resource = LOADBALANCERS_PATH % (orig_lb["tenant_id"], id)
+            data = {"loadbalancer": new_lb}
+            ret = self.servers.put(resource, data)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to update remote lb: "
+                        "%s"), e.message)
+            # reset to original state
+            super(QuantumRestProxyV2,
+                  self).update_loadbalancer(context, id, orig_lb)
+            raise
+
+        return new_lb
+
+    def delete_loadbalancer(self, context, id):
+        LOG.debug(_("QuantumRestProxyV2: LB delete_loadbalancer() called"))
+        lb = self.get_loadbalancer(context, id)
+        # delete from network ctrl. Remote error on delete is ignored
+        try:
+            resource = LOADBALANCERS_PATH % (lb['tenant_id'], id)
+            ret = self.servers.delete(resource)
+            if not self.servers.action_success(ret):
+                raise RemoteRestError(ret[2])
+            ret_val = super(QuantumRestProxyV2,
+                            self).delete_loadbalancer(context, id)
+            return ret_val
+        except RemoteRestError as e:
+            LOG.error(_("QuantumRestProxyV2: Unable to delete remote "
+                        "loadbalancer: %s"), e.message)
+            raise
+
+    """
+    Service Chain API implementation.
+    """
+    def get_service_chains(self, context, filters=None, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_service_chains() called"))
+        return super(QuantumRestProxyV2, self).get_service_chains(context,
+                                                                  filters,
+                                                                  fields)
+
+    def get_service_chain(self, context, id, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_service_chain() called"))
+        return super(QuantumRestProxyV2, self).get_service_chain(context, id,
+                                                                 fields)
+
+    def create_service_chain(self, context, service_chain):
+        return self._create_resource(context, service_chain, SERVICE_CHAIN,
+                                     SERVICE_CHAIN_RESOURCE_PATH)
+
+    def update_service_chain(self, context, id, service_chain):
+        return self._update_resource(context, id, service_chain, SERVICE_CHAIN,
+                                     SERVICE_CHAINS_PATH)
+
+    def delete_service_chain(self, context, id):
+        return self._delete_resource(context, id, SERVICE_CHAIN,
+                                     SERVICE_CHAINS_PATH)
+
+    def get_service_chain_templates(self, context, filters=None, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_service_chain_templates() called"))
+        return super(QuantumRestProxyV2,
+                     self).get_service_chain_templates(context, filters, fields)
+
+    def get_service_chain_template(self, context, id, fields=None):
+        LOG.debug(_("QuantumRestProxyV2: get_service_chain_template() called"))
+        return super(QuantumRestProxyV2,
+                     self).get_service_chain_template(context, id, fields)
+
+    def create_service_chain_template(self, context, service_chain_template):
+        LOG.debug(_("create_service_chain_template() called"))
+        return super(QuantumRestProxyV2,
+                     self).create_service_chain_template(context,
+                                                         service_chain_template)
+
+    def update_service_chain_template(self, context, id,
+                                      service_chain_template):
+        LOG.debug(_("update_service_chain_template() called"))
+        return super(QuantumRestProxyV2,
+                     self).update_service_chain_template(context, id,
+                                                         service_chain_template)
+
+    def delete_service_chain_template(self, context, id):
+        return super(QuantumRestProxyV2,
+                     self).delete_service_chain_template(context, id)

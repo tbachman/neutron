@@ -104,21 +104,34 @@ class QuantumManager(object):
 
     def _load_service_plugins(self):
         plugin_providers = cfg.CONF.service_plugins
+        core_plugin = cfg.CONF.core_plugin
         LOG.debug(_("Loading service plugins: %s"), plugin_providers)
         for provider in plugin_providers:
             if provider == '':
                 continue
             try:
-                LOG.info(_("Loading Plugin: %s"), provider)
-                plugin_class = importutils.import_class(provider)
+                if provider == core_plugin:
+                    plugin_inst = self.plugin
+                else:
+                    LOG.info(_("Loading Plugin: %s"), provider)
+                    plugin_class = importutils.import_class(provider)
+                    plugin_inst = plugin_class()
             except ClassNotFound:
                 LOG.exception(_("Error loading plugin"))
                 raise Exception(_("Plugin not found."))
-            plugin_inst = plugin_class()
+
+            plugin_services = plugin_inst.get_plugin_services()
+            for k,v in plugin_services.iteritems():
+               self.service_plugins[k] = plugin_inst
+               LOG.debug(_("Successfully loaded %(type)s plugin. "
+                           "Description: %(desc)s"),
+                         {"type": k,
+                          "desc": v})
 
             # only one implementation of svc_type allowed
             # specifying more than one plugin
             # for the same type is a fatal exception
+            """
             if plugin_inst.get_plugin_type() in self.service_plugins:
                 raise Exception(_("Multiple plugins for service "
                                 "%s were configured"),
@@ -130,6 +143,16 @@ class QuantumManager(object):
                         "Description: %(desc)s"),
                       {"type": plugin_inst.get_plugin_type(),
                        "desc": plugin_inst.get_plugin_description()})
+            """
+        """
+        self.service_plugins[constants.FIREWALL] = plugin_inst
+        self.service_plugins[constants.LOADBALANCER] = plugin_inst
+        for k,v in self.service_plugins.iteritems():
+            LOG.debug(_("Successfully loaded %(type)s plugin. "
+                        "Description: %(desc)s"),
+                      {"type": k,
+                       "desc": v})
+        """
 
     @classmethod
     @lockutils.synchronized("qmlock", "qml-")

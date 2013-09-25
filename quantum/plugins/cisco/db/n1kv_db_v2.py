@@ -376,7 +376,8 @@ def get_port_binding(db_session, port_id):
         raise c_exc.N1kvPortBindingNotFound(port_id=port_id)
 
 
-def add_port_binding(db_session, port_id, policy_profile_id):
+def add_port_binding(db_session, port_id, policy_profile_id,
+                     service_chain_id):
     """
     Create port binding.
 
@@ -384,9 +385,11 @@ def add_port_binding(db_session, port_id, policy_profile_id):
     :param db_session: database session
     :param port_id: UUID of the port
     :param policy_profile_id: UUID of the policy profile
+    :param service_chain_id: UUID of the service chain
     """
     with db_session.begin(subtransactions=True):
-        binding = n1kv_models_v2.N1kvPortBinding(port_id, policy_profile_id)
+        binding = n1kv_models_v2.N1kvPortBinding(port_id, policy_profile_id,
+                                                 service_chain_id)
         db_session.add(binding)
 
 
