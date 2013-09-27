@@ -1166,7 +1166,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 self._send_create_network_request(context, net, segment_pairs)
                 # note - exception will rollback entire transaction
             elif network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT:
-                self._send_add_multi_segment_request(context, segment_pairs)
+                self._send_add_multi_segment_request(context, net['id'], segment_pairs)
             # note - exception will rollback entire transaction
             LOG.debug(_("Created network: %s"), net['id'])
             return net
