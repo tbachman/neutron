@@ -948,7 +948,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             with excutils.save_and_reraise_exception():
                 super(N1kvQuantumPluginV2, self).delete_subnet(context, subnet['id'])
 
-    # TBD Begin : Need to implement this function
     def _send_update_subnet_request(self, subnet):
         """
         Send update subnet request to VSM
@@ -956,7 +955,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         """
         LOG.debug(_('_send_update_subnet_request: %s'), subnet['id'])
-    # TBD End.
+        pool.spawn(self.n1kvclient.update_ip_pool, subnet).wait()
 
     def _send_delete_subnet_request(self, context, subnet):
         """
@@ -1166,7 +1165,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 self._send_create_network_request(context, net, segment_pairs)
                 # note - exception will rollback entire transaction
             elif network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT:
-                self._send_add_multi_segment_request(context, segment_pairs)
+                self._send_add_multi_segment_request(context, net['id'], segment_pairs)
             # note - exception will rollback entire transaction
             LOG.debug(_("Created network: %s"), net['id'])
             return net
