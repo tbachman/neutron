@@ -397,6 +397,30 @@ def _get_sorted_vlan_ids(seg_min, seg_max):
     return sorted(vlan_ids)
 
 
+def delete_segment_allocations(db_session, network_profile):
+    """
+    Delete the segment allocation entry from the table.
+
+    :params db_session: database session
+    :params network_profile: network profile object
+    """
+    with db_session.begin(subtransactions=True):
+        seg_min, seg_max = get_segment_range(network_profile)
+        if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
+            vlan_ids = _get_sorted_vlan_ids(seg_min, seg_max)
+            for vlan_id in vlan_ids:
+                alloc = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
+                         filter_by(physical_network=network_profile['physical_network'],
+                                   vlan_id=vlan_id).
+                         one())
+                db_session.delete(alloc)
+        elif network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
+            vxlan_ids = _get_sorted_vxlan_ids(seg_min, seg_max)
+            for vxlan_id in vxlan_ids:
+                alloc = (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
+                         filter_by(vxlan_id=vxlan_id).one())
+                db_session.delete(alloc)
+
 def sync_vlan_allocations(db_session, network_profile):
     """
     Synchronize vlan_allocations table with configured VLAN ranges.
@@ -1098,6 +1122,9 @@ class NetworkProfile_db_mixin(object):
         :param id: UUID representing network profile to delete
         :returns: deleted network profile dictionary
         """
+        if self._segment_in_use(context.session,
+                                get_network_profile(context.session, id)):
+            raise c_exc.NetworkProfileInUse(profile=id)
         _profile = delete_network_profile(context.session, id)
         return self._make_network_profile_dict(_profile)
 
@@ -1113,15 +1140,31 @@ class NetworkProfile_db_mixin(object):
         :returns: updated network profile dictionary
         """
         p = network_profile['network_profile']
+        # Retrieve original network profile
+        net_p = get_network_profile(context.session, id)
         if context.is_admin and 'add_tenant' in p:
             self.add_network_profile_tenant(id, p['add_tenant'])
-            return self._make_network_profile_dict(get_network_profile(context.session, id))
         elif context.is_admin and 'remove_tenant' in p:
             delete_profile_binding(p['remove_tenant'], id)
-            return self._make_network_profile_dict(get_network_profile(context.session, id))
-        else:
-            return self._make_network_profile_dict(
-                update_network_profile(context.session, id, p))
+        # Update profile if no network is allocated from segment range
+        if 'segment_range' in p:
+            if not self._segment_in_use(context.session, net_p):
+                delete_segment_allocations(context.session, net_p)
+                updated_profile = update_network_profile(context.session, id, p)
+                self._validate_segment_range_uniqueness(context.session, updated_profile, id)
+                if net_p.segment_type == c_const.NETWORK_TYPE_VLAN:
+                    sync_vlan_allocations(context.session, updated_profile)
+                if net_p.segment_type == c_const.NETWORK_TYPE_VXLAN:
+                    sync_vxlan_allocations(context.session, updated_profile)
+                net_p = updated_profile
+            else:
+                raise c_exc.NetworkProfileInUse(profile=id)
+        if 'name' in p:
+            net_p = update_network_profile(context.session, id, p)
+        if 'multicast_ip_range' in p and net_p.segment_type == c_const.NETWORK_TYPE_VXLAN:
+            if not self._segment_in_use(context.session, net_p):
+                net_p = update_network_profile(context.session, id, p)
+        return self._make_network_profile_dict(net_p)
 
     def get_network_profile(self, context, id, fields=None):
         """
@@ -1189,6 +1232,27 @@ class NetworkProfile_db_mixin(object):
             return True
         except exc.NoResultFound:
             raise c_exc.NetworkProfileIdNotFound(profile_id=id)
+
+    def _segment_in_use(self, db_session, network_profile):
+        """Verify whether a segment is allocated for given network profile."""
+        with db_session.begin(subtransactions=True):
+            seg_min, seg_max = self._get_segment_range(network_profile['segment_range'])
+            if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
+                return (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
+                        filter(and_(
+                               n1kv_models_v2.N1kvVlanAllocation.vlan_id >= seg_min,
+                               n1kv_models_v2.N1kvVlanAllocation.vlan_id <= seg_max,
+                               n1kv_models_v2.N1kvVlanAllocation.physical_network ==
+                               network_profile['physical_network'],
+                               n1kv_models_v2.N1kvVlanAllocation.allocated == True)
+                               )).first()
+            elif network_profile['segment_type'] == c_const.NETWORK_TYPE_VXLAN:
+                return (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
+                        filter(and_(
+                               n1kv_models_v2.N1kvVxlanAllocation.vxlan_id >= seg_min,
+                               n1kv_models_v2.N1kvVxlanAllocation.vxlan_id <= seg_max,
+                               n1kv_models_v2.N1kvVxlanAllocation.allocated == True)
+                               )).first()
 
     def _get_segment_range(self, data):
         # Sort the range to ensure min, max is in order
@@ -1301,12 +1365,14 @@ class NetworkProfile_db_mixin(object):
         if _segment_type not in [c_const.NETWORK_TYPE_VXLAN]:
             net_p['multicast_ip_range'] = '0.0.0.0'
 
-    def _validate_segment_range_uniqueness(self, context, net_p):
+    def _validate_segment_range_uniqueness(self, context, net_p, id=None):
         """
         Validate that segment range doesn't overlap.
 
         :param context: neutron api request context
         :param net_p: network profile dictionary
+        :param id: UUID representing the network profile in case of
+                   network profile update
         """
         segment_type = net_p['segment_type'].lower()
         if segment_type == n1kv_models_v2.SEGMENT_TYPE_VLAN:
@@ -1318,6 +1384,8 @@ class NetworkProfile_db_mixin(object):
             profiles = _get_network_profiles()
         if profiles:
             for prfl in profiles:
+                if id and prfl.id == id:
+                    continue
                 name = prfl.name
                 segment_range = prfl.segment_range
                 if net_p['name'] == name:

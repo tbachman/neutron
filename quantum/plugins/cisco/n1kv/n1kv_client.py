@@ -199,7 +199,7 @@ class Client(object):
                 body['addSegments'] = network['add_segment_list']
                 body['delSegments'] = network['del_segment_list']
             else:
-                body['encapProfile'] = (network['name'] +
+                body['encapProfile'] = (network['id'] +
                                         c_const.ENCAPSULATION_PROFILE_SUFFIX)
         else:
             body['mode'] = 'access'
@@ -287,6 +287,42 @@ class Client(object):
     def create_ip_pool(self, subnet):
         """
         Create an ip-pool on the VSM
+
+        :param subnet: subnet dict
+        """
+        if subnet['cidr']:
+            try:
+                ip = netaddr.IPNetwork(subnet['cidr'])
+                netmask = str(ip.netmask)
+                network_address = str(ip.network)
+            except netaddr.AddrFormatError:
+                msg = _("Invalid input for CIDR")
+                raise q_exc.InvalidInput(error_message=msg)
+        else:
+            netmask = network_address = ""
+
+        if subnet['allocation_pools']:
+            address_range_start = subnet['allocation_pools'][0]['start']
+            address_range_end = subnet['allocation_pools'][0]['end']
+        else:
+            address_range_start = None
+            address_range_end = None
+
+        body = {'addressRangeStart': address_range_start,
+                'addressRangeEnd': address_range_end,
+                'ipAddressSubnet': netmask,
+                'description': subnet['name'],
+                'gateway': subnet['gateway_ip'],
+                'networkAddress': network_address,
+                'netSegmentName': subnet['network_id'],
+                'id': subnet['id'],
+                'tenantId': subnet['tenant_id']}
+        return self._post(self.ip_pool_path % (subnet['id']),
+                          body=body)
+
+    def update_ip_pool(self, subnet):
+        """
+        Update an ip-pool on the VSM
 
         :param subnet: subnet dict
         """

@@ -175,6 +175,12 @@ class NetworkProfileIdNotFound(exceptions.QuantumException):
     message = _("Network Profile %(profile_id)s could not be found.")
 
 
+class NetworkProfileInUse(exceptions.QuantumException):
+    """Network profile is in use."""
+    message = _("One or more network segments belonging to network "
+                "profile %(profile)s is in use.")
+
+
 class VMNetworkNotFound(exceptions.QuantumException):
     """VM Network cannot be found."""
     message = _("VM Network %(name)s could not be found.")

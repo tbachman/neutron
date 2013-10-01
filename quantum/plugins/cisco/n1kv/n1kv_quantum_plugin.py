@@ -410,7 +410,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         # TBD : Need to handle provider network updates
         msg = _("plugin does not support updating provider attributes")
         raise q_exc.InvalidInput(error_message=msg)
-
+    
+    def _is_valid_vlan_tag(self, vlan):
+        return c_const.MIN_VLAN_TAG <= vlan <= c_const.MAX_VLAN_TAG
+    
     def _get_cluster(self, segment1, segment2, clusters):
         """
         Returns a cluster to apply the segment mapping
@@ -549,7 +552,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             (segment, dot1qtag) = pair
             member_dict = {}
             net = self.get_network(context, segment)
-            member_dict['bridgeDomain'] = (net['name'] +
+            member_dict['bridgeDomain'] = (net['id'] +
                                            c_const.BRIDGE_DOMAIN_SUFFIX)
             member_dict['dot1q'] = dot1qtag
             member_list.append(member_dict)
@@ -659,7 +662,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                 "a vlan trunk segment") % segment
                         raise q_exc.InvalidInput(error_message=msg)
                     try:
-                        if not utils.is_valid_vlan_tag(int(dot1qtag)):
+                        if not self._is_valid_vlan_tag(int(dot1qtag)):
                             msg = _("Vlan tag '%s' is out of range") % dot1qtag
                             raise q_exc.InvalidInput(error_message=msg)
                     except ValueError:
@@ -814,7 +817,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                            n1kv_profile.SEGMENT_ADD)
             network['del_segment_list'] = []
             if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
-                encap_dict = {'name': (network['name'] +
+                encap_dict = {'name': (network['id'] +
                                        c_const.ENCAPSULATION_PROFILE_SUFFIX),
                               'add_segment_list': (
                                   self._get_encap_segments(context,
@@ -864,12 +867,13 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                            n1kv_profile.SEGMENT_DEL)
             body['mode'] = c_const.NETWORK_TYPE_TRUNK
             body['segmentType'] = profile['sub_type']
-            body['addSegments'] = network['add_segment_list']
-            body['delSegments'] = network['del_segment_list']
-            LOG.debug("add_segments=%s", body['addSegments'])
-            LOG.debug("del_segments=%s", body['delSegments'])
+            if profile['sub_type'] == c_const.NETWORK_TYPE_VLAN:
+                body['addSegments'] = network['add_segment_list']
+                body['delSegments'] = network['del_segment_list']
+	        LOG.debug("add_segments=%s", body['addSegments'])
+                LOG.debug("del_segments=%s", body['delSegments'])
             if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
-                encap_profile = (network['name'] +
+                encap_profile = (network['id'] +
                                  c_const.ENCAPSULATION_PROFILE_SUFFIX)
                 encap_dict = {'name': encap_profile,
                               'addMappings': (
@@ -881,7 +885,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 pool.spawn(self.n1kvclient.update_encapsulation_profile,
                            context, encap_profile, encap_dict).wait()
         pool.spawn(self.n1kvclient.update_network_segment,
-                   network['name'], body).wait()
+                   network['id'], body).wait()
         #TODO(rtapadar) rollback update_encap? 
 
     def _send_delete_network_request(self, context, network):
@@ -905,7 +909,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             profile = self.get_network_profile(
                 context, network[n1kv_profile.PROFILE_ID])
             if profile['sub_type'] == c_const.NETWORK_TYPE_VXLAN:
-                profile_name = (network['name'] +
+                profile_name = (network['id'] +
                                 c_const.ENCAPSULATION_PROFILE_SUFFIX)
                 pool.spawn(self.n1kvclient.delete_encapsulation_profile,
                            profile_name).wait()
@@ -944,7 +948,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             with excutils.save_and_reraise_exception():
                 super(N1kvQuantumPluginV2, self).delete_subnet(context, subnet['id'])
 
-    # TBD Begin : Need to implement this function
     def _send_update_subnet_request(self, subnet):
         """
         Send update subnet request to VSM
@@ -952,7 +955,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         """
         LOG.debug(_('_send_update_subnet_request: %s'), subnet['id'])
-    # TBD End.
+        pool.spawn(self.n1kvclient.update_ip_pool, subnet).wait()
 
     def _send_delete_subnet_request(self, context, subnet):
         """
@@ -1162,7 +1165,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 self._send_create_network_request(context, net, segment_pairs)
                 # note - exception will rollback entire transaction
             elif network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT:
-                self._send_add_multi_segment_request(context, segment_pairs)
+                self._send_add_multi_segment_request(context, net['id'], segment_pairs)
             # note - exception will rollback entire transaction
             LOG.debug(_("Created network: %s"), net['id'])
             return net
