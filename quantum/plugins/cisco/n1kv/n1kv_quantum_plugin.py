@@ -1241,6 +1241,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         with session.begin(subtransactions=True):
             binding = n1kv_db_v2.get_network_binding(session, id)
             network = self.get_network(context, id)
+            if network['subnets']:
+                msg = _("Cannot delete network '%s', "
+                        "delete the associated subnet first") % network['name']
+                raise q_exc.InvalidInput(error_message=msg)
             if n1kv_db_v2.is_trunk_member(session, id):
                 msg = _("Cannot delete network '%s' "
                         "that is member of a trunk segment") % network['name']
