@@ -1421,7 +1421,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         :returns: subnet object
         """
-        LOG.debug(_('ABHISHEK IN SUBNET CONNS %s'), pool.running())
         LOG.debug(_('Create subnet'))
         # Verify whether subnet name is populated.
         if not subnet['subnet']['name']:
