@@ -33,6 +33,7 @@ from quantum.common import exceptions as q_exc
 from quantum.common import rpc as q_rpc
 from quantum.common import topics
 from quantum.common import utils 
+from quantum.db import quota_db
 from quantum.db import agents_db
 from quantum.db import agentschedulers_db
 from quantum.db import db_base_plugin_v2
@@ -55,7 +56,6 @@ from quantum.plugins.cisco.db import n1kv_db_v2
 from quantum.plugins.cisco.db import network_db_v2
 from quantum.plugins.cisco.extensions import n1kv_profile
 from quantum.plugins.cisco.n1kv import n1kv_client
-from quantum import policy
 from quantum import policy
 
 
@@ -202,7 +202,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
     __native_bulk_support = False
     supported_extension_aliases = ["provider", "agent", "binding",
                                    "policy_profile_binding",
-                                   "network_profile_binding",
+                                   "network_profile_binding", "quotas",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "router", "credential"]
 
