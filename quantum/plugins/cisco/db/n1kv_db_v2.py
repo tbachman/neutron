@@ -1380,11 +1380,11 @@ class NetworkProfile_db_mixin(object):
         if segment_type == n1kv_models_v2.SEGMENT_TYPE_VLAN:
             profiles = _get_network_profiles(
                 physical_network=net_p['physical_network'])
-	    if ((1 > seg_min or seg_max > 4093) or
-                seg_min in range( 3968, 4048) or 
+            if ((1 > seg_min or seg_max > 4093) or
+                seg_min in range( 3968, 4048) or
                 seg_max in range (3968, 4048) or
-                (seg_min in range (1,3968) and 
-                seg_max in range (3968,4094))):                                
+                (seg_min in range (1,3968) and
+                seg_max in range (3968,4094))):
                 msg = _("Segment range is invalid, select from 1-3967, 4048-4093")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
@@ -1392,10 +1392,10 @@ class NetworkProfile_db_mixin(object):
                 n1kv_models_v2.SEGMENT_TYPE_MULTI_SEGMENT, \
                 n1kv_models_v2.SEGMENT_TYPE_TRUNK]:
             profiles = _get_network_profiles()
-	    if ((seg_min < 4096) or  (seg_max > 16000000)):
+            if ((seg_min < 4096) or  (seg_max > 16000000)):
                 msg = _("segment range is invalid. Valid range is : 4096-16000000")
                 LOG.exception(msg)
-                raise q_exc.InvalidInput(error_message=msg) 
+                raise q_exc.InvalidInput(error_message=msg)
         if profiles:
             for prfl in profiles:
                 if id and prfl.id == id:
