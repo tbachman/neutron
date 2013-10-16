@@ -274,6 +274,7 @@ def get_network_binding(db_session, network_id):
                        to fetch
     :returns: binding object
     """
+    db_session = db_session or db.get_session()
     try:
         binding = (db_session.query(n1kv_models_v2.N1kvNetworkBinding).
                    filter_by(network_id=network_id).
