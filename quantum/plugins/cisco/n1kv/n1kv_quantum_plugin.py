@@ -946,7 +946,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
-                super(N1kvQuantumPluginV2, self).delete_subnet(context, subnet['id'])
+                self.delete_subnet(context, subnet['id'])
 
     def _send_update_subnet_request(self, subnet):
         """
