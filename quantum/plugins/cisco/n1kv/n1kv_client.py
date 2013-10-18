@@ -315,6 +315,8 @@ class Client(object):
                 'gateway': subnet['gateway_ip'],
                 'networkAddress': network_address,
                 'netSegmentName': subnet['network_id'],
+                'dhcp': subnet['enable_dhcp'],
+                'dnsServersList': subnet['dns_nameservers'],
                 'id': subnet['id'],
                 'tenantId': subnet['tenant_id']}
         return self._post(self.ip_pool_path % (subnet['id']),
@@ -351,6 +353,8 @@ class Client(object):
                 'gateway': subnet['gateway_ip'],
                 'networkAddress': network_address,
                 'netSegmentName': subnet['network_id'],
+                'dhcp': subnet['enable_dhcp'],
+                'dnsServersList': subnet['dns_nameservers'],
                 'id': subnet['id'],
                 'tenantId': subnet['tenant_id']}
         return self._post(self.ip_pool_path % (subnet['id']),

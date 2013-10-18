@@ -33,6 +33,7 @@ from quantum.common import exceptions as q_exc
 from quantum.common import rpc as q_rpc
 from quantum.common import topics
 from quantum.common import utils 
+from quantum.db import quota_db
 from quantum.db import agents_db
 from quantum.db import agentschedulers_db
 from quantum.db import db_base_plugin_v2
@@ -56,7 +57,6 @@ from quantum.plugins.cisco.db import n1kv_db_v2
 from quantum.plugins.cisco.db import network_db_v2
 from quantum.plugins.cisco.extensions import n1kv_profile
 from quantum.plugins.cisco.n1kv import n1kv_client
-from quantum import policy
 from quantum import policy
 
 
@@ -203,7 +203,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
     __native_bulk_support = False
     supported_extension_aliases = ["provider", "agent", "binding",
                                    "policy_profile_binding",
-                                   "network_profile_binding",
+                                   "network_profile_binding", "quotas",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "router", "credential",
 	                               "agent_scheduler"]
@@ -952,7 +952,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
-                super(N1kvQuantumPluginV2, self).delete_subnet(context, subnet['id'])
+                self.delete_subnet(context, subnet['id'])
 
     def _send_update_subnet_request(self, subnet):
         """
@@ -1427,7 +1427,6 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         :param subnet: subnet dictionary
         :returns: subnet object
         """
-        LOG.debug(_('ABHISHEK IN SUBNET CONNS %s'), pool.running())
         LOG.debug(_('Create subnet'))
         # Verify whether subnet name is populated.
         if not subnet['subnet']['name']:
