@@ -57,7 +57,7 @@ from neutron.extensions import providernet as pnet
 from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import excutils
 from neutron.plugins.common import constants as plugin_const
-from neutron.plugins.nicira.common import config
+from neutron.plugins.nicira.common import config  # noqa
 from neutron.plugins.nicira.common import exceptions as nvp_exc
 from neutron.plugins.nicira.common import securitygroups as nvp_sec
 from neutron.plugins.nicira.common import sync
@@ -97,11 +97,6 @@ class NetworkTypes:
 
 def create_nvp_cluster(cluster_opts, concurrent_connections,
                        nvp_gen_timeout):
-    # NOTE(armando-migliaccio): remove this block once we no longer
-    # want to support deprecated options in the nvp config file
-    # ### BEGIN
-    config.register_deprecated(cfg.CONF)
-    # ### END
     cluster = nvp_cluster.NVPCluster(**cluster_opts)
     api_providers = [ctrl.split(':') + [True]
                      for ctrl in cluster.nvp_controllers]
@@ -525,8 +520,12 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         nvp_port_id = self._nvp_get_port_id(context, self.cluster,
                                             port_data)
         if not nvp_port_id:
-            raise q_exc.PortNotFound(port_id=port_data['id'])
-
+            LOG.warn(_("Neutron port %(port_id)s not found on NVP backend. "
+                       "Terminating delete operation. A dangling router port "
+                       "might have been left on router %(router_id)s"),
+                     {'port_id': port_data['id'],
+                      'router_id': lrouter_id})
+            return
         try:
             nvplib.delete_peer_router_lport(self.cluster,
                                             lrouter_id,
@@ -741,15 +740,15 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 cluster,
                 neutron_port['network_id'],
                 neutron_port['id'])
-            if nvp_port:
-                nicira_db.add_neutron_nvp_port_mapping(
-                    context.session,
-                    neutron_port['id'],
-                    nvp_port['uuid'])
-                return nvp_port['uuid']
-        except Exception:
+        except NvpApiClient.NvpApiException:
             LOG.exception(_("Unable to find NVP uuid for Neutron port %s"),
                           neutron_port['id'])
+
+        if nvp_port:
+            nicira_db.add_neutron_nvp_port_mapping(
+                context.session, neutron_port['id'],
+                nvp_port['uuid'])
+            return nvp_port['uuid']
 
     def _extend_fault_map(self):
         """Extends the Neutron Fault Map.
@@ -1070,12 +1069,12 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         with context.session.begin(subtransactions=True):
             # goto to the plugin DB and fetch the network
             network = self._get_network(context, id)
-            if fields and 'status' in fields:
+            if (self.nvp_sync_opts.always_read_status or
+                fields and 'status' in fields):
                 # External networks are not backed by nvp lswitches
                 if not network.external:
                     # Perform explicit state synchronization
-                    self._synchronizer.synchronize_network(
-                        context, network)
+                    self._synchronizer.synchronize_network(context, network)
             # Don't do field selection here otherwise we won't be able
             # to add provider networks fields
             net_result = self._make_network_dict(network)
@@ -1356,7 +1355,8 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
 
     def get_port(self, context, id, fields=None):
         with context.session.begin(subtransactions=True):
-            if fields and 'status' in fields:
+            if (self.nvp_sync_opts.always_read_status or
+                fields and 'status' in fields):
                 # Perform explicit state synchronization
                 db_port = self._get_port(context, id)
                 self._synchronizer.synchronize_port(
@@ -1366,7 +1366,8 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 return super(NvpPluginV2, self).get_port(context, id, fields)
 
     def get_router(self, context, id, fields=None):
-        if fields and 'status' in fields:
+        if (self.nvp_sync_opts.always_read_status or
+            fields and 'status' in fields):
             db_router = self._get_router(context, id)
             # Perform explicit state synchronization
             self._synchronizer.synchronize_router(

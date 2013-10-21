@@ -139,12 +139,7 @@ class TestDhcpAgent(base.BaseTestCase):
         self.driver_cls.return_value = self.driver
         self.mock_makedirs_p = mock.patch("os.makedirs")
         self.mock_makedirs = self.mock_makedirs_p.start()
-
-    def tearDown(self):
-        self.driver_cls_p.stop()
-        self.mock_makedirs_p.stop()
-        cfg.CONF.reset()
-        super(TestDhcpAgent, self).tearDown()
+        self.addCleanup(mock.patch.stopall)
 
     def test_dhcp_agent_manager(self):
         state_rpc_str = 'neutron.agent.rpc.PluginReportStateAPI'
@@ -318,6 +313,25 @@ class TestDhcpAgent(base.BaseTestCase):
         )
 
         self.assertEqual(set(networks), set(dhcp.cache.get_network_ids()))
+
+    def test_none_interface_driver(self):
+        cfg.CONF.set_override('interface_driver', None)
+        with mock.patch.object(dhcp, 'LOG') as log:
+            self.assertRaises(SystemExit, dhcp.DeviceManager,
+                              cfg.CONF, 'sudo', None)
+            msg = 'An interface driver must be specified'
+            log.error.assert_called_once_with(msg)
+
+    def test_nonexistent_interface_driver(self):
+        # Temporarily turn off mock, so could use the real import_class
+        # to import interface_driver.
+        self.driver_cls_p.stop()
+        self.addCleanup(self.driver_cls_p.start)
+        cfg.CONF.set_override('interface_driver', 'foo')
+        with mock.patch.object(dhcp, 'LOG') as log:
+            self.assertRaises(SystemExit, dhcp.DeviceManager,
+                              cfg.CONF, 'sudo', None)
+            log.error.assert_called_once()
 
 
 class TestLogArgs(base.BaseTestCase):
@@ -749,12 +763,13 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
              mock.call.get_port_by_id(fake_port1.id),
              mock.call.put_port(mock.ANY)])
         self.call_driver.assert_has_calls(
-            [mock.call.call_driver(
-                'release_lease',
-                fake_network,
-                mac_address=fake_port1.mac_address,
-                removed_ips=set([updated_fake_port1.fixed_ips[0].ip_address])),
-             mock.call.call_driver('reload_allocations', fake_network)])
+            [mock.call.call_driver('reload_allocations', fake_network),
+             mock.call.call_driver(
+                 'release_lease',
+                 fake_network,
+                 mac_address=fake_port1.mac_address,
+                 removed_ips=set([updated_fake_port1.fixed_ips[0].ip_address]))
+             ])
 
     def test_port_delete_end(self):
         payload = dict(port_id=fake_port2.id)
@@ -769,11 +784,11 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
              mock.call.get_network_by_id(fake_network.id),
              mock.call.remove_port(fake_port2)])
         self.call_driver.assert_has_calls(
-            [mock.call.call_driver('release_lease',
+            [mock.call.call_driver('reload_allocations', fake_network),
+             mock.call.call_driver('release_lease',
                                    fake_network,
                                    mac_address=fake_port2.mac_address,
-                                   removed_ips=removed_ips),
-             mock.call.call_driver('reload_allocations', fake_network)])
+                                   removed_ips=removed_ips)])
 
     def test_port_delete_end_unknown_port(self):
         payload = dict(port_id='unknown')

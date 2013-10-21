@@ -36,8 +36,9 @@ nvp_opts = [
     cfg.IntOpt('max_lp_per_overlay_ls', default=256,
                help=_("Maximum number of ports of a logical switch on an "
                       "overlay transport zone (default 256)")),
-    cfg.IntOpt('concurrent_connections', default=5,
-               help=_("Maximum concurrent connections")),
+    cfg.IntOpt('concurrent_connections', default=10,
+               help=_("Maximum concurrent connections to each NVP "
+                      "controller.")),
     cfg.IntOpt('nvp_gen_timeout', default=-1,
                help=_("Number of seconds a generation id should be valid for "
                       "(default -1 meaning do not time out)")),
@@ -70,7 +71,11 @@ sync_opts = [
                       'exceed state_sync_interval')),
     cfg.IntOpt('min_chunk_size', default=500,
                help=_('Minimum number of resources to be retrieved from NVP '
-                      'during state synchronization'))
+                      'during state synchronization')),
+    cfg.BoolOpt('always_read_status', default=False,
+                help=_('Always read operational status from backend on show '
+                       'operations. Enabling this option might slow down '
+                       'the system.'))
 ]
 
 connection_opts = [
@@ -157,32 +162,3 @@ cfg.CONF.register_opts(cluster_opts)
 cfg.CONF.register_opts(nvp_opts, "NVP")
 cfg.CONF.register_opts(sync_opts, "NVP_SYNC")
 cfg.CONF.register_opts(vcns_opts, group="vcns")
-# NOTE(armando-migliaccio): keep the following code until we support
-# NVP configuration files in older format (Grizzly or older).
-# ### BEGIN
-controller_depr = cfg.MultiStrOpt('nvp_controller_connection',
-                                  help=_("Describes a connection to a single "
-                                         "controller. A different connection "
-                                         "for each controller in the cluster "
-                                         "can be specified; there must be at "
-                                         "least one connection per cluster."))
-
-host_route_depr = cfg.BoolOpt('metadata_dhcp_host_route', default=None)
-
-
-def register_deprecated(conf):
-    conf.register_opts([host_route_depr])
-    multi_parser = cfg.MultiConfigParser()
-    read_ok = multi_parser.read(conf.config_file)
-    if len(read_ok) != len(conf.config_file):
-        raise cfg.Error(_("Some config files were not parsed properly"))
-
-    for parsed_file in multi_parser.parsed:
-        for section in parsed_file.keys():
-            if not section.lower().startswith("cluster:"):
-                continue
-
-            section = 'CLUSTER:' + section.split(':', 1)[1]
-            if section not in conf:
-                conf.register_opts(cluster_opts + [controller_depr], section)
-# ### END

@@ -39,10 +39,31 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
 
         utilsfactory._get_windows_version = mock.MagicMock(
             return_value='6.2.0')
+
+        class MockFixedIntervalLoopingCall(object):
+            def __init__(self, f):
+                self.f = f
+
+            def start(self, interval=0):
+                self.f()
+
+        mock.patch('neutron.openstack.common.loopingcall.'
+                   'FixedIntervalLoopingCall',
+                   new=MockFixedIntervalLoopingCall)
+
         self.agent = hyperv_neutron_agent.HyperVNeutronAgent()
         self.agent.plugin_rpc = mock.Mock()
         self.agent.context = mock.Mock()
         self.agent.agent_id = mock.Mock()
+
+        fake_agent_state = {
+            'binary': 'neutron-hyperv-agent',
+            'host': 'fake_host_name',
+            'topic': 'N/A',
+            'configurations': {'vswitch_mappings': ['*:MyVirtualSwitch']},
+            'agent_type': 'HyperV agent',
+            'start_flag': True}
+        self.agent_state = fake_agent_state
 
     def test_port_bound(self):
         port = mock.Mock()
@@ -90,8 +111,20 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
     def test_treat_devices_added_updates_known_port(self):
         details = mock.MagicMock()
         details.__contains__.side_effect = lambda x: True
-        self.assertTrue(self.mock_treat_devices_added(details,
-                                                      '_treat_vif_port'))
+        with mock.patch.object(self.agent.plugin_rpc,
+                               "update_device_up") as func:
+            self.assertTrue(self.mock_treat_devices_added(details,
+                                                          '_treat_vif_port'))
+            self.assertTrue(func.called)
+
+    def test_treat_devices_added_missing_port_id(self):
+        details = mock.MagicMock()
+        details.__contains__.side_effect = lambda x: False
+        with mock.patch.object(self.agent.plugin_rpc,
+                               "update_device_up") as func:
+            self.assertFalse(self.mock_treat_devices_added(details,
+                                                           '_treat_vif_port'))
+            self.assertFalse(func.called)
 
     def test_treat_devices_removed_returns_true_for_missing_device(self):
         attrs = {'update_device_down.side_effect': Exception()}
@@ -111,6 +144,14 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
 
     def test_treat_devices_removed_ignores_missing_port(self):
         self.mock_treat_devices_removed(False)
+
+    def test_report_state(self):
+        with mock.patch.object(self.agent.state_rpc,
+                               "report_state") as report_st:
+            self.agent._report_state()
+            report_st.assert_called_with(self.agent.context,
+                                         self.agent.agent_state)
+            self.assertNotIn("start_flag", self.agent.agent_state)
 
     def test_main(self):
         with mock.patch.object(hyperv_neutron_agent,

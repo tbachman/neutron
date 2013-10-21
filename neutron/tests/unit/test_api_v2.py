@@ -36,6 +36,7 @@ from neutron.manager import NeutronManager
 from neutron.openstack.common.notifier import api as notifer_api
 from neutron.openstack.common import policy as common_policy
 from neutron.openstack.common import uuidutils
+from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit import testlib_api
 
@@ -117,6 +118,10 @@ class APIv2TestBase(base.BaseTestCase):
 
         api = router.APIRouter()
         self.api = webtest.TestApp(api)
+
+        quota.QUOTAS._driver = None
+        cfg.CONF.set_override('quota_driver', 'neutron.quota.ConfDriver',
+                              group='QUOTAS')
 
 
 class _ArgMatcher(object):
@@ -1315,7 +1320,7 @@ class QuotaTest(APIv2TestBase):
         instance.get_networks_count.assert_called_with(mock.ANY,
                                                        filters=mock.ANY)
         self.assertIn("Quota exceeded for resources",
-                      res.json['NeutronError'])
+                      res.json['NeutronError']['message'])
 
     def test_create_network_quota_no_counts(self):
         cfg.CONF.set_override('quota_network', 1, group='QUOTAS')
@@ -1332,7 +1337,7 @@ class QuotaTest(APIv2TestBase):
         instance.get_networks_count.assert_called_with(mock.ANY,
                                                        filters=mock.ANY)
         self.assertIn("Quota exceeded for resources",
-                      res.json['NeutronError'])
+                      res.json['NeutronError']['message'])
 
     def test_create_network_quota_without_limit(self):
         cfg.CONF.set_override('quota_network', -1, group='QUOTAS')
@@ -1376,6 +1381,10 @@ class ExtensionTestCase(base.BaseTestCase):
 
         api = router.APIRouter()
         self.api = webtest.TestApp(api)
+
+        quota.QUOTAS._driver = None
+        cfg.CONF.set_override('quota_driver', 'neutron.quota.ConfDriver',
+                              group='QUOTAS')
 
     def tearDown(self):
         super(ExtensionTestCase, self).tearDown()

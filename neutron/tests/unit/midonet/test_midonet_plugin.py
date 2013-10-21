@@ -25,13 +25,15 @@ import os
 import sys
 
 import neutron.common.test_lib as test_lib
+from neutron.extensions import portbindings
+from neutron.tests.unit import _test_extension_portbindings as test_bindings
 import neutron.tests.unit.midonet.mock_lib as mock_lib
 import neutron.tests.unit.test_db_plugin as test_plugin
 import neutron.tests.unit.test_extension_security_group as sg
-
+import neutron.tests.unit.test_l3_plugin as test_l3_plugin
 
 MIDOKURA_PKG_PATH = "neutron.plugins.midonet.plugin"
-
+MIDONET_PLUGIN_NAME = ('%s.MidonetPluginV2' % MIDOKURA_PKG_PATH)
 
 # Need to mock the midonetclient module since the plugin will try to load it.
 sys.modules["midonetclient"] = mock.Mock()
@@ -39,9 +41,10 @@ sys.modules["midonetclient"] = mock.Mock()
 
 class MidonetPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
 
-    _plugin_name = ('%s.MidonetPluginV2' % MIDOKURA_PKG_PATH)
-
-    def setUp(self):
+    def setUp(self,
+              plugin=MIDONET_PLUGIN_NAME,
+              ext_mgr=None,
+              service_plugins=None):
         self.mock_api = mock.patch(
             'neutron.plugins.midonet.midonet_lib.MidoClient')
         etc_path = os.path.join(os.path.dirname(__file__), 'etc')
@@ -51,7 +54,8 @@ class MidonetPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
         self.instance = self.mock_api.start()
         mock_cfg = mock_lib.MidonetLibMockConfig(self.instance.return_value)
         mock_cfg.setup()
-        super(MidonetPluginV2TestCase, self).setUp(self._plugin_name)
+        super(MidonetPluginV2TestCase, self).setUp(plugin=plugin,
+                                                   ext_mgr=ext_mgr)
 
     def tearDown(self):
         super(MidonetPluginV2TestCase, self).tearDown()
@@ -62,6 +66,20 @@ class TestMidonetNetworksV2(test_plugin.TestNetworksV2,
                             MidonetPluginV2TestCase):
 
     pass
+
+
+class TestMidonetL3NatTestCase(test_l3_plugin.L3NatDBIntTestCase,
+                               MidonetPluginV2TestCase):
+    def setUp(self,
+              plugin=MIDONET_PLUGIN_NAME,
+              ext_mgr=None,
+              service_plugins=None):
+        super(TestMidonetL3NatTestCase, self).setUp(plugin=plugin,
+                                                    ext_mgr=None,
+                                                    service_plugins=None)
+
+    def test_floatingip_with_invalid_create_port(self):
+        self._test_floatingip_with_invalid_create_port(MIDONET_PLUGIN_NAME)
 
 
 class TestMidonetSecurityGroupsTestCase(sg.SecurityGroupDBTestCase):
@@ -113,24 +131,6 @@ class TestMidonetSubnetsV2(test_plugin.TestSubnetsV2,
     def test_create_subnet_inconsistent_ipv6_gatewayv4(self):
         pass
 
-    # Multiple subnets in a network is not supported by MidoNet yet.  Ignore
-    # tests that attempt to create them.
-
-    def test_create_subnets_bulk_emulated(self):
-        pass
-
-    def test_create_two_subnets(self):
-        pass
-
-    def test_list_subnets(self):
-        pass
-
-    def test_list_subnets_with_parameter(self):
-        pass
-
-    def test_create_two_subnets_same_cidr_returns_400(self):
-        pass
-
 
 class TestMidonetPortsV2(test_plugin.TestPortsV2,
                          MidonetPluginV2TestCase):
@@ -141,8 +141,17 @@ class TestMidonetPortsV2(test_plugin.TestPortsV2,
     def test_requested_subnet_id_v4_and_v6(self):
         pass
 
-    # Multiple subnets in a network is not supported by MidoNet yet.  Ignore
-    # tests that attempt to create them.
+    def test_vif_port_binding(self):
+        with self.port(name='myname') as port:
+            self.assertEqual('midonet', port['port']['binding:vif_type'])
+            self.assertTrue(port['port']['admin_state_up'])
 
-    def test_overlapping_subnets(self):
-        pass
+
+class TestMidonetPluginPortBinding(test_bindings.PortBindingsTestCase,
+                                   MidonetPluginV2TestCase):
+
+    VIF_TYPE = portbindings.VIF_TYPE_MIDONET
+    HAS_PORT_FILTER = True
+
+    def setUp(self):
+        super(TestMidonetPluginPortBinding, self).setUp()

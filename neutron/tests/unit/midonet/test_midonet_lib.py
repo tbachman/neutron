@@ -79,15 +79,33 @@ class MidoClientTestCase(testtools.TestCase):
     def test_create_dhcp(self):
 
         bridge = mock.Mock()
-        gw_call = mock.call.add_dhcp_subnet().default_gateway("192.168.1.1")
-        subnet_prefix_call = gw_call.subnet_prefix("192.168.1.0")
-        subnet_length_call = subnet_prefix_call.subnet_length(24)
 
-        calls = [gw_call, subnet_prefix_call, subnet_length_call,
-                 subnet_length_call.create()]
+        gateway_ip = "192.168.1.1"
+        cidr = "192.168.1.0/24"
+        host_rts = [{'destination': '10.0.0.0/24', 'nexthop': '10.0.0.1'},
+                    {'destination': '10.0.1.0/24', 'nexthop': '10.0.1.1'}]
+        dns_servers = ["8.8.8.8", "8.8.4.4"]
 
-        self.client.create_dhcp(bridge, "192.168.1.1", "192.168.1.0/24")
-        bridge.assert_has_calls(calls, any_order=True)
+        dhcp_call = mock.call.add_bridge_dhcp(bridge, gateway_ip, cidr,
+                                              host_rts=host_rts,
+                                              dns_servers=dns_servers)
+
+        self.client.create_dhcp(bridge, gateway_ip, cidr, host_rts=host_rts,
+                                dns_servers=dns_servers)
+
+        bridge.assert_has_call(dhcp_call)
+
+    def test_delete_dhcp(self):
+
+        bridge = mock.Mock()
+        subnet = mock.Mock()
+        subnet.get_subnet_prefix.return_value = "10.0.0.0"
+        subnets = mock.MagicMock(return_value=[subnet])
+        bridge.get_dhcp_subnets.side_effect = subnets
+        self.client.delete_dhcp(bridge, "10.0.0.0/24")
+        bridge.assert_has_calls(mock.call.get_dhcp_subnets)
+        subnet.assert_has_calls([mock.call.get_subnet_prefix(),
+                                mock.call.delete()])
 
     def test_add_dhcp_host(self):
 
@@ -100,6 +118,25 @@ class MidoClientTestCase(testtools.TestCase):
 
         self.client.add_dhcp_host(bridge, "10.0.0.0/24", "10.0.0.10",
                                   "2A:DB:6B:8C:19:99")
+        bridge.assert_has_calls(calls, any_order=True)
+
+    def test_add_dhcp_route_option(self):
+
+        bridge = mock.Mock()
+        subnet = bridge.get_dhcp_subnet.return_value
+        subnet.get_opt121_routes.return_value = None
+        dhcp_subnet_call = mock.call.get_dhcp_subnet("10.0.0.0_24")
+        dst_ip = "10.0.0.3/24"
+        gw_ip = "10.0.0.1"
+        prefix, length = dst_ip.split("/")
+        routes = [{'destinationPrefix': prefix, 'destinationLength': length,
+                   'gatewayAddr': gw_ip}]
+        opt121_routes_call = dhcp_subnet_call.opt121_routes(routes)
+        calls = [dhcp_subnet_call, opt121_routes_call,
+                 opt121_routes_call.update()]
+
+        self.client.add_dhcp_route_option(bridge, "10.0.0.0/24",
+                                          gw_ip, dst_ip)
         bridge.assert_has_calls(calls, any_order=True)
 
     def test_get_router_error(self):

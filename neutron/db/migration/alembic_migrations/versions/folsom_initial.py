@@ -1,4 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
+# vim: tabstop=4 shiftwidth=4 softtabstop=4l359
 #
 # Copyright 2012 New Dream Network, LLC (DreamHost)
 #
@@ -26,6 +26,7 @@ Create Date: 2012-12-03 09:14:50.579765
 
 PLUGINS = {
     'bigswitch': 'neutron.plugins.bigswitch.plugin.NeutronRestProxyV2',
+    'brocade': 'neutron.plugins.brocade.NeutronPlugin.BrocadePluginV2',
     'cisco': 'neutron.plugins.cisco.network_plugin.PluginV2',
     'lbr': 'neutron.plugins.linuxbridge.lb_neutron_plugin.LinuxBridgePluginV2',
     'meta': 'neutron.plugins.metaplugin.meta_neutron_plugin.MetaPluginV2',
@@ -45,6 +46,7 @@ L3_CAPABLE = [
     PLUGINS['nec'],
     PLUGINS['ovs'],
     PLUGINS['ryu'],
+    PLUGINS['brocade'],
     PLUGINS['plumgrid'],
 ]
 
@@ -91,6 +93,10 @@ def upgrade(active_plugins=None, options=None):
         upgrade_nec()
     elif PLUGINS['ryu'] in active_plugins:
         upgrade_ryu()
+    elif PLUGINS['brocade'] in active_plugins:
+        upgrade_brocade()
+        # Brocade plugin imports linux bridge models too
+        upgrade_linuxbridge()
 
 
 def upgrade_base():
@@ -321,7 +327,7 @@ def upgrade_nec():
         'packetfilters',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('network_id', sa.String(length=36), nullable=True),
+        sa.Column('network_id', sa.String(length=36), nullable=False),
         sa.Column('priority', sa.Integer(), nullable=False),
         sa.Column('action', sa.String(16), nullable=False),
         sa.Column('in_port', sa.String(36), nullable=False),
@@ -348,6 +354,26 @@ def upgrade_ryu():
         sa.Column('address', sa.String(255)),
         sa.Column('host_type', sa.String(255)),
         sa.PrimaryKeyConstraint('id')
+    )
+
+
+def upgrade_brocade():
+    op.create_table(
+        'brocadenetworks',
+        sa.Column('id', sa.Integer(), autoincrement=False, nullable=False),
+        sa.Column('vlan', sa.String(10)),
+        sa.PrimaryKeyConstraint('id')
+    )
+
+    op.create_table(
+        'brocadeports',
+        sa.Column('port_id', sa.String(36), nullable=False),
+        sa.Column('network_id', sa.String(36)),
+        sa.Column('admin_state_up', sa.Boolean()),
+        sa.Column('physical_interface', sa.String(36)),
+        sa.Column('vlan_id', sa.String(10)),
+        sa.Column('tenant_id', sa.String(36)),
+        sa.PrimaryKeyConstraint('port_id')
     )
 
 
@@ -446,6 +472,10 @@ def downgrade(active_plugins=None, options=None):
         downgrade_nec()
     elif PLUGINS['ryu'] in active_plugins:
         downgrade_ryu()
+    elif PLUGINS['brocade'] in active_plugins:
+        # Brocade plugin imports linux bridge models too
+        downgrade_brocade()
+        downgrade_linuxbridge()
 
     if set(active_plugins) & set(FOLSOM_QUOTA):
         common_ext_ops.downgrade_quota(options)
@@ -502,9 +532,14 @@ def downgrade_ryu():
     op.drop_table('ofp_server')
 
 
+def downgrade_brocade():
+    op.drop_table('brocadenetworks')
+    op.drop_table('brocadeports')
+
+
 def downgrade_cisco():
     op.drop_tables(
-        'nextport_bindings',
+        'nexusport_bindings',
         'port_bindings',
         'credentials',
         'qoss',

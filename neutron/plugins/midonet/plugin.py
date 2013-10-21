@@ -23,7 +23,9 @@
 
 from midonetclient import api
 from oslo.config import cfg
+from sqlalchemy.orm import exc as sa_exc
 
+from neutron.api.v2 import attributes
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
@@ -36,7 +38,11 @@ from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import models_v2
+from neutron.db import portbindings_db
 from neutron.db import securitygroups_db
+from neutron.extensions import external_net as ext_net
+from neutron.extensions import l3
+from neutron.extensions import portbindings
 from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
@@ -46,6 +52,8 @@ from neutron.plugins.midonet.common import net_util
 from neutron.plugins.midonet import midonet_lib
 
 LOG = logging.getLogger(__name__)
+
+EXTERNAL_GW_INFO = l3.EXTERNAL_GW_INFO
 
 METADATA_DEFAULT_IP = "169.254.169.254/32"
 OS_FLOATING_IP_RULE_KEY = 'OS_FLOATING_IP'
@@ -189,13 +197,14 @@ class MidonetPluginException(n_exc.NeutronException):
 
 
 class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
+                      portbindings_db.PortBindingMixin,
                       external_net_db.External_net_db_mixin,
                       l3_db.L3_NAT_db_mixin,
                       agentschedulers_db.DhcpAgentSchedulerDbMixin,
                       securitygroups_db.SecurityGroupDbMixin):
 
     supported_extension_aliases = ['external-net', 'router', 'security-group',
-                                   'agent' 'dhcp_agent_scheduler']
+                                   'agent' 'dhcp_agent_scheduler', 'binding']
     __native_bulk_support = False
 
     def __init__(self):
@@ -222,6 +231,12 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         self.setup_rpc()
         db.configure_db()
+
+        self.base_binding_dict = {
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_MIDONET,
+            portbindings.CAPABILITIES: {
+                portbindings.CAP_PORT_FILTER:
+                'security-group' in self.supported_extension_aliases}}
 
     def _get_provider_router(self):
         if self.provider_router is None:
@@ -349,6 +364,17 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             dl_type=net_util.get_ethertype_value(sg_rule["ethertype"]),
             properties=props)
 
+    def _remove_nat_rules(self, context, fip):
+        router = self.client.get_router(fip["router_id"])
+        self.client.remove_static_route(self._get_provider_router(),
+                                        fip["floating_ip_address"])
+
+        chain_names = _nat_chain_names(router.get_id())
+        for _type, name in chain_names.iteritems():
+            self.client.remove_rules_by_property(
+                router.get_tenant_id(), name,
+                OS_FLOATING_IP_RULE_KEY, fip["id"])
+
     def setup_rpc(self):
         # RPC support
         self.topic = topics.PLUGIN
@@ -367,7 +393,7 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_("MidonetPluginV2.create_subnet called: subnet=%r"), subnet)
 
-        subnet_data = subnet["subnet"]
+        s = subnet["subnet"]
         net = super(MidonetPluginV2, self).get_network(
             context, subnet['subnet']['network_id'], fields=None)
 
@@ -377,9 +403,19 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                                   subnet)
             bridge = self.client.get_bridge(sn_entry['network_id'])
 
-            gateway_ip = subnet_data['gateway_ip']
-            cidr = subnet_data['cidr']
-            self.client.create_dhcp(bridge, gateway_ip, cidr)
+            gateway_ip = s['gateway_ip']
+            cidr = s['cidr']
+            dns_nameservers = None
+            host_routes = None
+            if s['dns_nameservers'] is not attributes.ATTR_NOT_SPECIFIED:
+                dns_nameservers = s['dns_nameservers']
+
+            if s['host_routes'] is not attributes.ATTR_NOT_SPECIFIED:
+                host_routes = s['host_routes']
+
+            self.client.create_dhcp(bridge, gateway_ip, cidr,
+                                    host_rts=host_routes,
+                                    dns_servers=dns_nameservers)
 
             # For external network, link the bridge to the provider router.
             if net['router:external']:
@@ -401,16 +437,19 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         net = super(MidonetPluginV2, self).get_network(context,
                                                        subnet['network_id'],
                                                        fields=None)
-        bridge = self.client.get_bridge(subnet['network_id'])
-        self.client.delete_dhcp(bridge)
+        session = context.session
+        with session.begin(subtransactions=True):
 
-        # If the network is external, clean up routes, links, ports.
-        if net['router:external']:
-            self._unlink_bridge_from_gw_router(bridge,
-                                               self._get_provider_router())
+            super(MidonetPluginV2, self).delete_subnet(context, id)
+            bridge = self.client.get_bridge(subnet['network_id'])
+            self.client.delete_dhcp(bridge, subnet['cidr'])
 
-        super(MidonetPluginV2, self).delete_subnet(context, id)
-        LOG.debug(_("MidonetPluginV2.delete_subnet exiting"))
+            # If the network is external, clean up routes, links, ports
+            if net[ext_net.EXTERNAL]:
+                self._unlink_bridge_from_gw_router(
+                    bridge, self._get_provider_router())
+
+            LOG.debug(_("MidonetPluginV2.delete_subnet exiting"))
 
     def create_network(self, context, network):
         """Create Neutron network.
@@ -446,6 +485,7 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         with session.begin(subtransactions=True):
             net = super(MidonetPluginV2, self).update_network(
                 context, id, network)
+            self._process_l3_update(context, net, network['network'])
             self.client.update_bridge(id, net['name'])
 
         LOG.debug(_("MidonetPluginV2.update_network exiting: net=%r"), net)
@@ -498,12 +538,12 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 if _is_vif_port(port_data):
                     # Bind security groups to the port
                     sg_ids = self._get_security_groups_on_port(context, port)
-                    self._bind_port_to_sgs(context, port_data, sg_ids)
+                    self._bind_port_to_sgs(context, new_port, sg_ids)
 
                     # Create port chains
                     port_chains = {}
                     for d, name in _port_chain_names(
-                        new_port["id"]).iteritems():
+                            new_port["id"]).iteritems():
                         port_chains[d] = self.client.create_chain(tenant_id,
                                                                   name)
 
@@ -526,10 +566,12 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 elif _is_dhcp_port(port_data):
                     # For DHCP port, add a metadata route
                     for cidr, ip in self._metadata_subnets(
-                        context, port_data["fixed_ips"]):
+                            context, port_data["fixed_ips"]):
                         self.client.add_dhcp_route_option(bridge, cidr, ip,
                                                           METADATA_DEFAULT_IP)
 
+            self._process_portbindings_create_and_update(context,
+                                                         port_data, new_port)
         except Exception as ex:
             # Try removing the MidoNet port before raising an exception.
             with excutils.save_and_reraise_exception():
@@ -538,8 +580,8 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           {"net_id": port_data["network_id"], "err": ex})
                 self.client.delete_port(bridge_port.get_id())
 
-        LOG.debug(_("MidonetPluginV2.create_port exiting: port=%r"), port_data)
-        return port_data
+        LOG.debug(_("MidonetPluginV2.create_port exiting: port=%r"), new_port)
+        return new_port
 
     def get_port(self, context, id, fields=None):
         """Retrieve port."""
@@ -576,6 +618,7 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         if l3_port_check:
             self.prevent_l3_port_deletion(context, id)
 
+        self.disassociate_floatingips(context, id)
         port = self.get_port(context, id)
         device_id = port['device_id']
         # If this port is for router interface/gw, unlink and delete.
@@ -614,20 +657,30 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             old_port = self._get_port(context, id)
             net_id = old_port["network_id"]
             mac = old_port["mac_address"]
-            old_fixed_ips = old_port.get('fixed_ips')
-
+            old_ips = old_port["fixed_ips"]
             # update the port DB
             p = super(MidonetPluginV2, self).update_port(context, id, port)
 
-            if "fixed_ips" in p:
-                # IPs have changed.  Re-map the DHCP entries
+            new_ips = p["fixed_ips"]
+            if new_ips:
                 bridge = self.client.get_bridge(net_id)
-                for cidr, ip, mac in self._dhcp_mappings(
-                        context, old_fixed_ips, mac):
-                    self.client.remove_dhcp_host(bridge, cidr, ip, mac)
-                for cidr, ip, mac in self._dhcp_mappings(context,
-                                                         p["fixed_ips"], mac):
-                    self.client.add_dhcp_host(bridge, cidr, ip, mac)
+                # If it's a DHCP port, add a route to reach the MD server
+                if _is_dhcp_port(p):
+                    for cidr, ip in self._metadata_subnets(
+                        context, new_ips):
+                        self.client.add_dhcp_route_option(
+                            bridge, cidr, ip, METADATA_DEFAULT_IP)
+                else:
+                # IPs have changed.  Re-map the DHCP entries
+                    for cidr, ip, mac in self._dhcp_mappings(
+                            context, old_ips, mac):
+                        self.client.remove_dhcp_host(
+                            bridge, cidr, ip, mac)
+
+                    for cidr, ip, mac in self._dhcp_mappings(
+                        context, new_ips, mac):
+                        self.client.add_dhcp_host(
+                            bridge, cidr, ip, mac)
 
             if (self._check_update_deletes_security_groups(port) or
                     self._check_update_has_security_groups(port)):
@@ -635,6 +688,9 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 sg_ids = self._get_security_groups_on_port(context, port)
                 self._bind_port_to_sgs(context, p, sg_ids)
 
+            self._process_portbindings_create_and_update(context,
+                                                         port['port'],
+                                                         p)
         return p
 
     def create_router(self, context, router):
@@ -647,6 +703,11 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         :param router: Router information provided to create a new router.
         """
+
+        # NOTE(dcahill): Similar to the Nicira plugin, we completely override
+        # this method in order to be able to use the MidoNet ID as Neutron ID
+        # TODO(dcahill): Propose upstream patch for allowing
+        # 3rd parties to specify IDs as we do with l2 plugin
         LOG.debug(_("MidonetPluginV2.create_router called: router=%(router)s"),
                   {"router": router})
         tenant_id = self._get_tenant_id_for_create(context, router['router'])
@@ -655,15 +716,29 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         mido_router_id = mido_router.get_id()
 
         try:
+            r = router['router']
+            has_gw_info = False
+            if EXTERNAL_GW_INFO in r:
+                has_gw_info = True
+                gw_info = r[EXTERNAL_GW_INFO]
+                del r[EXTERNAL_GW_INFO]
+            tenant_id = self._get_tenant_id_for_create(context, r)
             with context.session.begin(subtransactions=True):
+                # pre-generate id so it will be available when
+                # configuring external gw port
+                router_db = l3_db.Router(id=mido_router_id,
+                                         tenant_id=tenant_id,
+                                         name=r['name'],
+                                         admin_state_up=r['admin_state_up'],
+                                         status="ACTIVE")
+                context.session.add(router_db)
+                if has_gw_info:
+                    self._update_router_gw_info(context, router_db['id'],
+                                                gw_info)
 
-                router_data = super(MidonetPluginV2, self).create_router(
-                    context, router)
+            router_data = self._make_router_dict(router_db,
+                                                 process_extensions=False)
 
-                # get entry from the DB and update 'id' with MidoNet router id.
-                router_db = self._get_router(context, router_data['id'])
-                router_data['id'] = mido_router_id
-                router_db.update(router_data)
         except Exception:
             # Try removing the midonet router
             with excutils.save_and_reraise_exception():
@@ -774,9 +849,10 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             tenant_id = r["tenant_id"]
             if gw_updated:
                 if (l3_db.EXTERNAL_GW_INFO in r and
-                    r[l3_db.EXTERNAL_GW_INFO] is not None):
+                        r[l3_db.EXTERNAL_GW_INFO] is not None):
                     # Gateway created
-                    gw_port = self._get_port(context, r["gw_port_id"])
+                    gw_port = self._get_port(context.elevated(),
+                                             r["gw_port_id"])
                     gw_ip = gw_port['fixed_ips'][0]['ip_address']
 
                     # First link routers and set up the routes
@@ -991,23 +1067,24 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
             # disassociate floating IP
             elif floatingip['floatingip']['port_id'] is None:
-
                 fip = super(MidonetPluginV2, self).get_floatingip(context, id)
-                router = self.client.get_router(fip["router_id"])
-                self.client.remove_static_route(self._get_provider_router(),
-                                                fip["floating_ip_address"])
-
-                chain_names = _nat_chain_names(router.get_id())
-                for _type, name in chain_names.iteritems():
-                    self.client.remove_rules_by_property(
-                        router.get_tenant_id(), name, OS_FLOATING_IP_RULE_KEY,
-                        id)
-
+                self._remove_nat_rules(context, fip)
                 super(MidonetPluginV2, self).update_floatingip(context, id,
                                                                floatingip)
 
         LOG.debug(_("MidonetPluginV2.update_floating_ip exiting: fip=%s"), fip)
         return fip
+
+    def disassociate_floatingips(self, context, port_id):
+        """Disassociate floating IPs (if any) from this port."""
+        try:
+            fip_qry = context.session.query(l3_db.FloatingIP)
+            fip_db = fip_qry.filter_by(fixed_port_id=port_id).one()
+            self._remove_nat_rules(context, fip_db)
+        except sa_exc.NoResultFound:
+            pass
+
+        super(MidonetPluginV2, self).disassociate_floatingips(context, port_id)
 
     def create_security_group(self, context, security_group, default_sg=False):
         """Create security group.
