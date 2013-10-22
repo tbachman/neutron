@@ -50,4 +50,4 @@ odl_opts = [
                help=_("Comma separated list of compute node ip addresses")),
 ]
 
-cfg.CONF.register_opts(odl_opts, "odl")
+cfg.CONF.register_opts(odl_opts, "ml2_odl")

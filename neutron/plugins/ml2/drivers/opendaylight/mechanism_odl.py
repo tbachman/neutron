@@ -38,7 +38,7 @@ from neutron.plugins.common import utils as plugin_utils
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2 import rpc as plugin_rpc
-from neutron.plugins.ml2.mechanism_drivers.opendaylight import config
+from neutron.plugins.ml2.drivers.opendaylight import config
 
 LOG = log.getLogger(__name__)
 
@@ -60,12 +60,12 @@ class OdlMechanismDriver(api.MechanismDriver):
     def initialize(self):
         # Make ODL connection and create integration bridge
         self.controllers = []
-        controllers = cfg.CONF.odl.controllers.split(',')
+        controllers = cfg.CONF.ml2_odl.controllers.split(',')
         self.controllers.extend(controllers)
         
         # Get a list of all compute nodes
         # TODO: (asomya) Get a list of compute nodes from nova
-        nodes = cfg.CONF.odl.nodes.split(',')
+        nodes = cfg.CONF.ml2_odl.nodes.split(',')
         label_prefix = 'mgmt%d'
         label_num = 0
         self.connections = {}
@@ -108,7 +108,8 @@ class OdlMechanismDriver(api.MechanismDriver):
         else:
             LOG.debug("\n\n\n\n\n%s\n\n\n\n" % response)
 
-    def _create_bridge(self, label, brname=cfg.CONF.odl.integration_bridge):
+    def _create_bridge(self, label,
+                       brname=cfg.CONF.ml2_odl.integration_bridge):
         LOG.debug(_("Creating a bridge"))
         uri = BR_CREATE_PATH % (label, brname)
 
@@ -135,7 +136,7 @@ class OdlMechanismDriver(api.MechanismDriver):
         if status == 200:
             for connector in response["nodeConnectorProperties"]:
                 if str(connector['properties']['name']['nameValue']) == \
-                    str(cfg.CONF.ODL.physical_bridge):
+                    str(cfg.CONF.ml2_odl.physical_bridge):
                     self.phy_br_port_id = connector['nodeconnector']['@id']
                     return self.phy_br_port_id
 
