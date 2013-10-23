@@ -1149,6 +1149,10 @@ class NetworkProfile_db_mixin(object):
             delete_profile_binding(p['remove_tenant'], id)
         # Update profile if no network is allocated from segment range
         if 'segment_range' in p:
+            if net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
+                msg = _("segment_range not required for TRUNK")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
             if not self._segment_in_use(context.session, net_p):
                 delete_segment_allocations(context.session, net_p)
                 updated_profile = update_network_profile(context.session, id, p)
@@ -1267,7 +1271,9 @@ class NetworkProfile_db_mixin(object):
         :param p: network profile object
         """
         self._validate_network_profile(p)
-        self._validate_segment_range_uniqueness(context, p)
+        _segment_type = p['segment_type'].lower()
+        if _segment_type != c_const.NETWORK_TYPE_TRUNK:
+          self._validate_segment_range_uniqueness(context, p)
 
     def _validate_multicast_ip_range(self, network_profile):
         """
@@ -1339,6 +1345,11 @@ class NetworkProfile_db_mixin(object):
                         "for trunk network profile")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
+            if net_p["segment_range"] is not "" :
+                msg = _("segment_range not required for TRUNK")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+
         if _segment_type in [c_const.NETWORK_TYPE_VLAN,
                              c_const.NETWORK_TYPE_VXLAN]:
             if any(net_p[arg] == '' for arg in ['segment_range']):
