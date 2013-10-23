@@ -17,6 +17,7 @@
 from oslo.config import cfg
 
 from quantum.agent.common import config
+from quantum import scheduler
 
 
 cisco_test_opts = [
@@ -90,6 +91,7 @@ cfg.CONF.register_opts(cisco_opts, "CISCO")
 cfg.CONF.register_opts(cisco_n1k_opts, "CISCO_N1K")
 cfg.CONF.register_opts(cisco_plugins_opts, "PLUGINS")
 cfg.CONF.register_opts(cisco_test_opts, "CISCO_TEST")
+cfg.CONF.register_opts(scheduler.AGENTS_SCHEDULER_OPTS)
 config.register_root_helper(cfg.CONF)
 
 # shortcuts

@@ -44,6 +44,7 @@ from quantum.db import securitygroups_rpc_base as sg_db_rpc
 from quantum.extensions import portbindings
 from quantum.extensions import providernet
 from quantum.openstack.common import excutils
+from quantum.openstack.common import importutils
 from quantum.openstack.common import log as logging
 from quantum.openstack.common import rpc
 from quantum.openstack.common import uuidutils as uuidutils
@@ -86,7 +87,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
-                          agentschedulers_db.AgentSchedulerDbMixin):
+                          agentschedulers_db.AgentSchedulerDbMixin):                     
 
     """
     Implement the Quantum abstractions using Cisco Nexus1000V
@@ -103,7 +104,8 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                    "policy_profile_binding",
                                    "network_profile_binding", "quotas",
                                    "n1kv_profile", "network_profile",
-                                   "policy_profile", "router", "credential"]
+                                   "policy_profile", "router", "credential",
+	                               "agent_scheduler"]
 
     binding_view = "extension:port_binding:view"
     binding_set = "extension:port_binding:set"
@@ -124,6 +126,10 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                 'extensions:quantum/plugins/cisco/extensions')
         self._setup_vsm()
         self._setup_rpc()
+        self.network_scheduler = importutils.import_object(
+            q_conf.CONF.network_scheduler_driver)
+        self.router_scheduler = importutils.import_object(
+            q_conf.CONF.router_scheduler_driver)
 
     def _setup_rpc(self):
         # RPC support
@@ -1329,6 +1335,9 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             sub = super(N1kvQuantumPluginV2, self).create_subnet(context, subnet)
         self._send_create_subnet_request(context, sub)
         LOG.debug(_("Created subnet: %s"), sub['id'])
+        # Schedule network to a DHCP agent
+        net = self.get_network(context, sub['network_id'])
+        self.schedule_network(context, net)
         return sub
 
     def update_subnet(self, context, id, subnet):
