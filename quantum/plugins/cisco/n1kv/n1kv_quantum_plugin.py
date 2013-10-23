@@ -65,15 +65,11 @@ pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                       l3_rpc_base.L3RpcCallbackMixin,
-                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
+                       l3_rpc_base.L3RpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
     # Set RPC API version to 1.1 by default.
-    RPC_API_VERSION = '1.1'
-
-    def __init__(self, notifier):
-        self.notifier = notifier
+    RPC_API_VERSION = '1.0'
 
     def create_rpc_dispatcher(self):
         """Get the rpc dispatcher for this rpc manager.
@@ -83,103 +79,6 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         """
         return q_rpc.PluginRpcDispatcher([self,
                                           agents_db.AgentExtRpcCallback()])
-
-    def get_port_from_device(cls, device):
-        port = n1kv_db_v2.get_port_from_device(device)
-        if port:
-            port['device'] = device
-        return port
-
-    def get_device_details(self, rpc_context, **kwargs):
-        """Agent requests device details."""
-        agent_id = kwargs.get('agent_id')
-        device = kwargs.get('device')
-        LOG.debug(_("Device %(device)s details requested from %(agent_id)s"),
-                  locals())
-        port = n1kv_db_v2.get_port(device)
-        if port:
-            binding = n1kv_db_v2.get_network_binding(None, port['network_id'])
-            entry = {'device': device,
-                     'network_id': port['network_id'],
-                     'port_id': port['id'],
-                     'admin_state_up': port['admin_state_up'],
-                     'network_type': binding.network_type,
-                     'segmentation_id': binding.segmentation_id,
-                     'physical_network': binding.physical_network}
-            # Set the port status to UP
-            n1kv_db_v2.set_port_status(port['id'], q_const.PORT_STATUS_ACTIVE)
-        else:
-            entry = {'device': device}
-            LOG.debug(_("%s can not be found in database"), device)
-        return entry
-
-    def update_device_down(self, rpc_context, **kwargs):
-        """Device no longer exists on agent"""
-        # (TODO) garyk - live migration and port status
-        agent_id = kwargs.get('agent_id')
-        device = kwargs.get('device')
-        LOG.debug(_("Device %(device)s no longer exists on %(agent_id)s"),
-                  locals())
-        port = n1kv_db_v2.get_port(device)
-        if port:
-            entry = {'device': device,
-                     'exists': True}
-            # Set port status to DOWN
-            n1kv_db_v2.set_port_status(port['id'], q_const.PORT_STATUS_DOWN)
-        else:
-            entry = {'device': device,
-                     'exists': False}
-            LOG.debug(_("%s can not be found in database"), device)
-        return entry
-
-
-class AgentNotifierApi(proxy.RpcProxy,
-                       sg_rpc.SecurityGroupAgentRpcApiMixin):
-
-    '''Agent side of the N1kv rpc API.
-
-    API version history:
-        1.0 - Initial version.
-
-    '''
-
-    BASE_RPC_API_VERSION = '1.0'
-
-    def __init__(self, topic):
-        super(AgentNotifierApi, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
-        self.topic_network_delete = topics.get_topic_name(topic,
-                                                          topics.NETWORK,
-                                                          topics.DELETE)
-        self.topic_port_update = topics.get_topic_name(topic,
-                                                       topics.PORT,
-                                                       topics.UPDATE)
-        self.topic_vxlan_update = topics.get_topic_name(topic,
-                                                        c_const.TUNNEL,
-                                                        topics.UPDATE)
-
-    def network_delete(self, context, network_id):
-        self.fanout_cast(context,
-                         self.make_msg('network_delete',
-                                       network_id=network_id),
-                         topic=self.topic_network_delete)
-
-    def port_update(self, context, port, network_type, segmentation_id,
-                    physical_network):
-        self.fanout_cast(context,
-                         self.make_msg('port_update',
-                                       port=port,
-                                       network_type=network_type,
-                                       segmentation_id=segmentation_id,
-                                       physical_network=physical_network),
-                         topic=self.topic_port_update)
-
-    def vxlan_update(self, context, vxlan_ip, vxlan_id):
-        self.fanout_cast(context,
-                         self.make_msg('vxlan_update',
-                                       vxlan_ip=vxlan_ip,
-                                       vxlan_id=vxlan_id),
-                         topic=self.topic_vxlan_update)
 
 
 class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
@@ -230,14 +129,12 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         # RPC support
         self.topic = topics.PLUGIN
         self.conn = rpc.create_connection(new=True)
-        self.notifier = AgentNotifierApi(topics.AGENT)
-        self.callbacks = N1kvRpcCallbacks(self.notifier)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
         self.conn.create_consumer(self.topic, self.dispatcher,
                                   fanout=False)
-        # Consume from all consumers in a thread
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+        # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
     def _setup_vsm(self):

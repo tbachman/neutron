@@ -459,11 +459,10 @@ def get_vlan_allocation(db_session, physical_network, vlan_id):
     :returns: allocation object for given physical network and VLAN ID
     """
     try:
-        alloc = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
-                 filter_by(physical_network=physical_network,
-                           vlan_id=vlan_id).
-                 one())
-        return alloc
+        return (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
+                filter_by(physical_network=physical_network,
+                          vlan_id=vlan_id).
+                one())
     except exc.NoResultFound:
         return
 
@@ -535,17 +534,13 @@ def alloc_network(db_session, network_profile_id):
     :param network_profile_id: UUID representing the network profile
     """
     with db_session.begin(subtransactions=True):
-        try:
-            network_profile = get_network_profile(db_session,
-                                                  network_profile_id)
-            if network_profile:
-                if network_profile.segment_type == c_const.NETWORK_TYPE_VLAN:
-                    return reserve_vlan(db_session, network_profile)
-                if network_profile.segment_type == c_const.NETWORK_TYPE_VXLAN:
-                    return reserve_vxlan(db_session, network_profile)
-                return (None, network_profile.segment_type, 0, "0.0.0.0")
-        except q_exc.NotFound:
-            LOG.debug(_("NetworkProfile not found"))
+        network_profile = get_network_profile(db_session,
+                                              network_profile_id)
+        if network_profile.segment_type == c_const.NETWORK_TYPE_VLAN:
+            return reserve_vlan(db_session, network_profile)
+        if network_profile.segment_type == c_const.NETWORK_TYPE_VXLAN:
+            return reserve_vxlan(db_session, network_profile)
+        return (None, network_profile.segment_type, 0, "0.0.0.0")
 
 
 def reserve_specific_vlan(db_session, physical_network, vlan_id):
@@ -719,9 +714,7 @@ def set_port_status(port_id, status):
     db_session = db.get_session()
     try:
         port = db_session.query(models_v2.Port).filter_by(id=port_id).one()
-        port['status'] = status
-        db_session.merge(port)
-        db_session.flush()
+        port.status = status
     except exc.NoResultFound:
         raise q_exc.PortNotFound(port_id=port_id)
 
@@ -772,10 +765,9 @@ def get_vm_network(db_session, policy_profile_id, network_id):
     :returns: VM network object
     """
     try:
-        vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
-                      filter_by(profile_id=policy_profile_id,
-                                network_id=network_id).one())
-        return vm_network
+        return (db_session.query(n1kv_models_v2.N1kVmNetwork).
+                filter_by(profile_id=policy_profile_id,
+                          network_id=network_id).one())
     except exc.NoResultFound:
         raise c_exc.VMNetworkNotFound(name=None)
 
@@ -797,17 +789,12 @@ def add_vm_network(db_session,
     :param network_id: UUID representing a network
     :param port_count: integer representing the number of ports on vm network
     """
-    try:
-        vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
-                      filter_by(name=name).one())
-    except exc.NoResultFound:
-        with db_session.begin(subtransactions=True):
-            vm_network = n1kv_models_v2.N1kVmNetwork(name,
-                                                     policy_profile_id,
-                                                     network_id,
-                                                     port_count)
-            db_session.add(vm_network)
-            db_session.flush()
+    with db_session.begin(subtransactions=True):
+        vm_network = n1kv_models_v2.N1kVmNetwork(name,
+                                                 policy_profile_id,
+                                                 network_id,
+                                                 port_count)
+        db_session.add(vm_network)
 
 
 def update_vm_network(db_session, name, port_count):
@@ -822,10 +809,8 @@ def update_vm_network(db_session, name, port_count):
         with db_session.begin(subtransactions=True):
             vm_network = (db_session.query(n1kv_models_v2.N1kVmNetwork).
                           filter_by(name=name).one())
-            if port_count:
-                vm_network['port_count'] = port_count
-            db_session.merge(vm_network)
-            db_session.flush()
+            if port_count is not None:
+                vm_network.port_count = port_count
             return vm_network
     except exc.NoResultFound:
         raise c_exc.VMNetworkNotFound(name=name)
@@ -840,12 +825,18 @@ def delete_vm_network(db_session, policy_profile_id, network_id):
     :param network_id: UUID representing a network
     :returns: deleted VM network object
     """
-    vm_network = get_vm_network(db_session, policy_profile_id, network_id)
     with db_session.begin(subtransactions=True):
-        db_session.delete(vm_network)
-        db_session.query(n1kv_models_v2.N1kVmNetwork).filter_by(
-            name=vm_network['name']).delete()
-    return vm_network
+        try:
+            vm_network = get_vm_network(db_session,
+                                        policy_profile_id,
+                                        network_id)
+            db_session.delete(vm_network)
+            db_session.query(n1kv_models_v2.N1kVmNetwork).filter_by(
+                name=vm_network['name']).delete()
+            return vm_network
+        except exc.NoResultFound:
+            name = "vmn_" + policy_profile_id + "_" + network_id
+            raise c_exc.VMNetworkNotFound(name=name)
 
 
 def create_network_profile(db_session, network_profile):
