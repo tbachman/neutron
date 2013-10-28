@@ -1571,3 +1571,21 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                      update_network_profile(context, id, network_profile))
             self._send_update_network_profile_request(net_p)
         return net_p
+    
+    def create_router(self, context, router):
+        """
+        Handle creation of router.
+
+        Schedule router to L3 agent as part of the create handling.
+        :param context: neutron api request context
+        :param router: router dictionary
+        :returns: router object
+        """
+        session = context.session
+        with session.begin(subtransactions=True):
+            rtr = (super(N1kvQuantumPluginV2, self).
+                   create_router(context, router))
+            LOG.debug(_("Scheduling router %s"), rtr['id'])
+            self.schedule_router(context, rtr)
+        return rtr
+
