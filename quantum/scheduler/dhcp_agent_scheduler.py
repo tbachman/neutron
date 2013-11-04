@@ -35,6 +35,38 @@ class ChanceScheduler(object):
     More sophisticated scheduler (similar to filter scheduler in nova?)
     can be introduced later."""
 
+    def __init__(self):
+        self.agents = []
+
+    def choose_agent(self, plugin, context, active_agents):
+        """Choose agent using a round-robin scheme.""" 
+        rebuild_agt_list = False
+        # Check if the list of active agents has changed
+        if len(self.agents) == len(active_agents):
+            for agt in active_agents:
+                if agt['id'] not in self.agents:
+                    rebuild_agt_list = True
+                    break;
+        else:
+            rebuild_agt_list = True
+        # Rebuild the agent list if needed
+        if rebuild_agt_list:
+            self.agents = []
+            for agt in active_agents:
+                self.agents.append(agt['id'])
+            LOG.debug(_('Agent list %s'), self.agents)
+        # Choose the first agent id and
+        # move it to the end of the list
+        chosen_agt_id = self.agents[0]
+        new_list = self.agents[1:]
+        new_list.append(chosen_agt_id)
+        self.agents = new_list
+        # Return the agent instance corr to the chosen id
+        chosen_agent = [agt for agt in active_agents 
+                        if agt['id'] == chosen_agt_id][0]
+        LOG.debug(_('Chose agt on node %s'), chosen_agent['host'])
+        return chosen_agent    
+
     def schedule(self, plugin, context, network):
         """Schedule the network to an active DHCP agent if there
         is no active DHCP agent hosting it.
@@ -62,7 +94,8 @@ class ChanceScheduler(object):
             if not active_dhcp_agents:
                 LOG.warn(_('No active DHCP agents'))
                 return
-            chosen_agent = random.choice(active_dhcp_agents)
+            chosen_agent = self.choose_agent(plugin, context,
+                                             active_dhcp_agents)
             binding = agentschedulers_db.NetworkDhcpAgentBinding()
             binding.dhcp_agent = chosen_agent
             binding.network_id = network['id']
