@@ -1159,6 +1159,11 @@ class NetworkProfile_db_mixin(object):
                raise c_exc.NetworkProfileInUse(profile=id)
         if 'name' in p:
             is_updated = True
+        if net_p.segment_type == c_const.NETWORK_TYPE_TRUNK or net_p.segment_type == c_const.NETWORK_TYPE_VLAN:
+            if "multicast_ip_range" in p and  p["multicast_ip_range"]:
+               msg = _("multicast_ip_range not required")
+               LOG.exception(msg)
+               raise q_exc.InvalidInput(error_message=msg)
         if ('multicast_ip_range' in p and p["multicast_ip_range"] and
             p["multicast_ip_range"] != net_p["multicast_ip_range"]):
             if not self._segment_in_use(context.session, net_p):
