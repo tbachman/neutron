@@ -207,7 +207,7 @@ class TestIpWrapper(base.BaseTestCase):
         ip_lib.IPWrapper('sudo').add_veth('tap0', 'tap1')
         self.execute.assert_called_once_with('', 'link',
                                              ('add', 'tap0', 'type', 'veth',
-                                             'peer', 'name', 'tap1'),
+                                              'peer', 'name', 'tap1'),
                                              'sudo', None)
 
     def test_add_veth_with_namespaces(self):
@@ -345,7 +345,7 @@ class TestIPDevice(base.BaseTestCase):
 
     def test_eq_other_is_none(self):
         dev1 = ip_lib.IPDevice('tap0', 'sudo', 'ns1')
-        self.assertNotEqual(dev1, None)
+        self.assertIsNotNone(dev1)
 
     def test_str(self):
         self.assertEqual(str(ip_lib.IPDevice('tap0')), 'tap0')

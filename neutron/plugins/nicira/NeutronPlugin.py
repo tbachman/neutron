@@ -271,7 +271,8 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             lrouter_port = nvplib.create_router_lport(
                 cluster, router_id, port_data.get('tenant_id', 'fake'),
                 port_data.get('id', 'fake'), port_data.get('name', 'fake'),
-                port_data.get('admin_state_up', True), ip_addresses)
+                port_data.get('admin_state_up', True), ip_addresses,
+                port_data.get('mac_address'))
             LOG.debug(_("Created NVP router port:%s"), lrouter_port['uuid'])
         except NvpApiClient.NvpApiException:
             LOG.exception(_("Unable to create port on NVP logical router %s"),
@@ -1913,11 +1914,12 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             nvp_res = nvplib.create_l2_gw_service(self.cluster, tenant_id,
                                                   gw_data['name'], devices)
             nvp_uuid = nvp_res.get('uuid')
-        except Exception:
-            raise nvp_exc.NvpPluginException(
-                err_msg=_("Create_l2_gw_service did not "
-                          "return an uuid for the newly "
-                          "created resource:%s") % nvp_res)
+        except NvpApiClient.Conflict:
+            raise nvp_exc.NvpL2GatewayAlreadyInUse(gateway=gw_data['name'])
+        except NvpApiClient.NvpApiException:
+            err_msg = _("Unable to create l2_gw_service for: %s") % gw_data
+            LOG.exception(err_msg)
+            raise nvp_exc.NvpPluginException(err_msg=err_msg)
         gw_data['id'] = nvp_uuid
         return super(NvpPluginV2, self).create_network_gateway(context,
                                                                network_gateway)
@@ -2024,7 +2026,7 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                                 in securitygroups_db.IP_PROTOCOL_MAP.values())
             if (not port_based_proto and
                 (r['port_range_min'] is not None or
-                r['port_range_max'] is not None)):
+                 r['port_range_max'] is not None)):
                 msg = (_("Port values not valid for "
                          "protocol: %s") % r['protocol'])
                 raise q_exc.BadRequest(resource='security_group_rule',
