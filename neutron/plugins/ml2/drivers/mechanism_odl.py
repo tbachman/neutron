@@ -45,8 +45,6 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
     exposed by ODL is slightly different from the API exposed by NCS,
     but the general concepts are the same.
     """
-    out_of_sync = True
-
     def initialize(self):
         self.url = cfg.CONF.ml2_odl.url
         self.timeout = cfg.CONF.ml2_odl.timeout
@@ -84,9 +82,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
 
     def sync_object(self, operation, object_type, context):
         """Synchronize the single modified record to ODL.
-        Transition to the out-of-sync state on failure.
         """
-        self.out_of_sync = True
         dbcontext = context._plugin_context
         id = context.current['id']
         if operation == 'delete':
@@ -136,7 +132,6 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                     del port['tenant_id']
                     del port['fixed_ips']
                 self.sendjson(method, urlpath, {'port': port})
-        self.out_of_sync = False
 
     def add_security_groups(self, context, dbcontext, port):
         """Populate the 'security_groups' field with entire records."""
