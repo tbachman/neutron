@@ -56,84 +56,31 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
     # Postcommit hooks are used to trigger synchronization.
 
     def create_network_postcommit(self, context):
-        self.synchronize('create', 'networks', context)
+        self.sync_object('create', 'networks', context)
 
     def update_network_postcommit(self, context):
-        self.synchronize('update', 'networks', context)
+        self.sync_object('update', 'networks', context)
 
     def delete_network_postcommit(self, context):
-        self.synchronize('delete', 'networks', context)
+        self.sync_object('delete', 'networks', context)
 
     def create_subnet_postcommit(self, context):
-        self.synchronize('create', 'subnets', context)
+        self.sync_object('create', 'subnets', context)
 
     def update_subnet_postcommit(self, context):
-        self.synchronize('update', 'subnets', context)
+        self.sync_object('update', 'subnets', context)
 
     def delete_subnet_postcommit(self, context):
-        self.synchronize('delete', 'subnets', context)
+        self.sync_object('delete', 'subnets', context)
 
     def create_port_postcommit(self, context):
-        self.synchronize('create', 'ports', context)
+        self.sync_object('create', 'ports', context)
 
     def update_port_postcommit(self, context):
-        self.synchronize('update', 'ports', context)
+        self.sync_object('update', 'ports', context)
 
     def delete_port_postcommit(self, context):
-        self.synchronize('delete', 'ports', context)
-
-    def synchronize(self, operation, object_type, context):
-        """Synchronize ODL with Neutron following a configuration change."""
-        self.sync_object(operation, object_type, context)
-
-    def sync_full(self, operation, context):
-        """Resync the entire database to ODL.
-        Transition to the in-sync state on success.
-        """
-        dbcontext = context._plugin_context
-        networks = context._plugin.get_networks(dbcontext)
-        if operation == 'update':
-            for network in networks:
-                self.sync_object(operation, 'network', context)
-        else:
-            if len(networks) > 1:
-                json = {'networks': networks}
-            elif len(networks) == 1:
-                json = {'network': networks}
-            if len(networks) >= 1:
-                self.sendjson('post', 'networks', json)
-
-        subnets = context._plugin.get_subnets(dbcontext)
-        if operation == 'update':
-            for subnet in subnets:
-                self.sync_object(operation, 'subnet', context)
-        else:
-            if len(subnets) > 1:
-                json = {'subnets': subnets}
-            elif len(subnets) == 1:
-                json = {'subnet': subnets}
-            if len(subnets) >= 1:
-                self.sendjson('post', 'subnets', json)
-
-        ports = context._plugin.get_ports(dbcontext)
-        if operation == 'update':
-            for port in ports:
-                self.sync_object(operation, 'port', context)
-        else:
-            for port in ports:
-                self.add_security_groups(context, dbcontext, port)
-            if len(ports) > 1:
-                json = {'ports': ports}
-            elif len(ports) == 1:
-                json = {'port': ports}
-            if len(ports) >= 1:
-                self.sendjson('post', 'ports', json)
-
-        #json = {'openstack': {'network': networks,
-        #                      'subnet': subnets,
-        #                      'port': ports}}
-        #self.sendjson('put', object_type, json)
-        self.out_of_sync = False
+        self.sync_object('delete', 'ports', context)
 
     def sync_object(self, operation, object_type, context):
         """Synchronize the single modified record to ODL.
