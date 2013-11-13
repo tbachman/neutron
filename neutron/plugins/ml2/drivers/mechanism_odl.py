@@ -124,10 +124,11 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                 assert object_type == 'ports'
                 port = context._plugin.get_port(dbcontext, id)
                 self.add_security_groups(context, dbcontext, port)
-                # TODO(kmestery): Only converting to uppercase due to ODL bug
-                port['mac_address'] = port['mac_address'].upper()
-                # Remove the following for update calls
-                if operation == 'update':
+                if operation == 'create':
+                    # TODO(kmestery): Converting to uppercase due to ODL bug
+                    port['mac_address'] = port['mac_address'].upper()
+                elif operation == 'update':
+                    # Remove the following for update calls
                     del port['network_id']
                     del port['id']
                     del port['status']
