@@ -38,7 +38,9 @@ from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import l3_rpc_base
+from neutron.db import portbindings_db
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
+from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
@@ -131,6 +133,7 @@ class AgentNotifierApi(proxy.RpcProxy,
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
                           l3_db.L3_NAT_db_mixin,
+                          portbindings_db.PortBindingMixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
@@ -148,19 +151,20 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     # bulk operations.
     __native_bulk_support = False
     supported_extension_aliases = ["provider", "agent",
-                                   "policy_profile_binding",
-                                   "network_profile_binding",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "external-net", "router",
-                                   "credential"]
+                                   "binding", "credential"]
 
     def __init__(self, configfile=None):
         """
         Initialize Nexus1000V Neutron plugin.
 
-        1. Initialize Nexus1000v and Credential DB
-        2. Establish communication with Cisco Nexus1000V
+        1. Initialize VIF type to OVS
+        2. Initialize Nexus1000v and Credential DB
+        3. Establish communication with Cisco Nexus1000V
         """
+        self.base_binding_dict = {
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS}
         n1kv_db_v2.initialize()
         c_cred.Store.initialize()
         self._initialize_network_ranges()
@@ -1261,6 +1265,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                                   port)
                 n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
                 self._extend_port_dict_profile(context, pt)
+                self._process_portbindings_create_and_update(context,
+                                                             port['port'],
+                                                             pt)
             try:
                 self._send_create_port_request(context, pt)
             except(cisco_exceptions.VSMError,
@@ -1290,9 +1297,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_("Update port: %s"), id)
         if self.agent_vsm:
             super(N1kvNeutronPluginV2, self).get_port(context, id)
-        port = super(N1kvNeutronPluginV2, self).update_port(context, id, port)
-        self._extend_port_dict_profile(context, port)
-        return port
+        updated_port = super(N1kvNeutronPluginV2, self).update_port(context,
+                                                                    id,
+                                                                    port)
+        self._process_portbindings_create_and_update(context,
+                                                     port['port'],
+                                                     updated_port)
+        self._extend_port_dict_profile(context, updated_port)
+        return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
         """
