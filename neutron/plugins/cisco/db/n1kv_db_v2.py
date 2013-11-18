@@ -398,69 +398,65 @@ def add_port_binding(db_session, port_id, policy_profile_id):
         db_session.add(binding)
 
 
-def _get_sorted_vlan_ids(vlan_ranges):
+def _get_sorted_vlan_ids(seg_min, seg_max):
     """Return sorted allocatable VLAN IDs."""
     vlan_ids = set()
-    for vlan_range in vlan_ranges:
-        vlan_ids |= set(xrange(vlan_range[0], vlan_range[1] + 1))
+    vlan_ids |= set(xrange(seg_min, seg_max + 1))
     return sorted(vlan_ids)
 
 
-def sync_vlan_allocations(db_session, network_vlan_ranges):
+def delete_segment_allocations(db_session, net_p):
+    """
+    Delete the segment allocation entry from the table.
+
+    :params db_session: database session
+    :params net_p: network profile object
+    """
+    with db_session.begin(subtransactions=True):
+        seg_min, seg_max = get_segment_range(net_p)
+        if net_p['segment_type'] == c_const.NETWORK_TYPE_VLAN:
+            vlan_ids = _get_sorted_vlan_ids(seg_min, seg_max)
+            for vlan_id in vlan_ids:
+                alloc = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
+                         filter_by(physical_network=net_p['physical_network'],
+                                   vlan_id=vlan_id).
+                         one())
+                db_session.delete(alloc)
+        elif net_p['segment_type'] == c_const.NETWORK_TYPE_OVERLAY:
+            vxlan_ids = _get_sorted_vxlan_ids(seg_min, seg_max)
+            for vxlan_id in vxlan_ids:
+                alloc = (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
+                         filter_by(vxlan_id=vxlan_id).one())
+                db_session.delete(alloc)
+
+def sync_vlan_allocations(db_session, net_p):
     """
     Synchronize vlan_allocations table with configured VLAN ranges.
 
     Sync the network profile range with the vlan_allocations table for each
     physical network.
     :param db_session: database session
-    :param network_vlan_ranges: dictionary of network vlan ranges with the
-                                physical network name as key.
+    :param net_p: network profile dictionary
     """
 
-    with db_session.begin():
-        # process vlan ranges for each physical network separately
-        for physical_network, vlan_ranges in network_vlan_ranges.items():
+    with db_session.begin(subtransactions=True):
+        # determine current configured allocatable vlans for this
+        # physical network
+        seg_min, seg_max = get_segment_range(net_p)
+        vlan_ids = _get_sorted_vlan_ids(seg_min, seg_max)
 
-            # determine current configured allocatable vlans for this
-            # physical network
-            vlan_ids = _get_sorted_vlan_ids(vlan_ranges)
-
-            # add missing allocatable vlans to table
-            for vlan_id in vlan_ids:
-                try:
-                    alloc = get_vlan_allocation(db_session,
-                                                physical_network,
-                                                vlan_id)
-                except c_exc.VlanIDNotFound:
-                    alloc = n1kv_models_v2.N1kvVlanAllocation(
-                        physical_network=physical_network, vlan_id=vlan_id)
-                    db_session.add(alloc)
-
-
-def delete_vlan_allocations(db_session, network_vlan_ranges):
-    """
-    Delete vlan_allocations for deleted network profile range.
-
-    :param db_session: database session
-    :param network_vlan_ranges: dictionary of network vlan ranges with the
-                                physical network name as key.
-    """
-
-    with db_session.begin():
-        # process vlan ranges for each physical network separately
-        for physical_network, vlan_ranges in network_vlan_ranges.items():
-            # Determine the set of vlan ids which need to be deleted.
-            vlan_ids = _get_sorted_vlan_ids(vlan_ranges)
-            allocs = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
-                      filter_by(physical_network=physical_network).
-                      filter_by(allocated=False))
-            for alloc in allocs:
-                if alloc.vlan_id in vlan_ids:
-                    LOG.debug(_("Removing vlan %(vlan)s on physical "
-                                "network %(network)s from pool"),
-                              {"vlan": alloc.vlan_id,
-                               "network": physical_network})
-                    db_session.delete(alloc)
+        # add missing allocatable vlans to table
+        for vlan_id in vlan_ids:
+            try:
+                get_vlan_allocation(db_session,
+                                    net_p['physical_network'],
+                                    vlan_id)
+            except c_exc.VlanIDNotFound:
+                alloc = n1kv_models_v2.N1kvVlanAllocation(
+                            physical_network=net_p['physical_network'],
+                            vlan_id=vlan_id,
+                            network_profile_id = net_p['id'])
+                db_session.add(alloc)
 
 
 def get_vlan_allocation(db_session, physical_network, vlan_id):
@@ -581,25 +577,19 @@ def reserve_specific_vlan(db_session, physical_network, vlan_id):
             LOG.debug(_("Reserving specific vlan %(vlan)s on physical "
                         "network %(network)s from pool"),
                       {"vlan": vlan_id, "network": physical_network})
-        except exc.NoResultFound:
-            LOG.debug(_("Reserving specific vlan %(vlan)s on physical "
-                        "network %(network)s outside pool"),
-                      {"vlan": vlan_id, "network": physical_network})
-            alloc = n1kv_models_v2.N1kvVlanAllocation(
-                physical_network=physical_network, vlan_id=vlan_id)
+            alloc.allocated = True
             db_session.add(alloc)
-        alloc.allocated = True
+        except exc.NoResultFound:
+            raise c_exc.VlanIDOutsidePool
 
 
-def release_vlan(db_session, physical_network, vlan_id, network_vlan_ranges):
+def release_vlan(db_session, physical_network, vlan_id):
     """
     Release a given VLAN ID.
 
     :param db_session: database session
     :param physical_network: string representing the name of physical network
     :param vlan_id: integer value of the segmentation ID to be released
-    :param network_vlan_ranges: dictionary of network vlan ranges with the
-                                physical network name as key.
     """
     with db_session.begin(subtransactions=True):
         try:
@@ -608,68 +598,40 @@ def release_vlan(db_session, physical_network, vlan_id, network_vlan_ranges):
                                vlan_id=vlan_id).
                      one())
             alloc.allocated = False
-            for vlan_range in network_vlan_ranges.get(physical_network, []):
-                if vlan_range[0] <= vlan_id <= vlan_range[1]:
-                    msg = _("Releasing vlan %(vlan)s on physical "
-                            "network %(network)s to pool")
-                    break
-            else:
-                db_session.delete(alloc)
-                msg = _("Releasing vlan %(vlan)s on physical "
-                        "network %(network)s outside pool")
-            LOG.debug(msg, {"vlan": vlan_id, "network": physical_network})
         except exc.NoResultFound:
             LOG.warning(_("vlan_id %(vlan)s on physical network %(network)s "
                           "not found"),
                         {"vlan": vlan_id, "network": physical_network})
 
 
-def _get_sorted_vxlan_ids(vxlan_id_ranges):
+def _get_sorted_vxlan_ids(vxlan_min, vxlan_max):
     """Return sorted VXLAN IDs."""
     vxlan_ids = set()
-    for vxlan_min, vxlan_max in vxlan_id_ranges:
-        if vxlan_max + 1 - vxlan_min > c_const.MAX_VXLAN_RANGE:
-            LOG.error(_("Skipping unreasonable vxlan ID range %(vxlan_min)s - "
-                        "%(vxlan_max)s"),
-                      {"vxlan_min": vxlan_min, "vxlan_max": vxlan_max})
-        else:
-            vxlan_ids |= set(xrange(vxlan_min, vxlan_max + 1))
+    if vxlan_max + 1 - vxlan_min > c_const.MAX_VXLAN_RANGE:
+        LOG.error(_("Skipping unreasonable vxlan ID range %(vxlan_min)s - "
+                    "%(vxlan_max)s"),
+                  {"vxlan_min": vxlan_min, "vxlan_max": vxlan_max})
+    else:
+        vxlan_ids |= set(xrange(vxlan_min, vxlan_max + 1))
     return sorted(vxlan_ids)
 
 
-def sync_vxlan_allocations(db_session, vxlan_id_ranges):
+def sync_vxlan_allocations(db_session, net_p):
     """
     Synchronize vxlan_allocations table with configured vxlan ranges.
 
     :param db_session: database session
-    :param vxlan_id_ranges: list of segment range tuples
+    :param net_p: network profile dictionary
     """
-
-    vxlan_ids = _get_sorted_vxlan_ids(vxlan_id_ranges)
-    with db_session.begin():
+    seg_min, seg_max = get_segment_range(net_p)
+    vxlan_ids = _get_sorted_vxlan_ids(seg_min, seg_max)
+    with db_session.begin(subtransactions=True):
         for vxlan_id in vxlan_ids:
             alloc = get_vxlan_allocation(db_session, vxlan_id)
             if not alloc:
-                alloc = n1kv_models_v2.N1kvVxlanAllocation(vxlan_id=vxlan_id)
+                alloc = n1kv_models_v2.N1kvVxlanAllocation(
+                    network_profile_id=net_p['id'], vxlan_id=vxlan_id)
                 db_session.add(alloc)
-
-
-def delete_vxlan_allocations(db_session, vxlan_id_ranges):
-    """
-    Delete vxlan_allocations for deleted network profile range.
-
-    :param db_session: database session
-    :param vxlan_id_ranges: list of segment range tuples
-    """
-    vxlan_ids = _get_sorted_vxlan_ids(vxlan_id_ranges)
-    with db_session.begin():
-        allocs = (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
-                  filter_by(allocated=False))
-        for alloc in allocs:
-            if alloc.vxlan_id in vxlan_ids:
-                LOG.debug(_("Removing vxlan %s from pool"),
-                          alloc.vxlan_id)
-                db_session.delete(alloc)
 
 
 def get_vxlan_allocation(db_session, vxlan_id):
@@ -706,13 +668,12 @@ def reserve_specific_vxlan(db_session, vxlan_id):
         alloc.allocated = True
 
 
-def release_vxlan(db_session, vxlan_id, vxlan_id_ranges):
+def release_vxlan(db_session, vxlan_id):
     """
     Release a given VXLAN ID.
 
     :param db_session: database session
     :param vxlan_id: integer value representing the segmentation ID
-    :param vxlan_id_ranges: list of the segment range tuples.
     """
     with db_session.begin(subtransactions=True):
         try:
@@ -720,14 +681,6 @@ def release_vxlan(db_session, vxlan_id, vxlan_id_ranges):
                      filter_by(vxlan_id=vxlan_id).
                      one())
             alloc.allocated = False
-            for vxlan_id_range in vxlan_id_ranges:
-                if vxlan_id_range[0] <= vxlan_id <= vxlan_id_range[1]:
-                    msg = _("Releasing vxlan %s to pool")
-                    break
-            else:
-                db_session.delete(alloc)
-                msg = _("Releasing vxlan %s outside pool")
-            LOG.debug(msg, vxlan_id)
         except exc.NoResultFound:
             LOG.warning(_("vxlan_id %s not found"), vxlan_id)
 
@@ -792,9 +745,9 @@ def add_vm_network(db_session,
         db_session.add(vm_network)
 
 
-def update_vm_network_port_count(db_session, name, port_count):
+def update_vm_network(db_session, name, port_count):
     """
-    Update a VM network with new port count.
+    Update a VM network.
 
     :param db_session: database session
     :param name: string representing the name of the VM network
@@ -854,7 +807,7 @@ def create_network_profile(db_session, network_profile):
             kwargs["sub_type"] = network_profile["sub_type"]
         net_profile = n1kv_models_v2.NetworkProfile(**kwargs)
         db_session.add(net_profile)
-        return net_profile
+    return net_profile
 
 
 def delete_network_profile(db_session, id):
@@ -944,6 +897,13 @@ def get_policy_profile(db_session, id):
         raise c_exc.PolicyProfileIdNotFound(profile_id=id)
 
 
+def _get_policy_profiles():
+    """Retrieve all policy profiles."""
+    db_session = db.get_session()
+    with db_session.begin(subtransactions=True):
+        return db_session.query(n1kv_models_v2.PolicyProfile)
+
+
 def create_profile_binding(tenant_id, profile_id, profile_type):
     """Create Network/Policy Profile association with a tenant."""
     if profile_type not in ["network", "policy"]:
@@ -1021,22 +981,6 @@ class NetworkProfile_db_mixin(object):
 
     """Network Profile Mixin."""
 
-    def _replace_fake_tenant_id_with_real(self, context):
-        """
-        Replace default tenant-id with admin tenant-ids.
-
-        Default tenant-ids are populated in profile bindings when plugin is
-        initialized. Replace these tenant-ids with admin's tenant-id.
-        :param context: neutron api request context
-        """
-        if context.is_admin and context.tenant_id:
-            tenant_id = context.tenant_id
-            db_session = context.session
-            with db_session.begin(subtransactions=True):
-                (db_session.query(n1kv_models_v2.ProfileBinding).
-                 filter_by(tenant_id=c_const.TENANT_ID_NOT_SET).
-                 update({'tenant_id': tenant_id}))
-
     def _get_network_collection_for_tenant(self, db_session, model, tenant_id):
         net_profile_ids = (db_session.query(n1kv_models_v2.ProfileBinding.
                                             profile_id).
@@ -1091,15 +1035,20 @@ class NetworkProfile_db_mixin(object):
         :param network_profile: network profile dictionary
         :returns: network profile dictionary
         """
-        self._replace_fake_tenant_id_with_real(context)
         p = network_profile["network_profile"]
         self._validate_network_profile_args(context, p)
-        net_profile = create_network_profile(context.session, p)
-        create_profile_binding(context.tenant_id,
-                               net_profile.id,
-                               c_const.NETWORK)
-        if p.get("add_tenant"):
-            self.add_network_profile_tenant(net_profile.id, p["add_tenant"])
+        with context.session.begin(subtransactions=True):
+            net_profile = create_network_profile(context.session, p)
+            if net_profile.segment_type == c_const.NETWORK_TYPE_VLAN:
+                sync_vlan_allocations(context.session, net_profile)
+            elif net_profile.segment_type == c_const.NETWORK_TYPE_OVERLAY:
+                sync_vxlan_allocations(context.session, net_profile)
+            create_profile_binding(context.tenant_id,
+                                   net_profile.id,
+                                   c_const.NETWORK)
+            if p.get("add_tenant"):
+                self.add_network_profile_tenant(net_profile.id,
+                                                p["add_tenant"])
         return self._make_network_profile_dict(net_profile)
 
     def delete_network_profile(self, context, id):
@@ -1503,6 +1452,22 @@ class PolicyProfile_db_mixin(object):
                          in_(a_set & b_set), n1kv_models_v2.ProfileBinding.
                          tenant_id == c_const.TENANT_ID_NOT_SET)).
              delete(synchronize_session="fetch"))
+
+    def _replace_fake_tenant_id_with_real(self, context):
+        """
+        Replace default tenant-id with admin tenant-ids.
+
+        Default tenant-ids are populated in profile bindings when plugin is
+        initialized. Replace these tenant-ids with admin's tenant-id.
+        :param context: neutron api request context
+        """
+        if context.is_admin and context.tenant_id:
+            tenant_id = context.tenant_id
+            db_session = context.session
+            with db_session.begin(subtransactions=True):
+                (db_session.query(n1kv_models_v2.ProfileBinding).
+                 filter_by(tenant_id=c_const.TENANT_ID_NOT_SET).
+                 update({'tenant_id': tenant_id}))
 
     def _add_policy_profile(self,
                             policy_profile_name,

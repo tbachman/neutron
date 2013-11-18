@@ -42,6 +42,7 @@ from neutron.db import portbindings_db
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
+from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.openstack.common.rpc import proxy
@@ -58,19 +59,16 @@ from neutron.plugins.common import constants as svc_constants
 
 
 LOG = logging.getLogger(__name__)
+pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                       l3_rpc_base.L3RpcCallbackMixin,
-                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
+                       l3_rpc_base.L3RpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
     # Set RPC API version to 1.1 by default.
     RPC_API_VERSION = '1.1'
-
-    def __init__(self, notifier):
-        self.notifier = notifier
 
     def create_rpc_dispatcher(self):
         """Get the rpc dispatcher for this rpc manager.
@@ -80,54 +78,6 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         """
         return q_rpc.PluginRpcDispatcher([self,
                                           agents_db.AgentExtRpcCallback()])
-
-
-class AgentNotifierApi(proxy.RpcProxy,
-                       sg_rpc.SecurityGroupAgentRpcApiMixin):
-
-    """Agent side of the N1kv rpc API.
-
-    API version history:
-        1.0 - Initial version.
-    """
-
-    BASE_RPC_API_VERSION = '1.0'
-
-    def __init__(self, topic):
-        super(AgentNotifierApi, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
-        self.topic_network_delete = topics.get_topic_name(topic,
-                                                          topics.NETWORK,
-                                                          topics.DELETE)
-        self.topic_port_update = topics.get_topic_name(topic,
-                                                       topics.PORT,
-                                                       topics.UPDATE)
-        self.topic_vxlan_update = topics.get_topic_name(topic,
-                                                        c_const.TUNNEL,
-                                                        topics.UPDATE)
-
-    def network_delete(self, context, network_id):
-        self.fanout_cast(context,
-                         self.make_msg('network_delete',
-                                       network_id=network_id),
-                         topic=self.topic_network_delete)
-
-    def port_update(self, context, port, network_type, segmentation_id,
-                    physical_network):
-        self.fanout_cast(context,
-                         self.make_msg('port_update',
-                                       port=port,
-                                       network_type=network_type,
-                                       segmentation_id=segmentation_id,
-                                       physical_network=physical_network),
-                         topic=self.topic_port_update)
-
-    def vxlan_update(self, context, vxlan_ip, vxlan_id):
-        self.fanout_cast(context,
-                         self.make_msg('vxlan_update',
-                                       vxlan_ip=vxlan_ip,
-                                       vxlan_id=vxlan_id),
-                         topic=self.topic_vxlan_update)
 
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
@@ -167,7 +117,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS}
         n1kv_db_v2.initialize()
         c_cred.Store.initialize()
-        self._initialize_network_ranges()
         # If no api_extensions_path is provided set the following
         if not q_conf.CONF.api_extensions_path:
             q_conf.CONF.set_override(
@@ -181,14 +130,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.conn = rpc.create_connection(new=True)
-        self.notifier = AgentNotifierApi(topics.AGENT)
-        self.callbacks = N1kvRpcCallbacks(self.notifier)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+        # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
     def _setup_vsm(self):
@@ -201,15 +148,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('_setup_vsm'))
         self.agent_vsm = True
-        # Retrieve all the policy profiles from VSM.
-        self._populate_policy_profiles()
-        # Continue to poll VSM for any create/delete of policy profiles.
+        self.n1kvclient = n1kv_client.Client()
+        # Poll VSM for any create/delete of policy profiles.
         eventlet.spawn(self._poll_policy_profiles)
 
     def _poll_policy_profiles(self):
         """Start a green thread to pull policy profiles from VSM."""
         while True:
-            self._poll_policies(event_type='port_profile')
+            self._populate_policy_profiles()
             eventlet.sleep(int(c_conf.CISCO_N1K.poll_duration))
 
     def _populate_policy_profiles(self):
@@ -222,76 +168,34 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('_populate_policy_profiles'))
         try:
-            n1kvclient = n1kv_client.Client()
-            policy_profiles = n1kvclient.list_port_profiles()
-            LOG.debug(_('_populate_policy_profiles %s'), policy_profiles)
+            vsm_profiles = {}
+            plugin_profiles = {}
+            # Fetch policy profiles from VSM
+            policy_profiles = pool.spawn(
+                self.n1kvclient.list_port_profiles).wait()
             if policy_profiles:
                 for profile in policy_profiles['body'][c_const.SET]:
                     if c_const.ID and c_const.NAME in profile:
-                        profile_id = profile[c_const.PROPERTIES][c_const.ID]
-                        profile_name = profile[c_const.
-                                               PROPERTIES][c_const.NAME]
-                        self._add_policy_profile(profile_name, profile_id)
+                        vsm_profiles[profile[c_const.PROPERTIES]
+                            [c_const.ID]] = (profile[c_const.PROPERTIES]
+                                             [c_const.NAME])
+                # Fetch policy profiles previously populated
+                for profile in n1kv_db_v2._get_policy_profiles():
+                    plugin_profiles[profile.id] = profile.name
+                vsm_profiles_set = set(vsm_profiles)
+                plugin_profiles_set = set(plugin_profiles)
+                # Update database if the profile sets differ.
+                if vsm_profiles_set ^ plugin_profiles_set:
+                    # Add profiles in database if new profiles were created in VSM
+                    for pid in vsm_profiles_set - plugin_profiles_set:
+                        self._add_policy_profile(vsm_profiles[pid], pid)
+                    # Delete profiles from database if profiles were deleted in VSM
+                    for pid in plugin_profiles_set - vsm_profiles_set:
+                        self._delete_policy_profile(pid)
             self._remove_all_fake_policy_profiles()
         except (cisco_exceptions.VSMError,
                 cisco_exceptions.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
-
-    def _poll_policies(self, event_type=None, epoch=None, tenant_id=None):
-        """
-        Poll for Policy Profiles from Cisco Nexus1000V for any update/delete.
-        """
-        LOG.debug(_('_poll_policies'))
-        try:
-            n1kvclient = n1kv_client.Client()
-            policy_profiles = n1kvclient.list_events(event_type, epoch)
-            if policy_profiles:
-                for profile in policy_profiles['body'][c_const.SET]:
-                    if c_const.NAME in profile:
-                        # Extract commands from the events XML.
-                        cmd = profile[c_const.PROPERTIES]['cmd']
-                        cmds = cmd.split(';')
-                        cmdwords = cmds[1].split()
-                        profile_name = profile[c_const.
-                                               PROPERTIES][c_const.NAME]
-                        # Delete the policy profile from db if deleted on VSM
-                        if 'no' in cmdwords[0]:
-                            p = self._get_policy_profile_by_name(profile_name)
-                            if p:
-                                self._delete_policy_profile(p['id'])
-                        # Add policy profile to neutron DB idempotently
-                        elif c_const.ID in profile[c_const.PROPERTIES]:
-                            profile_id = profile[c_const.
-                                                 PROPERTIES][c_const.ID]
-                            self._add_policy_profile(
-                                profile_name, profile_id, tenant_id)
-                # Replace tenant-id for profile bindings with admin's tenant-id
-                self._remove_all_fake_policy_profiles()
-        except (cisco_exceptions.VSMError,
-                cisco_exceptions.VSMConnectionFailed):
-            LOG.warning(_('No policy profile updated from VSM'))
-
-    def _initialize_network_ranges(self):
-        self.network_vlan_ranges = {}
-        self.vxlan_id_ranges = []
-        network_profiles = n1kv_db_v2._get_network_profiles()
-        for network_profile in network_profiles:
-            seg_min, seg_max = self._get_segment_range(
-                network_profile['segment_range'])
-            if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                self._add_network_vlan_range(network_profile[
-                    'physical_network'], int(seg_min), int(seg_max))
-            elif network_profile['segment_type'] == (c_const.
-                                                     NETWORK_TYPE_OVERLAY):
-                self.vxlan_id_ranges.append((int(seg_min), int(seg_max)))
-
-    def _add_network_vlan_range(self, physical_network, vlan_min, vlan_max):
-        self._add_network(physical_network)
-        self.network_vlan_ranges[physical_network].append((vlan_min, vlan_max))
-
-    def _add_network(self, physical_network):
-        if physical_network not in self.network_vlan_ranges:
-            self.network_vlan_ranges[physical_network] = []
 
     def _extend_network_dict_provider(self, context, network):
         """Add extended network parameters."""
@@ -358,12 +262,15 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         if network_type == c_const.NETWORK_TYPE_VLAN:
             if physical_network_set:
-                if physical_network not in self.network_vlan_ranges:
-                    msg = (_("Unknown provider:physical_network %s") %
-                           physical_network)
+                    network_profiles = n1kv_db_v2._get_network_profiles()
+                    for network_profile in network_profiles:
+                        if physical_network == network_profile[
+                            'physical_network']:
+                            break
+                        else:
+                            msg = (_("Unknown provider:physical_network %s") %
+                               physical_network)
                     raise q_exc.InvalidInput(error_message=msg)
-            elif 'default' in self.network_vlan_ranges:
-                physical_network = 'default'
             else:
                 msg = _("provider:physical_network required")
                 raise q_exc.InvalidInput(error_message=msg)
@@ -436,8 +343,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             return
 
         session = context.session
-        n1kvclient = n1kv_client.Client()
-        clusters = n1kvclient.get_clusters()
+        clusters = pool.spawn(self.n1kvclient.get_clusters).wait()
         online_clusters = []
         encap_dict = {}
         for cluster in clusters['body'][c_const.SET]:
@@ -474,8 +380,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 raise cisco_exceptions.NoClusterFound
 
         for profile in encap_dict:
-            n1kvclient.update_encapsulation_profile(context, profile,
-                                                    encap_dict[profile])
+            pool.spawn(self.n1kvclient.update_encapsulation_profile,
+                       context, profile, encap_dict[profile]).wait()
 
     def _send_del_multi_segment_request(self, context, net_id, segment_pairs):
         """
@@ -490,7 +396,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             return
         session = context.session
         encap_dict = {}
-        n1kvclient = n1kv_client.Client()
         for (segment1, segment2) in segment_pairs:
             binding = (
                 n1kv_db_v2.get_multi_segment_network_binding(session, net_id,
@@ -512,8 +417,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             profile_dict['delMappings'].append(mapping_dict)
 
         for profile in encap_dict:
-            n1kvclient.update_encapsulation_profile(context, profile,
-                                                    encap_dict[profile])
+            pool.spawn(self.n1kvclient.update_encapsulation_profile,
+                       context, profile, encap_dict[profile]).wait()
 
     def _get_encap_segments(self, context, segment_pairs):
         """
@@ -709,8 +614,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param tenant_id: UUID representing the tenant
         """
         LOG.debug(_('_send_create_logical_network'))
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_logical_network(network_profile, tenant_id)
+        pool.spawn(self.n1kvclient.create_logical_network,
+                   network_profile,
+                   tenant_id).wait()
 
     def _send_delete_logical_network_request(self, network_profile):
         """
@@ -719,10 +625,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param network_profile: network profile dictionary
         """
         LOG.debug('_send_delete_logical_network')
-        n1kvclient = n1kv_client.Client()
         logical_network_name = (network_profile['id'] +
 	                        c_const.LOGICAL_NETWORK_SUFFIX)
-        n1kvclient.delete_logical_network(logical_network_name)
+        pool.spawn(self.n1kvclient.delete_logical_network,
+                   logical_network_name).wait()
 
     def _send_create_network_profile_request(self, context, profile):
         """
@@ -732,8 +638,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param profile: network profile dictionary
         """
         LOG.debug(_('_send_create_network_profile_request: %s'), profile['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_network_segment_pool(profile, context.tenant_id)
+        pool.spawn(self.n1kvclient.create_network_segment_pool,
+                   profile,
+                   context.tenant_id).wait()
   
     def _send_update_network_profile_request(self, profile):
        """
@@ -742,8 +649,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
        :param profile: network profile dictionary
        """
        LOG.debug(_('_send_update_network_profile_request: %s'), profile['id'])
-       n1kvclient = n1kv_client.Client()
-       n1kvclient.update_network_segment_pool(profile)
+       pool.spawn(self.n1kvclient.update_network_segment_pool, profile).wait()
 
     def _send_delete_network_profile_request(self, profile):
         """
@@ -753,8 +659,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('_send_delete_network_profile_request: %s'),
                   profile['name'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.delete_network_segment_pool(profile['id'])
+        pool.spawn(self.n1kvclient.delete_network_segment_pool,
+                   profile['id']).wait()
 
     def _send_create_network_request(self, context, network, segment_pairs):
         """
@@ -769,9 +675,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('_send_create_network_request: %s'), network['id'])
         profile = self.get_network_profile(context,
                                            network[n1kv_profile.PROFILE_ID])
-        n1kvclient = n1kv_client.Client()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_OVERLAY:
-            n1kvclient.create_bridge_domain(network, profile['sub_type'])
+            pool.spawn(self.n1kvclient.create_bridge_domain,
+                       network,
+                       profile['sub_type']).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             self._populate_member_segments(context, network, segment_pairs,
                                            n1kv_profile.SEGMENT_ADD)
@@ -783,8 +690,21 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                   self._get_encap_segments(context,
                                                            segment_pairs)),
                               'del_segment_list': []}
-                n1kvclient.create_encapsulation_profile(encap_dict)
-        n1kvclient.create_network_segment(network, profile)
+                pool.spawn(self.n1kvclient.create_encapsulation_profile,
+                           encap_dict).wait()
+        try:
+            pool.spawn(self.n1kvclient.create_network_segment,
+                       network, profile).wait()
+        except(cisco_exceptions.VSMError,
+               cisco_exceptions.VSMConnectionFailed):
+            with excutils.save_and_reraise_exception():
+                if network[
+                    providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_OVERLAY:
+                    bridge_domain_name = (network['id'] + 
+                                          c_const.BRIDGE_DOMAIN_SUFFIX)
+                    pool.spawn(self.n1kvclient.delete_bridge_domain,
+                               bridge_domain_name).wait()
+                    #TODO(rtapadar) Rollback encap profile
 
     def _send_update_network_request(self, context, network, add_segments,
                                      del_segments):
@@ -802,7 +722,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         db_session = context.session
         profile = n1kv_db_v2.get_network_profile(
             db_session, network[n1kv_profile.PROFILE_ID])
-        n1kvclient = n1kv_client.Client()
         body = {'publishName': network['name'],
                 'id': network['id'],
                 'networkSegmentPool': profile['id'],
@@ -832,9 +751,11 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                               'delMappings': (
                                   self._get_encap_segments(context,
                                                            del_segments))}
-                n1kvclient.update_encapsulation_profile(context, encap_profile,
-                                                        encap_dict)
-        n1kvclient.update_network_segment(network['id'], body)
+                pool.spawn(self.n1kvclient.update_encapsulation_profile,
+                           context, encap_profile, encap_dict).wait()
+        pool.spawn(self.n1kvclient.update_network_segment,
+                   network['id'], body).wait()
+        #TODO(rtapadar) Rollback update encap
 
     def _send_delete_network_request(self, context, network):
         """
@@ -846,18 +767,20 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param network: network dictionary
         """
         LOG.debug(_('_send_delete_network_request: %s'), network['id'])
-        n1kvclient = n1kv_client.Client()
         session = context.session
+        pool.spawn(self.n1kvclient.delete_network_segment,
+                   network['id']).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_OVERLAY:
             name = network['id'] + c_const.BRIDGE_DOMAIN_SUFFIX
-            n1kvclient.delete_bridge_domain(name)
+            pool.spawn(self.n1kvclient.delete_bridge_domain, name).wait()
         elif network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             profile = self.get_network_profile(
                 context, network[n1kv_profile.PROFILE_ID])
             if profile['sub_type'] == c_const.NETWORK_TYPE_OVERLAY:
                 profile_name = (network['id'] +
                                 c_const.ENCAPSULATION_PROFILE_SUFFIX)
-                n1kvclient.delete_encapsulation_profile(profile_name)
+                pool.spawn(self.n1kvclient.delete_encapsulation_profile,
+                           profile_name).wait()
         elif (network[providernet.NETWORK_TYPE] ==
                 c_const.NETWORK_TYPE_MULTI_SEGMENT):
             encap_dict = n1kv_db_v2.get_multi_segment_encap_dict(session,
@@ -874,9 +797,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                     self._extend_mapping_dict(context,
                                               mapping_dict, segment2)
                     profile_dict['delSegments'].append(mapping_dict)
-                n1kvclient.update_encapsulation_profile(context, profile,
-                                                        profile_dict)
-        n1kvclient.delete_network_segment(network['id'])
+                pool.spawn(self.n1kvclient.update_encapsulation_profile,
+                           context, profile, profile_dict).wait()
 
     def _send_create_subnet_request(self, context, subnet):
         """
@@ -886,10 +808,21 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param subnet: subnet dictionary
         """
         LOG.debug(_('_send_create_subnet_request: %s'), subnet['id'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.create_ip_pool(subnet)
-        body = {'ipPool': subnet['id']}
-        n1kvclient.update_network_segment(subnet['network_id'], body=body)
+        try:
+           pool.spawn(self.n1kvclient.create_ip_pool, subnet).wait()
+        except(cisco_exceptions.VSMError,
+               cisco_exceptions.VSMConnectionFailed):
+            with excutils.save_and_reraise_exception():
+                self.delete_subnet(context, subnet['id']) 
+
+    def _send_update_subnet_request(self, subnet):
+        """
+        Send update subnet request to VSM.
+
+        :param subnet: subnet dictionary
+        """
+        LOG.debug(_('_send_update_subnet_request: %s'), subnet['name'])
+        pool.spawn(self.n1kvclient.update_ip_pool, subnet).wait()
 
     def _send_delete_subnet_request(self, context, subnet):
         """
@@ -900,9 +833,17 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('_send_delete_subnet_request: %s'), subnet['name'])
         body = {'ipPool': subnet['id'], 'deleteSubnet': True}
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_network_segment(subnet['network_id'], body=body)
-        n1kvclient.delete_ip_pool(subnet['id'])
+        pool.spawn(self.n1kvclient.update_network_segment,
+                   subnet['network_id'], body=body).wait()
+        try:
+            pool.spawn(self.n1kvclient.delete_ip_pool,
+                       subnet['id']).wait()
+        except(cisco_exceptions.VSMError,
+               cisco_exceptions.VSMConnectionFailed):
+            with excutils.save_and_reraise_exception():
+                body['deleteSubnet'] = False
+                pool.spawn(self.n1kvclient.update_network_segment,
+                           subnet['network_id'], body).wait()
 
     def _send_create_port_request(self, context, port):
         """
@@ -915,37 +856,48 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param port: port dictionary
         """
         LOG.debug(_('_send_create_port_request: %s'), port)
-        try:
-            vm_network = n1kv_db_v2.get_vm_network(
-                context.session,
-                port[n1kv_profile.PROFILE_ID],
-                port['network_id'])
-        except cisco_exceptions.VMNetworkNotFound:
-            policy_profile = n1kv_db_v2.get_policy_profile(
-                context.session, port[n1kv_profile.PROFILE_ID])
-            network = self.get_network(context, port['network_id'])
-            vm_network_name = (c_const.VM_NETWORK_NAME_PREFIX +
-                               str(port[n1kv_profile.PROFILE_ID]) +
-                               "_" + str(port['network_id']))
-            port_count = 1
-            n1kv_db_v2.add_vm_network(context.session,
-                                      vm_network_name,
-                                      port[n1kv_profile.PROFILE_ID],
-                                      port['network_id'],
-                                      port_count)
-            n1kvclient = n1kv_client.Client()
-            n1kvclient.create_vm_network(port,
-                                         vm_network_name,
-                                         policy_profile)
-                                         
-            n1kvclient.create_n1kv_port(port, vm_network_name)
-        else:
-            vm_network_name = vm_network['name']
-            n1kvclient = n1kv_client.Client()
-            n1kvclient.create_n1kv_port(port, vm_network_name)
-            vm_network['port_count'] += 1
-            n1kv_db_v2.update_vm_network_port_count(
-                context.session, vm_network_name, vm_network['port_count'])
+        with context.session.begin(subtransactions=True):
+            try:
+                vm_network = n1kv_db_v2.get_vm_network(
+                    context.session,
+                    port[n1kv_profile.PROFILE_ID],
+                    port['network_id'])
+            except cisco_exceptions.VMNetworkNotFound:
+                policy_profile = n1kv_db_v2.get_policy_profile(
+                    context.session, port[n1kv_profile.PROFILE_ID])
+                network = self.get_network(context, port['network_id'])
+                vm_network_name = (c_const.VM_NETWORK_NAME_PREFIX +
+                                   str(port[n1kv_profile.PROFILE_ID]) +
+                                   "_" + str(port['network_id']))
+                port_count = 1
+                n1kv_db_v2.add_vm_network(context.session,
+                                          vm_network_name,
+                                          port[n1kv_profile.PROFILE_ID],
+                                          port['network_id'],
+                                          port_count)
+                try:
+                    pool.spawn(self.n1kvclient.create_vm_network,
+                               port,
+                               vm_network_name,
+                               policy_profile).wait()
+                except(cisco_exceptions.VSMError,
+                       cisco_exceptions.VSMConnectionFailed):
+                    with excutils.save_and_reraise_exception():
+                        super(N1kvNeutronPluginV2, self).delete_port(
+                            context, port['id'])
+            else:
+                vm_network_name = vm_network['name']
+                vm_network['port_count'] += 1
+                n1kv_db_v2.update_vm_network(context.session, vm_network_name,
+                                             vm_network['port_count'])
+                try:
+                    pool.spawn(self.n1kvclient.create_n1kv_port,
+                               port, vm_network_name).wait()
+                except(cisco_exceptions.VSMError,
+                       cisco_exceptions.VSMConnectionFailed):
+                    with excutils.save_and_reraise_exception():
+                        super(N1kvNeutronPluginV2, self).delete_port(
+                            context, port['id'])  
 
     def _send_update_port_request(self, port_id, mac_address, vm_network_name):
         """
@@ -958,8 +910,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('_send_update_port_request: %s'), port_id)
         body = {'portId': port_id,
                 'macAddress': mac_address}
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.update_n1kv_port(vm_network_name, port_id, body)
+        pool.spawn(self.n1kvclient.update_n1kv_port,
+                   vm_network_name, port_id, body).wait()
 
     def _send_delete_port_request(self, context, id):
         """
@@ -976,15 +928,23 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                port[n1kv_profile.PROFILE_ID],
                                                port['network_id'])
         vm_network['port_count'] -= 1
-        n1kv_db_v2.update_vm_network_port_count(
-            context.session, vm_network['name'], vm_network['port_count'])
-        n1kvclient = n1kv_client.Client()
-        n1kvclient.delete_n1kv_port(vm_network['name'], id)
+        n1kv_db_v2.update_vm_network(context.session,
+                                     vm_network['name'],
+                                     vm_network['port_count'])
+        pool.spawn(self.n1kvclient.delete_n1kv_port,
+                   vm_network['name'], id).wait()
         if vm_network['port_count'] == 0:
             n1kv_db_v2.delete_vm_network(context.session,
                                          port[n1kv_profile.PROFILE_ID],
                                          port['network_id'])
-            n1kvclient.delete_vm_network(vm_network['name'])
+            try:
+                pool.spawn(self.n1kvclient.delete_vm_network,
+                           vm_network['name']).wait()
+            except(cisco_exceptions.VSMError,
+                   cisco_exceptions.VSMConnectionFailed):
+                with excutils.save_and_reraise_exception():
+                    pool.spawn(self.n1kvclient.create_n1kv_port,
+                               port, vm_network['name']).wait()
 
     def _get_segmentation_id(self, context, id):
         """
@@ -1055,10 +1015,11 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                         network_profile['segment_range'])
                     if not seg_min <= segmentation_id <= seg_max:
                         raise cisco_exceptions.VlanIDOutsidePool
-                    n1kv_db_v2.reserve_specific_vlan(session,
-                                                     physical_network,
-                                                     segmentation_id)
-                    multicast_ip = "0.0.0.0"
+                    else:
+                        n1kv_db_v2.reserve_specific_vlan(session,
+                                                         physical_network,
+                                                         segmentation_id)
+                        multicast_ip = "0.0.0.0"
             net = super(N1kvNeutronPluginV2, self).create_network(context,
                                                                   network)
             n1kv_db_v2.add_network_binding(session,
@@ -1072,21 +1033,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._process_l3_create(context, net, network['network'])
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
-
-        try:
             if network_type == c_const.NETWORK_TYPE_MULTI_SEGMENT:
                 self._send_add_multi_segment_request(context, net['id'],
                                                      segment_pairs)
             else:
                 self._send_create_network_request(context, net, segment_pairs)
-                # note - exception will rollback entire transaction
-        except(cisco_exceptions.VSMError,
-               cisco_exceptions.VSMConnectionFailed):
-            super(N1kvNeutronPluginV2, self).delete_network(context, net['id'])
-        else:
             # note - exception will rollback entire transaction
-            LOG.debug(_("Created network: %s"), net['id'])
-            return net
+        LOG.debug(_("Created network: %s"), net['id'])
+        return net
 
     def update_network(self, context, id, network):
         """
@@ -1140,11 +1094,11 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                      net['id'], del_segments)
             self._extend_network_dict_provider(context, net)
             self._extend_network_dict_profile(context, net)
-        if binding.network_type not in [c_const.NETWORK_TYPE_MULTI_SEGMENT]:
-            self._send_update_network_request(context, net, add_segments,
-                                              del_segments)
-        LOG.debug(_("Updated network: %s"), net['id'])
-        return net
+            if binding.network_type != c_const.NETWORK_TYPE_MULTI_SEGMENT:
+                self._send_update_network_request(context, net, add_segments,
+                                                  del_segments)
+            LOG.debug(_("Updated network: %s"), net['id'])
+            return net
 
     def delete_network(self, context, id):
         """
@@ -1165,23 +1119,16 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 msg = _("Cannot delete network '%s' that is a member of a "
                         "multi-segment network") % network['name']
                 raise q_exc.InvalidInput(error_message=msg)
-            if self.agent_vsm:
-                try:
-                    self._send_delete_network_request(context, network)
-                except(cisco_exceptions.VSMError,
-                       cisco_exceptions.VSMConnectionFailed):
-                    LOG.debug(_('Delete failed in VSM'))
-            super(N1kvNeutronPluginV2, self).delete_network(context, id)
             if binding.network_type == c_const.NETWORK_TYPE_OVERLAY:
-                n1kv_db_v2.release_vxlan(session, binding.segmentation_id,
-                                         self.vxlan_id_ranges)
+                n1kv_db_v2.release_vxlan(session, binding.segmentation_id)
             elif binding.network_type == c_const.NETWORK_TYPE_VLAN:
                 n1kv_db_v2.release_vlan(session, binding.physical_network,
-                                        binding.segmentation_id,
-                                        self.network_vlan_ranges)
+                                        binding.segmentation_id)
                 # the network_binding record is deleted via cascade from
                 # the network record, so explicit removal is not necessary
-        LOG.debug(_("Deleted network: %s"), id)
+            self._send_delete_network_request(context, network)
+            super(N1kvNeutronPluginV2, self).delete_network(context, id)
+            LOG.debug(_("Deleted network: %s"), id)
 
     def get_network(self, context, id, fields=None):
         """
@@ -1255,27 +1202,21 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 port['port']['n1kv:profile_id'] = p_profile['id']
                 profile_id_set = True
 
-        if profile_id_set:
-            profile_id = self._process_policy_profile(context,
-                                                      port['port'])
-            LOG.debug(_('Create port: profile_id=%s'), profile_id)
-            session = context.session
-            with session.begin(subtransactions=True):
-                pt = super(N1kvNeutronPluginV2, self).create_port(context,
-                                                                  port)
-                n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
-                self._extend_port_dict_profile(context, pt)
-                self._process_portbindings_create_and_update(context,
-                                                             port['port'],
-                                                             pt)
-            try:
-                self._send_create_port_request(context, pt)
-            except(cisco_exceptions.VSMError,
-                   cisco_exceptions.VSMConnectionFailed):
-                super(N1kvNeutronPluginV2, self).delete_port(context, pt['id'])
-            else:
-                LOG.debug(_("Created port: %s"), pt)
-                return pt
+        profile_id = self._process_policy_profile(context,
+                                                  port['port'])
+        LOG.debug(_('Create port: profile_id=%s'), profile_id)
+        session = context.session
+        with session.begin(subtransactions=True):
+            pt = super(N1kvNeutronPluginV2, self).create_port(context,
+                                                              port)
+            n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
+            self._extend_port_dict_profile(context, pt)
+            self._process_portbindings_create_and_update(context,
+                                                         port['port'],
+                                                         pt)
+        self._send_create_port_request(context, pt)
+        LOG.debug(_("Created port: %s"), pt)
+        return pt
 
     def _add_dummy_profile_only_if_testing(self, obj):
         """
@@ -1295,8 +1236,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: updated port object
         """
         LOG.debug(_("Update port: %s"), id)
-        if self.agent_vsm:
-            super(N1kvNeutronPluginV2, self).get_port(context, id)
         updated_port = super(N1kvNeutronPluginV2, self).update_port(context,
                                                                     id,
                                                                     port)
@@ -1316,11 +1255,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
-        if l3_port_check:
-            self.prevent_l3_port_deletion(context, id)
-        self.disassociate_floatingips(context, id)
-        self._send_delete_port_request(context, id)
-        return super(N1kvNeutronPluginV2, self).delete_port(context, id)
+        with context.session.begin(subtransactions=True):
+            if l3_port_check:
+                self.prevent_l3_port_deletion(context, id)
+            self.disassociate_floatingips(context, id)
+            self._send_delete_port_request(context, id)
+            return super(N1kvNeutronPluginV2, self).delete_port(context, id)
 
     def get_port(self, context, id, fields=None):
         """
@@ -1368,15 +1308,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: subnet object
         """
         LOG.debug(_('Create subnet'))
-        sub = super(N1kvNeutronPluginV2, self).create_subnet(context, subnet)
-        try:
-            self._send_create_subnet_request(context, sub)
-        except(cisco_exceptions.VSMError,
-               cisco_exceptions.VSMConnectionFailed):
-            super(N1kvNeutronPluginV2, self).delete_subnet(context, sub['id'])
-        else:
-            LOG.debug(_("Created subnet: %s"), sub['id'])
-            return sub
+        with context.session.begin(subtransactions=True):
+            sub = super(N1kvNeutronPluginV2, self).create_subnet(context,
+                                                                 subnet)
+        self._send_create_subnet_request(context, sub)
+        LOG.debug(_("Created subnet: %s"), sub['id'])
+        return sub
 
     def update_subnet(self, context, id, subnet):
         """
@@ -1390,6 +1327,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         sub = super(N1kvNeutronPluginV2, self).update_subnet(context,
                                                              id,
                                                              subnet)
+        self._send_update_subnet_request(sub)
         return sub
 
     def delete_subnet(self, context, id):
@@ -1401,9 +1339,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: deleted subnet object
         """
         LOG.debug(_('Delete subnet: %s'), id)
-        subnet = self.get_subnet(context, id)
-        self._send_delete_subnet_request(context, subnet)
-        return super(N1kvNeutronPluginV2, self).delete_subnet(context, id)
+        with context.session.begin(subtransactions=True):
+            subnet = self.get_subnet(context, id)
+            self._send_delete_subnet_request(context, subnet)
+            return super(N1kvNeutronPluginV2, self).delete_subnet(context, id)
 
     def get_subnet(self, context, id, fields=None):
         """
@@ -1454,40 +1393,27 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: network profile object
         """
         self._replace_fake_tenant_id_with_real(context)
-        _network_profile = super(
-            N1kvNeutronPluginV2, self).create_network_profile(context,
-                                                              network_profile)
-        if _network_profile['segment_type'] in [c_const.NETWORK_TYPE_VLAN,
-                                                c_const.NETWORK_TYPE_OVERLAY]:
-            seg_min, seg_max = self._get_segment_range(
-                _network_profile['segment_range'])
-            if _network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-                self._add_network_vlan_range(
-                    _network_profile['physical_network'], int(seg_min),
-                    int(seg_max))
-                n1kv_db_v2.sync_vlan_allocations(context.session,
-                                                 self.network_vlan_ranges)
-            else:
-                self.vxlan_id_ranges = [(int(seg_min), int(seg_max))]
-                n1kv_db_v2.sync_vxlan_allocations(context.session,
-                                                  self.vxlan_id_ranges)
-        try:
-            self._send_create_logical_network_request(_network_profile,
-                                                      context.tenant_id)
-        except(cisco_exceptions.VSMError,
-               cisco_exceptions.VSMConnectionFailed):
-            super(N1kvNeutronPluginV2, self).delete_network_profile(
-                context, _network_profile['id'])
-        try:
-            self._send_create_network_profile_request(context,
-                                                      _network_profile)
-        except(cisco_exceptions.VSMError,
-               cisco_exceptions.VSMConnectionFailed):
-            self._send_delete_logical_network_request(_network_profile)
-            super(N1kvNeutronPluginV2, self).delete_network_profile(
-                context, _network_profile['id'])
-        else:
-            return _network_profile
+        session = context.session
+        with session.begin(subtransactions=True):
+            net_p = super(N1kvNeutronPluginV2, self).create_network_profile(
+                context, network_profile)
+            try:
+                self._send_create_logical_network_request(net_p,
+                                                          context.tenant_id)
+            except(cisco_exceptions.VSMError,
+                   cisco_exceptions.VSMConnectionFailed):
+                with excutils.save_and_reraise_exception():
+                    n1kv_db_v2.delete_profile_binding(context.tenant_id,
+                                                      net_p['id'])
+            try:
+                self._send_create_network_profile_request(context, net_p)
+            except(cisco_exceptions.VSMError,
+                   cisco_exceptions.VSMConnectionFailed):
+                with excutils.save_and_reraise_exception():
+                    n1kv_db_v2.delete_profile_binding(context.tenant_id,
+                                                      net_p['id'])
+                    self._send_delete_logical_network_request(net_p)
+        return net_p
 
     def delete_network_profile(self, context, id):
         """
@@ -1497,22 +1423,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param id: UUID of the network profile to delete
         :returns: deleted network profile object
         """
-        _network_profile = super(
-            N1kvNeutronPluginV2, self).delete_network_profile(context, id)
-        seg_min, seg_max = self._get_segment_range(
-            _network_profile['segment_range'])
-        if _network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-            self._add_network_vlan_range(_network_profile['physical_network'],
-                                         int(seg_min),
-                                         int(seg_max))
-            n1kv_db_v2.delete_vlan_allocations(context.session,
-                                               self.network_vlan_ranges)
-        elif _network_profile['segment_type'] == c_const.NETWORK_TYPE_OVERLAY:
-            self.delete_vxlan_ranges = []
-            self.delete_vxlan_ranges.append((int(seg_min), int(seg_max)))
-            n1kv_db_v2.delete_vxlan_allocations(context.session,
-                                                self.delete_vxlan_ranges)
-        self._send_delete_network_profile_request(_network_profile)
+        session = context.session
+        with session.begin(subtransactions=True):
+            net_p = super(N1kvNeutronPluginV2, self).delete_network_profile(
+                context, id)
+            self._send_delete_network_profile_request(net_p)
+            self._send_delete_logical_network_request(net_p)
  
     def update_network_profile(self, context, net_profile_id, network_profile):
 	  """
