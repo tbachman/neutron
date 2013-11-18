@@ -123,6 +123,8 @@ class Client(object):
             if self.status in (wexc.HTTPOk.code, wexc.HTTPCreated.code):
                 return r.json()
 
+    def put_request(self, resource, payload=None):
+        pass
 
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')
