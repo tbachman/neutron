@@ -5,7 +5,7 @@ from httmock import urlmatch, all_requests
 import requests
 from webob import exc as wexc
 
-
+# TODO REMOVE....
 def repeat(n):
     """Decorator to limit the number of times a handler is called.
     
@@ -29,6 +29,31 @@ def repeat(n):
             return func(*args, **kwargs)
         return wrapped
     return decorator
+
+def once_for(resource):
+    """Decorator to invoke handler once for a specific resource.
+    
+    This will call the handler the first time it is invoked for a
+    specific resource. Subsequent calls will return None, telling
+    the mock mechanism that there is no handler for this resource,
+    allowing additional handlers (if any) to be attempted."""
+    
+    class static:
+        times = 1
+        target_resource = resource
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            if static.times == 0:
+                return None
+            if static.target_resource in args[0].path:
+                static.times -= 1
+                return func(*args, **kwargs)
+            else:
+                return None # Not for this resource
+        return wrapped
+    return decorator
+
 
 @urlmatch(netloc=r'localhost')
 def token(url, request):
@@ -82,23 +107,25 @@ def get(url, request):
                 'content': {u'kind': u'collection#local-user', 
                             u'users': ['peter', 'paul', 'mary']}}
 
-@repeat(1)
+@once_for('global/host-name')
 @urlmatch(netloc=r'localhost')
 def expired_get(url, request):
-    if 'global/host-name' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'object#host-name',
-                            u'host-name': u'Router'}}
+    """Simulate access denied failure when get from this resource.
+    
+    This handler will be ignored (by returning None), on any subsequent
+    accesses to this resource."""
+    
+    return {'status_code': wexc.HTTPUnauthorized.code}
 
-@repeat(1)
+@once_for('interfaces/GigabitEthernet1')
 @urlmatch(netloc=r'localhost')
 def expired_post(url, request):
-    if 'interfaces/GigabitEthernet' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPNoContent.code}
+    """Simulate access denied failure when post to this resource.
+    
+    This handler will be ignored (by returning None), on any subsequent
+    accesses to this resource."""
+    
+    return {'status_code': wexc.HTTPUnauthorized.code}
 
 def post(url, request):
     if 'interfaces/GigabitEthernet' in url.path:
@@ -107,5 +134,7 @@ def post(url, request):
         return {'status_code': wexc.HTTPNoContent.code}
 
 def put(url, request):
-    pass
-
+    if 'interfaces/GigabitEthernet' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPNoContent.code}

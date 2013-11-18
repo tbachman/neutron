@@ -78,7 +78,9 @@ class Client(object):
                              verify=False, timeout=self.timeout)
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
+                    # print "LOG: Unable to re-authenticate with CSR (%s)" % self.host
                     return None
+                # print "LOG: Re-authenticated with CSR (%s)" % self.host
                 headers['X-auth-token'] = self.token
                 r = requests.get(url, headers=headers,
                                  verify=False, timeout=self.timeout)
@@ -103,18 +105,21 @@ class Client(object):
         
         url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
                                                         'resource': resource}
+        data = json.dumps(payload)
         headers = {'Accept': 'application/json',
                    'content-type': 'application/json',
                    'X-auth-token': self.token}        
         try:
-            r = requests.post(url, data=json.dumps(payload),
+            r = requests.post(url, headers=headers, data=data,
                               verify=False, timeout=self.timeout)
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
+                    # print "LOG: Unable to re-authenticate with CSR (%s)" % self.host
                     return None
+                # print "LOG: Re-authenticated with CSR (%s)" % self.host
                 headers['X-auth-token'] = self.token
-                r = requests.get(url, headers=headers,
-                                 verify=False, timeout=self.timeout)
+                r = requests.post(url, headers=headers, data=data,
+                                  verify=False, timeout=self.timeout)
         except requests.Timeout as te:
             # print "LOG: Timeout during get for CSR (%s): %s" % (self.host, te)
             self.status = wexc.HTTPRequestTimeout.code
@@ -124,7 +129,39 @@ class Client(object):
                 return r.json()
 
     def put_request(self, resource, payload=None):
-        pass
+        """Perform a PUT request to a CSR resource.
+        
+        If this is the first time interacting with the CSR, a token will
+        be obatained. If the request fails, due to an expired token, the
+        token will be obtained and the request will be retried once more."""
+
+        if not self.logged_in():
+            if not self.login():
+                return None
+        
+        url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
+                                                        'resource': resource}
+        data = json.dumps(payload)
+        headers = {'Accept': 'application/json',
+                   'content-type': 'application/json',
+                   'X-auth-token': self.token}        
+        try:
+            r = requests.put(url, headers=headers, data=data,
+                             verify=False, timeout=self.timeout)
+            if r.status_code == wexc.HTTPUnauthorized.code:
+                if not self.login():
+                    return None
+                headers['X-auth-token'] = self.token
+                r = requests.put(url, headers=headers, data=data,
+                                 verify=False, timeout=self.timeout)
+        except requests.Timeout as te:
+            # print "LOG: Timeout during get for CSR (%s): %s" % (self.host, te)
+            self.status = wexc.HTTPRequestTimeout.code
+        else:
+            self.status = r.status_code
+            if self.status in (wexc.HTTPOk.code, wexc.HTTPCreated.code):
+                return r.json()
+
 
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')

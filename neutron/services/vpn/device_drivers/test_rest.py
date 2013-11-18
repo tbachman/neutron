@@ -80,11 +80,19 @@ class TestCsrRestApi(unittest.TestCase):
         self.assertEqual(None, content)
         
     def test_token_expired_on_get_request(self):
-        """Token expired before trying a second get request."""
+        """Token expired before trying a second get request.
+
+        The mock is configured to return a 401 error on the first
+        attempt to reference the host name. For all other get requests
+        to for host name and any requests for local users, the proper
+        result will be returned."""
+
         with HTTMock(csr_request.token, csr_request.expired_get,
                      csr_request.get):
-            content = self.csr.get_request('global/host-name')
+            content = self.csr.get_request('global/local-users')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            self.assertIn('users', content)
+            
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.get_request('global/host-name')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
@@ -138,7 +146,12 @@ class TestCsrRestApi(unittest.TestCase):
         self.assertEqual(None, content)
     
     def test_token_expired_on_post_request(self):
-        """Negative test of token expired during post request."""
+        """Negative test of token expired during post request.
+        
+        The mock is configured to return a 401 error on the first
+        attempt to reference statistics for GigabitEthernet1. For
+        all other post requests to this and GigabitEthernet0, the
+        proper result will be returned."""
         with HTTMock(csr_request.token, csr_request.expired_post,
                      csr_request.post):
             content = self.csr.post_request(
@@ -146,8 +159,8 @@ class TestCsrRestApi(unittest.TestCase):
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
+            
             self.csr.token = '123' # These are 44 characters, so won't match
-            # Assumes there are two interfaces
             content = self.csr.post_request(
                 'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
@@ -176,6 +189,11 @@ class TestCsrRestApi(unittest.TestCase):
         with HTTMock(csr_request.token, csr_request.put):
             content = self.csr.put_request(
                 'interfaces/GigabitEthernet0',
+                payload={'description': 'Description changed'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet1',
                 payload={'description': 'Description changed'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
