@@ -152,7 +152,7 @@ class TestCsrRestApi(unittest.TestCase):
         attempt to reference statistics for GigabitEthernet1. For
         all other post requests to this and GigabitEthernet0, the
         proper result will be returned."""
-        with HTTMock(csr_request.token, csr_request.expired_post,
+        with HTTMock(csr_request.token, csr_request.expired_post_put,
                      csr_request.post):
             content = self.csr.post_request(
                 'interfaces/GigabitEthernet0/statistics',
@@ -199,34 +199,69 @@ class TestCsrRestApi(unittest.TestCase):
             self.assertIsNone(content)
     
     def test_put_invalid_resource(self):
-        pass
+        with HTTMock(csr_request.token, csr_request.no_such_resource):
+            content = self.csr.put_request('no/such/request',
+                                            payload={'foo': 'bar'})
+        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+        self.assertIsNone(content)            
     
     def test_timeout_during_put(self):
-        pass
+        with HTTMock(csr_request.token, csr_request.timeout):
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet0',
+                payload={'description': 'Description changed'})
+        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+        self.assertEqual(None, content)
     
     def test_token_expired_on_put_request(self):
-        pass
-    
+        """Negative test of token expired during put request.
+        
+        The mock is configured to return a 401 error on the first
+        attempt to reference GigabitEthernet1 for description change.
+        For all other put requests to this and GigabitEthernet0, the
+        proper result will be returned."""
+        with HTTMock(csr_request.token, csr_request.expired_post_put,
+                     csr_request.put):
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet0',
+                payload={'description': 'Description changed'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+            
+            self.csr.token = '123' # These are 44 characters, so won't match
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet1',
+                payload={'description': 'Description changed'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+     
     def test_failed_to_obtain_token_on_post(self):
-        pass
-    
+        """Negative test of unauthorized user for put request."""
+        self.csr.auth = ('stack', 'bogus')
+        with HTTMock(csr_request.token_unauthorized):
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet0',
+                payload={'description': 'Un-authorized user cannot change'})
+        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+        self.assertIsNone(content)
+     
     #############################################
     # Tests of REST DELETE
     #############################################
-    def test_delete_requests(self):
-        pass
-    
-    def test_delete_invalid_resource(self):
-        pass
-    
-    def test_timeout_during_delete(self):
-        pass
-    
-    def test_token_expired_on_delete_request(self):
-        pass
-    
-    def test_failed_to_obtain_token_on_delete(self):
-        pass
+#     def test_delete_requests(self):
+#         pass
+#     
+#     def test_delete_invalid_resource(self):
+#         pass
+#     
+#     def test_timeout_during_delete(self):
+#         pass
+#     
+#     def test_token_expired_on_delete_request(self):
+#         pass
+#     
+#     def test_failed_to_obtain_token_on_delete(self):
+#         pass
     
 
 # Functional tests with a real CSR

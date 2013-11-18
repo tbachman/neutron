@@ -119,8 +119,8 @@ def expired_get(url, request):
 
 @once_for('interfaces/GigabitEthernet1')
 @urlmatch(netloc=r'localhost')
-def expired_post(url, request):
-    """Simulate access denied failure when post to this resource.
+def expired_post_put(url, request):
+    """Simulate access denied failure when post/put to this resource.
     
     This handler will be ignored (by returning None), on any subsequent
     accesses to this resource."""
