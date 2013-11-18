@@ -34,16 +34,16 @@ def csr_timeout_mock(url, request):
     This handler is conditional, and will only apply to unit test
     cases that match the resource."""
     
-    if 'global/host-name' in url.path:
+    if ('global/host-name' in url.path or 
+        'interfaces/GigabitEthernet' in url.path):
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         raise requests.Timeout()
 
 @urlmatch(netloc=r'localhost')
-def csr_request_not_found_mock(url, request):
+def csr_no_such_resource_mock(url, request):
     if 'no/such/request' in url.path:
-        return {'status_code': wexc.HTTPNotFound.code,
-                'content': {'token-id': 'dummy-token'}}
+        return {'status_code': wexc.HTTPNotFound.code}
 
 @urlmatch(netloc=r'localhost')
 def csr_get_mock(url, request):
@@ -95,7 +95,7 @@ def csr_expired_get_mock(url, request):
                             u'host-name': u'Router'}}
 
 def csr_post_mock(url, request):
-    if 'interfaces/gigabitEthernet0/statistics' in url.path:
+    if 'interfaces/GigabitEthernet' in url.path:
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}
@@ -144,30 +144,27 @@ class TestCsrRestApi(unittest.TestCase):
     # Tests of REST GET
     #############################################
     def test_valid_rest_gets(self):
-        """First request will get token."""
+        """Simple GET requests. First request will get token."""
         with HTTMock(csr_token_mock, csr_get_mock):
             content = self.csr.get_request('global/host-name')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('host-name', content)
             self.assertNotEqual(None, content['host-name'])
-            # May not want to do following, as actual router may be different
-            self.assertDictContainsSubset({'host-name': 'Router'}, content)
-            
+           
             # Already have token for this request
             content = self.csr.get_request('global/local-users')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('users', content)
 
     def test_get_request_for_non_existent_resource(self):
-        """Negative test of non-existent resource."""
-        with HTTMock(csr_token_mock, csr_request_not_found_mock):
+        """Negative test of non-existent resource on get request."""
+        with HTTMock(csr_token_mock, csr_no_such_resource_mock):
             content = self.csr.get_request('no/such/request')
         self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
         self.assertIsNone(content)
                      
     def test_timeout_during_get(self):
         """Negative test of timeout during get resource."""
-        print "Start"
         with HTTMock(csr_token_mock, csr_timeout_mock):
             content = self.csr.get_request('global/host-name')
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
@@ -185,7 +182,7 @@ class TestCsrRestApi(unittest.TestCase):
             self.assertNotEqual(None, content['host-name'])
 
     def test_failed_to_obtain_token_on_get(self):
-        """Negative test of timeout obtaining token for get request."""
+        """Negative test of unauthorized user for get request."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_token_unauthorized_mock):
             content = self.csr.get_request('global/host-name')
@@ -196,22 +193,43 @@ class TestCsrRestApi(unittest.TestCase):
     # Tests of REST POST
     #############################################
     def test_post_requests(self):
+        """Simple POST requests (repeatable). First request will get token."""
         with HTTMock(csr_token_mock, csr_post_mock):
             content = self.csr.post_request(
-                'interfaces/gigabitEthernet0/statistics',
-                data={'action': 'clear'})
+                'interfaces/GigabitEthernet0/statistics',
+                payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+            # Assumes we have two interfaces...
+            content = self.csr.post_request(
+                'interfaces/GigabitEthernet1/statistics',
+                payload={'action': 'clear'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)            
     
     def test_post_invalid_resource(self):
-        pass
+        """Negative test of non-existing resource on post request."""
+        with HTTMock(csr_token_mock, csr_no_such_resource_mock):
+            content = self.csr.post_request('no/such/request',
+                                            payload={'foo': 'bar'})
+        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+        self.assertIsNone(content)            
     
     def test_timeout_during_post(self):
-        pass
+        """Negative test of timeout during post requests."""
+        with HTTMock(csr_token_mock, csr_timeout_mock):
+            content = self.csr.post_request(
+                'interfaces/GigabitEthernet0/statistics',
+                payload={'action': 'clear'})
+        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+        self.assertEqual(None, content)
     
     def test_token_expired_on_post_request(self):
+        """Negative test of token expired during post request."""
         pass
     
     def test_failed_to_obtain_token_on_post(self):
+        """Negative test of unauthorized user for post request."""
         pass
     
     #############################################

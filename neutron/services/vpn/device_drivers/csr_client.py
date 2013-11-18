@@ -73,9 +73,6 @@ class Client(object):
                                                         'resource': resource}
         headers = {'Accept': 'application/json',
                    'X-auth-token': self.token}
-
-        # print "Headers", headers
-        # print "URL", url
         try:
             r = requests.get(url, headers=headers, 
                              verify=False, timeout=self.timeout)
@@ -93,7 +90,7 @@ class Client(object):
             if self.status == wexc.HTTPOk.code:
                 return r.json()
 
-    def post_request(self, resource, data=None):
+    def post_request(self, resource, payload=None):
         """Perform a POST request to a CSR resource.
         
         If this is the first time interacting with the CSR, a token will
@@ -107,9 +104,11 @@ class Client(object):
         url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
                                                         'resource': resource}
         headers = {'Accept': 'application/json',
+                   'content-type': 'application/json',
                    'X-auth-token': self.token}        
         try:
-            r = requests.post(url, data)
+            r = requests.post(url, data=json.dumps(payload),
+                              verify=False, timeout=self.timeout)
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
                     return None
@@ -128,22 +127,29 @@ class Client(object):
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')
 
-    print "Start"
-    content = csr.get_request('global/host-name')
-    print "Status:", csr.status
-    print content
-    print "End"
-    
-    print "Get token: ", csr.login()
-    print 'Token status %s, token=%s' %(csr.status, csr.token)
-    
-    content = csr.get_request('global/host-name')
-    print "Get status %s, Content=%s" % (csr.status, content)
-    
-    content = csr.get_request('global/local-users')
-    print "Get status %s, Content=%s" % (csr.status, content)
-     
-    bad_host = Client('192.168.200.30', 'stack', 'cisco')
-    print "Get token: ", bad_host.login()
-    print 'Bad status %s' % bad_host.status
+#     print "Start"
+#     content = csr.get_request('global/host-name')
+#     print "Status:", csr.status
+#     print content
+#     print "End"
+#     
+#     print "Get token: ", csr.login()
+#     print 'Token status %s, token=%s' %(csr.status, csr.token)
+#     
+#     content = csr.get_request('global/host-name')
+#     print "Get status %s, Content=%s" % (csr.status, content)
+#     
+#     content = csr.get_request('global/local-users')
+#     print "Get status %s, Content=%s" % (csr.status, content)
+#      
+#     bad_host = Client('192.168.200.30', 'stack', 'cisco')
+#     print "Get token: ", bad_host.login()
+#     print 'Bad status %s' % bad_host.status
+
+    content = csr.post_request('interfaces/gigabitEthernet0/statistics',
+                               payload={'action': 'clear'})
+    print "Good post status %s, Content=%s" % (csr.status, content)
+    content = csr.post_request('no/such/request',
+                                payload={'foo': 'bar'})
+    print "Bad post status %s, Content=%s" % (csr.status, content)
 
