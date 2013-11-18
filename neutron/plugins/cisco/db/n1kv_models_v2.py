@@ -33,6 +33,10 @@ class N1kvVlanAllocation(model_base.BASEV2):
     """Represents allocation state of vlan_id on physical network."""
     __tablename__ = 'cisco_n1kv_vlan_allocations'
 
+    network_profile_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('cisco_network_profiles.id',
+                                                 ondelete="CASCADE"),
+                                   primary_key=True)
     physical_network = sa.Column(sa.String(64),
                                  nullable=False,
                                  primary_key=True)
@@ -46,6 +50,10 @@ class N1kvVxlanAllocation(model_base.BASEV2):
     """Represents allocation state of vxlan_id."""
     __tablename__ = 'cisco_n1kv_vxlan_allocations'
 
+    network_profile_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('cisco_network_profiles.id',
+                                                 ondelete="CASCADE"),
+                                   primary_key=True)
     vxlan_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
                          autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False, default=False)
