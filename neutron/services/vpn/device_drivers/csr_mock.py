@@ -132,9 +132,19 @@ def post(url, request):
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}
+    if 'global/local-users' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPCreated.code}
 
 def put(url, request):
     if 'interfaces/GigabitEthernet' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPNoContent.code}
+
+def delete(url, request):
+    if 'global/local-users' in url.path:
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}

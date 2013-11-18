@@ -248,7 +248,25 @@ class TestCsrRestApi(unittest.TestCase):
     #############################################
     # Tests of REST DELETE
     #############################################
-#     def test_delete_requests(self):
+    def test_delete_requests(self):
+        """Simple DELETE requests. 
+        
+        First request will do a post to get token (login). Will do a
+        create first, and then delete."""
+
+        with HTTMock(csr_request.token, csr_request.post, csr_request.delete):
+            content = self.csr.post_request(
+                'global/local-users',
+                payload={'username': 'dummy',
+                         'password': 'dummy',
+                         'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            content = self.csr.delete_request(
+                'global/local-users/dummy')
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+
+#     def test_delete_non_existent_entry(self):
 #         pass
 #     
 #     def test_delete_invalid_resource(self):
