@@ -94,6 +94,14 @@ def csr_expired_get_mock(url, request):
                 'content': {u'kind': u'object#host-name',
                             u'host-name': u'Router'}}
 
+@repeat(1)
+@urlmatch(netloc=r'localhost')
+def csr_expired_post_mock(url, request):
+    if 'interfaces/GigabitEthernet' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPNoContent.code}
+
 def csr_post_mock(url, request):
     if 'interfaces/GigabitEthernet' in url.path:
         if not request.headers.get('X-auth-token', None):
@@ -226,11 +234,29 @@ class TestCsrRestApi(unittest.TestCase):
     
     def test_token_expired_on_post_request(self):
         """Negative test of token expired during post request."""
-        pass
+        with HTTMock(csr_token_mock, csr_expired_post_mock, csr_post_mock):
+            content = self.csr.post_request(
+                'interfaces/GigabitEthernet0/statistics',
+                payload={'action': 'clear'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+            self.csr.token = '123' # These are 44 characters, so won't match
+            # Assumes there are two interfaces
+            content = self.csr.post_request(
+                'interfaces/GigabitEthernet1/statistics',
+                payload={'action': 'clear'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
     
     def test_failed_to_obtain_token_on_post(self):
         """Negative test of unauthorized user for post request."""
-        pass
+        self.csr.auth = ('stack', 'bogus')
+        with HTTMock(csr_token_unauthorized_mock):
+            content = self.csr.post_request(
+                'interfaces/GigabitEthernet0/statistics',
+                payload={'action': 'clear'})
+        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+        self.assertIsNone(content)
     
     #############################################
     # Tests of REST PUT
