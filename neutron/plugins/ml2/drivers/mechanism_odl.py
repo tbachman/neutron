@@ -17,9 +17,11 @@
 from oslo.config import cfg
 import requests
 
+from neutron.extensions import portbindings
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.openvswitch.common import constants
 
 LOG = log.getLogger(__name__)
 
@@ -50,6 +52,8 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         self.timeout = cfg.CONF.ml2_odl.timeout
         self.username = cfg.CONF.ml2_odl.username
         self.password = cfg.CONF.ml2_odl.password
+        self.vif_type = portbindings.VIF_TYPE_OVS
+        self.cap_port_filter = False
 
     # Postcommit hooks are used to trigger synchronization.
 
@@ -156,3 +160,54 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                                  headers=headers, data=data,
                                  auth=auth, timeout=self.timeout)
             r.raise_for_status()
+
+    def bind_port(self, context):
+        LOG.debug(_("Attempting to bind port %(port)s on "
+                    "network %(network)s"),
+                  {'port': context.current['id'],
+                   'network': context.network.current['id']})
+        for segment in context.network.network_segments:
+            if self.check_segment(segment):
+                context.set_binding(segment[api.ID],
+                                    self.vif_type,
+                                    self.cap_port_filter)
+                LOG.debug(_("Bound using segment: %s"), segment)
+                return
+            else:
+                LOG.error(_("Failed binding port for segment ID %(id)s, "
+                            "segment %(seg)s, phys net %(physnet)s, and "
+                            "network type %(nettype)s"),
+                          {'id': segment[api.ID],
+                           'seg': segment[api.SEGMENTATION_ID],
+                           'physnet': segment[api.PHYSICAL_NETWORK],
+                           'nettype': segment[api.NETWORK_TYPE]})
+
+    def validate_port_binding(self, context):
+        if self.check_segment(context.bound_segment):
+            LOG.debug(_('Binding valid.'))
+            return True
+        LOG.warning(_("Binding invalid for port: %s"), context.current)
+        return False
+
+    def unbind_port(self, context):
+        LOG.debug(_("Unbinding port %(port)s on "
+                    "network %(network)s"),
+                  {'port': context.current['id'],
+                   'network': context.network.current['id']})
+
+    def check_segment(self, segment):
+        """Verify a segment is valid for the OpenDaylight MechanismDriver
+
+        Verify the requested segment is supported by ODL and return True or
+        False to indicate this to callers.
+        """
+        network_type = segment[api.NETWORK_TYPE]
+        if network_type == 'local':
+            return True
+        elif network_type in [constants.TYPE_GRE, constants.TYPE_VXLAN]:
+            return True
+        elif network_type in ['flat', 'vlan']:
+            #TODO(mestery): Validate these
+            return True
+        else:
+            return False
