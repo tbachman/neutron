@@ -29,10 +29,15 @@ def csr_token_timeout_mock(url, request):
 
 @all_requests
 def csr_timeout_mock(url, request):
-    """Simulated timeout of a normal request."""
-    if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    raise requests.Timeout()
+    """Simulated timeout of a normal request.
+    
+    This handler is conditional, and will only apply to unit test
+    cases that match the resource."""
+    
+    if 'global/host-name' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        raise requests.Timeout()
 
 @urlmatch(netloc=r'localhost')
 def csr_request_not_found_mock(url, request):

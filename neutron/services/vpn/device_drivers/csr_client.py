@@ -42,22 +42,20 @@ class Client(object):
                    'Content-Length': '0',
                    'Accept': 'application/json'}
         self.token = None
-        print "Logging in to", self.host
         try:
             r = requests.post(url, headers=headers, timeout=self.timeout,
                               auth=self.auth, verify=False)
         except requests.ConnectionError as ce:
-            print "LOG: Unable to connect to CSR (%s): %s" % (self.host, ce)
+            # print "LOG: Unable to connect to CSR (%s): %s" % (self.host, ce)
             self.status = wexc.HTTPNotFound.code
         except requests.Timeout as te:
-            print "LOG: Timeout connecting to CSR (%s): %s" % (self.host, te)
+            # print "LOG: Timeout connecting to CSR (%s): %s" % (self.host, te)
             self.status = wexc.HTTPRequestTimeout.code
         else:
             self.status = r.status_code
-            print "LOG: Login status", self.status
             if self.status == wexc.HTTPCreated.code:
                 self.token = r.json()['token-id']
-                print "LOG: Login successful. Token=", self.token
+                # print "LOG: Login successful. Token=", self.token
                 return True
 
     def get_request(self, resource):
@@ -130,6 +128,12 @@ class Client(object):
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')
 
+    print "Start"
+    content = csr.get_request('global/host-name')
+    print "Status:", csr.status
+    print content
+    print "End"
+    
     print "Get token: ", csr.login()
     print 'Token status %s, token=%s' %(csr.status, csr.token)
     
