@@ -5,7 +5,7 @@ from httmock import urlmatch, all_requests
 import requests
 from webob import exc as wexc
 
-DEBUG = True
+DEBUG = False
 
 def once_for(resource):
     """Decorator to invoke handler once for a specific resource.
@@ -149,10 +149,9 @@ def put(url, request):
         return
     if DEBUG:
         print "DEBUG: PUT mock for", url
-    if 'global/host-name' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPNoContent.code}
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPNoContent.code}
 
 @urlmatch(netloc=r'localhost')
 def delete(url, request):
@@ -160,8 +159,6 @@ def delete(url, request):
         return
     if DEBUG:
         print "DEBUG: DELETE mock for", url
-    print "Invoked delete mock", url, request
-    if 'global/local-users' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPNoContent.code}
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPNoContent.code}

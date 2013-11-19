@@ -87,16 +87,11 @@ class TestCsrGetRestApi(unittest.TestCase):
         """Token expired before trying a second get request.
 
         The mock is configured to return a 401 error on the first
-        attempt to reference the host name. For all other get requests
-        to for host name and any requests for local users, the proper
-        result will be returned."""
+        attempt to reference the host name. Simulate expiration of
+        token by changing it."""
 
         with HTTMock(csr_request.token, csr_request.expired_get,
                      csr_request.get):
-            content = self.csr.get_request('global/local-users')
-            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-            self.assertIn('users', content)
-            
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.get_request('global/host-name')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
@@ -157,22 +152,12 @@ class TestCsrPostRestApi(unittest.TestCase):
     def test_token_expired_on_post_request(self):
         """Negative test of token expired during post request.
         
-        Assumes that there are two interfaces (Ge1 and Ge2). First,
-        it verifies that we can post to one interface. Next, it
-        verifies that a 401 error (unauth) on the first attempt to
-        post to the second interface, due to invalid token ID. After
-        that, it verifies that posts are successful."""
+        Simulates expiration of the token by changing it."""
         with HTTMock(csr_request.token, csr_request.expired_post_put,
                      csr_request.post):
-            content = self.csr.post_request(
-                'interfaces/GigabitEthernet1/statistics',
-                payload={'action': 'clear'})
-            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-            self.assertIsNone(content)
-            
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet2/statistics',
+                'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
@@ -198,7 +183,6 @@ class TestCsrPutRestApi(unittest.TestCase):
             if self.csr.status != wexc.HTTPOk.code:
                 self.fail("Unable to save original host name")
         self.original_host = details['host-name']
-        print "Saved", self.original_host
         self.csr.token = None
 
     def _restore_host_name(self):
@@ -207,7 +191,6 @@ class TestCsrPutRestApi(unittest.TestCase):
         Must restore the user and password, so that authentication
         token can be obtained (as some tests corrupt auth info)."""
         
-        print "Restoring", self.original_host
         self.csr.auth = ('stack', 'cisco')
         with HTTMock(csr_request.token, csr_request.put):
             payload = {'host-name': self.original_host}
