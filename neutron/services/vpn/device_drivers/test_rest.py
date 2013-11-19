@@ -7,19 +7,19 @@ import csr_client
 import csr_mock as csr_request
 
 
-class TestCsrRestApi(unittest.TestCase):
+class TestCsrLoginRestApi(unittest.TestCase):
+    
+    """Test logging into CSR to obtain token-id."""
 
     def setUp(self):
         self.csr = csr_client.Client('localhost', 
                                      'stack', 'cisco')
 
-    #############################################
-    # Tests of access token
-    #############################################
     def test_get_token(self):
         """Obtain the token and its expiration time."""
         with HTTMock(csr_request.token):
             self.assertTrue(self.csr.login())
+        # TODO: Once fixed on CSR, this should return HTTPOk
         self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
         self.assertIsNotNone(self.csr.token)
 
@@ -46,9 +46,14 @@ class TestCsrRestApi(unittest.TestCase):
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
         self.assertIsNone(self.csr.token)
 
-    #############################################
-    # Tests of REST GET
-    #############################################
+class TestCsrGetRestApi(unittest.TestCase):
+    
+    """Test CSR GET REST API."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 
+                                     'stack', 'cisco')
+
     def test_valid_rest_gets(self):
         """Simple GET requests.
         
@@ -107,23 +112,28 @@ class TestCsrRestApi(unittest.TestCase):
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
 
-    #############################################
-    # Tests of REST POST
-    #############################################
+class TestCsrPostRestApi(unittest.TestCase):
+    
+    """Test CSR POST REST API."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 
+                                     'stack', 'cisco')
+
     def test_post_requests(self):
         """Simple POST requests (repeatable).
         
         First request will do a post to get token (login). Assumes
-        that there are two interfaces on the CSR."""
+        that there are two interfaces (Ge1 and Ge2) on the CSR."""
         
         with HTTMock(csr_request.token, csr_request.post):
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet0/statistics',
+                'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet1/statistics',
+                'interfaces/GigabitEthernet2/statistics',
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)            
@@ -140,7 +150,7 @@ class TestCsrRestApi(unittest.TestCase):
         """Negative test of timeout during post requests."""
         with HTTMock(csr_request.token, csr_request.timeout):
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet0/statistics',
+                'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
         self.assertEqual(None, content)
@@ -148,21 +158,22 @@ class TestCsrRestApi(unittest.TestCase):
     def test_token_expired_on_post_request(self):
         """Negative test of token expired during post request.
         
-        The mock is configured to return a 401 error on the first
-        attempt to reference statistics for GigabitEthernet1. For
-        all other post requests to this and GigabitEthernet0, the
-        proper result will be returned."""
+        Assumes that there are two interfaces (Ge1 and Ge2). First,
+        it verifies that we can post to one interface. Next, it
+        verifies that a 401 error (unauth) on the first attempt to
+        post to the second interface, due to invalid token ID. After
+        that, it verifies that posts are successful."""
         with HTTMock(csr_request.token, csr_request.expired_post_put,
                      csr_request.post):
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet0/statistics',
+                'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
             
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet1/statistics',
+                'interfaces/GigabitEthernet2/statistics',
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
@@ -172,29 +183,52 @@ class TestCsrRestApi(unittest.TestCase):
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
             content = self.csr.post_request(
-                'interfaces/GigabitEthernet0/statistics',
+                'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
     
-    #############################################
-    # Tests of REST PUT
-    #############################################
+class TestCsrPutRestApi(unittest.TestCase):
+    
+    """Test CSR PUT REST API."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 
+                                     'stack', 'cisco')
+
+    def _build_payload_from_get(self, details):
+        return {u'description': details['description'],
+                u'if-name': details['if-name'],
+                u'ip-address': details['ip-address'],
+                u'subnet-mask': details['subnet-mask'],
+                u'type': details['type']}
+        
     def test_put_requests(self):
         """Simple PUT requests (repeatable). 
         
         First request will do a post to get token (login). Assumes
-        that there are two interfaces on the CSR."""
+        that there are two interfaces on the CSR (Ge1 and Ge2)."""
 
-        with HTTMock(csr_request.token, csr_request.put):
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet0',
-                payload={'description': 'Description changed'})
+        print "PUT test start"
+        with HTTMock(csr_request.token, csr_request.put,
+                     csr_request.get):
+            details = self.csr.get_request('interfaces/GigabitEthernet1')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            print "GET output", details
+            payload = self._build_payload_from_get(details)
+            payload[u'description'] = "Description changed"
+            content = self.csr.put_request('interfaces/GigabitEthernet1',
+                                           payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'description': 'Description changed'})
+            
+            details = self.csr.get_request('interfaces/GigabitEthernet2')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            print "GET output", details
+            payload = self._build_payload_from_get(details)
+            payload[u'description'] = "Changed another"
+            content = self.csr.put_request('interfaces/GigabitEthernet2',
+                                           payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
     
@@ -208,52 +242,63 @@ class TestCsrRestApi(unittest.TestCase):
     def test_timeout_during_put(self):
         with HTTMock(csr_request.token, csr_request.timeout):
             content = self.csr.put_request(
-                'interfaces/GigabitEthernet0',
-                payload={'description': 'Description changed'})
+                'interfaces/GigabitEthernet1',
+                payload={'if-name': 'GigabitEthernet1',
+                         'description': 'Description changed'})
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
         self.assertEqual(None, content)
     
     def test_token_expired_on_put_request(self):
         """Negative test of token expired during put request.
         
-        The mock is configured to return a 401 error on the first
-        attempt to reference GigabitEthernet1 for description change.
-        For all other put requests to this and GigabitEthernet0, the
-        proper result will be returned."""
+        Assumes that there are two interfaces (Ge1 and Ge2). First,
+        it verifies that we can put to one interface. Next, it
+        verifies that a 401 error (unauth) on the first attempt to
+        put to the second interface, due to invalid token ID. After
+        that, it verifies that puts are successful."""
         with HTTMock(csr_request.token, csr_request.expired_post_put,
                      csr_request.put):
             content = self.csr.put_request(
-                'interfaces/GigabitEthernet0',
-                payload={'description': 'Description changed'})
+                'interfaces/GigabitEthernet1',
+                payload={'if-name': 'GigabitEthernet1',
+                         'description': 'Description changed'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
             
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'description': 'Description changed'})
+                'interfaces/GigabitEthernet2',
+                payload={'if-name': 'GigabitEthernet1',
+                         'description': 'Description changed'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
      
-    def test_failed_to_obtain_token_on_post(self):
+    def test_failed_to_obtain_token_on_put(self):
         """Negative test of unauthorized user for put request."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
             content = self.csr.put_request(
-                'interfaces/GigabitEthernet0',
-                payload={'description': 'Un-authorized user cannot change'})
+                'interfaces/GigabitEthernet1',
+                payload={'if-name': 'GigabitEthernet1',
+                         'description': 'Un-authorized user cannot change'})
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
      
-    #############################################
-    # Tests of REST DELETE
-    #############################################
+class TestCsrDeleteRestApi(unittest.TestCase):
+    
+    """Test CSR DELETE REST API."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 
+                                     'stack', 'cisco')
+
     def test_delete_requests(self):
         """Simple DELETE requests. 
-        
+         
         First request will do a post to get token (login). Will do a
         create first, and then delete."""
-
+ 
+        print "Start DELETE test<<<<<<"
         with HTTMock(csr_request.token, csr_request.post, csr_request.delete):
             content = self.csr.post_request(
                 'global/local-users',
@@ -284,11 +329,36 @@ class TestCsrRestApi(unittest.TestCase):
 
 # Functional tests with a real CSR
 if True:
-    class TestLiveCsr(TestCsrRestApi):
+    class TestLiveCsrLoginRestApi(TestCsrLoginRestApi):
           
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20', 
                                          'stack', 'cisco', timeout=2)
+
+    class TestLiveCsrGetRestApi(TestCsrGetRestApi):
+          
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20', 
+                                         'stack', 'cisco', timeout=2)
+
+    class TestLiveCsrPostRestApi(TestCsrPostRestApi):
+          
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20', 
+                                         'stack', 'cisco', timeout=2)
+
+    class TestLiveCsrPutRestApi(TestCsrPutRestApi):
+          
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20', 
+                                         'stack', 'cisco', timeout=2)
+
+    class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
+          
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20', 
+                                         'stack', 'cisco', timeout=2)
+
 
 if __name__ == '__main__':
     unittest.main()

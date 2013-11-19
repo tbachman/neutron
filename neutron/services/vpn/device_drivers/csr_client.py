@@ -109,6 +109,7 @@ class Client(object):
         headers = {'Accept': 'application/json',
                    'content-type': 'application/json',
                    'X-auth-token': self.token}        
+        print "POST request", url, headers, payload        
         try:
             r = requests.post(url, headers=headers, data=data,
                               verify=False, timeout=self.timeout)
@@ -125,8 +126,8 @@ class Client(object):
             self.status = wexc.HTTPRequestTimeout.code
         else:
             self.status = r.status_code
-#             if self.status == wexc.HTTPCreated.code:
-#                 return r.json()
+            if self.status == wexc.HTTPNotFound.code:
+                print "Failed", r.json()
 
     def put_request(self, resource, payload=None):
         """Perform a PUT request to a CSR resource.
@@ -144,7 +145,8 @@ class Client(object):
         data = json.dumps(payload)
         headers = {'Accept': 'application/json',
                    'content-type': 'application/json',
-                   'X-auth-token': self.token}        
+                   'X-auth-token': self.token}
+        print "PUT request", payload      
         try:
             r = requests.put(url, headers=headers, data=data,
                              verify=False, timeout=self.timeout)
@@ -159,6 +161,8 @@ class Client(object):
             self.status = wexc.HTTPRequestTimeout.code
         else:
             self.status = r.status_code
+            if r.content:
+                print "PUT content", json.dumps(r.content)
 
     def delete_request(self, resource):
         """Perform a DELETE request on a CSR resource.
@@ -176,22 +180,27 @@ class Client(object):
         headers = {'Accept': 'application/json',
                    'content-type': 'application/json',
                    'X-auth-token': self.token}
-        print "DELETE", url, headers        
+        print "DELETE request", url, headers        
         try:
             r = requests.delete(url, headers=headers,
                                 verify=False, timeout=self.timeout)
+            print "First try", r.content, r.status_code
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
                     return None
                 headers['X-auth-token'] = self.token
+                print 're-logged in and retry', url, headers
                 r = requests.delete(url, headers=headers,
                                     verify=False, timeout=self.timeout)
         except requests.Timeout as te:
             # print "LOG: Timeout during delete for CSR (%s): %s" % (self.host, te)
             self.status = wexc.HTTPRequestTimeout.code
+        except:
+            print "LOG: Unexpected error during delete for CSR (%s): %s" % (self.host, te)
+            self.status = wexc.HTTPInternalServerError.code
         else:
             self.status = r.status_code
-            print "status", self.status
+            print "delete status", self.status
 
 
 if __name__ == '__main__':
