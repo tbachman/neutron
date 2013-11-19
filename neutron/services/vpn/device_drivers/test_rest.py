@@ -12,8 +12,7 @@ class TestCsrLoginRestApi(unittest.TestCase):
     """Test logging into CSR to obtain token-id."""
 
     def setUp(self):
-        self.csr = csr_client.Client('localhost', 
-                                     'stack', 'cisco')
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
     def test_get_token(self):
         """Obtain the token and its expiration time."""
@@ -46,13 +45,13 @@ class TestCsrLoginRestApi(unittest.TestCase):
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
         self.assertIsNone(self.csr.token)
 
+
 class TestCsrGetRestApi(unittest.TestCase):
     
     """Test CSR GET REST API."""
 
     def setUp(self):
-        self.csr = csr_client.Client('localhost', 
-                                     'stack', 'cisco')
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
     def test_valid_rest_gets(self):
         """Simple GET requests.
@@ -112,13 +111,13 @@ class TestCsrGetRestApi(unittest.TestCase):
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
 
+
 class TestCsrPostRestApi(unittest.TestCase):
     
     """Test CSR POST REST API."""
 
     def setUp(self):
-        self.csr = csr_client.Client('localhost', 
-                                     'stack', 'cisco')
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
     def test_post_requests(self):
         """Simple POST requests (repeatable).
@@ -187,47 +186,61 @@ class TestCsrPostRestApi(unittest.TestCase):
                 payload={'action': 'clear'})
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
+
     
 class TestCsrPutRestApi(unittest.TestCase):
     
     """Test CSR PUT REST API."""
 
-    def setUp(self):
-        self.csr = csr_client.Client('localhost', 
-                                     'stack', 'cisco')
+    def _save_host_name(self):
+        with HTTMock(csr_request.token, csr_request.get):
+            details = self.csr.get_request('global/host-name')
+            if self.csr.status != wexc.HTTPOk.code:
+                self.fail("Unable to save original host name")
+        self.original_host = details['host-name']
+        print "Saved", self.original_host
+        self.csr.token = None
 
-    def _build_payload_from_get(self, details):
-        return {u'description': details['description'],
-                u'if-name': details['if-name'],
-                u'ip-address': details['ip-address'],
-                u'subnet-mask': details['subnet-mask'],
-                u'type': details['type']}
+    def _restore_host_name(self):
+        print "Restoring", self.original_host
+        with HTTMock(csr_request.token, csr_request.put):
+            payload = {'host-name': self.original_host}
+            self.csr.put_request('global/host-name', payload=payload)
+            if self.csr.status != wexc.HTTPNoContent.code:
+                self.fail("Unable to restore host name after test")
+
+    def setUp(self):
+        """Prepare for PUT API tests.
         
+        Need to save user and password, as test for token failure will
+        alter them. Restore them in tearDown()."""
+        
+        self.user = 'stack'
+        self.password = 'cisco'
+        self.csr = csr_client.Client('localhost', self.user, self.password)
+        self._save_host_name()
+        
+    def tearDown(self):
+        self.csr.user = 'stack'
+        self.csr.password = 'cisco'
+        self._restore_host_name()
+
     def test_put_requests(self):
         """Simple PUT requests (repeatable). 
         
         First request will do a post to get token (login). Assumes
         that there are two interfaces on the CSR (Ge1 and Ge2)."""
 
-        print "PUT test start"
         with HTTMock(csr_request.token, csr_request.put,
                      csr_request.get):
-            details = self.csr.get_request('interfaces/GigabitEthernet1')
-            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-            print "GET output", details
-            payload = self._build_payload_from_get(details)
-            payload[u'description'] = "Description changed"
-            content = self.csr.put_request('interfaces/GigabitEthernet1',
+            payload = {'host-name': 'TestHost'}
+            content = self.csr.put_request('global/host-name',
                                            payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
             
-            details = self.csr.get_request('interfaces/GigabitEthernet2')
-            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-            print "GET output", details
-            payload = self._build_payload_from_get(details)
-            payload[u'description'] = "Changed another"
-            content = self.csr.put_request('interfaces/GigabitEthernet2',
+            payload = {'host-name': 'TestHost2'}
+            content = self.csr.put_request('global/host-name',
                                            payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
@@ -241,56 +254,47 @@ class TestCsrPutRestApi(unittest.TestCase):
     
     def test_timeout_during_put(self):
         with HTTMock(csr_request.token, csr_request.timeout):
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'if-name': 'GigabitEthernet1',
-                         'description': 'Description changed'})
+            payload = {'host-name': 'TimeoutHost'}
+            content = self.csr.put_request('global/host-name',
+                                           payload=payload)
         self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
         self.assertEqual(None, content)
     
     def test_token_expired_on_put_request(self):
         """Negative test of token expired during put request.
         
-        Assumes that there are two interfaces (Ge1 and Ge2). First,
-        it verifies that we can put to one interface. Next, it
-        verifies that a 401 error (unauth) on the first attempt to
-        put to the second interface, due to invalid token ID. After
-        that, it verifies that puts are successful."""
+        Will alter the token to simulate expiration, requiring
+        re-login. Expect it to be successful after getting new
+        token."""
         with HTTMock(csr_request.token, csr_request.expired_post_put,
                      csr_request.put):
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'if-name': 'GigabitEthernet1',
-                         'description': 'Description changed'})
-            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-            self.assertIsNone(content)
-            
             self.csr.token = '123' # These are 44 characters, so won't match
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet2',
-                payload={'if-name': 'GigabitEthernet1',
-                         'description': 'Description changed'})
+            payload = {'host-name': 'TestHost2'}
+            content = self.csr.put_request('global/host-name',
+                                           payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
      
     def test_failed_to_obtain_token_on_put(self):
-        """Negative test of unauthorized user for put request."""
+        """Negative test of unauthorized user for put request.
+        
+        We need to change the password, so that the login fails for the
+        test case."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
-            content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'if-name': 'GigabitEthernet1',
-                         'description': 'Un-authorized user cannot change'})
+            payload = {'host-name': 'TestHost'}
+            content = self.csr.put_request('global/host-name',
+                                           payload=payload)
         self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
         self.assertIsNone(content)
-     
+
+
 class TestCsrDeleteRestApi(unittest.TestCase):
     
     """Test CSR DELETE REST API."""
 
     def setUp(self):
-        self.csr = csr_client.Client('localhost', 
-                                     'stack', 'cisco')
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
     def test_delete_requests(self):
         """Simple DELETE requests. 
@@ -300,11 +304,10 @@ class TestCsrDeleteRestApi(unittest.TestCase):
  
         print "Start DELETE test<<<<<<"
         with HTTMock(csr_request.token, csr_request.post, csr_request.delete):
-            content = self.csr.post_request(
-                'global/local-users',
-                payload={'username': 'dummy',
-                         'password': 'dummy',
-                         'privilege': 15})
+            content = self.csr.post_request('global/local-users',
+                                            payload={'username': 'dummy',
+                                                     'password': 'dummy',
+                                                     'privilege': 15})
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             content = self.csr.delete_request(
                 'global/local-users/dummy')
@@ -350,15 +353,44 @@ if True:
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
           
         def setUp(self):
-            self.csr = csr_client.Client('192.168.200.20', 
-                                         'stack', 'cisco', timeout=2)
-
+            """Prepare for PUT REST API requests."""
+    
+            self.user = 'stack'
+            self.password = 'cisco'
+            self.csr = csr_client.Client('192.168.200.20',
+                                         self.user, self.password, timeout=2)
+            self._save_host_name()
+            
+        def tearDown(self):
+            self.csr.user = 'stack'
+            self.csr.password = 'cisco'
+            self._restore_host_name()
+            
     class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
           
+        def _cleanup_users(self):
+            """Clean up existing users.
+            
+            Invoked before and after tests, so that we can ensure that
+            the CSR is in a clean state. Clear the token, so that test
+            cases will act as they normally, as if no prior access to
+            the CSR."""
+            with HTTMock(csr_request.token, csr_request.get, csr_request.delete):
+                details = self.csr.get_request('global/local-users/dummy')
+                if self.csr.status == wexc.HTTPOk.code:
+                    self.csr.delete_request('global/local-users/dummy')
+                    if self.csr.status != wexc.HTTPNoContent.code:
+                        self.fail("Unable to clean up existing user")
+            self.csr.token = None
+    
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20', 
                                          'stack', 'cisco', timeout=2)
-
+            self._cleanup_users()
+            
+        def tearDown(self):
+            self._cleanup_users()
+                
 
 if __name__ == '__main__':
     unittest.main()

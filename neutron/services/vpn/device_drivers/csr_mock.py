@@ -117,7 +117,7 @@ def expired_get(url, request):
     if request.method == 'GET':
         return {'status_code': wexc.HTTPUnauthorized.code}
 
-@once_for('interfaces/GigabitEthernet1')
+@once_for('global/host-name')
 @urlmatch(netloc=r'localhost')
 def expired_post_put(url, request):
     """Simulate access denied failure when post/put to this resource.
@@ -149,7 +149,7 @@ def put(url, request):
         return
     if DEBUG:
         print "DEBUG: PUT mock for", url
-    if 'interfaces/GigabitEthernet' in url.path:
+    if 'global/host-name' in url.path:
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}

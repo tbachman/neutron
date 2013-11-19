@@ -53,10 +53,13 @@ class Client(object):
             self.status = wexc.HTTPRequestTimeout.code
         else:
             self.status = r.status_code
+            # TODO: When CSR fixes this, change to 200 code
             if self.status == wexc.HTTPCreated.code:
                 self.token = r.json()['token-id']
-                # print "LOG: Login successful. Token=", self.token
+                print "LOG: Login successful. Token=", self.token
                 return True
+            else:
+                print "LOG: Login failed (%s)" % self.status
 
     def get_request(self, resource):
         """Perform a REST GET requests for a CSR resource.
@@ -73,6 +76,7 @@ class Client(object):
                                                         'resource': resource}
         headers = {'Accept': 'application/json',
                    'X-auth-token': self.token}
+        print "GET request", url, headers
         try:
             r = requests.get(url, headers=headers, 
                              verify=False, timeout=self.timeout)
@@ -126,8 +130,6 @@ class Client(object):
             self.status = wexc.HTTPRequestTimeout.code
         else:
             self.status = r.status_code
-            if self.status == wexc.HTTPNotFound.code:
-                print "Failed", r.json()
 
     def put_request(self, resource, payload=None):
         """Perform a PUT request to a CSR resource.
@@ -146,16 +148,19 @@ class Client(object):
         headers = {'Accept': 'application/json',
                    'content-type': 'application/json',
                    'X-auth-token': self.token}
-        print "PUT request", payload      
+        print "PUT request", url, headers, payload      
         try:
             r = requests.put(url, headers=headers, data=data,
                              verify=False, timeout=self.timeout)
             if r.status_code == wexc.HTTPUnauthorized.code:
+                print "Failed PUT"
                 if not self.login():
                     return None
                 headers['X-auth-token'] = self.token
+                print "PUT request(2)", url, headers, payload      
                 r = requests.put(url, headers=headers, data=data,
                                  verify=False, timeout=self.timeout)
+                print "PUT result", r
         except requests.Timeout as te:
             # print "LOG: Timeout during put for CSR (%s): %s" % (self.host, te)
             self.status = wexc.HTTPRequestTimeout.code
