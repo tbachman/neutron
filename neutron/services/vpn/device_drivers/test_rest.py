@@ -283,7 +283,6 @@ class TestCsrDeleteRestApi(unittest.TestCase):
         First request will do a post to get token (login). Will do a
         create first, and then delete."""
  
-        print "Start DELETE test<<<<<<"
         with HTTMock(csr_request.token, csr_request.post, csr_request.delete):
             content = self.csr.post_request('global/local-users',
                                             payload={'username': 'dummy',
@@ -295,9 +294,13 @@ class TestCsrDeleteRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
 
-#     def test_delete_non_existent_entry(self):
-#         pass
-#     
+    def test_delete_non_existent_entry(self):
+        """Negative test of trying to delete a non-existent user."""
+        with HTTMock(csr_request.token, csr_request.delete_unknown):
+           content = self.csr.delete_request('global/local-users/unknown')
+           self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+
+     
 #     def test_delete_invalid_resource(self):
 #         pass
 #     
@@ -359,7 +362,8 @@ if True:
                 details = self.csr.get_request('global/local-users/dummy')
                 if self.csr.status == wexc.HTTPOk.code:
                     self.csr.delete_request('global/local-users/dummy')
-                    if self.csr.status != wexc.HTTPNoContent.code:
+                    if self.csr.status not in (wexc.HTTPNoContent.code,
+                                               wexc.HTTPNotFound.code):
                         self.fail("Unable to clean up existing user")
             self.csr.token = None
     

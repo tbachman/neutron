@@ -162,3 +162,13 @@ def delete(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     return {'status_code': wexc.HTTPNoContent.code}
+
+@urlmatch(netloc=r'localhost')
+def delete_unknown(url, request):
+    if request.method != 'DELETE':
+        return
+    if DEBUG:
+        print "DEBUG: DELETE unnwon mock for", url
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPNotFound.code}
