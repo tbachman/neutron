@@ -42,6 +42,7 @@ class Client(object):
                    'Content-Length': '0',
                    'Accept': 'application/json'}
         self.token = None
+        print "Login request", url, headers, self.auth       
         try:
             r = requests.post(url, headers=headers, timeout=self.timeout,
                               auth=self.auth, verify=False)

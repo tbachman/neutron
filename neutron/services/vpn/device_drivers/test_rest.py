@@ -202,7 +202,13 @@ class TestCsrPutRestApi(unittest.TestCase):
         self.csr.token = None
 
     def _restore_host_name(self):
+        """Restore the host name.
+        
+        Must restore the user and password, so that authentication
+        token can be obtained (as some tests corrupt auth info)."""
+        
         print "Restoring", self.original_host
+        self.csr.auth = ('stack', 'cisco')
         with HTTMock(csr_request.token, csr_request.put):
             payload = {'host-name': self.original_host}
             self.csr.put_request('global/host-name', payload=payload)
@@ -210,19 +216,11 @@ class TestCsrPutRestApi(unittest.TestCase):
                 self.fail("Unable to restore host name after test")
 
     def setUp(self):
-        """Prepare for PUT API tests.
-        
-        Need to save user and password, as test for token failure will
-        alter them. Restore them in tearDown()."""
-        
-        self.user = 'stack'
-        self.password = 'cisco'
-        self.csr = csr_client.Client('localhost', self.user, self.password)
+        """Prepare for PUT API tests."""
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
         self._save_host_name()
         
     def tearDown(self):
-        self.csr.user = 'stack'
-        self.csr.password = 'cisco'
         self._restore_host_name()
 
     def test_put_requests(self):
@@ -353,17 +351,16 @@ if True:
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
           
         def setUp(self):
-            """Prepare for PUT REST API requests."""
+            """Prepare for PUT REST API requests.
+            
+            Must save and restore the user and password, as unauthorized
+            token test will alter them."""
     
-            self.user = 'stack'
-            self.password = 'cisco'
             self.csr = csr_client.Client('192.168.200.20',
-                                         self.user, self.password, timeout=2)
+                                         'stack', 'cisco', timeout=2)
             self._save_host_name()
             
         def tearDown(self):
-            self.csr.user = 'stack'
-            self.csr.password = 'cisco'
             self._restore_host_name()
             
     class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
