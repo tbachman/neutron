@@ -202,11 +202,9 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         False to indicate this to callers.
         """
         network_type = segment[api.NETWORK_TYPE]
-        if network_type == 'local':
-            return True
-        elif network_type in [constants.TYPE_GRE, constants.TYPE_VXLAN]:
-            return True
-        elif network_type in ['flat', 'vlan']:
+        if network_type in [constants.TYPE_LOCAL, constants.TYPE_FLAT,
+                            constants.TYPE_VLAN, constants.TYPE_GRE,
+                            constants.TYPE_VXLAN]:
             #TODO(mestery): Validate these
             return True
         else:
