@@ -755,7 +755,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         db_session = context.session
         profile = n1kv_db_v2.get_network_profile(db_session,
                                                  network[n1kv_profile.PROFILE_ID])
-        body = {'publishName': network['name'],
+        body = {'description': network['name'],
                 'id': network['id'],
                 'networkSegmentPool': profile['id'],
                 'vlan': network[providernet.SEGMENTATION_ID],

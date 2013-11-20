@@ -183,7 +183,7 @@ class Client(object):
         :param network_profile: network profile dict
         """
         LOG.debug(_("seg id %s"), network_profile['name'])
-        body = {'publishName': network['name'],
+        body = {'publishName': network['id'],
                 'description': network['name'],
                 'id': network['id'],
                 'tenantId': network['tenant_id'],
