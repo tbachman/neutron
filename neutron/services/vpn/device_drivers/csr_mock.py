@@ -75,7 +75,8 @@ def timeout(url, request):
     cases that match the resource."""
     
     if ('global/host-name' in url.path or 
-        'interfaces/GigabitEthernet' in url.path):
+        'interfaces/GigabitEthernet' in url.path or
+        'global/local-users' in url.path):
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         raise requests.Timeout()
@@ -122,22 +123,22 @@ def get(url, request):
                             u'verify-unicast-source': False,
                             u'type': u'ethernet'}}        
 
-@filter(['get'], 'global/host-name')
+@filter(['get', 'post', 'put'], 'global/host-name')
 @repeat(1)
 @urlmatch(netloc=r'localhost')
-def expired_get(url, request):
-    """Simulate access denied failure when get from this resource.
+def expired_get_post_put(url, request):
+    """Simulate access denied failure when get, post, or put to this resource.
     
     This handler will be ignored (by returning None), on any subsequent
     accesses to this resource."""
     
     return {'status_code': wexc.HTTPUnauthorized.code}
 
-@filter(['post', 'put'], 'global/host-name')
+@filter(['delete'], 'global/local-users')
 @repeat(1)
 @urlmatch(netloc=r'localhost')
-def expired_post_put(url, request):
-    """Simulate access denied failure when post/put to this resource.
+def expired_delete(url, request):
+    """Simulate access denied failure when delete this resource.
     
     This handler will be ignored (by returning None), on any subsequent
     accesses to this resource."""
@@ -186,8 +187,19 @@ def delete_unknown(url, request):
     if request.method != 'DELETE':
         return
     if DEBUG:
-        print "DEBUG: DELETE unnwon mock for", url
+        print "DEBUG: DELETE unknown mock for", url
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource
     return {'status_code': wexc.HTTPNotFound.code}
+
+@urlmatch(netloc=r'localhost')
+def delete_not_allowed(url, request):
+    if request.method != 'DELETE':
+        return
+    if DEBUG:
+        print "DEBUG: DELETE not allowed mock for", url
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    # Any resource
+    return {'status_code': wexc.HTTPMethodNotAllowed.code}

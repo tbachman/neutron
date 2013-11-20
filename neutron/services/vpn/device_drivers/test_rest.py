@@ -18,16 +18,16 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Obtain the token and its expiration time."""
         with HTTMock(csr_request.token):
             self.assertTrue(self.csr.login())
-        # TODO: Once fixed on CSR, this should return HTTPOk
-        self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-        self.assertIsNotNone(self.csr.token)
+            # TODO: Once fixed on CSR, this should return HTTPOk
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIsNotNone(self.csr.token)
 
     def test_unauthorized_token_request(self):
         """Negative test of invalid user/password."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
             self.assertIsNone(self.csr.login())
-        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+            self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
 
     def test_non_existent_host(self):
         """Negative test of request to non-existent host."""
@@ -35,15 +35,15 @@ class TestCsrLoginRestApi(unittest.TestCase):
         self.csr.token = 'Set by some previously successful access'
         with HTTMock(csr_request.token_wrong_host):
             self.assertIsNone(self.csr.login())
-        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-        self.assertIsNone(self.csr.token)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.assertIsNone(self.csr.token)
 
     def test_timeout_on_token_access(self):
         """Negative test of a timeout on a request."""
         with HTTMock(csr_request.token_timeout):
             self.assertIsNone(self.csr.login())
-        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
-        self.assertIsNone(self.csr.token)
+            self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+            self.assertIsNone(self.csr.token)
 
 
 class TestCsrGetRestApi(unittest.TestCase):
@@ -73,15 +73,15 @@ class TestCsrGetRestApi(unittest.TestCase):
         """Negative test of non-existent resource on get request."""
         with HTTMock(csr_request.token, csr_request.no_such_resource):
             content = self.csr.get_request('no/such/request')
-        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-        self.assertIsNone(content)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.assertIsNone(content)
                      
     def test_timeout_during_get(self):
         """Negative test of timeout during get resource."""
         with HTTMock(csr_request.token, csr_request.timeout):
             content = self.csr.get_request('global/host-name')
-        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
-        self.assertEqual(None, content)
+            self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+            self.assertEqual(None, content)
         
     def test_token_expired_on_get_request(self):
         """Token expired before trying a second get request.
@@ -90,7 +90,7 @@ class TestCsrGetRestApi(unittest.TestCase):
         attempt to reference the host name. Simulate expiration of
         token by changing it."""
 
-        with HTTMock(csr_request.token, csr_request.expired_get,
+        with HTTMock(csr_request.token, csr_request.expired_get_post_put,
                      csr_request.get):
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.get_request('global/host-name')
@@ -103,8 +103,8 @@ class TestCsrGetRestApi(unittest.TestCase):
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
             content = self.csr.get_request('global/host-name')
-        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-        self.assertIsNone(content)
+            self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+            self.assertIsNone(content)
 
 
 class TestCsrPostRestApi(unittest.TestCase):
@@ -137,8 +137,8 @@ class TestCsrPostRestApi(unittest.TestCase):
         with HTTMock(csr_request.token, csr_request.no_such_resource):
             content = self.csr.post_request('no/such/request',
                                             payload={'foo': 'bar'})
-        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-        self.assertIsNone(content)            
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.assertIsNone(content)            
     
     def test_timeout_during_post(self):
         """Negative test of timeout during post requests."""
@@ -146,14 +146,14 @@ class TestCsrPostRestApi(unittest.TestCase):
             content = self.csr.post_request(
                 'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
-        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
-        self.assertEqual(None, content)
+            self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+            self.assertEqual(None, content)
     
     def test_token_expired_on_post_request(self):
         """Negative test of token expired during post request.
         
         Simulates expiration of the token by changing it."""
-        with HTTMock(csr_request.token, csr_request.expired_post_put,
+        with HTTMock(csr_request.token, csr_request.expired_get_post_put,
                      csr_request.post):
             self.csr.token = '123' # These are 44 characters, so won't match
             content = self.csr.post_request(
@@ -169,8 +169,8 @@ class TestCsrPostRestApi(unittest.TestCase):
             content = self.csr.post_request(
                 'interfaces/GigabitEthernet1/statistics',
                 payload={'action': 'clear'})
-        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-        self.assertIsNone(content)
+            self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+            self.assertIsNone(content)
 
     
 class TestCsrPutRestApi(unittest.TestCase):
@@ -225,19 +225,21 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.assertIsNone(content)
     
     def test_put_invalid_resource(self):
+        """Negative test of non-existing resource on put request."""
         with HTTMock(csr_request.token, csr_request.no_such_resource):
             content = self.csr.put_request('no/such/request',
                                             payload={'foo': 'bar'})
-        self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-        self.assertIsNone(content)            
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.assertIsNone(content)            
     
     def test_timeout_during_put(self):
+        """Negative test of timeout during put requests."""
         with HTTMock(csr_request.token, csr_request.timeout):
             payload = {'host-name': 'TimeoutHost'}
             content = self.csr.put_request('global/host-name',
                                            payload=payload)
-        self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
-        self.assertEqual(None, content)
+            self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+            self.assertEqual(None, content)
     
     def test_token_expired_on_put_request(self):
         """Negative test of token expired during put request.
@@ -245,7 +247,7 @@ class TestCsrPutRestApi(unittest.TestCase):
         Will alter the token to simulate expiration, requiring
         re-login. Expect it to be successful after getting new
         token."""
-        with HTTMock(csr_request.token, csr_request.expired_post_put,
+        with HTTMock(csr_request.token, csr_request.expired_get_post_put,
                      csr_request.put):
             self.csr.token = '123' # These are 44 characters, so won't match
             payload = {'host-name': 'TestHost2'}
@@ -264,8 +266,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             payload = {'host-name': 'TestHost'}
             content = self.csr.put_request('global/host-name',
                                            payload=payload)
-        self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-        self.assertIsNone(content)
+            self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+            self.assertIsNone(content)
 
 
 class TestCsrDeleteRestApi(unittest.TestCase):
@@ -298,21 +300,62 @@ class TestCsrDeleteRestApi(unittest.TestCase):
 
     def test_delete_not_allowed(self):
         """Negative test of trying to delete the host-name."""
-        with HTTMock(csr_request.token, csr_request.delete_unknown):
+        with HTTMock(csr_request.token, csr_request.delete_not_allowed):
             self.csr.delete_request('global/host-name')
             self.assertEqual(wexc.HTTPMethodNotAllowed.code, self.csr.status)
        
-#     def test_delete_invalid_resource(self):
-#         pass
-#     
-#     def test_timeout_during_delete(self):
-#         pass
-#     
-#     def test_token_expired_on_delete_request(self):
-#         pass
-#     
-#     def test_failed_to_obtain_token_on_delete(self):
-#         pass
+    def test_delete_invalid_resource(self):
+        """Negative test of non-existing resource on delete request."""
+        with HTTMock(csr_request.token, csr_request.no_such_resource):
+            self.csr.delete_request('no/such/request')
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+        
+    def test_timeout_during_delete(self):
+        """Negative test of timeout during delete requests."""
+        with HTTMock(csr_request.token, csr_request.post):
+            content = self.csr.post_request('global/local-users',
+                                            payload={'username': 'dummy',
+                                                     'password': 'dummy',
+                                                     'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+        with HTTMock(csr_request.token, csr_request.timeout):
+            self.csr.delete_request('global/local-users/dummy')
+            self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
+     
+    def test_token_expired_on_delete_request(self):
+        """Negative test of token expired during delete request.
+        
+        Will alter the token to simulate expiration, requiring
+        re-login. Expect it to be successful after getting new
+        token."""
+        with HTTMock(csr_request.token, csr_request.post,
+                     csr_request.expired_delete, csr_request.delete):
+            content = self.csr.post_request('global/local-users',
+                                            payload={'username': 'dummy',
+                                                     'password': 'dummy',
+                                                     'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.csr.token = '123' # These are 44 characters, so won't match
+            self.csr.delete_request('global/local-users/dummy')
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+     
+    def test_failed_to_obtain_token_on_delete(self):
+        """Negative test of unauthorized user for delete request.
+        
+        Create an entry to delete first. Then, change the password
+        and clear the token, so that the login attempt fails."""
+        with HTTMock(csr_request.token, csr_request.post):
+            content = self.csr.post_request('global/local-users',
+                                            payload={'username': 'dummy',
+                                                     'password': 'dummy',
+                                                     'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+        self.csr.auth = ('stack', 'bogus')
+        self.csr.token = None
+        with HTTMock(csr_request.token_unauthorized):
+            self.csr.delete_request('global/local-users/dummy')
+            self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
+        
     
 
 # Functional tests with a real CSR
@@ -347,7 +390,7 @@ if True:
             timeout on some test cases."""
     
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8)
+                                         'stack', 'cisco', timeout=2)
             self._save_host_name()
             self.addCleanup(self._restore_host_name, 'stack', 'cisco')
             
@@ -371,7 +414,8 @@ if True:
     
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20', 
-                                         'stack', 'cisco', timeout=2)
+                                         'stack', 'cisco', timeout=8)
+            self._cleanup_user()
             self.addCleanup(self._cleanup_user)
             
 

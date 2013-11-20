@@ -120,7 +120,7 @@ class Client(object):
                               verify=False, timeout=self.timeout)
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
-                    # print "LOG: Unable to re-authenticate with CSR (%s)" % self.host
+                    print "LOG: Unable to re-authenticate with CSR (%s)" % self.host
                     return None
                 # print "LOG: Re-authenticated with CSR (%s)" % self.host
                 headers['X-auth-token'] = self.token
