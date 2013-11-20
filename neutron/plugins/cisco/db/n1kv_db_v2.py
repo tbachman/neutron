@@ -1066,22 +1066,21 @@ class NetworkProfile_db_mixin(object):
         """
         Update a network profile.
 
-        Add/remove network profile to tenant-id binding for the corresponding
-        options and if user is admin.
+        Update network profile attributes and add/remove network profile
+        to tenant-id binding for the corresponding options for admin users.
         :param context: neutron api request context
         :param id: UUID representing network profile to update
         :param network_profile: network profile dictionary
         :returns: updated network profile dictionary
         """
         p = network_profile["network_profile"]
+        original_net_p = get_network_profile(context.session, id)
         if context.is_admin and "add_tenant" in p:
             self.add_network_profile_tenant(id, p["add_tenant"])
-            return self._make_network_profile_dict(get_network_profile(
-                context.session, id))
+            return self._make_network_profile_dict(original_net_p)
         if context.is_admin and "remove_tenant" in p:
             delete_profile_binding(p["remove_tenant"], id)
-            return self._make_network_profile_dict(get_network_profile(
-                context.session, id))
+            return self._make_network_profile_dict(original_net_p) 
         return self._make_network_profile_dict(
             update_network_profile(context.session, id, p))
 
