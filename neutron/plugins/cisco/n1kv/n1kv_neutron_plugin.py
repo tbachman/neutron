@@ -676,9 +676,17 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         profile = self.get_network_profile(context,
                                            network[n1kv_profile.PROFILE_ID])
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_OVERLAY:
-            pool.spawn(self.n1kvclient.create_bridge_domain,
-                       network,
-                       profile['sub_type']).wait()
+            try:
+                pool.spawn(self.n1kvclient.create_bridge_domain,
+                           network,
+                           profile['sub_type']).wait()
+            except(cisco_exceptions.VSMError,
+                   cisco_exceptions.VSMConnectionFailed):
+                with excutils.save_and_reraise_exception():
+                    bridge_domain_name = (network['id'] + 
+                                          c_const.BRIDGE_DOMAIN_SUFFIX)
+                    pool.spawn(self.n1kvclient.delete_bridge_domain,
+                               bridge_domain_name).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             self._populate_member_segments(context, network, segment_pairs,
                                            n1kv_profile.SEGMENT_ADD)
@@ -722,7 +730,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         db_session = context.session
         profile = n1kv_db_v2.get_network_profile(
             db_session, network[n1kv_profile.PROFILE_ID])
-        body = {'publishName': network['name'],
+        body = {'description': network['name'],
                 'id': network['id'],
                 'networkSegmentPool': profile['id'],
                 'vlan': network[providernet.SEGMENTATION_ID],
@@ -1445,4 +1453,4 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 	                                     net_profile_id,
                                              network_profile))
 	     self._send_update_network_profile_request(net_p)
-             return net_p
+          return net_p
