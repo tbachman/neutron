@@ -293,14 +293,14 @@ class TestCsrDeleteRestApi(unittest.TestCase):
     def test_delete_non_existent_entry(self):
         """Negative test of trying to delete a non-existent user."""
         with HTTMock(csr_request.token, csr_request.delete_unknown):
-           self.csr.delete_request('global/local-users/unknown')
-           self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.csr.delete_request('global/local-users/unknown')
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
     def test_delete_not_allowed(self):
         """Negative test of trying to delete the host-name."""
         with HTTMock(csr_request.token, csr_request.delete_unknown):
-           self.csr.delete_request('global/host-name')
-           self.assertEqual(wexc.HTTPMethodNotAllowed.code, self.csr.status)
+            self.csr.delete_request('global/host-name')
+            self.assertEqual(wexc.HTTPMethodNotAllowed.code, self.csr.status)
        
 #     def test_delete_invalid_resource(self):
 #         pass

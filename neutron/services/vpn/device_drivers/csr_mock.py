@@ -7,24 +7,40 @@ from webob import exc as wexc
 
 DEBUG = False
 
-def once_for(resource):
-    """Decorator to invoke handler once for a specific resource.
+def repeat(n):
+    """Decorator to limit the number of times a handler is called.
     
-    This will call the handler the first time it is invoked for a
-    specific resource. Subsequent calls will return None, telling
-    the mock mechanism that there is no handler for this resource,
-    allowing additional handlers (if any) to be attempted."""
+    Will allow the wrapped function (handler) to be called 'n' times.
+    After that, this will return None for any additional calls,
+    allowing other handlers, if any, to be invoked."""
     
     class static:
-        times = 1
+        retries = n
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            if static.retries == 0:
+                return None
+            static.retries -= 1
+            return func(*args, **kwargs)
+        return wrapped
+    return decorator
+
+def filter(methods, resource):
+    """Decorator to invoke handler once for a specific resource.
+    
+    This will call the handler only for a specific resource using
+    a specific method(s). Any other resource request or method will
+    return None, allowing other handlers, if any, to be invoked."""
+    
+    class static:
+        target_methods = [m.upper() for m in methods]
         target_resource = resource
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
-            if static.times == 0:
-                return None
-            if static.target_resource in args[0].path:
-                static.times -= 1
+            if (args[1].method in static.target_methods and
+                static.target_resource in args[0].path):
                 return func(*args, **kwargs)
             else:
                 return None # Not for this resource
@@ -106,7 +122,8 @@ def get(url, request):
                             u'verify-unicast-source': False,
                             u'type': u'ethernet'}}        
 
-@once_for('global/host-name')
+@filter(['get'], 'global/host-name')
+@repeat(1)
 @urlmatch(netloc=r'localhost')
 def expired_get(url, request):
     """Simulate access denied failure when get from this resource.
@@ -114,10 +131,10 @@ def expired_get(url, request):
     This handler will be ignored (by returning None), on any subsequent
     accesses to this resource."""
     
-    if request.method == 'GET':
-        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPUnauthorized.code}
 
-@once_for('global/host-name')
+@filter(['post', 'put'], 'global/host-name')
+@repeat(1)
 @urlmatch(netloc=r'localhost')
 def expired_post_put(url, request):
     """Simulate access denied failure when post/put to this resource.
@@ -125,8 +142,7 @@ def expired_post_put(url, request):
     This handler will be ignored (by returning None), on any subsequent
     accesses to this resource."""
     
-    if request.method == 'PUT':
-        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPUnauthorized.code}
 
 @urlmatch(netloc=r'localhost')
 def post(url, request):
