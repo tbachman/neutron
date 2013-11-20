@@ -713,8 +713,15 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         profile = self.get_network_profile(context,
                                            network[n1kv_profile.PROFILE_ID])
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_VXLAN:
-            pool.spawn(self.n1kvclient.create_bridge_domain,
-                       network, profile['sub_type']).wait()
+            try:
+                pool.spawn(self.n1kvclient.create_bridge_domain,
+                           network, profile['sub_type']).wait()
+            except(cisco_exceptions.VSMError,
+                   cisco_exceptions.VSMConnectionFailed):
+                with excutils.save_and_reraise_exception():
+                    bridge_domain_name = network['id'] + '_bd'
+                    pool.spawn(self.n1kvclient.delete_bridge_domain,
+                               bridge_domain_name).wait()
         if network[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
             self._populate_member_segments(context, network, segment_pairs,
                                            n1kv_profile.SEGMENT_ADD)
