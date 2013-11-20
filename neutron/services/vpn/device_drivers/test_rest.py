@@ -185,13 +185,13 @@ class TestCsrPutRestApi(unittest.TestCase):
         self.original_host = details['host-name']
         self.csr.token = None
 
-    def _restore_host_name(self):
+    def _restore_host_name(self, user, password):
         """Restore the host name.
         
         Must restore the user and password, so that authentication
         token can be obtained (as some tests corrupt auth info)."""
         
-        self.csr.auth = ('stack', 'cisco')
+        self.csr.auth = (user, password)
         with HTTMock(csr_request.token, csr_request.put):
             payload = {'host-name': self.original_host}
             self.csr.put_request('global/host-name', payload=payload)
@@ -202,10 +202,8 @@ class TestCsrPutRestApi(unittest.TestCase):
         """Prepare for PUT API tests."""
         self.csr = csr_client.Client('localhost', 'stack', 'cisco')
         self._save_host_name()
+        self.addCleanup(self._restore_host_name, 'stack', 'cisco')
         
-    def tearDown(self):
-        self._restore_host_name()
-
     def test_put_requests(self):
         """Simple PUT requests (repeatable). 
         
@@ -289,15 +287,13 @@ class TestCsrDeleteRestApi(unittest.TestCase):
                                                      'password': 'dummy',
                                                      'privilege': 15})
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-            content = self.csr.delete_request(
-                'global/local-users/dummy')
+            self.csr.delete_request('global/local-users/dummy')
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-            self.assertIsNone(content)
 
     def test_delete_non_existent_entry(self):
         """Negative test of trying to delete a non-existent user."""
         with HTTMock(csr_request.token, csr_request.delete_unknown):
-           content = self.csr.delete_request('global/local-users/unknown')
+           self.csr.delete_request('global/local-users/unknown')
            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
      
@@ -340,18 +336,19 @@ if True:
             """Prepare for PUT REST API requests.
             
             Must save and restore the user and password, as unauthorized
-            token test will alter them."""
+            token test will alter them.
+            
+            Note: May need to tune timeout more, as 2 sec seems to trip
+            timeout on some test cases."""
     
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2)
+                                         'stack', 'cisco', timeout=3)
             self._save_host_name()
-            
-        def tearDown(self):
-            self._restore_host_name()
+            self.addCleanup(self._restore_host_name, 'stack', 'cisco')
             
     class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
           
-        def _cleanup_users(self):
+        def _cleanup_user(self):
             """Clean up existing users.
             
             Invoked before and after tests, so that we can ensure that
@@ -370,11 +367,8 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20', 
                                          'stack', 'cisco', timeout=2)
-            self._cleanup_users()
+            self.addCleanup(self._cleanup_user)
             
-        def tearDown(self):
-            self._cleanup_users()
-                
 
 if __name__ == '__main__':
     unittest.main()

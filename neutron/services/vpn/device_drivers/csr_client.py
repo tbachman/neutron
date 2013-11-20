@@ -174,7 +174,7 @@ class Client(object):
 
         if not self.logged_in():
             if not self.login():
-                return None
+                return
         
         url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
                                                         'resource': resource}
@@ -188,7 +188,7 @@ class Client(object):
             print "First try", r.content, r.status_code
             if r.status_code == wexc.HTTPUnauthorized.code:
                 if not self.login():
-                    return None
+                    return
                 headers['X-auth-token'] = self.token
                 print 're-logged in and retry', url, headers
                 r = requests.delete(url, headers=headers,
