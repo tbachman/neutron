@@ -196,8 +196,8 @@ class Client(object):
         except requests.Timeout as te:
             # print "LOG: Timeout during delete for CSR (%s): %s" % (self.host, te)
             self.status = wexc.HTTPRequestTimeout.code
-        except:
-            print "LOG: Unexpected error during delete for CSR (%s): %s" % (self.host, te)
+        except Exception as e:
+            print "LOG: Unexpected error during delete for CSR (%s): %s" % (self.host, e)
             self.status = wexc.HTTPInternalServerError.code
         else:
             self.status = r.status_code

@@ -296,7 +296,12 @@ class TestCsrDeleteRestApi(unittest.TestCase):
            self.csr.delete_request('global/local-users/unknown')
            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
-     
+    def test_delete_not_allowed(self):
+        """Negative test of trying to delete the host-name."""
+        with HTTMock(csr_request.token, csr_request.delete_unknown):
+           self.csr.delete_request('global/host-name')
+           self.assertEqual(wexc.HTTPMethodNotAllowed.code, self.csr.status)
+       
 #     def test_delete_invalid_resource(self):
 #         pass
 #     
@@ -342,7 +347,7 @@ if True:
             timeout on some test cases."""
     
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=3)
+                                         'stack', 'cisco', timeout=8)
             self._save_host_name()
             self.addCleanup(self._restore_host_name, 'stack', 'cisco')
             

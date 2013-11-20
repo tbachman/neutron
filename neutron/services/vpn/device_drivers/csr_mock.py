@@ -151,6 +151,7 @@ def put(url, request):
         print "DEBUG: PUT mock for", url
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
+    # Any resource
     return {'status_code': wexc.HTTPNoContent.code}
 
 @urlmatch(netloc=r'localhost')
@@ -161,6 +162,7 @@ def delete(url, request):
         print "DEBUG: DELETE mock for", url
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
+    # Any resource
     return {'status_code': wexc.HTTPNoContent.code}
 
 @urlmatch(netloc=r'localhost')
@@ -171,4 +173,5 @@ def delete_unknown(url, request):
         print "DEBUG: DELETE unnwon mock for", url
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
+    # Any resource
     return {'status_code': wexc.HTTPNotFound.code}
