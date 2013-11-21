@@ -158,7 +158,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                  bridge_mappings, root_helper,
                  polling_interval, tunnel_types=None,
                  veth_mtu=None, l2_population=False,
-                 minimize_polling=False):
+                 minimize_polling=False,
+                 ovsdb_monitor_respawn_interval=(
+                     constants.DEFAULT_OVSDBMON_RESPAWN)):
         '''Constructor.
 
         :param integ_br: name of the integration bridge.
@@ -173,6 +175,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         :param veth_mtu: MTU size for veth interfaces.
         :param minimize_polling: Optional, whether to minimize polling by
                monitoring ovsdb for interface changes.
+        :param ovsdb_monitor_respawn_interval: Optional, when using polling
+               minimization, the number of seconds to wait before respawning
+               the ovsdb monitor.
         '''
         self.veth_mtu = veth_mtu
         self.root_helper = root_helper
@@ -204,6 +209,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
 
         self.polling_interval = polling_interval
         self.minimize_polling = minimize_polling
+        self.ovsdb_monitor_respawn_interval = ovsdb_monitor_respawn_interval
 
         if tunnel_types:
             self.enable_tunneling = True
@@ -862,7 +868,13 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                              self.local_ip,
                                              tunnel_type,
                                              self.vxlan_udp_port)
-        if ofport < 0:
+        ofport_int = -1
+        try:
+            ofport_int = int(ofport)
+        except (TypeError, ValueError):
+            LOG.exception(_("ofport should have a value that can be "
+                            "interpreted as an integer"))
+        if ofport_int < 0:
             LOG.error(_("Failed to set-up %(type)s tunnel port to %(ip)s"),
                       {'type': tunnel_type, 'ip': remote_ip})
             return 0
@@ -1109,8 +1121,11 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                            'elapsed': elapsed})
 
     def daemon_loop(self):
-        with polling.get_polling_manager(self.minimize_polling,
-                                         self.root_helper) as pm:
+        with polling.get_polling_manager(
+            self.minimize_polling,
+            self.root_helper,
+            self.ovsdb_monitor_respawn_interval) as pm:
+
             self.rpc_loop(polling_manager=pm)
 
 
