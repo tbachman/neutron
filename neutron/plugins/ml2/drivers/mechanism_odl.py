@@ -47,6 +47,9 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
     exposed by ODL is slightly different from the API exposed by NCS,
     but the general concepts are the same.
     """
+
+    out_of_sync = True
+
     def initialize(self):
         self.url = cfg.CONF.ml2_odl.url
         self.timeout = cfg.CONF.ml2_odl.timeout
@@ -58,35 +61,61 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
     # Postcommit hooks are used to trigger synchronization.
 
     def create_network_postcommit(self, context):
-        self.sync_object('create', 'networks', context)
+        self.synchronize('create', 'networks', context)
 
     def update_network_postcommit(self, context):
-        self.sync_object('update', 'networks', context)
+        self.synchronize('update', 'networks', context)
 
     def delete_network_postcommit(self, context):
-        self.sync_object('delete', 'networks', context)
+        self.synchronize('delete', 'networks', context)
 
     def create_subnet_postcommit(self, context):
-        self.sync_object('create', 'subnets', context)
+        self.synchronize('create', 'subnets', context)
 
     def update_subnet_postcommit(self, context):
-        self.sync_object('update', 'subnets', context)
+        self.synchronize('update', 'subnets', context)
 
     def delete_subnet_postcommit(self, context):
-        self.sync_object('delete', 'subnets', context)
+        self.synchronize('delete', 'subnets', context)
 
     def create_port_postcommit(self, context):
-        self.sync_object('create', 'ports', context)
+        self.synchronize('create', 'ports', context)
 
     def update_port_postcommit(self, context):
-        self.sync_object('update', 'ports', context)
+        self.synchronize('update', 'ports', context)
 
     def delete_port_postcommit(self, context):
-        self.sync_object('delete', 'ports', context)
+        self.synchronize('delete', 'ports', context)
+
+    def synchronize(self, operation, object_type, context):
+        """Synchronize ODL with Neutron following a configuration change."""
+        if self.out_of_sync:
+            self.sync_full(context)
+        else:
+            self.sync_object(operation, object_type, context)
+
+    def sync_full(self, context):
+        """Resync the entire database to ODL.
+        Transition to the in-sync state on success.
+        """
+        dbcontext = context._plugin_context
+        networks = context._plugin.get_networks(dbcontext)
+        subnets = context._plugin.get_subnets(dbcontext)
+        ports = context._plugin.get_ports(dbcontext)
+
+        self.sendjson('post', 'networks', {'networks': networks})
+        self.sendjson('post', 'subnets', {'subnets': subnets})
+        for port in ports:
+            self.add_security_groups(context, dbcontext, port)
+            # TODO(kmestery): Converting to uppercase due to ODL bug
+            port['mac_address'] = port['mac_address'].upper()
+        self.sendjson('post', 'ports', {'ports': ports})
+        self.out_of_sync = False
 
     def sync_object(self, operation, object_type, context):
         """Synchronize the single modified record to ODL.
         """
+        self.out_of_sync = True
         dbcontext = context._plugin_context
         id = context.current['id']
         if operation == 'delete':
@@ -136,6 +165,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                     del port['tenant_id']
                     del port['fixed_ips']
                 self.sendjson(method, urlpath, {'port': port})
+        self.out_of_sync = False
 
     def add_security_groups(self, context, dbcontext, port):
         """Populate the 'security_groups' field with entire records."""
