@@ -308,6 +308,8 @@ class TestCsrDeleteRestApi(unittest.TestCase):
         self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
     def _make_dummy_user(self):
+        """Create a user that will be later deleted."""
+        
         self.csr.post_request('global/local-users',
                               payload={'username': 'dummy',
                                        'password': 'dummy',
@@ -315,20 +317,21 @@ class TestCsrDeleteRestApi(unittest.TestCase):
         self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
 
     def test_delete_requests(self):
-        """Simple DELETE requests.
-
-        First request will do a post to get token (login). Will do a
-        create first, and then delete.
-        """
-
+        """Simple DELETE requests (creating entry first)."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.delete):
+            self._make_dummy_user()
+            self.csr.token = None  # Force login
             self.csr.delete_request('global/local-users/dummy')
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            # Delete again, but without logging in this time
+            self._make_dummy_user()
+            self.csr.delete_request('global/local-users/dummy')
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            
 
     def test_delete_non_existent_entry(self):
         """Negative test of trying to delete a non-existent user."""
         with HTTMock(csr_request.token, csr_request.delete_unknown):
-            self._make_dummy_user()
             self.csr.delete_request('global/local-users/unknown')
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
