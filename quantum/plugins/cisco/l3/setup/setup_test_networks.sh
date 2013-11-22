@@ -15,6 +15,7 @@ testNetworks=(bob_test_net1 bob_test_net2 bob_test_net3 bob_test_net4 bob_test_n
 testNetworkOpts=('' '' '' '' '' '' '--router:external=True')
 testSubnetNames=(bob_test_subnet1 bob_test_subnet2 bob_test_subnet3 bob_test_subnet4 bob_test_subnet5 bob_test_subnet6 bob_test_extsubnet1)
 testSubnetCIDRs=('10.0.10.0/24' '10.0.11.0/24' '10.0.12.0/24' '10.0.13.0/24' '10.0.14.0/24' '10.0.15.0/24' '10.0.20.0/24')
+testSubnetOpts=('' '' '' '' '' '' '--disable-dhcp --allocation-pool start=10.0.20.10,end=10.0.20.254')
 
 function get_network_profile_id() {
     index=$1
@@ -76,7 +77,7 @@ for (( i=0; i<${#testSubnetNames[@]}; i++)); do
     hasSubNw=`quantum subnet-show ${testSubnetNames[$i]} 2>&1 | awk '/Unable to find|Value/ { if ($1 == "Unable") print "No"; else print "Yes"; }'`
     if [ "$hasSubNw" == "No" ]; then
         echo " No it does not. Creating it."
-        quantum subnet-create --name ${testSubnetNames[$i]} ${testNetworks[$i]} ${testSubnetCIDRs[$i]}
+        quantum subnet-create --name ${testSubnetNames[$i]} ${testSubnetOpts[$i]} ${testNetworks[$i]} ${testSubnetCIDRs[$i]}
     else
         echo " Yes, it does."
     fi
