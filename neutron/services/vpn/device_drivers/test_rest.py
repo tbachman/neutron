@@ -309,7 +309,7 @@ class TestCsrDeleteRestApi(unittest.TestCase):
 
     def _make_dummy_user(self):
         """Create a user that will be later deleted."""
-        
+
         self.csr.post_request('global/local-users',
                               payload={'username': 'dummy',
                                        'password': 'dummy',
@@ -327,7 +327,6 @@ class TestCsrDeleteRestApi(unittest.TestCase):
             self._make_dummy_user()
             self.csr.delete_request('global/local-users/dummy')
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-            
 
     def test_delete_non_existent_entry(self):
         """Negative test of trying to delete a non-existent user."""

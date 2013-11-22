@@ -24,12 +24,13 @@ from neutron.openstack.common import jsonutils
 
 
 if True:  # Debugging
-    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s', 
+    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
                         level=logging.DEBUG)
-    
+
 LOG = logging.getLogger(__name__)
-HEADER_CONTENT_TYPE_JSON={'content-type': 'application/json'}
-URL_BASE='https://%(host)s/api/v1/%(resource)s'
+HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
+URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
+
 
 class Client(object):
 
@@ -82,7 +83,6 @@ class Client(object):
                             "[%(status)s]"),
                           {'host': self.host, 'status': self.status})
 
-        
     def _do_request(self, method, resource, payload=None, more_headers=None):
         """Perform a REST request to a CSR resource.
 
@@ -120,7 +120,7 @@ class Client(object):
         except requests.Timeout as te:
             LOG.error(_("%(method)s: Request timeout for CSR(%(host)s): "
                         "%(error)s"),
-                      {'method': method, 'host': self.host,'error': te})
+                      {'method': method, 'host': self.host, 'error': te})
             self.status = wexc.HTTPRequestTimeout.code
         except requests.ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
