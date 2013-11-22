@@ -7,7 +7,7 @@ plugin=${1:-n1kv}
 
 osnExtNwName=bob_test_extnet1
 osnExtNwLen=24
-hostportIP=10.0.20.3
+hostportIP=10.0.21.3
 portName=hostOnExtNw
 n1kvPortPolicyProfileNames=(test-profile osn_t1_pp osn_t2_pp)
 vethHostSideName=hostOnExtNw_hs
