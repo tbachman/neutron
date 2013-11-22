@@ -28,6 +28,8 @@ if True:  # Debugging
                         level=logging.DEBUG)
     
 LOG = logging.getLogger(__name__)
+HEADER_CONTENT_TYPE_JSON={'content-type': 'application/json'}
+URL_BASE='https://%(host)s/api/v1/%(resource)s'
 
 class Client(object):
 
@@ -40,16 +42,16 @@ class Client(object):
         self.status = wexc.HTTPOk.code
         self.timeout = timeout
 
-    def logged_in(self):
+    def authenticated(self):
         return self.token
 
-    def login(self):
+    def authenticate(self):
         """Obtain a token to use for subsequent CSR REST requests."""
 
-        url = 'https://%s/api/v1/auth/token-services' % self.host
-        headers = {'content-type': 'application/json',
-                   'Content-Length': '0',
+        url = URL_BASE % {'host': self.host, 'resource': 'auth/token-services'}
+        headers = {'Content-Length': '0',
                    'Accept': 'application/json'}
+        headers.update(HEADER_CONTENT_TYPE_JSON)
         self.token = None
         # QUESTION: Should we display user/password in log?
         LOG.debug(_("Authenticate request %(resource)s as %(auth)s"),
@@ -72,11 +74,11 @@ class Client(object):
                 self.token = r.json()['token-id']
                 # QUESTION: Should we display token in log?
                 LOG.debug(_("Authenticated with CSR(%(host)s). "
-                            "Token %(token)s"),
+                            "Token '%(token)s'"),
                           {'host': self.host, 'token': self.token})
                 return True
             else:
-                LOG.error(_("Failed authentication with CSR (%(host)s) "
+                LOG.error(_("Failed authentication with CSR (%(host)s)"
                             "[%(status)s]"),
                           {'host': self.host, 'status': self.status})
 
@@ -85,12 +87,12 @@ class Client(object):
         """Perform a REST request to a CSR resource.
 
         If this is the first time interacting with the CSR, a token will
-        be obatained. If the request fails, due to an expired token, the
+        be obtained. If the request fails, due to an expired token, the
         token will be obtained and the request will be retried once more.
         """
 
-        if not self.logged_in():
-            if not self.login():
+        if not self.authenticated():
+            if not self.authenticate():
                 return None
 
         url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
@@ -109,49 +111,52 @@ class Client(object):
                                  verify=False, timeout=self.timeout,
                                  data=payload)
             if r.status_code == wexc.HTTPUnauthorized.code:
-                if not self.login():
+                if not self.authenticate():
                     return
                 headers['X-auth-token'] = self.token
                 r = requests.request(method, url, headers=headers,
                                      verify=False, timeout=self.timeout,
                                      data=payload)
         except requests.Timeout as te:
-            LOG.error(_("%(method)s: Request imeout for CSR(%(host)s):"
-                        " %(error)s"),
-                      {'method': method.upper(), 'host': self.host, 'error': te})
+            LOG.error(_("%(method)s: Request timeout for CSR(%(host)s): "
+                        "%(error)s"),
+                      {'method': method, 'host': self.host,'error': te})
             self.status = wexc.HTTPRequestTimeout.code
+        except requests.ConnectionError as ce:
+            LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
+                        "%(error)s"),
+                      {'method': method, 'host': self.host, 'error': ce})
+            self.status = wexc.HTTPNotFound.code
         except Exception as e:
             LOG.error(_("%(method)s: Unexpected error for CSR (%(host)s): "
                         "%(error)s"),
-                      {'method': method.upper(), 'host': self.host, 'error': e})
+                      {'method': method, 'host': self.host, 'error': e})
             self.status = wexc.HTTPInternalServerError.code
         else:
             self.status = r.status_code
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
-                      {'method': method.upper(), 'status': self.status})
-            if (resource in 'auth/token-services' and 
-                self.status == wexc.HTTPCreated.code) or (method == 'get' and 
-                self.status == wexc.HTTPOk.code):
+                      {'method': method, 'status': self.status})
+            if method == 'GET' and self.status == wexc.HTTPOk.code:
                 return r.json()
 
     def get_request(self, resource):
         """Perform a REST GET requests for a CSR resource."""
-        return self._do_request('get', resource)
+        return self._do_request('GET', resource)
 
     def post_request(self, resource, payload=None):
         """Perform a POST request to a CSR resource."""
-        self._do_request('post', resource, payload=payload,
-                         more_headers={'content-type': 'application/json'})
+        self._do_request('POST', resource, payload=payload,
+                         more_headers=HEADER_CONTENT_TYPE_JSON)
 
     def put_request(self, resource, payload=None):
         """Perform a PUT request to a CSR resource."""
-        self._do_request('put', resource, payload=payload,
-                         more_headers={'content-type': 'application/json'})
+        self._do_request('PUT', resource, payload=payload,
+                         more_headers=HEADER_CONTENT_TYPE_JSON)
 
     def delete_request(self, resource):
         """Perform a DELETE request on a CSR resource."""
-        self._do_request('delete', resource,
-                         more_headers={'content-type': 'application/json'})
+        self._do_request('DELETE', resource,
+                         more_headers=HEADER_CONTENT_TYPE_JSON)
 
 
 if __name__ == '__main__':
@@ -163,7 +168,7 @@ if __name__ == '__main__':
 #     print content
 #     print "End"
 #
-#     print "Get token: ", csr.login()
+#     print "Get token: ", csr.authenticate()
 #     print 'Token status %s, token=%s' %(csr.status, csr.token)
 #
 #     content = csr.get_request('global/host-name')
@@ -173,7 +178,7 @@ if __name__ == '__main__':
 #     print "Get status %s, Content=%s" % (csr.status, content)
 #
 #     bad_host = Client('192.168.200.30', 'stack', 'cisco')
-#     print "Get token: ", bad_host.login()
+#     print "Get token: ", bad_host.authenticate()
 #     print 'Bad status %s' % bad_host.status
 
     content = csr.post_request('interfaces/gigabitEthernet0/statistics',
