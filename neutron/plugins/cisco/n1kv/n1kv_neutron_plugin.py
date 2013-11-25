@@ -23,7 +23,6 @@ import eventlet
 
 from oslo.config import cfg as q_conf
 
-from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
@@ -39,13 +38,11 @@ from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import l3_rpc_base
 from neutron.db import portbindings_db
-from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import uuidutils as uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
@@ -177,8 +174,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 for profile in policy_profiles['body'][c_const.SET]:
                     if c_const.ID and c_const.NAME in profile:
                         vsm_profiles[profile[c_const.PROPERTIES]
-                            [c_const.ID]] = (profile[c_const.PROPERTIES]
-                                             [c_const.NAME])
+                                     [c_const.ID]] = (
+                                         profile[c_const.PROPERTIES][
+                                             c_const.NAME])
                 # Fetch policy profiles previously populated
                 for profile in n1kv_db_v2._get_policy_profiles():
                     plugin_profiles[profile.id] = profile.name
@@ -186,10 +184,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 plugin_profiles_set = set(plugin_profiles)
                 # Update database if the profile sets differ.
                 if vsm_profiles_set ^ plugin_profiles_set:
-                    # Add profiles in database if new profiles were created in VSM
+                    # Add profiles in db if new profiles were created in VSM
                     for pid in vsm_profiles_set - plugin_profiles_set:
                         self._add_policy_profile(vsm_profiles[pid], pid)
-                    # Delete profiles from database if profiles were deleted in VSM
+                    # Delete profiles from db if profiles were deleted in VSM
                     for pid in plugin_profiles_set - vsm_profiles_set:
                         self._delete_policy_profile(pid)
             self._remove_all_fake_policy_profiles()
@@ -269,7 +267,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                             break
                         else:
                             msg = (_("Unknown provider:physical_network %s") %
-                               physical_network)
+                                   physical_network)
                     raise q_exc.InvalidInput(error_message=msg)
             else:
                 msg = _("provider:physical_network required")
@@ -626,7 +624,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug('_send_delete_logical_network')
         logical_network_name = (network_profile['id'] +
-	                        c_const.LOGICAL_NETWORK_SUFFIX)
+                                c_const.LOGICAL_NETWORK_SUFFIX)
         pool.spawn(self.n1kvclient.delete_logical_network,
                    logical_network_name).wait()
 
@@ -641,15 +639,15 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         pool.spawn(self.n1kvclient.create_network_segment_pool,
                    profile,
                    context.tenant_id).wait()
-  
-    def _send_update_network_profile_request(self, profile):
-       """
-       Send update network profile request to VSM.
 
-       :param profile: network profile dictionary
-       """
-       LOG.debug(_('_send_update_network_profile_request: %s'), profile['id'])
-       pool.spawn(self.n1kvclient.update_network_segment_pool, profile).wait()
+    def _send_update_network_profile_request(self, profile):
+        """
+        Send update network profile request to VSM.
+
+        :param profile: network profile dictionary
+        """
+        LOG.debug(_('_send_update_network_profile_request: %s'), profile['id'])
+        pool.spawn(self.n1kvclient.update_network_segment_pool, profile).wait()
 
     def _send_delete_network_profile_request(self, profile):
         """
@@ -683,7 +681,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             except(cisco_exceptions.VSMError,
                    cisco_exceptions.VSMConnectionFailed):
                 with excutils.save_and_reraise_exception():
-                    bridge_domain_name = (network['id'] + 
+                    bridge_domain_name = (network['id'] +
                                           c_const.BRIDGE_DOMAIN_SUFFIX)
                     pool.spawn(self.n1kvclient.delete_bridge_domain,
                                bridge_domain_name).wait()
@@ -708,7 +706,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             with excutils.save_and_reraise_exception():
                 if network[
                     providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_OVERLAY:
-                    bridge_domain_name = (network['id'] + 
+                    bridge_domain_name = (network['id'] +
                                           c_const.BRIDGE_DOMAIN_SUFFIX)
                     pool.spawn(self.n1kvclient.delete_bridge_domain,
                                bridge_domain_name).wait()
@@ -817,11 +815,11 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_('_send_create_subnet_request: %s'), subnet['id'])
         try:
-           pool.spawn(self.n1kvclient.create_ip_pool, subnet).wait()
+            pool.spawn(self.n1kvclient.create_ip_pool, subnet).wait()
         except(cisco_exceptions.VSMError,
                cisco_exceptions.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
-                self.delete_subnet(context, subnet['id']) 
+                self.delete_subnet(context, subnet['id'])
 
     def _send_update_subnet_request(self, subnet):
         """
@@ -873,7 +871,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             except cisco_exceptions.VMNetworkNotFound:
                 policy_profile = n1kv_db_v2.get_policy_profile(
                     context.session, port[n1kv_profile.PROFILE_ID])
-                network = self.get_network(context, port['network_id'])
                 vm_network_name = (c_const.VM_NETWORK_NAME_PREFIX +
                                    str(port[n1kv_profile.PROFILE_ID]) +
                                    "_" + str(port['network_id']))
@@ -905,7 +902,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                        cisco_exceptions.VSMConnectionFailed):
                     with excutils.save_and_reraise_exception():
                         super(N1kvNeutronPluginV2, self).delete_port(
-                            context, port['id'])  
+                            context, port['id'])
 
     def _send_update_port_request(self, port_id, mac_address, vm_network_name):
         """
@@ -1437,20 +1434,20 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 context, id)
             self._send_delete_network_profile_request(net_p)
             self._send_delete_logical_network_request(net_p)
- 
+
     def update_network_profile(self, context, net_profile_id, network_profile):
-	  """
-	  Update a network profile.
-	
-	  :param context: neutron api request context
-          :param net_profile_id: UUID of the network profile to update
-          :param network_profile: dictionary containing network profile object
-          """
-          session = context.session
-	  with session.begin(subtransactions=True):
-	     net_p = (super(N1kvNeutronPluginV2, self).
-	              update_network_profile(context,
-	                                     net_profile_id,
-                                             network_profile))
-	     self._send_update_network_profile_request(net_p)
-          return net_p
+        """
+        Update a network profile.
+
+        :param context: neutron api request context
+        :param net_profile_id: UUID of the network profile to update
+        :param network_profile: dictionary containing network profile object
+        """
+        session = context.session
+        with session.begin(subtransactions=True):
+            net_p = (super(N1kvNeutronPluginV2, self).
+                     update_network_profile(context,
+                                            net_profile_id,
+                                            network_profile))
+            self._send_update_network_profile_request(net_p)
+        return net_p
