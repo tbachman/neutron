@@ -429,6 +429,7 @@ def delete_segment_allocations(db_session, net_p):
                          filter_by(vxlan_id=vxlan_id).one())
                 db_session.delete(alloc)
 
+
 def sync_vlan_allocations(db_session, net_p):
     """
     Synchronize vlan_allocations table with configured VLAN ranges.
@@ -453,9 +454,9 @@ def sync_vlan_allocations(db_session, net_p):
                                     vlan_id)
             except c_exc.VlanIDNotFound:
                 alloc = n1kv_models_v2.N1kvVlanAllocation(
-                            physical_network=net_p['physical_network'],
-                            vlan_id=vlan_id,
-                            network_profile_id = net_p['id'])
+                    physical_network=net_p['physical_network'],
+                    vlan_id=vlan_id,
+                    network_profile_id=net_p['id'])
                 db_session.add(alloc)
 
 
@@ -1080,7 +1081,7 @@ class NetworkProfile_db_mixin(object):
             return self._make_network_profile_dict(original_net_p)
         if context.is_admin and "remove_tenant" in p:
             delete_profile_binding(p["remove_tenant"], id)
-            return self._make_network_profile_dict(original_net_p) 
+            return self._make_network_profile_dict(original_net_p)
         return self._make_network_profile_dict(
             update_network_profile(context.session, id, p))
 
