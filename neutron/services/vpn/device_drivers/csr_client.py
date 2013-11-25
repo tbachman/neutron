@@ -23,7 +23,7 @@ from neutron.openstack.common import jsonutils
 #from neutron.openstack.common import log as logging
 
 
-if True:  # Debugging
+if False:  # Debugging
     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
                         level=logging.DEBUG)
 
