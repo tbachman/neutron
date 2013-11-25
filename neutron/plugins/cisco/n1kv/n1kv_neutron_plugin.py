@@ -26,21 +26,29 @@ from oslo.config import cfg as q_conf
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
+from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
+from neutron.db import allowedaddresspairs_db as addr_pair_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
-from neutron.db import l3_db
+from neutron.db import extradhcpopt_db
+from neutron.db import extraroute_db
+from neutron.db import l3_agentschedulers_db
+from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
 from neutron.db import portbindings_db
+from neutron.extensions import allowedaddresspairs as addr_pair
+from neutron.extensions import extra_dhcp_opt as edo_ext
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron.openstack.common import excutils
+from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.openstack.common import uuidutils as uuidutils
@@ -79,12 +87,16 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
-                          l3_db.L3_NAT_db_mixin,
+                          extraroute_db.ExtraRoute_db_mixin,
+                          l3_gwmode_db.L3_NAT_db_mixin,
+                          l3_agentschedulers_db.L3AgentSchedulerDbMixin,
+                          agentschedulers_db.DhcpAgentSchedulerDbMixin,
                           portbindings_db.PortBindingMixin,
+                          extradhcpopt_db.ExtraDhcpOptMixin,
+                          addr_pair_db.AllowedAddressPairsMixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
-                          network_db_v2.Credential_db_mixin,
-                          agentschedulers_db.AgentSchedulerDbMixin):
+                          network_db_v2.Credential_db_mixin):
 
     """
     Implement the Neutron abstractions using Cisco Nexus1000V.
@@ -97,10 +109,13 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     # This attribute specifies whether the plugin supports or not
     # bulk operations.
     __native_bulk_support = False
-    supported_extension_aliases = ["provider", "agent",
+    supported_extension_aliases = ["provider", "agent", "ext-gw-mode",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "external-net", "router",
-                                   "binding", "credential"]
+                                   "binding", "credential",
+                                   "l3_agent_scheduler",
+                                   "dhcp_agent_scheduler", "extra_dhcp_opt",
+                                   "allowed-address-pairs"]
 
     def __init__(self, configfile=None):
         """
@@ -121,17 +136,27 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 'extensions:neutron/plugins/cisco/extensions')
         self._setup_vsm()
         self._setup_rpc()
+        self.network_scheduler = importutils.import_object(
+            q_conf.CONF.network_scheduler_driver
+        )
+        self.router_scheduler = importutils.import_object(
+            q_conf.CONF.router_scheduler_driver
+        )
 
     def _setup_rpc(self):
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.conn = rpc.create_connection(new=True)
+        self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
+            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        )
+        self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
+            l3_rpc_agent_api.L3AgentNotify
+        )
         self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
-        self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
@@ -1212,6 +1237,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('Create port: profile_id=%s'), profile_id)
         session = context.session
         with session.begin(subtransactions=True):
+            dhcp_opts = port['port'].get(edo_ext.EXTRADHCPOPTS, [])
             pt = super(N1kvNeutronPluginV2, self).create_port(context,
                                                               port)
             n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
@@ -1219,6 +1245,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._process_portbindings_create_and_update(context,
                                                          port['port'],
                                                          pt)
+            self._process_port_create_extra_dhcp_opts(context, port,
+                                                      dhcp_opts)
+            port[addr_pair.ADDRESS_PAIRS] = (
+                self._process_create_allowed_address_pairs(
+                    context, port,
+                    port['port'].get(addr_pair.ADDRESS_PAIRS)))
         self._send_create_port_request(context, pt)
         LOG.debug(_("Created port: %s"), pt)
         return pt
@@ -1241,14 +1273,24 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: updated port object
         """
         LOG.debug(_("Update port: %s"), id)
-        updated_port = super(N1kvNeutronPluginV2, self).update_port(context,
-                                                                    id,
-                                                                    port)
-        self._process_portbindings_create_and_update(context,
-                                                     port['port'],
-                                                     updated_port)
-        self._extend_port_dict_profile(context, updated_port)
-        return updated_port
+        session = context.session
+        changed_fixed_ips = 'fixed_ips' in port['port']
+        with session.begin(subtransactions=True):
+            updated_port = super(N1kvNeutronPluginV2, self).update_port(
+                context, id, port)
+            if addr_pair.ADDRESS_PAIRS in port['port']:
+                self._delete_allowed_address_pairs(context, id)
+                self._process_create_allowed_address_pairs(
+                    context, updated_port,
+                    port['port'][addr_pair.ADDRESS_PAIRS])
+            elif changed_fixed_ips:
+                self._check_fixed_ips_and_address_pairs_no_overlap(
+                    context, updated_port)
+            self._process_portbindings_create_and_update(context,
+                                                         port['port'],
+                                                         updated_port)
+            self._extend_port_dict_profile(context, updated_port)
+            return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
         """
@@ -1260,12 +1302,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
+        if l3_port_check:
+            self.prevent_l3_port_deletion(context, id)
         with context.session.begin(subtransactions=True):
-            if l3_port_check:
-                self.prevent_l3_port_deletion(context, id)
             self.disassociate_floatingips(context, id)
             self._send_delete_port_request(context, id)
-            return super(N1kvNeutronPluginV2, self).delete_port(context, id)
+            super(N1kvNeutronPluginV2, self).delete_port(context, id)
 
     def get_port(self, context, id, fields=None):
         """
