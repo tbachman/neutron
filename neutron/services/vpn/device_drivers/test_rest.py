@@ -213,9 +213,9 @@ class TestCsrDeleteRestApi(unittest.TestCase):
 
 
 class TestCsrRestApiFailures(unittest.TestCase):
-    
+
     """Test failure cases common for all REST APIs."""
-    
+
     def setUp(self):
         self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
@@ -322,9 +322,8 @@ if True:
             self._cleanup_user()
             self.addCleanup(self._cleanup_user)
 
-
     class TestLiveCsrRestApiFailures(TestCsrRestApiFailures):
-        
+
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=8)
