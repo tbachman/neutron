@@ -387,7 +387,7 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
                 # Re-raise the original exception
                 raise exc_info[0], exc_info[1], exc_info[2]
 
-    def delete_port(self, context, id):
+    def delete_port(self, context, id, l3_port_check=True):
         """Delete port.
 
         Perform this operation in the context of the configured device
@@ -406,7 +406,7 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
                                            self._func_name(),
                                            n_args)
         try:
-            args = [context, id]
+            args = [context, id, l3_port_check]
             ovs_output = self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
                                                         self._func_name(),
                                                         args)
