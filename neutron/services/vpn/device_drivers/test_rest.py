@@ -241,7 +241,7 @@ class TestCsrRestApiFailures(unittest.TestCase):
         token by changing it.
         """
 
-        with HTTMock(csr_request.token, csr_request.expired_get_post_put,
+        with HTTMock(csr_request.token, csr_request.expired_request,
                      csr_request.get):
             self.csr.token = '123'  # These are 44 characters, so won't match
             content = self.csr._do_request('GET', 'global/host-name')

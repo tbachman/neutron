@@ -156,27 +156,19 @@ def get(url, request):
                             u'type': u'ethernet'}}
 
 
-@filter(['get', 'post', 'put'], 'global/host-name')
+@filter(['get'], 'global/host-name')
 @repeat(1)
 @urlmatch(netloc=r'localhost')
-def expired_get_post_put(url, request):
-    """Simulate access denied failure when get, post, or put to this resource.
+def expired_request(url, request):
+    """Simulate access denied failure on first request for this resource.
 
-    This handler will be ignored (by returning None), on any subsequent
-    accesses to this resource.
-    """
-
-    return {'status_code': wexc.HTTPUnauthorized.code}
-
-
-@filter(['delete'], 'global/local-users')
-@repeat(1)
-@urlmatch(netloc=r'localhost')
-def expired_delete(url, request):
-    """Simulate access denied failure when delete this resource.
-
-    This handler will be ignored (by returning None), on any subsequent
-    accesses to this resource.
+    Intent here is to simulate that the token has expired, by failing
+    the first request to the resource. Because of the repeat=1, this
+    will only be called once, and subsequent calls will not be handled
+    by this function, but instead will access the normal handler and
+    will pass. Currently configured for a GET request, but will work
+    with POST and PUT as well. For DELETE, would need to filter on a
+    different resource (e.g. 'global/local-users')
     """
 
     return {'status_code': wexc.HTTPUnauthorized.code}
