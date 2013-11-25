@@ -257,9 +257,9 @@ class Client(object):
         :param network_profile: UUID representing the tenant
         """
         LOG.debug(_("Logical network"))
-        body = { 'description': network_profile['name'],
-                 'tenantId': tenant_id}  
-        logical_network_name = (network_profile['id'] + 
+        body = {'description': network_profile['name'],
+                'tenantId': tenant_id}
+        logical_network_name = (network_profile['id'] +
                                 c_const.LOGICAL_NETWORK_SUFFIX)
         return self._post(self.logical_network_path % logical_network_name,
                           body=body)
@@ -268,7 +268,8 @@ class Client(object):
         """
         Delete a logical network on VSM.
 
-        :param logical_network_name: string representing the name of the logical network
+        :param logical_network_name: string representing the name of the
+                                     logical network
         """
         return self._delete(
             self.logical_network_path % logical_network_name)
@@ -288,8 +289,8 @@ class Client(object):
                 'id': network_profile['id'],
                 'logicalNetwork': logical_network_name,
                 'tenantId': tenant_id}
-        return self._post(self.network_segment_pool_path % network_profile['id'],
-                          body=body)
+        return self._post(self.network_segment_pool_path %
+                          network_profile['id'], body=body)
 
     def update_network_segment_pool(self, network_profile):
         """
@@ -298,7 +299,7 @@ class Client(object):
         :param network_profile: network profile dict
         """
         body = {'name': network_profile['name'],
-	        'description': network_profile['name']}
+                'description': network_profile['name']}
         return self._post(self.network_segment_pool_path %
                           network_profile['id'], body=body)
 
@@ -306,7 +307,8 @@ class Client(object):
         """
         Delete a network segment pool on the VSM.
 
-        :param network_segment_pool_id: UUID representing the network segment pool
+        :param network_segment_pool_id: UUID representing the network segment
+                                        pool
         """
         return self._delete(self.network_segment_pool_path %
                             network_segment_pool_id)
@@ -336,7 +338,7 @@ class Client(object):
         body = {'addressRangeStart': address_range_start,
                 'addressRangeEnd': address_range_end,
                 'ipAddressSubnet': netmask,
-                'description' : subnet['name'],
+                'description': subnet['name'],
                 'gateway': subnet['gateway_ip'],
                 'networkAddress': network_address,
                 'netSegmentName': subnet['network_id'],
@@ -395,7 +397,7 @@ class Client(object):
                           port,
                           vm_network_name,
                           policy_profile):
-                        
+
         """
         Create a VM network on the VSM.
 
@@ -411,7 +413,7 @@ class Client(object):
                 'portProfileId': policy_profile['id'],
                 'portId': port['id'],
                 'macAddress': port['mac_address'],
-                'tenantId':port['tenant_id'],
+                'tenantId': port['tenant_id'],
                 }
         return self._post(self.vm_networks_path,
                           body=body)
@@ -434,7 +436,7 @@ class Client(object):
         body = {'id': port['id'],
                 'macAddress': port['mac_address']}
         if port.get('fixed_ips'):
-           body['ipAddress'] = port['fixed_ips'][0]['ip_address']
+            body['ipAddress'] = port['fixed_ips'][0]['ip_address']
         return self._post(self.ports_path % (vm_network_name),
                           body=body)
 
