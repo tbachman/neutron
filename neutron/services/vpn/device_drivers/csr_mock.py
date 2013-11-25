@@ -96,20 +96,27 @@ def token_timeout(url, request):
     raise requests.Timeout()
 
 
+@filter(['get'], 'global/local-users')
+@all_requests
+@repeat(4)
+def timeout_four_times(url, request):
+    """Simulated timeout of a normal request four times."""
+
+    if DEBUG:
+        print "DEBUG:Get timeout(4)"
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    raise requests.Timeout()
+
+
+@filter(['get'], 'global/host-name')
 @all_requests
 def timeout(url, request):
-    """Simulated timeout of a normal request.
+    """Simulated timeout of a normal request."""
 
-    This handler is conditional, and will only apply to unit test
-    cases that match the resource.
-    """
-
-    if ('global/host-name' in url.path or
-        'interfaces/GigabitEthernet' in url.path or
-        'global/local-users' in url.path):
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        raise requests.Timeout()
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    raise requests.Timeout()
 
 
 @urlmatch(netloc=r'localhost')
@@ -117,6 +124,24 @@ def no_such_resource(url, request):
     """Indicate not found error, when invalid resource requested."""
     if 'no/such/request' in url.path:
         return {'status_code': wexc.HTTPNotFound.code}
+
+
+@filter(['get'], 'global/host-name')
+@repeat(1)
+@urlmatch(netloc=r'localhost')
+def expired_request(url, request):
+    """Simulate access denied failure on first request for this resource.
+
+    Intent here is to simulate that the token has expired, by failing
+    the first request to the resource. Because of the repeat=1, this
+    will only be called once, and subsequent calls will not be handled
+    by this function, but instead will access the normal handler and
+    will pass. Currently configured for a GET request, but will work
+    with POST and PUT as well. For DELETE, would need to filter on a
+    different resource (e.g. 'global/local-users')
+    """
+
+    return {'status_code': wexc.HTTPUnauthorized.code}
 
 
 @urlmatch(netloc=r'localhost')
@@ -154,24 +179,6 @@ def get(url, request):
                             u'ip-address': u'192.168.200.%s' % ip,
                             u'verify-unicast-source': False,
                             u'type': u'ethernet'}}
-
-
-@filter(['get'], 'global/host-name')
-@repeat(1)
-@urlmatch(netloc=r'localhost')
-def expired_request(url, request):
-    """Simulate access denied failure on first request for this resource.
-
-    Intent here is to simulate that the token has expired, by failing
-    the first request to the resource. Because of the repeat=1, this
-    will only be called once, and subsequent calls will not be handled
-    by this function, but instead will access the normal handler and
-    will pass. Currently configured for a GET request, but will work
-    with POST and PUT as well. For DELETE, would need to filter on a
-    different resource (e.g. 'global/local-users')
-    """
-
-    return {'status_code': wexc.HTTPUnauthorized.code}
 
 
 @urlmatch(netloc=r'localhost')

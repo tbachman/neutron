@@ -217,7 +217,8 @@ class TestCsrRestApiFailures(unittest.TestCase):
     """Test failure cases common for all REST APIs."""
 
     def setUp(self):
-        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco',
+                                     timeout=0.1)
 
     def test_request_for_non_existent_resource(self):
         """Negative test of non-existent resource on REST request."""
@@ -232,6 +233,18 @@ class TestCsrRestApiFailures(unittest.TestCase):
             content = self.csr._do_request('GET', 'global/host-name')
             self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
             self.assertEqual(None, content)
+
+    def test_timeout_with_retries_during_request(self):
+        """Negative test of retries for timeout during REST request.
+
+        Simulate timeouts four times and then, on fifth request, use
+        the normal handler resulting in success.
+        """
+        with HTTMock(csr_request.token, csr_request.timeout_four_times,
+                     csr_request.get):
+            content = self.csr._do_request('GET', 'global/local-users')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            self.assertIn('users', content)
 
     def test_token_expired_on_request(self):
         """Token expired before trying a REST request.
@@ -264,19 +277,19 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2)
+                                         'stack', 'cisco', timeout=2.0)
 
     class TestLiveCsrGetRestApi(TestCsrGetRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2)
+                                         'stack', 'cisco', timeout=2.0)
 
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2)
+                                         'stack', 'cisco', timeout=2.0)
 
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
 
@@ -291,7 +304,7 @@ if True:
             """
 
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8)
+                                         'stack', 'cisco', timeout=8.0)
             self._save_host_name()
             self.addCleanup(self._restore_host_name, 'stack', 'cisco')
 
@@ -318,7 +331,7 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8)
+                                         'stack', 'cisco', timeout=8.0)
             self._cleanup_user()
             self.addCleanup(self._cleanup_user)
 
@@ -326,7 +339,7 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8)
+                                         'stack', 'cisco', timeout=8.0)
 
 
 if __name__ == '__main__':

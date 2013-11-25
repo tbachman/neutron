@@ -42,6 +42,7 @@ class Client(object):
         self.token = None
         self.status = wexc.HTTPOk.code
         self.timeout = timeout
+        self.max_tries = 5
 
     def authenticated(self):
         return self.token
@@ -106,38 +107,53 @@ class Client(object):
                    'payload': payload, 'headers': headers})
         if payload:
             payload = jsonutils.dumps(payload)
-        try:
-            r = requests.request(method, url, headers=headers,
-                                 verify=False, timeout=self.timeout,
-                                 data=payload)
-            if r.status_code == wexc.HTTPUnauthorized.code:
-                if not self.authenticate():
-                    return
-                headers['X-auth-token'] = self.token
+        num_tries = 1
+        while True:
+            try:
                 r = requests.request(method, url, headers=headers,
                                      verify=False, timeout=self.timeout,
                                      data=payload)
-        except requests.Timeout as te:
-            LOG.error(_("%(method)s: Request timeout for CSR(%(host)s): "
-                        "%(error)s"),
-                      {'method': method, 'host': self.host, 'error': te})
-            self.status = wexc.HTTPRequestTimeout.code
-        except requests.ConnectionError as ce:
-            LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
-                        "%(error)s"),
-                      {'method': method, 'host': self.host, 'error': ce})
-            self.status = wexc.HTTPNotFound.code
-        except Exception as e:
-            LOG.error(_("%(method)s: Unexpected error for CSR (%(host)s): "
-                        "%(error)s"),
-                      {'method': method, 'host': self.host, 'error': e})
-            self.status = wexc.HTTPInternalServerError.code
-        else:
-            self.status = r.status_code
-            LOG.debug(_("%(method)s: Completed [%(status)s]"),
-                      {'method': method, 'status': self.status})
-            if method == 'GET' and self.status == wexc.HTTPOk.code:
-                return r.json()
+                if r.status_code == wexc.HTTPUnauthorized.code:
+                    if not self.authenticate():
+                        break
+                    headers['X-auth-token'] = self.token
+                    r = requests.request(method, url, headers=headers,
+                                         verify=False, timeout=self.timeout,
+                                         data=payload)
+            except requests.Timeout as te:
+                if self.timeout and (num_tries < self.max_tries):
+                    LOG.debug(_("%(method)s: Request timeout #%(try)d "
+                                "(%(interval)f) for CSR(%(host)s)"),
+                              {'method': method, 'try': num_tries,
+                               'interval': self.timeout, 'host': self.host})
+                    num_tries += 1
+                    self.timeout *= 2.0
+                else:
+                    LOG.error(_("%(method)s: Request timeout %(tries)d times "
+                                "for CSR(%(host)s): %(error)s"),
+                              {'method': method, 'tries': num_tries,
+                               'host': self.host, 'error': te})
+                    self.status = wexc.HTTPRequestTimeout.code
+                    break
+            except requests.ConnectionError as ce:
+                LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
+                            "%(error)s"),
+                          {'method': method, 'host': self.host, 'error': ce})
+                self.status = wexc.HTTPNotFound.code
+                break
+            except Exception as e:
+                LOG.error(_("%(method)s: Unexpected error for CSR (%(host)s): "
+                            "%(error)s"),
+                          {'method': method, 'host': self.host, 'error': e})
+                self.status = wexc.HTTPInternalServerError.code
+                break
+            else:
+                self.status = r.status_code
+                LOG.debug(_("%(method)s: Completed [%(status)s]"),
+                          {'method': method, 'status': self.status})
+                if method == 'GET' and self.status == wexc.HTTPOk.code:
+                    return r.json()
+                break
 
     def get_request(self, resource):
         """Perform a REST GET requests for a CSR resource."""
