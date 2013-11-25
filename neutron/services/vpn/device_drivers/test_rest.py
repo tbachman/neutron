@@ -43,7 +43,7 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Negative test of invalid user/password."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
-            self.assertIsNone(self.csr.authenticate())
+            self.assertFalse(self.csr.authenticate())
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
 
     def test_non_existent_host(self):
@@ -51,14 +51,14 @@ class TestCsrLoginRestApi(unittest.TestCase):
         self.csr.host = 'wrong-host'
         self.csr.token = 'Set by some previously successful access'
         with HTTMock(csr_request.token_wrong_host):
-            self.assertIsNone(self.csr.authenticate())
+            self.assertFalse(self.csr.authenticate())
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
             self.assertIsNone(self.csr.token)
 
     def test_timeout_on_token_access(self):
         """Negative test of a timeout on a request."""
         with HTTMock(csr_request.token_timeout):
-            self.assertIsNone(self.csr.authenticate())
+            self.assertFalse(self.csr.authenticate())
             self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
             self.assertIsNone(self.csr.token)
 
@@ -277,19 +277,19 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2.0)
+                                         'stack', 'cisco', timeout=1.0)
 
     class TestLiveCsrGetRestApi(TestCsrGetRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2.0)
+                                         'stack', 'cisco', timeout=1.0)
 
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=2.0)
+                                         'stack', 'cisco', timeout=1.0)
 
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
 
@@ -304,7 +304,7 @@ if True:
             """
 
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8.0)
+                                         'stack', 'cisco', timeout=1.0)
             self._save_host_name()
             self.addCleanup(self._restore_host_name, 'stack', 'cisco')
 
@@ -331,7 +331,7 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8.0)
+                                         'stack', 'cisco', timeout=1.0)
             self._cleanup_user()
             self.addCleanup(self._cleanup_user)
 
@@ -339,7 +339,7 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=8.0)
+                                         'stack', 'cisco', timeout=1.0)
 
 
 if __name__ == '__main__':
