@@ -43,7 +43,7 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Negative test of invalid user/password."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
-            self.assertFalse(self.csr.authenticate())
+            self.assertIsNone(self.csr.authenticate())
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
 
     def test_non_existent_host(self):
@@ -51,14 +51,14 @@ class TestCsrLoginRestApi(unittest.TestCase):
         self.csr.host = 'wrong-host'
         self.csr.token = 'Set by some previously successful access'
         with HTTMock(csr_request.token_wrong_host):
-            self.assertFalse(self.csr.authenticate())
+            self.assertIsNone(self.csr.authenticate())
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
             self.assertIsNone(self.csr.token)
 
     def test_timeout_on_token_access(self):
         """Negative test of a timeout on a request."""
         with HTTMock(csr_request.token_timeout):
-            self.assertFalse(self.csr.authenticate())
+            self.assertIsNone(self.csr.authenticate())
             self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
             self.assertIsNone(self.csr.token)
 

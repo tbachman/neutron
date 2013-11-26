@@ -24,7 +24,7 @@ from httmock import urlmatch, all_requests
 import requests
 from webob import exc as wexc
 
-DEBUG = True
+DEBUG = False  # Turn on to see handler invocation
 
 
 def repeat(n):

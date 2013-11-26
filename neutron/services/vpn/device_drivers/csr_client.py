@@ -15,15 +15,15 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
-import logging
+import logging  # TODO(pcm) remove once integrated in with Neutron
 import requests
 from webob import exc as wexc
 
 from neutron.openstack.common import jsonutils
 #from neutron.openstack.common import log as logging
 
-
-if True:  # Debugging
+# TODO(pcm): Remove this once integrated in with Neutron
+if False:  # Debugging
     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
                         level=logging.DEBUG)
 
@@ -84,6 +84,38 @@ class Client(object):
                       {'method': method, 'status': self.status})
             return self._contents_for(response, method, url)
 
+    def authenticated(self):
+        return self.token
+
+    def authenticate(self):
+        """Obtain a token to use for subsequent CSR REST requests.
+
+        This does not use a timeout with retry count, like _do_request(). Was
+        seeing that a ConnectionError, instead of a Timeout exception occuring,
+        when using a one second timeout.
+        """
+
+        url = URL_BASE % {'host': self.host, 'resource': 'auth/token-services'}
+        headers = {'Content-Length': '0',
+                   'Accept': 'application/json'}
+        headers.update(HEADER_CONTENT_TYPE_JSON)
+        self.token = None
+        # QUESTION: Should we display user/password in log?
+        LOG.debug(_("Authenticate request %(resource)s as %(auth)s"),
+                  {'resource': url, 'auth': self.auth})
+        response = self._request("POST", url, 1,
+                                 headers=headers, auth=self.auth)
+        if response:
+            self.token = response['token-id']
+            # QUESTION: Should we display token in log?
+            LOG.debug(_("Authenticated with CSR(%(host)s). "
+                        "Token=%(token)s"),
+                      {'host': self.host, 'token': self.token})
+            return True
+        LOG.error(_("Failed authentication with CSR (%(host)s) "
+                    "[%(status)s]"),
+                  {'host': self.host, 'status': self.status})
+
     def _do_request(self, method, resource, payload=None, more_headers=None):
         """Perform a REST request to a CSR resource.
 
@@ -131,47 +163,6 @@ class Client(object):
                     "for CSR(%(host)s)"),
                   {'method': method, 'tries': try_num, 'host': self.host})
 
-    def authenticated(self):
-        return self.token
-
-    def authenticate(self):
-        """Obtain a token to use for subsequent CSR REST requests."""
-
-        url = URL_BASE % {'host': self.host, 'resource': 'auth/token-services'}
-        headers = {'Content-Length': '0',
-                   'Accept': 'application/json'}
-        headers.update(HEADER_CONTENT_TYPE_JSON)
-        self.token = None
-        # QUESTION: Should we display user/password in log?
-        LOG.debug(_("Authenticate request %(resource)s as %(auth)s"),
-                  {'resource': url, 'auth': self.auth})
-        try_num = 0
-        while try_num < self.max_tries:
-            response = self._request("POST", url, 1,
-                                     headers=headers, auth=self.auth)
-            if self.status == wexc.HTTPRequestTimeout.code:
-                if not self.timeout_interval:
-                    break  # Cannot retry when no interval specified
-                try_num += 1
-                self.timeout_interval *= 2.0
-            else:
-                if response:
-                    self.token = response['token-id']
-                    # QUESTION: Should we display token in log?
-                    LOG.debug(_("Authenticated with CSR(%(host)s). "
-                                "Token=%(token)s"),
-                              {'host': self.host, 'token': self.token})
-                    return True
-                else:
-                    LOG.error(_("Failed authentication with CSR (%(host)s) "
-                                "[%(status)s]"),
-                              {'host': self.host, 'status': self.status})
-                    return False
-        LOG.error(_("%(method)s: Request timeout %(tries)d times "
-                    "for CSR(%(host)s)"),
-                  {'method': 'POST', 'tries': try_num, 'host': self.host})
-        return False
-
     def get_request(self, resource):
         """Perform a REST GET requests for a CSR resource."""
         return self._do_request('GET', resource)
@@ -194,25 +185,6 @@ class Client(object):
 
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')
-
-#     print "Start"
-#     content = csr.get_request('global/host-name')
-#     print "Status:", csr.status
-#     print content
-#     print "End"
-#
-#     print "Get token: ", csr.authenticate()
-#     print 'Token status %s, token=%s' %(csr.status, csr.token)
-#
-#     content = csr.get_request('global/host-name')
-#     print "Get status %s, Content=%s" % (csr.status, content)
-#
-#     content = csr.get_request('global/local-users')
-#     print "Get status %s, Content=%s" % (csr.status, content)
-#
-#     bad_host = Client('192.168.200.30', 'stack', 'cisco')
-#     print "Get token: ", bad_host.authenticate()
-#     print 'Bad status %s' % bad_host.status
 
     content = csr.post_request('interfaces/gigabitEthernet0/statistics',
                                payload={'action': 'clear'})
