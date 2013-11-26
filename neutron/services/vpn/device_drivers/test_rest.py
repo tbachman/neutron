@@ -114,21 +114,25 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
 
-
 class TestCsrPutRestApi(unittest.TestCase):
 
     """Test CSR PUT REST API."""
 
-    def _save_host_name(self):
+    def _save_resources(self):
         with HTTMock(csr_request.token, csr_request.get):
             details = self.csr.get_request('global/host-name')
             if self.csr.status != wexc.HTTPOk.code:
                 self.fail("Unable to save original host name")
-        self.original_host = details['host-name']
-        self.csr.token = None
+            self.original_host = details['host-name']
+            details = self.csr.get_request('interfaces/GigabitEthernet1')
+            if self.csr.status != wexc.HTTPOk.code:
+                self.fail("Unable to save interface Ge1 description")
+            self.original_desc = details['description']
+            self.csr.token = None
+            
 
-    def _restore_host_name(self, user, password):
-        """Restore the host name.
+    def _restore_resources(self, user, password):
+        """Restore the host name and itnerface description.
 
         Must restore the user and password, so that authentication
         token can be obtained (as some tests corrupt auth info).
@@ -142,12 +146,17 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.csr.put_request('global/host-name', payload=payload)
             if self.csr.status != wexc.HTTPNoContent.code:
                 self.fail("Unable to restore host name after test")
+            payload = {'description': self.original_desc}
+            self.csr.put_request('interfaces/GigabitEthernet1',
+                                 payload=payload)
+            if self.csr.status != wexc.HTTPNoContent.code:
+                self.fail("Unable to restore I/F Ge1 description after test")
 
     def setUp(self):
         """Prepare for PUT API tests."""
         self.csr = csr_client.Client('localhost', 'stack', 'cisco')
-        self._save_host_name()
-        self.addCleanup(self._restore_host_name, 'stack', 'cisco')
+        self._save_resources()
+        self.addCleanup(self._restore_resources, 'stack', 'cisco')
 
     def test_put_requests(self):
         """Simple PUT requests (repeatable).
@@ -170,6 +179,18 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
 
+    def test_change_interface_description(self):
+        """Test that interface description can be changed.
+        
+        This was a problem with an earlier version of the CSR image and is
+        here to prevent regression.
+        """
+        with HTTMock(csr_request.token, csr_request.put):
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet1',
+                payload={'description': 'Changed description'})
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
 
 class TestCsrDeleteRestApi(unittest.TestCase):
 
@@ -305,8 +326,8 @@ if True:
 
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=1.0)
-            self._save_host_name()
-            self.addCleanup(self._restore_host_name, 'stack', 'cisco')
+            self._save_resources()
+            self.addCleanup(self._restore_resources, 'stack', 'cisco')
 
     class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
 
