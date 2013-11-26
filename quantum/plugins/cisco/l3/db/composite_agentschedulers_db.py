@@ -16,12 +16,14 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
+from oslo.config import cfg
 from sqlalchemy.orm import joinedload
 
 from quantum.common import constants
 from quantum.db import agents_db
 from quantum.db import agentschedulers_db as agentsched_db
 from quantum.openstack.common import log as logging
+from quantum.openstack.common import timeutils
 from quantum.plugins.cisco.l3.common import constants as cl3_constants
 from quantum.plugins.cisco.l3.db import l3_router_appliance_db as l3_ra_db
 
@@ -32,6 +34,11 @@ LOG = logging.getLogger(__name__)
 class CompositeAgentSchedulerDbMixin(agentsched_db.AgentSchedulerDbMixin):
     """Mixin class to add agent scheduler extension to db_plugin_base_v2.
     This class also supports l3 configuration agents."""
+
+    @classmethod
+    def is_agent_down(cls, heart_beat_time,
+                      timeout=cfg.CONF.cfg_agent_down_time):
+        return timeutils.is_older_than(heart_beat_time, timeout)
 
     def auto_schedule_hosting_entities_on_cfg_agent(self, context, host,
                                                     router_id):
@@ -44,7 +51,8 @@ class CompositeAgentSchedulerDbMixin(agentsched_db.AgentSchedulerDbMixin):
                                                                 router_id))
 
     def list_active_sync_routers_on_active_l3_cfg_agent(self, context, host,
-                                                        router_id):
+                                                        router_id,
+                                                        hosting_entity_ids=[]):
         agent = self._get_agent_by_type_and_host(
             context, cl3_constants.AGENT_TYPE_L3_CFG, host)
 
@@ -58,7 +66,14 @@ class CompositeAgentSchedulerDbMixin(agentsched_db.AgentSchedulerDbMixin):
         if router_id:
             query = query.filter(
                 l3_ra_db.RouterHostingEntityBinding.router_id == router_id)
-
+        if len(hosting_entity_ids) == 1:
+            query = query.filter(
+                l3_ra_db.RouterHostingEntityBinding.hosting_entity_id ==
+                hosting_entity_ids[0])
+        elif len(hosting_entity_ids) > 1:
+            query = query.filter(
+                l3_ra_db.RouterHostingEntityBinding.hosting_entity_id.in_(
+                    hosting_entity_ids))
         router_ids = [item[0] for item in query]
         if router_ids:
             return self.get_sync_data_ext(context, router_ids=router_ids,
@@ -100,7 +115,7 @@ class CompositeAgentSchedulerDbMixin(agentsched_db.AgentSchedulerDbMixin):
         if active is not None:
             l3_cfg_agents = [l3_cfg_agent for l3_cfg_agent in
                              l3_cfg_agents if not
-                             agents_db.AgentDbMixin.is_agent_down(
+                             self.is_agent_down(
                                  l3_cfg_agent['heartbeat_timestamp'])]
         return l3_cfg_agents
 
@@ -124,8 +139,7 @@ class CompositeAgentSchedulerDbMixin(agentsched_db.AgentSchedulerDbMixin):
                   if hosting_entity.l3_cfg_agent is not None]
         if active is not None:
             agents = [agent for agent in agents if not
-                      agents_db.AgentDbMixin.is_agent_down(
-                          agent['heartbeat_timestamp'])]
+                      self.is_agent_down(agent['heartbeat_timestamp'])]
         return agents
 
     def update_agent(self, context, id, agent):

@@ -153,6 +153,15 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                                 routers, host,
                                 topic=cl3_constants.L3_CFG_AGENT)
 
+    def hosting_entity_removed(self, context, hosting_data, deconfigure,
+                               cfg_agent):
+        if hosting_data:
+            self._notification_host(context, 'hosting_entity_removed',
+                                    {'hosting_data': hosting_data,
+                                     'deconfigure': deconfigure}, cfg_agent,
+                                    topic=cl3_constants.L3_CFG_AGENT)
+
+
 L3JointAgentNotify = L3JointAgentNotifyAPI()
 
 # Monkey patch

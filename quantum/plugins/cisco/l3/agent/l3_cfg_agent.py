@@ -97,7 +97,8 @@ class L3PluginApi(proxy.RpcProxy):
                                                     hosting entities
         @return: -
         """
-        self.call(context,
+        # Cast since we don't expect a return value.
+        self.cast(context,
                   self.make_msg('report_non_responding_hosting_entities',
                                 host=self.host,
                                 hosting_entity_ids=he_ids),
@@ -114,39 +115,16 @@ class HostingEntities(object):
         self._drivers = {}
         self.backlog_hosting_entities = {}
 
-    def is_hosting_entity_reachable(self, router_id, router):
-        he = router['hosting_entity']
-        he_id = he['id']
-        he_mgmt_ip = he['ip_address']
-        #Modifying the 'created_at' to a date time object
-        he['created_at'] = datetime.datetime.strptime(he['created_at'],
-                                                      '%Y-%m-%d %H:%M:%S')
-
-        if not he_id in self.backlog_hosting_entities.keys():
-            if self.is_pingable(he_mgmt_ip):
-                LOG.debug(_("Router:%(id)s <--> Hosting Entity@%(ip)s:Reachable."),
-                          {'id': router_id, 'ip': he['ip_address']})
-                return True
-            else:
-                LOG.debug(_("Router:%(id)s <--> HostingEntity@%(ip)s:Not Reachable."),
-                          {'id': router_id, 'ip': he['ip_address']})
-                he['backlog_insertion_ts'] = timeutils.utcnow()
-                self.backlog_hosting_entities[he_id] = he
-                self.clear_driver_connection(he_id)
-                LOG.debug(_("HostingEntity@%(ip)s is now added to Backlog "),
-                          {'ip': he['ip_address']})
-        return False
-
     def get_driver(self, router_id):
         hosting_entity = self.router_id_hosting_entities.get(router_id, None)
         if hosting_entity is not None:
             driver = self._drivers.get(hosting_entity['id'], None)
             if driver is None:
-                LOG.error(_("No valid driver found for Hosting Entity: %s"),
+                LOG.error(_("No valid driver found for hosting entity: %s"),
                           hosting_entity)['id']
         else:
-            LOG.error(_("Cannot find hosting entity for: %s"),
-                      hosting_entity['id'])
+            LOG.error(_("Cannot find hosting entity for router: %s"),
+                      router_id)
         return driver
 
     def set_driver(self, router_id, router):
@@ -171,7 +149,7 @@ class HostingEntities(object):
             driver = self._drivers.get(he_id, None)
             if driver:
                 driver.clear_connection()
-                LOG.debug(_("Cleared connection@%s"), driver._csr_host)
+                LOG.debug(_("Cleared connection @ %s"), driver._csr_host)
 
     def remove_driver(self, router_id):
         del self.router_id_hosting_entities[router_id]
@@ -182,32 +160,77 @@ class HostingEntities(object):
     def pop(self, he_id):
         self._drivers.pop(he_id, None)
 
+    def get_backlogged_hosting_entities(self):
+        return {he_id: {'affected routers': data['routers']} for he_id, data
+                in self.backlog_hosting_entities.items()}
+
+    def is_hosting_entity_reachable(self, router_id, router):
+        he = router['hosting_entity']
+        he_id = he['id']
+        he_mgmt_ip = he['ip_address']
+        #Modifying the 'created_at' to a date time object
+        he['created_at'] = datetime.datetime.strptime(he['created_at'],
+                                                      '%Y-%m-%d %H:%M:%S')
+
+        if not he_id in self.backlog_hosting_entities.keys():
+            if self.is_pingable(he_mgmt_ip):
+                LOG.debug(_("Hosting entity: %(he_id)s @ %(ip)s for router: "
+                            "%(id)s is reachable."),
+                          {'he_id': he_id, 'ip': he['ip_address'],
+                           'id': router_id})
+                return True
+            else:
+                LOG.debug(_("Hosting entity: %(he_id)s @ %(ip)s for router: "
+                            "%(id)s is NOT reachable."),
+                          {'he_id': he_id, 'ip': he['ip_address'],
+                           'id': router_id, })
+                he['backlog_insertion_ts'] = max(
+                    timeutils.utcnow(),
+                    he['created_at'] +
+                    datetime.timedelta(seconds=he['booting_time']))
+                self.backlog_hosting_entities[he_id] = {'he': he,
+                                                        'routers': [router_id]}
+                self.clear_driver_connection(he_id)
+                LOG.debug(_("Hosting entity: %(he_id)s @ %(ip)s is now added "
+                            "to backlog"), {'he_id': he_id,
+                                            'ip': he['ip_address']})
+        else:
+            self.backlog_hosting_entities[he_id]['routers'].append(router_id)
+        return False
+
     def check_backlogged_hosting_entities(self):
         response_dict = {'reachable': [],
                          'dead': []}
         for he_id in self.backlog_hosting_entities.keys():
-            he = self.backlog_hosting_entities[he_id]
+            he = self.backlog_hosting_entities[he_id]['he']
             if not timeutils.is_older_than(he['created_at'],
-                                           int(cfg.CONF.csr1kv_booting_time)):
-                LOG.info(_("Hosting Entity@%s hasn't passed minimum boot time."
-                           "Skipping.. "), he['ip_address'])
+                                           he['booting_time']):
+                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s hasn't passed "
+                           "minimum boot time. Skipping it. "),
+                         {'he_id': he_id, 'ip': he['ip_address']})
                 continue
-            LOG.info(_("Checking Hosting Entity@%s for reachability."),
-                     he['ip_address'])
+            LOG.info(_("Checking hosting entity: %(he_id)s @ %(ip)s for "
+                       "reachability."), {'he_id': he_id,
+                                          'ip': he['ip_address']})
             if self.is_pingable(he['ip_address']):
                 he.pop('backlog_insertion_ts', None)
                 del self.backlog_hosting_entities[he_id]
                 response_dict['reachable'].append(he_id)
-                LOG.info(_("Hosting Entity@%s is now reachable."
-                           " Adding it to response"), he['ip_address'])
+                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s is now "
+                           "reachable. Adding it to response"),
+                         {'he_id': he_id, 'ip': he['ip_address']})
             else:
-                LOG.info(_("Hosting Entity@%s still not reachable "),
-                         he['ip_address'])
-                if timeutils.is_older_than(he['backlog_insertion_ts'],
-                                           int(cfg.CONF.hosting_entity_dead_timeout)):
-                    LOG.debug(_("Hosting Entity@%(ip)s hasn't been reachable "
-                                "for last %(timeout)d seconds.Marking it dead"),
-                              {'ip': he['ip_address'], 'timeout': cfg.CONF.hosting_entity_dead_timeout})
+                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s still not "
+                           "reachable "), {'he_id': he_id,
+                                           'ip': he['ip_address']})
+                if timeutils.is_older_than(
+                        he['backlog_insertion_ts'],
+                        int(cfg.CONF.hosting_entity_dead_timeout)):
+                    LOG.debug(_("Hosting entity: %(he_id)s @ %(ip)s hasn't "
+                                "been reachable for the last %(time)d "
+                                "seconds. Marking it dead."),
+                              {'he_id': he_id, 'ip': he['ip_address'],
+                               'time': cfg.CONF.hosting_entity_dead_timeout})
                     response_dict['dead'].append(he_id)
                     he.pop('backlog_insertion_ts', None)
                     del self.backlog_hosting_entities[he_id]
@@ -283,9 +306,6 @@ class L3NATAgent(manager.Manager):
                           "by the agents.")),
         cfg.BoolOpt('enable_metadata_proxy', default=True,
                     help=_("Allow running metadata proxy.")),
-        cfg.IntOpt('csr1kv_booting_time', default=420,
-                   help=_("The time in seconds it typically takes to "
-                          "boot a CSR1kv VM")),
         cfg.IntOpt('hosting_entity_dead_timeout', default=300,
                    help=_("The time in seconds until a backlogged "
                           "hosting entity is presumed dead ")),
@@ -490,11 +510,14 @@ class L3NATAgent(manager.Manager):
             self.router_info[router_id] = ri
 
     def _router_removed(self, router_id, deconfigure=True):
-        ri = self.router_info[router_id]
+        ri = self.router_info.get(router_id)
+        if ri is None:
+            return
         ri.router['gw_port'] = None
         ri.router[l3_constants.INTERFACE_KEY] = []
         ri.router[l3_constants.FLOATINGIP_KEY] = []
-        self.process_router(ri)
+        if deconfigure:
+            self.process_router(ri)
         del self.router_info[router_id]
         #Hareesh : CSR
         if self.conf.use_hosting_entities and deconfigure:
@@ -664,12 +687,17 @@ class L3NATAgent(manager.Manager):
                 LOG.error(msg, str(Exception))
                 self.fullsync = True
 
-    def hosting_entity_removed(self, hosting_entities, deconfigure=False):
-        # {'he_id1':[id1,id2,..],'he_id2':[id3, ide4,..]}
-        for he_id, router_ids in hosting_entities.items():
-            LOG.debug(_("Hosting entity removal data: %s "), hosting_entities)
-            for router_id in router_ids:
-                self._router_removed(router_id, deconfigure)
+    def hosting_entity_removed(self, context, payload):
+        # payload = {
+        #     'hosting_data': {'he_id1': {'routers': [id1, id2, ...]},
+        #                      'he_id2': {'routers': [id3, id4, ...]}, ... },
+        #     'deconfigure': True/False}
+
+        for he_id, resource_data in payload['hosting_data'].items():
+            LOG.debug(_("Hosting entity removal data: %s "),
+                      payload['hosting_data'])
+            for router_id in resource_data.get('routers', []):
+                self._router_removed(router_id, payload['deconfigure'])
             self._he.pop(he_id)
 
     def router_removed_from_agent(self, context, payload):
@@ -717,8 +745,8 @@ class L3NATAgent(manager.Manager):
             cur_router_ids.add(r['id'])
 
             if not self._he.is_hosting_entity_reachable(r['id'], r):
-                LOG.info(_("Router:%(id)s on unreachable HostingEntity."
-                         "Skip processing it"), {'id': r['id']})
+                LOG.info(_("Router: %(id)s is on unreachable hosting entity. "
+                         "Skip processing it."), {'id': r['id']})
                 continue
 
             if r['id'] not in self.router_info:
@@ -749,14 +777,18 @@ class L3NATAgent(manager.Manager):
                     LOG.exception(_("Failed synchronizing routers"))
                     self.fullsync = True
             else:
-                LOG.debug(_("Full sync is False. Processing backlog"))
+                LOG.debug(_("Full sync is False. Processing backlog."))
                 res = self._he.check_backlogged_hosting_entities()
                 if res['reachable']:
                     #Fetch routers for now reachable HE's
+                    LOG.debug(_("Requesting routers for hosting entities: %s "
+                                "that are now responding."), res['reachable'])
                     routers = self.plugin_rpc.get_routers(
                         context, router_id=None, he_ids=res['reachable'])
                     self._process_routers(routers, all_routers=True)
                 if res['dead']:
+                    LOG.debug(_("Reporting dead hosting entities: %s"),
+                              res['dead'])
                     # Process dead HE's
                     self.plugin_rpc.report_dead_hosting_entities(
                         context, he_ids=res['dead'])
@@ -794,13 +826,17 @@ class L3NATAgentWithStateReport(L3NATAgent):
             'host': host,
             'topic': cl3_constants.L3_CFG_AGENT,
             'configurations': {
-                'use_namespaces': self.conf.use_namespaces,
-                'router_id': self.conf.router_id,
-                'handle_internal_only_routers':
-                self.conf.handle_internal_only_routers,
-                'gateway_external_network_id':
-                self.conf.gateway_external_network_id,
-                'interface_driver': self.conf.interface_driver},
+#                'use_namespaces': self.conf.use_namespaces,
+#                'router_id': self.conf.router_id,
+#                'handle_internal_only_routers':
+#                self.conf.handle_internal_only_routers,
+#                'gateway_external_network_id':
+#                self.conf.gateway_external_network_id,
+#                'interface_driver': self.conf.interface_driver},
+                'hosting_entity_drivers': {
+                    cl3_constants.CSR1KV_HOST:
+                    'quantum.plugins.cisco.l3.agent.csr1000v.'
+                    'cisco_csr_network_driver.CiscoCSRDriver'}},
             'start_flag': True,
             'agent_type': cl3_constants.AGENT_TYPE_L3_CFG}
         report_interval = cfg.CONF.AGENT.report_interval
@@ -814,6 +850,7 @@ class L3NATAgentWithStateReport(L3NATAgent):
         num_floating_ips = 0
         router_infos = self.router_info.values()
         num_routers = len(router_infos)
+        num_he_routers = {}
         for ri in router_infos:
             ex_gw_port = self._get_ex_gw_port(ri)
             if ex_gw_port:
@@ -822,11 +859,19 @@ class L3NATAgentWithStateReport(L3NATAgent):
                                                 []))
             num_floating_ips += len(ri.router.get(l3_constants.FLOATINGIP_KEY,
                                                   []))
+            he = ri.router['hosting_entity']
+            if he:
+                num_he_routers[he['id']] = num_he_routers.get(he['id'], 0) + 1
+        routers_per_he = {he_id: {'routers': num} for he_id, num
+                          in num_he_routers.items()}
+        non_responding = self._he.get_backlogged_hosting_entities()
         configurations = self.agent_state['configurations']
-        configurations['routers'] = num_routers
-        configurations['ex_gw_ports'] = num_ex_gw_ports
-        configurations['interfaces'] = num_interfaces
-        configurations['floating_ips'] = num_floating_ips
+        configurations['total routers'] = num_routers
+        configurations['total ex_gw_ports'] = num_ex_gw_ports
+        configurations['total interfaces'] = num_interfaces
+        configurations['total floating_ips'] = num_floating_ips
+        configurations['hosting_entities'] = routers_per_he
+        configurations['non_responding_hosting_entities'] = non_responding
         try:
             self.state_rpc.report_state(self.context,
                                         self.agent_state)

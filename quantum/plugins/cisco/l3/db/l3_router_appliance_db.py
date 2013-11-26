@@ -87,13 +87,16 @@ router_appliance_opts = [
                        'l3_hosting_entity_scheduler.L3HostingEntityScheduler',
                help=_('Driver to use for scheduling router to a hosting '
                       'entity')),
+    cfg.IntOpt('cfg_agent_down_time', default=10,
+               help=_('Seconds of no status update until a cfg agent '
+                      'is considered down.')),
     cfg.IntOpt('max_routers_per_csr1kv', default=1,
                help=_("The maximum number of logical routers a CSR1kv VM "
                       "instance will host")),
     cfg.IntOpt('standby_pool_size', default=1,
                help=_("The number of running CSR1kv VMs to maintain "
                       "as a pool of standby VMs")),
-    cfg.IntOpt('csr1kv_booting_time', default=300,
+    cfg.IntOpt('csr1kv_booting_time', default=420,
                help=_("The time in seconds it typically takes to "
                       "boot a CSR1kv VM")),
     cfg.StrOpt('templates_path',
@@ -116,6 +119,9 @@ FULL_VLAN_SET = set(range(MIN_LL_VLAN_TAG, MAX_LL_VLAN_TAG))
 # Port lookups can fail so retries are needed
 MAX_HOSTING_PORT_LOOKUP_ATTEMPTS = 10
 SECONDS_BETWEEN_HOSTING_PORT_LOOKSUPS = 2
+
+# Time needed (in seconds) to boot a CSR1kv VM
+CSR_BOOTING_TIME = 300
 
 cfg.CONF.register_opts(router_appliance_opts)
 
@@ -151,10 +157,14 @@ class HostingEntity(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # Service VMs take time to boot so we store creation time
     # so we can give preference to older ones when scheduling
     created_at = sa.Column(sa.DateTime, nullable=False)
+    # Typical time (in seconds) needed for hosting entity to boot
+    # into operational state.
+    booting_time = sa.Column(sa.Integer, default=0)
     status = sa.Column(sa.String(16))
     # 'tenant_bound' is empty or is id of the only tenant allowed to
     # own/place resources on this hosting entity
     tenant_bound = sa.Column(sa.String(255))
+    auto_delete_on_fail = sa.Column(sa.Boolean, default=True, nullable=False)
 
 
 class RouterHostingEntityBinding(model_base.BASEV2):
@@ -166,6 +176,9 @@ class RouterHostingEntityBinding(model_base.BASEV2):
     router = orm.relationship(l3_db.Router)
     # 'router_type' can be 'NetworkNamespace', 'CSR1kv', ...
     router_type = sa.Column(sa.String(255), nullable=False)
+    # If 'auto_schedule' is True then router is automatically scheduled
+    # if it lacks a hosting entity or its hosting entity fails.
+    auto_schedule = sa.Column(sa.Boolean, default=True, nullable=False)
     share_hosting_entity = sa.Column(sa.Boolean, default=True, nullable=False)
     hosting_entity_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('hostingentities.id',
@@ -189,7 +202,7 @@ class TrunkInfo(model_base.BASEV2):
     network_type = sa.Column(sa.String(32))
     hosting_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id',
-                                              ondelete='SET NULL'))
+                                              ondelete='CASCADE'))
     hosting_port = orm.relationship(models_v2.Port,
                                     primaryjoin='Port.id==TrunkInfo.'
                                                 'hosting_port_id')
@@ -401,6 +414,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 router_id=router_created['id'],
                 router_type=r.get('router_type',
                                   cfg.CONF.default_router_type),
+                auto_schedule=r.get('auto_schedule',
+                                    cfg.CONF.router_auto_schedule),
                 share_hosting_entity=r.get('share_host', True),
                 hosting_entity_id=None)
             context.session.add(r_he_b_db)
@@ -444,7 +459,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
 
     def delete_router(self, context, id):
         # Collect info needed after parent has deleted router
-        r_he_b = self.get_router_binding_info(context, id)
+        r_he_b = self._get_router_binding_info(context, id)
         router = self._make_router_dict(r_he_b.router)
         self._add_type_and_hosting_info(context, router,
                                         binding_info=r_he_b,
@@ -583,10 +598,11 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                                                                       routers)
 
     def get_router_type(self, context, id):
-        r_he_b = self.get_router_binding_info(context, id, load_he_info=False)
+        r_he_b = self._get_router_binding_info(context, id, load_he_info=False)
 
         return r_he_b.router_type
 
+    #TODO(bob-melander): Refactor - to new resource management class
     def create_csr1kv_vm_hosting_entities(self, context, num,
                                           tenant_bound=None):
         """Creates a number of CSR1kv VM instances that will act as
@@ -634,8 +650,10 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                         transport_port=cl3_const.CSR1kv_SSH_NETCONF_PORT,
                         l3_cfg_agent_id=None,
                         created_at=birth_date,
+                        booting_time=CSR_BOOTING_TIME,
                         status=None,
-                        tenant_bound=tenant_bound)
+                        tenant_bound=tenant_bound,
+                        auto_delete_on_fail=True)
                     context.session.add(he_db)
                 else:
                     # Fundamental error like could not contact Nova
@@ -646,9 +664,10 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                     return hosting_entities
         return hosting_entities
 
-    def delete_service_vm_hosting_entities(self, context, num,
-                                           host_type=cl3_const.CSR1KV_HOST,
-                                           tenant_bound=None):
+    #TODO(bob-melander): Refactor - to new resource management class
+    def delete_unused_service_vm_hosting_entities(
+            self, context, num, host_type=cl3_const.CSR1KV_HOST,
+            tenant_bound=None):
         """Deletes <num> or less unused service VM instances that act as
         <host_type> hosting entities (for a certain tenant or for shared
         use). The number of deleted service vm instances is returned.
@@ -675,22 +694,55 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         with context.session.begin(subtransactions=True):
             for i in xrange(0, num_possible_to_delete):
                 if svm.delete_service_vm(he_candidates[i]['id'],
-                                         self.mgmt_nw_id(),
-                                         delete_networks=True):
+                                         self.mgmt_nw_id()):
                     context.session.delete(he_candidates[i])
                     num_deleted += 1
         return num_deleted
 
+    #TODO(bob-melander): Refactor - to new resource management class
+    def delete_dead_service_vm_hosting_entity(self, context, hosting_entity_db,
+                                              logical_resource_ids):
+        """ Deletes a presumably dead service VM. This will indirectly
+        make all of its hosted resources (i.e., routers) unscheduled."""
+        if hosting_entity_db is None:
+            return
+        if hosting_entity_db['host_type'] == cl3_const.CSR1KV_HOST:
+            if self.hosting_scheduler._avail_svc_vm_slots < 0:
+                self.hosting_scheduler.sync_service_vm_pool_counters(context)
+            if hosting_entity_db['tenant_bound'] is not None:
+                # The slots of a tenant bound hosting entity have already
+                # been subtracted from available slots so no need to subtract
+                # again when that dead hosting entity is deleted.
+                reduce_by = 0
+            else:
+                # For an unbound (dead) hosting entity all its slots (used
+                # and unused) should be counted when reducing the number of
+                # available slots.
+                reduce_by = cfg.CONF.max_routers_per_csr1kv
+            if not self.svc_vm_mgr().delete_service_vm(hosting_entity_db['id'],
+                                                       self.mgmt_nw_id()):
+                LOG.error(_('Failed to delete hosting entity %s service VM. '
+                            'Will un-register it anyway.'),
+                          hosting_entity_db['id'])
+            with context.session.begin(subtransactions=True):
+                context.session.delete(hosting_entity_db)
+            self.hosting_scheduler._avail_svc_vm_slots = (
+                max(0, self.hosting_scheduler._avail_svc_vm_slots - reduce_by))
+            self.hosting_scheduler.maintain_service_vm_pool(self, context)
+
+    #TODO(bob-melander): Refactor - to new resource management class
     def delete_all_service_vm_hosting_entities(
             self, context, host_type=cl3_const.CSR1KV_HOST):
         query = context.session.query(HostingEntity)
         query = query.filter(HostingEntity.host_type == host_type)
         svm = self.svc_vm_mgr()
         for he in query:
-            svm.delete_service_vm(he.id, self.mgmt_nw_id(),
-                                  delete_networks=True)
+            svm.delete_service_vm(he.id, self.mgmt_nw_id())
+        # Adjust pool counters, easiest is to just re-sync.
+        self.hosting_scheduler.sync_service_vm_pool_counters(context,
+                                                             host_type)
 
-    def get_router_binding_info(self, context, id, load_he_info=True):
+    def _get_router_binding_info(self, context, id, load_he_info=True):
         query = context.session.query(RouterHostingEntityBinding)
         if load_he_info:
             query = query.options(joinedload('hosting_entity'))
@@ -720,7 +772,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         return query.all()
 
     def host_router(self, context, router_id):
-        """Schedules non-hosted router(s) on hosting entities.
+        """Schedules non-hosted auto-schedulable router(s) on hosting entities.
         If <router_id> is given, then only the router with that id is
         scheduled (if it is non-hosted). If no <router_id> is given,
         then all non-hosted routers are scheduled.
@@ -731,6 +783,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         query = query.filter(
             RouterHostingEntityBinding.router_type !=
             cl3_const.NAMESPACE_ROUTER_TYPE,
+            RouterHostingEntityBinding.auto_schedule == True,
             RouterHostingEntityBinding.hosting_entity == None)
         if router_id:
             query = query.filter(
@@ -741,6 +794,63 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             router['share_host'] = r_he_binding['share_hosting_entity']
             self.hosting_scheduler.schedule_router_on_hosting_entity(
                 self, context, router, r_he_binding)
+
+    def _get_hosting_entity_bindings(self, context, id, load_routers=False,
+                                    load_hosting_entity=False):
+        query = context.session.query(RouterHostingEntityBinding)
+        if load_routers:
+            query = query.options(joinedload('router'))
+        if load_hosting_entity:
+            query = query.options(joinedload('hosting_entity'))
+        query = query.filter(
+            RouterHostingEntityBinding.hosting_entity_id == id)
+        return query.all()
+
+    #TODO(bob-melander): Consider refactor - to new resource management class
+    def _process_non_responsive_hosting_entity(self, context,
+                                               hosting_entity_db,
+                                               logical_resource_ids):
+        """ Host type specific processing of non responsive hosting entities.
+
+        :param hosting_entity_db: db object for hosting entity
+        :param logical_resource_ids: dict{'routers': [id1, id2, ...]}
+        :return: True if hosting_entity has been deleted, otherwise False
+        """
+        if hosting_entity_db['host_type'] == cl3_const.CSR1KV_HOST:
+            self.delete_dead_service_vm_hosting_entity(
+                context, hosting_entity_db, logical_resource_ids)
+            return True
+        return False
+
+    def handle_non_responding_hosting_entities(self, context, cfg_agent,
+                                               hosting_entity_ids):
+        hosting_entities = self.get_hosting_entities(context,
+                                                     hosting_entity_ids)
+        # Information to send to l3 cfg agent:
+        #    {'he_id1': {'routers': [id1, id2, ...]},
+        #     'he_id2': {'routers': [id3, id4, ...]}, ...}
+        hosting_info = {}
+        to_reschedule = []
+        for he in hosting_entities:
+            he_id = he['id']
+            he_bindings = self._get_hosting_entity_bindings(context, he_id)
+            router_ids = []
+            for binding in he_bindings:
+                router_ids.append(binding['router_id'])
+                if binding['auto_schedule']:
+                    to_reschedule.append(binding['router_id'])
+            logical_resource_ids = {'routers': router_ids}
+            was_deleted = self._process_non_responsive_hosting_entity(
+                context, he, logical_resource_ids)
+            if was_deleted:
+                hosting_info[he_id] = logical_resource_ids
+        l3_rpc_joint_agent_api.L3JointAgentNotify.hosting_entity_removed(
+            context, hosting_info, False, cfg_agent)
+        if to_reschedule:
+            # Reschedule routers that should be auto-scheduled
+            routers = self.get_sync_data_ext(context, to_reschedule)
+            l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(context,
+                                                                      routers)
 
     # Make parent's call to get_sync_data(...) a noop
     def get_sync_data(self, context, router_ids=None, active=None):
@@ -771,8 +881,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         """Adds type and hosting entity information to a router."""
         try:
             if binding_info is None:
-                binding_info = self.get_router_binding_info(context,
-                                                            router['id'])
+                binding_info = self._get_router_binding_info(context,
+                                                             router['id'])
         except RouterBindingInfoError:
             return
         router['router_type'] = binding_info['router_type']
@@ -792,7 +902,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 'host_type': binding_info.hosting_entity.host_type,
                 'ip_address': binding_info.hosting_entity.ip_address,
                 'port': binding_info.hosting_entity.transport_port,
-                'created_at': str(binding_info.hosting_entity.created_at)}
+                'created_at': str(binding_info.hosting_entity.created_at),
+                'booting_time': binding_info.hosting_entity.booting_time}
 
     def _get_hosting_port_name(self, context, net_id):
         if self._plugin == cl3_const.N1KV_PLUGIN:
@@ -812,7 +923,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
     def _populate_port_trunk_info(self, context, router,
                                   ext_gw_change_status=None,
                                   int_if_change_status=None):
-        """Populate router ports with with trunking information.
+        """Populate router ports with trunking information.
 
         This function should only be called for routers that are hosted
         by hosting entities that use VLANs, e.g., service VMs like CSR1kv.

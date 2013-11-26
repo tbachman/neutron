@@ -37,7 +37,7 @@ class L3CfgRpcCallbackMixin(object):
     def cfg_sync_routers(self, context, **kwargs):
         """Sync routers according to filters to a specific cfg agent.
 
-        @param context: contain user information
+        @param context: contains user information
         @param kwargs: host, or router_id
         @return: a list of routers
                  with their interfaces and floating_ips
@@ -50,12 +50,10 @@ class L3CfgRpcCallbackMixin(object):
         plugin = manager.QuantumManager.get_plugin()
         if utils.is_extension_supported(
                 plugin, constants.AGENT_SCHEDULER_EXT_ALIAS):
-            if cfg.CONF.router_auto_schedule:
-                plugin.auto_schedule_hosting_entities_on_cfg_agent(context,
-                                                                   host,
-                                                                   router_id)
+            plugin.auto_schedule_hosting_entities_on_cfg_agent(context, host,
+                                                               router_id)
             routers = plugin.list_active_sync_routers_on_active_l3_cfg_agent(
-                context, host, router_id)
+                context, host, router_id, he_ids)
         else:
             routers = {}
         LOG.debug(_("Routers returned to l3 cfg agent:\n %s"),
@@ -85,6 +83,7 @@ class L3CfgRpcCallbackMixin(object):
         @return: -
         """
         hosting_entity_ids = kwargs.get('hosting_entity_ids', [])
+        cfg_agent = kwargs.get('host', None)
         plugin = manager.QuantumManager.get_plugin()
-        plugin.handle_non_responding_hosting_entity(context,
-                                                    hosting_entity_ids)
+        plugin.handle_non_responding_hosting_entities(context, cfg_agent,
+                                                      hosting_entity_ids)

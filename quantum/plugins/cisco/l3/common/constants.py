@@ -58,3 +58,8 @@ L3_CFG_AGENT = 'l3_cfg_agent'
 # Length mgmt port UUID to be part of VM's config drive filename
 CFG_DRIVE_UUID_START = 24
 CFG_DRIVE_UUID_LEN = 12
+
+# Service VM status
+SVM_OK = 'OK'
+SVM_ERROR = 'ERROR'
+SVM_NON_RESPONSIVE = 'NON_RESPONSIVE'

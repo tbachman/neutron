@@ -33,7 +33,8 @@ LOG = logging.getLogger(__name__)
 
 class L3HostingEntityScheduler(object):
     """Methods to schedule routers to hosting entities."""
-    #TODO(bob-melander): Refactor to use driver per hosting entity type
+    #TODO(bob-melander): Refactor - use driver per hosting entity type
+    #TODO(bob-melander): Refactor - pool to new resource management class
 
     # This variable only count tenant unbound slots
     _avail_svc_vm_slots = -1
@@ -114,8 +115,8 @@ class L3HostingEntityScheduler(object):
             num_req = int(math.ceil((self._avail_svc_vm_slots -
                                      self._desired_svc_vm_slots) /
                                     (1.0*cfg.CONF.max_routers_per_csr1kv)))
-            num_deleted = plugin.delete_service_vm_hosting_entities(context,
-                                                                    num_req)
+            num_deleted = plugin.delete_unused_service_vm_hosting_entities(
+                context, num_req)
             if num_deleted < num_req:
                 LOG.warn(_('Tried to delete %{n_requested} service VMs '
                            'but only %{n_deleted} could be deleted'),

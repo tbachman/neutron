@@ -84,7 +84,7 @@ def dispatch_service_vm(self, vm_image, vm_flavor, mgmt_port, ports):
     return myserver['server']
 
 
-def delete_service_vm(self, id, mgmt_nw_id, delete_networks=False):
+def delete_service_vm(self, id, mgmt_nw_id, delete_networks=True):
     ports = self._core_plugin.get_ports(self._context,
                                         filters={'device_id': [id]})
 

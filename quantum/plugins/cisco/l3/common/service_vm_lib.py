@@ -50,6 +50,19 @@ class ServiceVMManager:
         self._core_plugin = manager.QuantumManager.get_plugin()
         #self.csr_config_template = "./csr_cfgs/cfg_template"
 
+    def get_service_vm_status(self, vm_id):
+        try:
+            status = self._nclient.servers.get(vm_id).status
+        except (n_exc.UnsupportedVersion, n_exc.CommandError,
+                n_exc.AuthorizationFailure, n_exc.NoUniqueMatch,
+                n_exc.AuthSystemNotFound, n_exc.NoTokenLookupException,
+                n_exc.EndpointNotFound, n_exc.AmbiguousEndpoints,
+                n_exc.ConnectionRefused, n_exc.ClientException) as e:
+            LOG.error(_('Failed to get status of service VM instance %(id)s, '
+                        'due to %(err)s'), {'id': vm_id, 'err': e})
+            status = constants.SVM_ERROR
+        return status
+
     def dispatch_service_vm(self, vm_image, vm_flavor, mgmt_port,
                             ports=None):
         nics = [{'port-id': mgmt_port['id']}]
@@ -83,7 +96,7 @@ class ServiceVMManager:
         res = {'id': server.id}
         return res
 
-    def delete_service_vm(self, vm_id, mgmt_nw_id, delete_networks=False):
+    def delete_service_vm(self, vm_id, mgmt_nw_id, delete_networks=True):
         to_delete = []
         ports = self._core_plugin.get_ports(self._context,
                                             filters={'device_id': [vm_id]})
