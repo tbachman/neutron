@@ -64,8 +64,14 @@ class CiscoCSRDriver():
                     self._intfs_enabled = self._enable_intfs(self._csr_conn)
             return self._csr_conn
         except Exception:
-            LOG.exception("Failed getting connecting to CSR1000v. "
-                          "Conn.Params %s" % "localhost:8000:lab:lab")
+            LOG.exception(_("Failed connecting to CSR1000v. \n"
+                          "Connection Params Host:%(host)s "
+                          "Port:%(port)s User:%(user)s Password:%(pass)s"),
+                          {'host': self._csr_host, 'port': self._csr_ssh_port,
+                           'user': self._csr_user, 'pass': self._csr_password})
+
+    def clear_connection(self):
+        self._csr_conn = None
 
     def _get_interfaces(self):
         """
@@ -115,9 +121,7 @@ class CiscoCSRDriver():
         # CSR1kv, in release 3.11 GigabitEthernet 0 is gone.
         # so GigabitEthernet 1 is used as management and 2 up
         # is used for data.
-        interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3',
-                       'GigabitEthernet 4', 'GigabitEthernet 5',
-                       'GigabitEthernet 6', 'GigabitEthernet 7']
+        interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
         try:
             for i in interfaces:
                 confstr = snippets.ENABLE_INTF % i

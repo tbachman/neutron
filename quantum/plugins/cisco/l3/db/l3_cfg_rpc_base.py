@@ -44,6 +44,8 @@ class L3CfgRpcCallbackMixin(object):
         """
         router_id = kwargs.get('router_id')
         host = kwargs.get('host')
+        #ToDo(bob-melander): Add functionality to process specific HE's
+        he_ids = kwargs.get('hosting_entity_ids', [])
         context = quantum_context.get_admin_context()
         plugin = manager.QuantumManager.get_plugin()
         if utils.is_extension_supported(
@@ -73,3 +75,16 @@ class L3CfgRpcCallbackMixin(object):
         LOG.debug(_("External network ID returned to l3 cfg agent: %s"),
                   net_id)
         return net_id
+
+    def report_non_responding_hosting_entities(self, context, **kwargs):
+        """Report that a hosting entity cannot be contacted.
+
+        @param: context: contains user information
+        @param: kwargs: hosting_entity_ids: list of non-responding
+                                            hosting entities
+        @return: -
+        """
+        hosting_entity_ids = kwargs.get('hosting_entity_ids', [])
+        plugin = manager.QuantumManager.get_plugin()
+        plugin.handle_non_responding_hosting_entity(context,
+                                                    hosting_entity_ids)
