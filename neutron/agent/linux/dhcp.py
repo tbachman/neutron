@@ -26,6 +26,7 @@ import uuid
 
 import netaddr
 from oslo.config import cfg
+import six
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -51,6 +52,8 @@ OPTS = [
     cfg.StrOpt('dnsmasq_dns_server',
                help=_('Use another DNS server before any in '
                       '/etc/resolv.conf.')),
+    cfg.BoolOpt('dhcp_delete_namespaces', default=False,
+                help=_("Delete namespace after removing a dhcp server.")),
     cfg.IntOpt(
         'dnsmasq_lease_max',
         default=(2 ** 24),
@@ -101,8 +104,8 @@ class NetModel(DictModel):
         return self._ns_name
 
 
+@six.add_metaclass(abc.ABCMeta)
 class DhcpBase(object):
-    __metaclass__ = abc.ABCMeta
 
     def __init__(self, conf, network, root_helper='sudo',
                  version=None, plugin=None):
@@ -189,6 +192,16 @@ class DhcpLocalProcess(DhcpBase):
             LOG.debug(_('No DHCP started for %s'), self.network.id)
 
         self._remove_config_files()
+
+        if not retain_port:
+            if self.conf.dhcp_delete_namespaces and self.network.namespace:
+                ns_ip = ip_lib.IPWrapper(self.root_helper,
+                                         self.network.namespace)
+                try:
+                    ns_ip.netns.delete(self.network.namespace)
+                except RuntimeError:
+                    msg = _('Failed trying to delete namespace: %s')
+                    LOG.exception(msg, self.network.namespace)
 
     def _remove_config_files(self):
         confs_dir = os.path.abspath(os.path.normpath(self.conf.dhcp_confs))

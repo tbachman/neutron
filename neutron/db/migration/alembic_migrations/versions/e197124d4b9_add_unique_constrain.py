@@ -15,22 +15,23 @@
 #    under the License.
 #
 
-"""Add unique constraint for id column of TunnelEndpoint
+"""add unique constraint to members
 
-Revision ID: 63afba73813
-Revises: 3c6e57a23db4
-Create Date: 2013-04-30 13:53:31.717450
+Revision ID: e197124d4b9
+Revises: havana
+Create Date: 2013-11-17 10:09:37.728903
 
 """
 
 # revision identifiers, used by Alembic.
-revision = '63afba73813'
-down_revision = '3c6e57a23db4'
+revision = 'e197124d4b9'
+down_revision = 'havana'
 
 # Change to ['*'] if this migration applies to all plugins
 
 migration_for_plugins = [
-    'neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2',
+    'neutron.services.loadbalancer.plugin.LoadBalancerPlugin',
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
 ]
 
 from alembic import op
@@ -38,8 +39,8 @@ from alembic import op
 from neutron.db import migration
 
 
-CONSTRAINT_NAME = 'uniq_ovs_tunnel_endpoints0id'
-TABLE_NAME = 'ovs_tunnel_endpoints'
+CONSTRAINT_NAME = 'uniq_member0pool_id0address0port'
+TABLE_NAME = 'members'
 
 
 def upgrade(active_plugins=None, options=None):
@@ -49,7 +50,7 @@ def upgrade(active_plugins=None, options=None):
     op.create_unique_constraint(
         name=CONSTRAINT_NAME,
         source=TABLE_NAME,
-        local_cols=['id']
+        local_cols=['pool_id', 'address', 'protocol_port']
     )
 
 
@@ -58,7 +59,7 @@ def downgrade(active_plugins=None, options=None):
         return
 
     op.drop_constraint(
-        CONSTRAINT_NAME,
-        TABLE_NAME,
-        type_='unique'
+        name=CONSTRAINT_NAME,
+        tablename=TABLE_NAME,
+        type='unique'
     )
