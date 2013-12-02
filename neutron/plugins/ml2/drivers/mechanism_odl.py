@@ -103,13 +103,22 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         subnets = context._plugin.get_subnets(dbcontext)
         ports = context._plugin.get_ports(dbcontext)
 
-        self.sendjson('post', 'networks', {'networks': networks})
-        self.sendjson('post', 'subnets', {'subnets': subnets})
+        if len(networks) > 1:
+            self.sendjson('post', 'networks', {'networks': networks})
+        elif len(networks) == 1:
+            self.sendjson('post', 'networks', {'network': networks})
+        if len(subnets) > 1:
+            self.sendjson('post', 'subnets', {'subnets': subnets})
+        elif len(subnets) == 1:
+            self.sendjson('post', 'subnets', {'subnet': subnets})
         for port in ports:
             self.add_security_groups(context, dbcontext, port)
             # TODO(kmestery): Converting to uppercase due to ODL bug
             port['mac_address'] = port['mac_address'].upper()
-        self.sendjson('post', 'ports', {'ports': ports})
+        if len(ports) > 1:
+            self.sendjson('post', 'ports', {'ports': ports})
+        elif len(ports) == 1:
+            self.sendjson('post', 'ports', {'port': ports})
         self.out_of_sync = False
 
     def sync_object(self, operation, object_type, context):
