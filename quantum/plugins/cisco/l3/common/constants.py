@@ -39,7 +39,11 @@ T2_SUBNET_START_PREFX = '172.32.'
 # Hosting entities are of one of the following types.
 NETWORK_NODE_HOST = 'NetworkNamespaceNode'
 CSR1KV_HOST = 'CSR1kv'
-NEXUS3K_HOST = 'Nexus_3k'
+# For Nexus series (NX-OS) top of rack switches
+NEXUS_TOR_HOST = 'NexusToR'
+# For Nexus series (NX-OS) aggregation switches
+NEXUS_AGGR_HOST = 'NexusAggregateSwitch'
+
 
 # Router type is a new attribute for OsN Router
 # It can be set in Create operation then just Read.

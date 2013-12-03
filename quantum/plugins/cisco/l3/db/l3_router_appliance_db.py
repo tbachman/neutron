@@ -107,6 +107,9 @@ router_appliance_opts = [
     cfg.StrOpt('service_vm_config_path',
                default='/opt/stack/data/quantum/cisco/config_drive',
                help=_("Path to config drive files for service VMs")),
+    cfg.IntOpt('max_routers_per_N7k', default=1000,
+               help=_("The maximum number of logical routers a Nexus 7k "
+                      "switch will host")),
 ]
 
 # Segmentation types
@@ -125,7 +128,6 @@ CSR_BOOTING_TIME = 300
 
 cfg.CONF.register_opts(router_appliance_opts)
 
-
 class RouterCreateInternalError(q_exc.QuantumException):
     message = _("Router could not be created due to internal error.")
 
@@ -140,7 +142,8 @@ class RouterBindingInfoError(q_exc.QuantumException):
 
 class HostingEntity(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an appliance hosting OsN router(s). When the
-       hosting entity is a Nova VM 'id' is uuid of that OsC VM."""
+       hosting entity is a Nova VM 'id' is uuid of that OsC VM.
+    """
     __tablename__ = 'hostingentities'
 
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
@@ -169,7 +172,8 @@ class HostingEntity(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class RouterHostingEntityBinding(model_base.BASEV2):
     """Represents binding between OsN routers and
-       their hosting entities"""
+       their hosting entities.
+    """
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
@@ -400,16 +404,17 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        # Bob: Hard coding router type to shared CSR1kv for now
-        r['router_type'] = cfg.CONF.default_router_type
+        # Bob: Hard coding router type for now
+#        r['router_type'] = cfg.CONF.default_router_type
+        r['router_type'] = cl3_const.HARDWARE_ROUTER_TYPE
         r['share_host'] = True
         if (r['router_type'] != cl3_const.NAMESPACE_ROUTER_TYPE and
                 self.mgmt_nw_id()) is None:
             raise RouterCreateInternalError()
-        router_created = (super(L3_router_appliance_db_mixin, self).
-                          create_router(context, router))
-
+        self._ensure_create_ha_compliant(r)
         with context.session.begin(subtransactions=True):
+            router_created = (super(L3_router_appliance_db_mixin, self).
+                              create_router(context, router))
             r_he_b_db = RouterHostingEntityBinding(
                 router_id=router_created['id'],
                 router_type=r.get('router_type',
@@ -419,10 +424,14 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 share_hosting_entity=r.get('share_host', True),
                 hosting_entity_id=None)
             context.session.add(r_he_b_db)
+            # process any HA
+            self._create_redundancy_routers(context, router_created, r)
         return router_created
 
     def update_router(self, context, id, router):
         r = router['router']
+        # Ensure update is compliant with any HA
+        self._ensure_update_ha_compliant(context, id, r)
         # Check if external gateway has changed so we may have to
         # update trunking
         new_ext_gw = r.get('external_gateway_info', {}).get('network_id', '')
@@ -447,6 +456,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             super(L3_router_appliance_db_mixin, self).update_router(context,
                                                                     id,
                                                                     router))
+        # process any HA
+        self._update_redundancy_routers(context, router_updated, router)
         gw_change_status = {'changed': ext_gateway_changed,
                             'old_hosting_port_name': old_hosting_port_name,
                             'old_hosting_port_id': old_hosting_port_id,
@@ -468,6 +479,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             self._get_trunk_port_and_network_ids(context,
                                                  r_he_b.router.gw_port))
         hosting_entity = r_he_b.hosting_entity
+        # process any HA
+        self._delete_redundancy_routers(context, router)
         super(L3_router_appliance_db_mixin, self).delete_router(context, id)
         if router['router_type'] != cl3_const.NAMESPACE_ROUTER_TYPE:
             self._cleanup_gateway_configurations(context, router, trunk_nw_id)
@@ -475,6 +488,33 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 self, context, router, hosting_entity)
         l3_rpc_joint_agent_api.L3JointAgentNotify.router_deleted(context,
                                                                  router)
+
+    def get_router(self, context, id, fields=None):
+        router = super(L3_router_appliance_db_mixin, self).get_router(context,
+                                                                      id)
+        # process any HA
+        self._extend_router_dict_ha(context, router)
+        #Todo(bob-melander): Create router type extension to publish attributes
+        self._add_type_and_hosting_info(context, router, binding_info=None,
+                                        schedule=False)
+        return self._fields(router, fields)
+
+    def get_routers(self, context, filters=None, fields=None,
+                    sorts=None, limit=None, marker=None,
+                    page_reverse=False):
+        routers = super(L3_router_appliance_db_mixin, self).get_routers(
+            context, filters, fields=None, sorts=sorts, limit=limit,
+            marker=marker, page_reverse=page_reverse)
+        res = []
+        for router in routers:
+            # process any HA
+            self._extend_router_dict_ha(context, router)
+            #Todo(bob-melander): Create router type extension to
+            # publish attributes
+            self._add_type_and_hosting_info(context, router, binding_info=None,
+                                            schedule=False)
+            res.append(self._fields(router, fields))
+        return res
 
     def _cleanup_gateway_configurations(self, context, router, trunk_nw_id):
         if router['router_type'] != cl3_const.CSR_ROUTER_TYPE:
@@ -490,9 +530,11 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                          'old_hosting_port_name': '',
                          'old_hosting_port_id': None,
                          'old_trunk_nw_id': None}
+        new_port_db = self._get_port(context, info['port_id'])
+        # process any HA
+        self._add_redundancy_router_interfaces(context, router_id, new_port_db)
         routers = self.get_sync_data_ext(context.elevated(), [router_id],
                                          int_if_change_status=if_chg_status)
-        new_port_db = self._get_port(context, info['port_id'])
         l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
             context, routers, 'add_router_interface',
             {'network_id': new_port_db['network_id'],
@@ -528,7 +570,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                     context, trunk_network_id),
                 'old_hosting_port_id': hosting_port_id,
                 'old_trunk_nw_id': trunk_network_id}
-
+        # process any HA
+        self._remove_redundancy_router_interfaces(context, router_id, port_db)
         info = (super(L3_router_appliance_db_mixin, self).
                 remove_router_interface(context, router_id, interface_info))
         routers = self.get_sync_data_ext(context.elevated(), [router_id],
@@ -869,8 +912,14 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             host_type = (r.get('hosting_entity') or {}).get('host_type', '')
             #TODO(bobmel): Vif management needs further modularization
             #TODO(bobmel): to support non-trunk case etc.
+            self._populate_ha_information(context, r)
             if self._plugin in [cl3_const.N1KV_PLUGIN, cl3_const.OVS_PLUGIN]:
-                if host_type == cl3_const.CSR1KV_HOST:
+                if host_type in [cl3_const.NEXUS_AGGR_HOST,
+                                 cl3_const.NEXUS_TOR_HOST]:
+                    self._populate_vlan_trunk_info(
+                        context, r, ext_gw_change_status=ext_gw_change_status,
+                        int_if_change_status=int_if_change_status)
+                elif host_type == cl3_const.CSR1KV_HOST:
                     self._populate_port_trunk_info(
                         context, r, ext_gw_change_status=ext_gw_change_status,
                         int_if_change_status=int_if_change_status)
@@ -919,6 +968,33 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             return 'vlan'
         else:
             return 'vxlan'
+
+    def _populate_vlan_trunk_info(self, context, router,
+                                  ext_gw_change_status=None,
+                                  int_if_change_status=None):
+
+        for itfc in (router.get(l3_constants.INTERFACE_KEY, []) +
+                     (router.get('gw_port') and [router.get('gw_port')]
+                      or [])):
+            port_db = self._get_port(context, itfc['id'])
+            tr_info = port_db.trunk_info
+            if tr_info is None:
+                tags = self.get_networks(context, {'id': [itfc['network_id']]},
+                                         [pr_net.SEGMENTATION_ID])
+                used_vlan = (None if tags == [] else
+                             tags[0].get(pr_net.SEGMENTATION_ID))
+                with context.session.begin(subtransactions=True):
+                    tr_info = TrunkInfo(
+                        router_port_id=port_db['id'],
+                        network_type='VLAN',
+                        hosting_port_id=port_db['id'],
+                        segmentation_tag=used_vlan)
+                    context.session.add(tr_info)
+            itfc['trunk_info'] = {
+                'hosting_port_id': tr_info.hosting_port_id,
+                'hosting_mac': itfc['mac_address'],
+                'hosting_port_name': itfc['name'],
+                'segmentation_id': tr_info.segmentation_tag}
 
     def _populate_port_trunk_info(self, context, router,
                                   ext_gw_change_status=None,
