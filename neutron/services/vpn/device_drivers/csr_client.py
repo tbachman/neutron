@@ -150,6 +150,10 @@ class Client(object):
                 if not self.authenticate():
                     return
                 headers['X-auth-token'] = self.token
+                LOG.debug(_("%(method)s: Retry request for %(resource)s "
+                            "headers %(headers)s payload %(payload)s"),
+                          {'method': method.upper(), 'resource': url,
+                           'payload': payload, 'headers': headers})
                 return self._request(method, url, try_num,
                                      headers=headers, data=payload)
             if self.status == wexc.HTTPRequestTimeout.code:

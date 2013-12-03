@@ -127,7 +127,11 @@ class TestCsrPutRestApi(unittest.TestCase):
             details = self.csr.get_request('interfaces/GigabitEthernet1')
             if self.csr.status != wexc.HTTPOk.code:
                 self.fail("Unable to save interface Ge1 description")
-            self.original_desc = details['description']
+            self.original_if = details
+            # CSR has bug where it fails to PUT with empty description, and
+            # bug where get description returns empty string (even when set).
+            if not details.get('description', ''):
+                self.original_if['description'] = 'dummy'
             self.csr.token = None
             
 
@@ -146,7 +150,11 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.csr.put_request('global/host-name', payload=payload)
             if self.csr.status != wexc.HTTPNoContent.code:
                 self.fail("Unable to restore host name after test")
-            payload = {'description': self.original_desc}
+            payload = {'description': self.original_if['description'],
+                       'if-name': self.original_if['if-name'],
+                       'ip-address': self.original_if['ip-address'],
+                       'subnet-mask': self.original_if['subnet-mask'],
+                       'type': self.original_if['type']}
             self.csr.put_request('interfaces/GigabitEthernet1',
                                  payload=payload)
             if self.csr.status != wexc.HTTPNoContent.code:
@@ -185,12 +193,22 @@ class TestCsrPutRestApi(unittest.TestCase):
         This was a problem with an earlier version of the CSR image and is
         here to prevent regression.
         """
-        with HTTMock(csr_request.token, csr_request.put):
+        with HTTMock(csr_request.token, csr_request.put, csr_request.get):
+            payload = {'description': 'Changed description',
+                       'if-name': self.original_if['if-name'],
+                       'ip-address': self.original_if['ip-address'],
+                       'subnet-mask': self.original_if['subnet-mask'],
+                       'type': self.original_if['type']}
             content = self.csr.put_request(
-                'interfaces/GigabitEthernet1',
-                payload={'description': 'Changed description'})
+                'interfaces/GigabitEthernet1', payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
+            # Ensure it is really changed
+            content = self.csr.get_request('interfaces/GigabitEthernet1')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            self.assertIn('description', content)
+            # Currently bug in CSR and returns empty string always
+            # self.assertEqual('Changed description', content['description'])
 
 class TestCsrDeleteRestApi(unittest.TestCase):
 
