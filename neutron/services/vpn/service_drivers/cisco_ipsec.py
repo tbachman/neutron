@@ -100,7 +100,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
     """Cisco CSR VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):
-        self.callbacks = IPsecVpnDriverCallBack(self)
+        self.callbacks = CiscoCsrIPsecVpnDriverCallBack(self)
         self.service_plugin = service_plugin
         self.conn = rpc.create_connection(new=True)
         self.conn.create_consumer(
@@ -108,7 +108,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
             self.callbacks.create_rpc_dispatcher(),
             fanout=False)
         self.conn.consume_in_thread()
-        self.agent_rpc = IPsecVpnAgentApi(
+        self.agent_rpc = CiscoCsrIPsecVpnAgentApi(
             topics.CISCO_IPSEC_AGENT_TOPIC, BASE_IPSEC_VERSION)
 
     @property

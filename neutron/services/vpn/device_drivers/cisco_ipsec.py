@@ -436,8 +436,8 @@ class OpenSwanProcess(BaseSwanProcess):
                        ])
 
 
-class IPsecVpnDriverApi(proxy.RpcProxy):
-    """IPSecVpnDriver RPC api."""
+class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
+    """CiscoCsrIPSecVpnDriver RPC api."""
     IPSEC_PLUGIN_VERSION = '1.0'
 
     def get_vpn_services_on_host(self, context, host):
@@ -498,7 +498,7 @@ class IPsecDriver(device_drivers.DeviceDriver):
             self.create_rpc_dispatcher(),
             fanout=False)
         self.conn.consume_in_thread()
-        self.agent_rpc = IPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0')
+        self.agent_rpc = CiscoCsrIPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0')
         self.process_status_cache_check = loopingcall.FixedIntervalLoopingCall(
             self.report_status, self.context)
         self.process_status_cache_check.start(
