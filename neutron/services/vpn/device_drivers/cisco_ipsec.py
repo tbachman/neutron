@@ -1,6 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 #
-# Copyright 2013, Paul Michali, Cisco Systems, Inc.
+# Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -436,8 +436,8 @@ class OpenSwanProcess(BaseSwanProcess):
                        ])
 
 
-class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
-    """CiscoCsrIPSecVpnDriver RPC api."""
+class IPsecVpnDriverApi(proxy.RpcProxy):
+    """IPSecVpnDriver RPC api."""
     IPSEC_PLUGIN_VERSION = '1.0'
 
     def get_vpn_services_on_host(self, context, host):
@@ -465,8 +465,8 @@ class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
                          topic=self.topic)
 
 
-class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
-    """Cisco CSR VPN Device Driver for IPSec.
+class IPsecDriver(device_drivers.DeviceDriver):
+    """VPN Device Driver for IPSec.
 
     This class is designed for use with L3-agent now.
     However this driver will be used with another agent in future.
@@ -487,7 +487,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.host = host
         self.conn = rpc.create_connection(new=True)
         self.context = context.get_admin_context_without_session()
-        self.topic = topics.IPSEC_AGENT_TOPIC
+        self.topic = topics.CISCO_IPSEC_AGENT_TOPIC
         node_topic = '%s.%s' % (self.topic, self.host)
 
         self.processes = {}
@@ -498,7 +498,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             self.create_rpc_dispatcher(),
             fanout=False)
         self.conn.consume_in_thread()
-        self.agent_rpc = IPsecVpnDriverApi(topics.IPSEC_DRIVER_TOPIC, '1.0')
+        self.agent_rpc = IPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0')
         self.process_status_cache_check = loopingcall.FixedIntervalLoopingCall(
             self.report_status, self.context)
         self.process_status_cache_check.start(
