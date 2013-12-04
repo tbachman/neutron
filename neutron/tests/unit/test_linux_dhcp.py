@@ -30,8 +30,9 @@ LOG = logging.getLogger(__name__)
 
 
 class FakeIPAllocation:
-    def __init__(self, address):
+    def __init__(self, address, subnet_id=None):
         self.ip_address = address
+        self.subnet_id = subnet_id
 
 
 class DhcpOpt(object):
@@ -45,6 +46,7 @@ class DhcpOpt(object):
 class FakePort1:
     id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
     admin_state_up = True
+    device_owner = 'foo1'
     fixed_ips = [FakeIPAllocation('192.168.0.2')]
     mac_address = '00:00:80:aa:bb:cc'
 
@@ -55,6 +57,7 @@ class FakePort1:
 class FakePort2:
     id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
     admin_state_up = False
+    device_owner = 'foo2'
     fixed_ips = [FakeIPAllocation('fdca:3ba5:a17a:4ba3::2')]
     mac_address = '00:00:f3:aa:bb:cc'
 
@@ -65,6 +68,7 @@ class FakePort2:
 class FakePort3:
     id = '44444444-4444-4444-4444-444444444444'
     admin_state_up = True
+    device_owner = 'foo3'
     fixed_ips = [FakeIPAllocation('192.168.0.3'),
                  FakeIPAllocation('fdca:3ba5:a17a:4ba3::3')]
     mac_address = '00:00:0f:aa:bb:cc'
