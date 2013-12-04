@@ -436,8 +436,8 @@ class OpenSwanProcess(BaseSwanProcess):
                        ])
 
 
-class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
-    """CiscoCsrIPSecVpnDriver RPC api."""
+class IPsecVpnDriverApi(proxy.RpcProxy):
+    """IPSecVpnDriver RPC api."""
     IPSEC_PLUGIN_VERSION = '1.0'
 
     def get_vpn_services_on_host(self, context, host):
@@ -465,8 +465,8 @@ class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
                          topic=self.topic)
 
 
-class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
-    """Cisco CSR VPN Device Driver for IPSec.
+class IPsecDriver(device_drivers.DeviceDriver):
+    """VPN Device Driver for IPSec.
 
     This class is designed for use with L3-agent now.
     However this driver will be used with another agent in future.
