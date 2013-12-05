@@ -132,7 +132,7 @@ class LinuxBridgeManager:
         if 0 <= int(segmentation_id) <= constants.MAX_VXLAN_VNI:
             return VXLAN_INTERFACE_PREFIX + str(segmentation_id)
         else:
-            LOG.warning(_("Invalid Segementation ID: %s, will lead to "
+            LOG.warning(_("Invalid Segmentation ID: %s, will lead to "
                           "incorrect vxlan device name"), segmentation_id)
 
     def get_all_neutron_bridges(self):
@@ -661,10 +661,12 @@ class LinuxBridgeRpcCallbacks(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                                            self.agent.agent_id,
                                                            cfg.CONF.host)
                 else:
-                    self.plugin_rpc.update_device_down(self.context,
-                                                       tap_device_name,
-                                                       self.agent.agent_id,
-                                                       cfg.CONF.host)
+                    self.agent.plugin_rpc.update_device_down(
+                        self.context,
+                        tap_device_name,
+                        self.agent.agent_id,
+                        cfg.CONF.host
+                    )
             else:
                 bridge_name = self.agent.br_mgr.get_bridge_name(
                     port['network_id'])
