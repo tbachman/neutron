@@ -128,8 +128,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             if self.csr.status != wexc.HTTPOk.code:
                 self.fail("Unable to save interface Ge1 description")
             self.original_if = details
-            # CSR has bug where it fails to PUT with empty description, and
-            # bug where get description returns empty string (even when set).
+            # TODO(pcm): Remove the next two lines of code, once the bug is
+            # fixed, where an empty string is always returned for description.
             if not details.get('description', ''):
                 self.original_if['description'] = 'dummy'
             self.csr.token = None
@@ -203,12 +203,39 @@ class TestCsrPutRestApi(unittest.TestCase):
                 'interfaces/GigabitEthernet1', payload=payload)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
-            # Ensure it is really changed
             content = self.csr.get_request('interfaces/GigabitEthernet1')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('description', content)
-            # Currently bug in CSR and returns empty string always
+            # TODO(pcm): Currently bug in CSR and returns empty string always
+            # Uncomment assert, once fixed.
             # self.assertEqual('Changed description', content['description'])
+
+    def ignore_test_change_to_empty_interface_description(self):
+        """Test that interface description can be changed to empty string.
+        
+        This is a problem in the current version of the CSR image, which
+        rejects the change with a 400 error. This test is here to prevent
+        a regression (once it is fixed) Note that there is code in the
+        test setup to change the description to a non-empty string to
+        avoid failures in other tests.
+        """
+        with HTTMock(csr_request.token, csr_request.put, csr_request.get):
+            
+            payload = {'description': '',
+                       'if-name': self.original_if['if-name'],
+                       'ip-address': self.original_if['ip-address'],
+                       'subnet-mask': self.original_if['subnet-mask'],
+                       'type': self.original_if['type']}
+            content = self.csr.put_request(
+                'interfaces/GigabitEthernet1', payload=payload)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.assertIsNone(content)
+            content = self.csr.get_request('interfaces/GigabitEthernet1')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            self.assertIn('description', content)
+            # TODO(pcm): Uncomment assert, once bug is fixed where the CSR
+            # is always returning an empty string.
+            # self.assertEqual('', content['description'])           
 
 class TestCsrDeleteRestApi(unittest.TestCase):
 
