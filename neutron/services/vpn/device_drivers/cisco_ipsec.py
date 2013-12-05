@@ -465,8 +465,8 @@ class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
                          topic=self.topic)
 
 
-class IPsecDriver(device_drivers.DeviceDriver):
-    """VPN Device Driver for IPSec.
+class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
+    """Cisco CSR VPN Device Driver for IPSec.
 
     This class is designed for use with L3-agent now.
     However this driver will be used with another agent in future.
@@ -498,7 +498,8 @@ class IPsecDriver(device_drivers.DeviceDriver):
             self.create_rpc_dispatcher(),
             fanout=False)
         self.conn.consume_in_thread()
-        self.agent_rpc = CiscoCsrIPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0')
+        self.agent_rpc = (
+            CiscoCsrIPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0'))
         self.process_status_cache_check = loopingcall.FixedIntervalLoopingCall(
             self.report_status, self.context)
         self.process_status_cache_check.start(
@@ -677,7 +678,7 @@ class IPsecDriver(device_drivers.DeviceDriver):
         self.report_status(context)
 
 
-class OpenSwanDriver(IPsecDriver):
+class OpenSwanDriver(CiscoCsrIPsecDriver):
     def create_process(self, process_id, vpnservice, namespace):
         return OpenSwanProcess(
             self.conf,

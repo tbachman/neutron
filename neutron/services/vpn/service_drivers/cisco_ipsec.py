@@ -88,7 +88,8 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
             self.cast(
                 context, self.make_msg(method),
                 version=version,
-                topic='%s.%s' % (topics.CISCO_IPSEC_AGENT_TOPIC, l3_agent.host))
+                topic='%s.%s' % (topics.CISCO_IPSEC_AGENT_TOPIC,
+                                 l3_agent.host))
 
     def vpnservice_updated(self, context, router_id):
         """Send update event of vpnservices."""

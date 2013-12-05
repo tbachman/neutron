@@ -114,6 +114,7 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
 
+
 class TestCsrPutRestApi(unittest.TestCase):
 
     """Test CSR PUT REST API."""
@@ -133,7 +134,6 @@ class TestCsrPutRestApi(unittest.TestCase):
             if not details.get('description', ''):
                 self.original_if['description'] = 'dummy'
             self.csr.token = None
-            
 
     def _restore_resources(self, user, password):
         """Restore the host name and itnerface description.
@@ -189,7 +189,7 @@ class TestCsrPutRestApi(unittest.TestCase):
 
     def test_change_interface_description(self):
         """Test that interface description can be changed.
-        
+
         This was a problem with an earlier version of the CSR image and is
         here to prevent regression.
         """
@@ -212,7 +212,7 @@ class TestCsrPutRestApi(unittest.TestCase):
 
     def ignore_test_change_to_empty_interface_description(self):
         """Test that interface description can be changed to empty string.
-        
+
         This is a problem in the current version of the CSR image, which
         rejects the change with a 400 error. This test is here to prevent
         a regression (once it is fixed) Note that there is code in the
@@ -220,7 +220,6 @@ class TestCsrPutRestApi(unittest.TestCase):
         avoid failures in other tests.
         """
         with HTTMock(csr_request.token, csr_request.put, csr_request.get):
-            
             payload = {'description': '',
                        'if-name': self.original_if['if-name'],
                        'ip-address': self.original_if['ip-address'],
@@ -235,7 +234,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.assertIn('description', content)
             # TODO(pcm): Uncomment assert, once bug is fixed where the CSR
             # is always returning an empty string.
-            # self.assertEqual('', content['description'])           
+            # self.assertEqual('', content['description'])
+
 
 class TestCsrDeleteRestApi(unittest.TestCase):
 
