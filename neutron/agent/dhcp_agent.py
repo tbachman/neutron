@@ -164,6 +164,8 @@ class DhcpAgent(manager.Manager):
 
             for network in active_networks:
                 pool.spawn_n(self.safe_configure_dhcp_for_network, network)
+            pool.waitall()
+            LOG.info(_('Synchronizing state complete'))
 
         except Exception:
             self.needs_resync = True
@@ -448,12 +450,14 @@ class DhcpPluginApi(proxy.RpcProxy):
 
     def update_dhcp_port(self, port_id, port):
         """Make a remote process call to update the dhcp port."""
-        return dhcp.DictModel(self.call(self.context,
-                                        self.make_msg('update_dhcp_port',
-                                                      port_id=port_id,
-                                                      port=port,
-                                                      host=self.host),
-                                        topic=self.topic))
+        port = self.call(self.context,
+                         self.make_msg('update_dhcp_port',
+                                       port_id=port_id,
+                                       port=port,
+                                       host=self.host),
+                         topic=self.topic)
+        if port:
+            return dhcp.DictModel(port)
 
     def release_dhcp_port(self, network_id, device_id):
         """Make a remote process call to release the dhcp port."""
