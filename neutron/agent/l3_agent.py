@@ -391,13 +391,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                      p['id'] not in current_port_ids]
         for p in new_ports:
             self._set_subnet_info(p)
-            ri.internal_ports.append(p)
             self.internal_network_added(ri, p['network_id'], p['id'],
                                         p['ip_cidr'], p['mac_address'])
+            ri.internal_ports.append(p)
 
         for p in old_ports:
-            ri.internal_ports.remove(p)
             self.internal_network_removed(ri, p['id'], p['ip_cidr'])
+            ri.internal_ports.remove(p)
 
         internal_cidrs = [p['ip_cidr'] for p in ri.internal_ports]
         # TODO(salv-orlando): RouterInfo would be a better place for
@@ -534,8 +534,17 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                              bridge=self.conf.external_network_bridge,
                              namespace=ri.ns_name(),
                              prefix=EXTERNAL_DEV_PREFIX)
+
+        # Compute a list of addresses this router is supposed to have.
+        # This avoids unnecessarily removing those addresses and
+        # causing a momentarily network outage.
+        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+        preserve_ips = [ip['floating_ip_address'] + FLOATING_IP_CIDR_SUFFIX
+                        for ip in floating_ips]
+
         self.driver.init_l3(interface_name, [ex_gw_port['ip_cidr']],
-                            namespace=ri.ns_name())
+                            namespace=ri.ns_name(),
+                            preserve_ips=preserve_ips)
         ip_address = ex_gw_port['ip_cidr'].split('/')[0]
         self._send_gratuitous_arp_packet(ri, interface_name, ip_address)
 
