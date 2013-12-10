@@ -15,17 +15,12 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
-# import logging  # TODO(pcm) remove once integrated in with Neutron
 import requests
 from webob import exc as wexc
 
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
-# TODO(pcm): Remove this once integrated in with Neutron
-# if True:  # Debugging
-#     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
-#                         level=logging.DEBUG)
 
 LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
@@ -44,17 +39,22 @@ class Client(object):
         self.timeout_interval = timeout
         self.max_tries = 5
 
-    def _contents_for(self, response, method, url):
-        """Return contents from response.
+    def _response_info_for(self, response, method, url):
+        """Return contents or location from response.
 
         A temporary function, until the CSR fixes authentication to return
         the token via a 200 status, for which we can remove this function
         and do the check for GET and 200 in the caller.
+        
+        For a POST with a 201 response, we return the header's location,
+        which contains the identifier for the created resource.
         """
         if (('auth/token-services' in url and
              self.status == wexc.HTTPCreated.code) or
             (method == 'GET' and self.status == wexc.HTTPOk.code)):
             return response.json()
+        if method == 'POST' and self.status == wexc.HTTPCreated.code:
+            return response.headers.get('location','')
 
     def _request(self, method, url, attempt, **kwargs):
         """Perform REST request and save response info."""
@@ -82,7 +82,7 @@ class Client(object):
             self.status = response.status_code
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
                       {'method': method, 'status': self.status})
-            return self._contents_for(response, method, url)
+            return self._response_info_for(response, method, url)
 
     def authenticated(self):
         return self.token
@@ -116,7 +116,8 @@ class Client(object):
                     "[%(status)s]"),
                   {'host': self.host, 'status': self.status})
 
-    def _do_request(self, method, resource, payload=None, more_headers=None):
+    def _do_request(self, method, resource,
+                    payload=None, more_headers=None, full_url=False):
         """Perform a REST request to a CSR resource.
 
         If this is the first time interacting with the CSR, a token will
@@ -131,8 +132,11 @@ class Client(object):
             if not self.authenticate():
                 return None
 
-        url = 'https://%(host)s/api/v1/%(resource)s' % {'host': self.host,
-                                                        'resource': resource}
+        if full_url:
+            url = resource
+        else:
+            url = 'https://%(host)s/api/v1/%(resource)s' % {
+                      'host': self.host, 'resource': resource}
         headers = {'Accept': 'application/json', 'X-auth-token': self.token}
         if more_headers:
             headers.update(more_headers)
@@ -167,14 +171,14 @@ class Client(object):
                     "for CSR(%(host)s)"),
                   {'method': method, 'tries': try_num, 'host': self.host})
 
-    def get_request(self, resource):
+    def get_request(self, resource, full_url=False):
         """Perform a REST GET requests for a CSR resource."""
-        return self._do_request('GET', resource)
+        return self._do_request('GET', resource, full_url=full_url)
 
     def post_request(self, resource, payload=None):
         """Perform a POST request to a CSR resource."""
-        self._do_request('POST', resource, payload=payload,
-                         more_headers=HEADER_CONTENT_TYPE_JSON)
+        return self._do_request('POST', resource, payload=payload,
+                                more_headers=HEADER_CONTENT_TYPE_JSON)
 
     def put_request(self, resource, payload=None):
         """Perform a PUT request to a CSR resource."""

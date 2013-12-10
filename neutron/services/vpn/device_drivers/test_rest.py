@@ -25,8 +25,9 @@ import csr_mock as csr_request
 from neutron.openstack.common import log as logging
 
 
+LOG = logging.getLogger(__name__)
 # Enables debug logging to console
-if False:
+if True:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
 
@@ -351,8 +352,6 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
     def setUp(self):
         self.csr = csr_client.Client('localhost', 'stack', 'cisco')
 
-    # TODO(pcm): delete any created policies in teardown
-
     def test_create_ike_policy(self):
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             policy_id = u'2'
@@ -364,8 +363,7 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             location = self.csr.create_ike_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
-            content = self.csr.get_request('vpn-svc/ike/policies/%s' % 
-                                           policy_id)
+            content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ike-policy',
                                u'version': u'v1',
@@ -449,8 +447,8 @@ if True:
 
             Invoked before and after tests, so that we can ensure that
             the CSR is in a clean state. Clear the token, so that test
-            cases will act as they normally, as if no prior access to
-            the CSR.
+            cases will act as they would normally, as if no prior access
+            to the CSR.
             """
 
             with HTTMock(csr_request.token, csr_request.get,
@@ -474,6 +472,30 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=1.0)
+
+    class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
+
+        def _ensure_no_existing_policy(self):
+            """Ensure no IKE policy exists.
+            
+            Invoked before and after tests, so that we can ensure that
+            the CSR is in a clean state. Clear the token, so that test
+            cases will act as they would normally, as if no prior access
+            to the CSR.
+            """
+            with HTTMock(csr_request.token, csr_request.delete):
+                self.csr.delete_request('vpn-svc/ike/policies/2')
+                if self.csr.status not in (wexc.HTTPNoContent.code,
+                                           wexc.HTTPNotFound.code):
+                    self.fail("Unable to clean up existing user")
+            self.csr.token = None
+
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20',
+                                         'stack', 'cisco', timeout=1.0)
+            self._ensure_no_existing_policy()
+            self.addCleanup(self._ensure_no_existing_policy)
+
 
 
 if __name__ == '__main__':
