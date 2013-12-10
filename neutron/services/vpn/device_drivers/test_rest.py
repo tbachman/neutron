@@ -27,7 +27,7 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 # Enables debug logging to console
-if True:
+if False:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
 
@@ -451,14 +451,11 @@ if True:
             to the CSR.
             """
 
-            with HTTMock(csr_request.token, csr_request.get,
-                         csr_request.delete):
-                self.csr.get_request('global/local-users/dummy')
-                if self.csr.status == wexc.HTTPOk.code:
-                    self.csr.delete_request('global/local-users/dummy')
-                    if self.csr.status not in (wexc.HTTPNoContent.code,
-                                               wexc.HTTPNotFound.code):
-                        self.fail("Unable to clean up existing user")
+            with HTTMock(csr_request.token, csr_request.delete):
+                self.csr.delete_request('global/local-users/dummy')
+                if self.csr.status not in (wexc.HTTPNoContent.code,
+                                           wexc.HTTPNotFound.code):
+                    self.fail("Unable to clean up existing user")
             self.csr.token = None
 
         def setUp(self):
