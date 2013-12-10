@@ -45,7 +45,7 @@ class Client(object):
         A temporary function, until the CSR fixes authentication to return
         the token via a 200 status, for which we can remove this function
         and do the check for GET and 200 in the caller.
-        
+
         For a POST with a 201 response, we return the header's location,
         which contains the identifier for the created resource.
         """
@@ -54,7 +54,7 @@ class Client(object):
             (method == 'GET' and self.status == wexc.HTTPOk.code)):
             return response.json()
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
-            return response.headers.get('location','')
+            return response.headers.get('location', '')
 
     def _request(self, method, url, attempt, **kwargs):
         """Perform REST request and save response info."""
@@ -135,8 +135,8 @@ class Client(object):
         if full_url:
             url = resource
         else:
-            url = 'https://%(host)s/api/v1/%(resource)s' % {
-                      'host': self.host, 'resource': resource}
+            url = ('https://%(host)s/api/v1/%(resource)s' %
+                   {'host': self.host, 'resource': resource})
         headers = {'Accept': 'application/json', 'X-auth-token': self.token}
         if more_headers:
             headers.update(more_headers)

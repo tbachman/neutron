@@ -174,7 +174,7 @@ def get(url, request):
                    u'icmp-redirects': True,
                    u'ip-address': u'192.168.200.%s' % ip,
                    u'verify-unicast-source': False,
-                   u'type': u'ethernet'} 
+                   u'type': u'ethernet'}
         return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
         content = {u'kind': u'object#ipsec-policy',
@@ -208,7 +208,7 @@ def post(url, request):
         return {'status_code': wexc.HTTPUnauthorized.code}
     if 'interfaces/GigabitEthernet' in url.path:
         return {'status_code': wexc.HTTPNoContent.code}
-    if 'global/local-users' in url.path: 
+    if 'global/local-users' in url.path:
         headers = {'location': '%s/test-user' % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:

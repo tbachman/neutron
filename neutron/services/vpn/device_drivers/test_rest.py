@@ -121,7 +121,7 @@ class TestCsrPostRestApi(unittest.TestCase):
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
-            
+
     def test_post_with_location(self):
         """Create a user and verify that location returned."""
         with HTTMock(csr_request.token, csr_request.post):
@@ -395,6 +395,7 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
 #                'pfs': 'group5',
 #             }
 
+
 class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
     """Test IPSec site-to-site connection REST requests."""
@@ -412,7 +413,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 #                 }
 #             self.csr.create_ipsec_connection(connection_info)
 #             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-        
+
 
 # Functional tests with a real CSR
 if True:
@@ -452,7 +453,6 @@ if True:
             _cleanup_user(self, 'test-user')
             self.addCleanup(_cleanup_user, self, 'test-user')
 
-
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
 
         def setUp(self):
@@ -488,7 +488,7 @@ if True:
 
         def _ensure_no_existing_policy(self):
             """Ensure no IKE policy exists.
-            
+
             Invoked before and after tests, so that we can ensure that
             the CSR is in a clean state. Clear the token, so that test
             cases will act as they would normally, as if no prior access
@@ -506,7 +506,6 @@ if True:
                                          'stack', 'cisco', timeout=1.0)
             self._ensure_no_existing_policy()
             self.addCleanup(self._ensure_no_existing_policy)
-
 
 
 if __name__ == '__main__':
