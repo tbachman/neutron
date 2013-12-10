@@ -208,8 +208,10 @@ def post(url, request):
         return {'status_code': wexc.HTTPUnauthorized.code}
     if 'interfaces/GigabitEthernet' in url.path:
         return {'status_code': wexc.HTTPNoContent.code}
-    if ('global/local-users' in url.path or 
-        'vpn-svc/ipsec/policies' in url.path):
+    if 'global/local-users' in url.path: 
+        headers = {'location': '%s/test-user' % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
+    if 'vpn-svc/ipsec/policies' in url.path:
         return {'status_code': wexc.HTTPCreated.code}
     if 'vpn-svc/ike/policies' in url.path:
         headers = {'location': "%s/2" % url.geturl()}

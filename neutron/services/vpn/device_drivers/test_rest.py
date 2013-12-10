@@ -121,6 +121,17 @@ class TestCsrPostRestApi(unittest.TestCase):
                 payload={'action': 'clear'})
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             self.assertIsNone(content)
+            
+    def test_post_with_location(self):
+        """Create a user and verify that location returned."""
+        with HTTMock(csr_request.token, csr_request.post):
+            location = self.csr.post_request(
+                'global/local-users',
+                payload={'username': 'test-user',
+                         'password': 'pass12345',
+                         'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('global/local-users/test-user', location)
 
 
 class TestCsrPutRestApi(unittest.TestCase):
@@ -417,11 +428,30 @@ if True:
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=1.0)
 
+    def _cleanup_user(for_test, name):
+        """Clean up existing user.
+
+        Invoked before and after tests, so that we can ensure that
+        the CSR is in a clean state. Clear the token, so that test
+        cases will act as they would normally, as if no prior access
+        to the CSR.
+        """
+
+        with HTTMock(csr_request.token, csr_request.delete):
+            for_test.csr.delete_request('global/local-users/test-user')
+            if for_test.csr.status not in (wexc.HTTPNoContent.code,
+                                           wexc.HTTPNotFound.code):
+                for_test.fail("Unable to clean up existing user")
+        for_test.csr.token = None
+
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=1.0)
+            _cleanup_user(self, 'test-user')
+            self.addCleanup(_cleanup_user, self, 'test-user')
+
 
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
 
@@ -442,27 +472,11 @@ if True:
 
     class TestLiveCsrDeleteRestApi(TestCsrDeleteRestApi):
 
-        def _cleanup_user(self):
-            """Clean up existing users.
-
-            Invoked before and after tests, so that we can ensure that
-            the CSR is in a clean state. Clear the token, so that test
-            cases will act as they would normally, as if no prior access
-            to the CSR.
-            """
-
-            with HTTMock(csr_request.token, csr_request.delete):
-                self.csr.delete_request('global/local-users/dummy')
-                if self.csr.status not in (wexc.HTTPNoContent.code,
-                                           wexc.HTTPNotFound.code):
-                    self.fail("Unable to clean up existing user")
-            self.csr.token = None
-
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco', timeout=1.0)
-            self._cleanup_user()
-            self.addCleanup(self._cleanup_user)
+            _cleanup_user(self, 'dummy')
+            self.addCleanup(_cleanup_user, self, 'dummy')
 
     class TestLiveCsrRestApiFailures(TestCsrRestApiFailures):
 
