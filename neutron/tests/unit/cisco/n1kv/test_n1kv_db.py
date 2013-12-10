@@ -102,7 +102,9 @@ class VlanAllocationsTest(base.BaseTestCase):
         super(VlanAllocationsTest, self).setUp()
         n1kv_db_v2.initialize()
         self.session = db.get_session()
-        n1kv_db_v2.sync_vlan_allocations(self.session, VLAN_RANGES)
+        #n1kv_db_v2.sync_vlan_allocations(self.session, VLAN_RANGES)
+        p = _create_test_network_profile_if_not_there(self.session)
+        n1kv_db_v2.sync_vlan_allocations(self.session, p)
 
     def tearDown(self):
         super(VlanAllocationsTest, self).tearDown()
@@ -946,8 +948,7 @@ class ProfileBindingTests(base.BaseTestCase,
                                           test_profile_id,
                                           test_profile_type)
         network_profile = {"network_profile": TEST_NETWORK_PROFILE}
-        test_network_profile = self.create_network_profile(ctx,
-                                                           network_profile)
+        self.create_network_profile(ctx, network_profile)
         binding = n1kv_db_v2.get_profile_binding(ctx.tenant_id,
                                                  test_profile_id)
         self.assertIsNone(n1kv_db_v2.get_profile_binding(
@@ -955,5 +956,3 @@ class ProfileBindingTests(base.BaseTestCase,
             test_profile_id))
         self.assertNotEqual(binding.tenant_id,
                             cisco_constants.TENANT_ID_NOT_SET)
-        n1kv_db_v2.delete_network_profile(self.session,
-                                          test_network_profile['id'])
