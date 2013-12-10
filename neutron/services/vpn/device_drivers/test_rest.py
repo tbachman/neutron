@@ -22,6 +22,13 @@ from webob import exc as wexc
 
 import csr_client
 import csr_mock as csr_request
+from neutron.openstack.common import log as logging
+
+
+# Enables debug logging to console
+if False:
+    logging.CONF.set_override('debug', True)
+    logging.setup('neutron')
 
 
 class TestCsrLoginRestApi(unittest.TestCase):
@@ -336,6 +343,67 @@ class TestCsrRestApiFailures(unittest.TestCase):
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
             self.assertIsNone(content)
 
+
+class TestCsrRestIkePolicyCreate(unittest.TestCase):
+
+    """Test IKE policy create REST requests."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
+
+    # TODO(pcm): delete any created policies in teardown
+
+    def test_create_ike_policy(self):
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            policy_id = u'2'
+            policy_info = {u'priority-id': policy_id,
+                           u'encryption': u'aes',
+                           u'hash': u'sha',
+                           u'dhGroup': 5,
+                           u'lifetime': 3600}
+            location = self.csr.create_ike_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
+            content = self.csr.get_request('vpn-svc/ike/policies/%s' % 
+                                           policy_id)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_policy = {u'kind': u'object#ike-policy',
+                               u'version': u'v1',
+                               u'local-auth-method': u'pre-share'}
+            expected_policy.update(policy_info)
+            self.assertEqual(expected_policy, content)
+
+# IPSec....
+#             policy_id = '22652e97-5cbb-4598-9590-fafba0576265'
+#             policy_info = {
+#                 'policy-id': policy_id,
+#                 'protection-suite': {
+#                     'esp-encryption': 'esp-aes',
+#                     'esp-authentication': 'esp-sha-hmac',
+#                     'ah': 'ah-sha-hmac',
+#                 },
+#                 'lifetime-sec': 3600,
+#                'pfs': 'group5',
+#             }
+
+class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
+
+    """Test IPSec site-to-site connection REST requests."""
+
+    def test_create_ipsec_connection(self):
+        """Create an IPSec connection request."""
+        pass
+#         with HTTMock(csr_request.token, csr_request.post):
+#             connection_info = {
+#                 'vpn-interface-name': 'tunnel1',
+#                 'ipsec-policy-id': "VTI",
+#                 'local-device': {'ip-address': '10.3.0.1/30',
+#                                  'tunnel-ip-address': '172.24.4.23'},
+#                 'remote-device': {'tunnel-ip-address': '172.24.4.11'}
+#                 }
+#             self.csr.create_ipsec_connection(connection_info)
+#             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+        
 
 # Functional tests with a real CSR
 if True:

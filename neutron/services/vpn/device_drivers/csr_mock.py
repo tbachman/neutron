@@ -24,7 +24,10 @@ from httmock import urlmatch, all_requests
 import requests
 from webob import exc as wexc
 
-DEBUG = False  # Turn on to see handler invocation
+from neutron.openstack.common import log as logging
+
+
+LOG = logging.getLogger(__name__)
 
 
 def repeat(n):
@@ -102,8 +105,7 @@ def token_timeout(url, request):
 def timeout_four_times(url, request):
     """Simulated timeout of a normal request four times."""
 
-    if DEBUG:
-        print "DEBUG:Get timeout(4)"
+    LOG.debug("DEBUG:Get timeout(4)")
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     raise requests.Timeout()
@@ -148,8 +150,7 @@ def expired_request(url, request):
 def get(url, request):
     if request.method != 'GET':
         return
-    if DEBUG:
-        print "DEBUG: GET mock for", url
+    LOG.debug("DEBUG: GET mock for %s", url)
     if 'global/host-name' in url.path:
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
@@ -179,19 +180,46 @@ def get(url, request):
                             u'ip-address': u'192.168.200.%s' % ip,
                             u'verify-unicast-source': False,
                             u'type': u'ethernet'}}
+    if 'vpn-svc/ipsec/policies/' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPOk.code,
+                'content': {u'kind': u'object#ipsec-policy',
+                            # FIX...
+                            u'priority-id': '...',
+                            u'version': u'v1',
+                            u'local-auth-method': u'pre-share',
+                            u'encryption': u'aes',
+                            u'hash': u'sha',
+                            u'hGroup': 5,
+                            u'lifetime': 3600}}
+    if 'vpn-svc/ike/policies/' in url.path:
+        if not request.headers.get('X-auth-token', None):
+            return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': wexc.HTTPOk.code,
+                'content': {u'kind': u'object#ike-policy',
+                            u'priority-id': u'2',
+                            u'version': u'v1',
+                            u'local-auth-method': u'pre-share',
+                            u'encryption': u'aes',
+                            u'hash': u'sha',
+                            u'dhGroup': 5,
+                            u'lifetime': 3600}}
+
 
 
 @urlmatch(netloc=r'localhost')
 def post(url, request):
     if request.method != 'POST':
         return
-    if DEBUG:
-        print"DEBUG: POST mock for", url
+    LOG.debug("DEBUG: POST mock for %s", url)
     if 'interfaces/GigabitEthernet' in url.path:
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}
-    if 'global/local-users' in url.path:
+    if ('global/local-users' in url.path or 
+        'vpn-svc/ike/policies' in url.path or
+        'vpn-svc/ipsec/policies' in url.path):
         if not request.headers.get('X-auth-token', None):
             return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPCreated.code}
@@ -201,8 +229,7 @@ def post(url, request):
 def put(url, request):
     if request.method != 'PUT':
         return
-    if DEBUG:
-        print "DEBUG: PUT mock for", url
+    LOG.debug("DEBUG: PUT mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource
@@ -213,8 +240,7 @@ def put(url, request):
 def delete(url, request):
     if request.method != 'DELETE':
         return
-    if DEBUG:
-        print "DEBUG: DELETE mock for", url
+    LOG.debug("DEBUG: DELETE mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource
@@ -225,8 +251,7 @@ def delete(url, request):
 def delete_unknown(url, request):
     if request.method != 'DELETE':
         return
-    if DEBUG:
-        print "DEBUG: DELETE unknown mock for", url
+    LOG.debug("DEBUG: DELETE unknown mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource
@@ -237,8 +262,7 @@ def delete_unknown(url, request):
 def delete_not_allowed(url, request):
     if request.method != 'DELETE':
         return
-    if DEBUG:
-        print "DEBUG: DELETE not allowed mock for", url
+    LOG.debug("DEBUG: DELETE not allowed mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource

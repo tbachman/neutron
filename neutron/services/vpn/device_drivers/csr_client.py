@@ -15,17 +15,17 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
-import logging  # TODO(pcm) remove once integrated in with Neutron
+# import logging  # TODO(pcm) remove once integrated in with Neutron
 import requests
 from webob import exc as wexc
 
 from neutron.openstack.common import jsonutils
-#from neutron.openstack.common import log as logging
+from neutron.openstack.common import log as logging
 
 # TODO(pcm): Remove this once integrated in with Neutron
-if False:  # Debugging
-    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
-                        level=logging.DEBUG)
+# if True:  # Debugging
+#     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] %(message)s',
+#                         level=logging.DEBUG)
 
 LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
@@ -154,8 +154,8 @@ class Client(object):
                             "headers %(headers)s payload %(payload)s"),
                           {'method': method.upper(), 'resource': url,
                            'payload': payload, 'headers': headers})
-                return self._request(method, url, try_num,
-                                     headers=headers, data=payload)
+                response = self._request(method, url, try_num,
+                                         headers=headers, data=payload)
             if self.status == wexc.HTTPRequestTimeout.code:
                 if not self.timeout_interval:
                     break  # Cannot retry when no interval specified
@@ -185,6 +185,12 @@ class Client(object):
         """Perform a DELETE request on a CSR resource."""
         self._do_request('DELETE', resource,
                          more_headers=HEADER_CONTENT_TYPE_JSON)
+
+    def create_ike_policy(self, policy_info):
+        base_ike_policy_info = {u'version': u'v1',
+                                u'local-auth-method': u'pre-share'}
+        policy_info.update(base_ike_policy_info)
+        return self.post_request('vpn-svc/ike/policies', payload=policy_info)
 
 
 if __name__ == '__main__':
