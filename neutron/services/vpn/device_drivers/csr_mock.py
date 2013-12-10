@@ -20,7 +20,7 @@
 """Mock requests to Cisco Cloud Services Router."""
 
 from functools import wraps
-from httmock import urlmatch, all_requests
+from httmock import urlmatch, all_requests, response
 import requests
 from webob import exc as wexc
 
@@ -151,61 +151,52 @@ def get(url, request):
     if request.method != 'GET':
         return
     LOG.debug("DEBUG: GET mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
     if 'global/host-name' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'object#host-name',
-                            u'host-name': u'Router'}}
+        content = {u'kind': u'object#host-name',
+                   u'host-name': u'Router'}
+        return response(wexc.HTTPOk.code, content=content)
     if 'global/local-users' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'collection#local-user',
-                            u'users': ['peter', 'paul', 'mary']}}
+        content = {u'kind': u'collection#local-user',
+                   u'users': ['peter', 'paul', 'mary']}
+        return response(wexc.HTTPOk.code, content=content)
     if 'interfaces/GigabitEthernet' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
         actual_interface = url.path.split('/')[-1]
         ip = actual_interface[-1]
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'object#interface',
-                            u'description': u'Nothing yet',
-                            u'if-name': actual_interface,
-                            u'proxy-arp': True,
-                            u'subnet-mask': u'255.255.255.0',
-                            u'icmp-unreachable': True,
-                            u'nat-direction': u'',
-                            u'icmp-redirects': True,
-                            u'ip-address': u'192.168.200.%s' % ip,
-                            u'verify-unicast-source': False,
-                            u'type': u'ethernet'}}
+        content = {u'kind': u'object#interface',
+                   u'description': u'Nothing yet',
+                   u'if-name': actual_interface,
+                   u'proxy-arp': True,
+                   u'subnet-mask': u'255.255.255.0',
+                   u'icmp-unreachable': True,
+                   u'nat-direction': u'',
+                   u'icmp-redirects': True,
+                   u'ip-address': u'192.168.200.%s' % ip,
+                   u'verify-unicast-source': False,
+                   u'type': u'ethernet'} 
+        return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'object#ipsec-policy',
-                            # FIX...
-                            u'priority-id': '...',
-                            u'version': u'v1',
-                            u'local-auth-method': u'pre-share',
-                            u'encryption': u'aes',
-                            u'hash': u'sha',
-                            u'hGroup': 5,
-                            u'lifetime': 3600}}
+        content = {u'kind': u'object#ipsec-policy',
+                   # FIX...
+                   u'priority-id': '...',
+                   u'version': u'v1',
+                   u'local-auth-method': u'pre-share',
+                   u'encryption': u'aes',
+                   u'hash': u'sha',
+                   u'hGroup': 5,
+                   u'lifetime': 3600}
+        return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ike/policies/' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {u'kind': u'object#ike-policy',
-                            u'priority-id': u'2',
-                            u'version': u'v1',
-                            u'local-auth-method': u'pre-share',
-                            u'encryption': u'aes',
-                            u'hash': u'sha',
-                            u'dhGroup': 5,
-                            u'lifetime': 3600}}
-
+        content = {u'kind': u'object#ike-policy',
+                   u'priority-id': u'2',
+                   u'version': u'v1',
+                   u'local-auth-method': u'pre-share',
+                   u'encryption': u'aes',
+                   u'hash': u'sha',
+                   u'dhGroup': 5,
+                   u'lifetime': 3600}
+        return response(wexc.HTTPOk.code, content=content)
 
 
 @urlmatch(netloc=r'localhost')
@@ -213,16 +204,16 @@ def post(url, request):
     if request.method != 'POST':
         return
     LOG.debug("DEBUG: POST mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
     if 'interfaces/GigabitEthernet' in url.path:
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPNoContent.code}
     if ('global/local-users' in url.path or 
-        'vpn-svc/ike/policies' in url.path or
         'vpn-svc/ipsec/policies' in url.path):
-        if not request.headers.get('X-auth-token', None):
-            return {'status_code': wexc.HTTPUnauthorized.code}
         return {'status_code': wexc.HTTPCreated.code}
+    if 'vpn-svc/ike/policies' in url.path:
+        headers = {'location': "%s/2" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
 
 
 @urlmatch(netloc=r'localhost')
