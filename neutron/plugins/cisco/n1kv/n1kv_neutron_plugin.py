@@ -1439,7 +1439,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param network_profile: network profile dictionary
         :returns: network profile object
         """
-        self._replace_fake_tenant_id_with_real(context)
         session = context.session
         with session.begin(subtransactions=True):
             net_p = super(N1kvNeutronPluginV2, self).create_network_profile(
