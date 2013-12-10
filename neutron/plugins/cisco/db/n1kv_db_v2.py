@@ -1042,6 +1042,7 @@ class NetworkProfile_db_mixin(object):
         :param network_profile: network profile dictionary
         :returns: network profile dictionary
         """
+        self._replace_fake_tenant_id_with_real(context)
         p = network_profile["network_profile"]
         self._validate_network_profile_args(context, p)
         with context.session.begin(subtransactions=True):
@@ -1297,9 +1298,9 @@ class NetworkProfile_db_mixin(object):
                         "4048-4093")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
-        elif segment_type in [n1kv_models_v2.SEGMENT_TYPE_OVERLAY,
-                              n1kv_models_v2.SEGMENT_TYPE_MULTI_SEGMENT,
-                              n1kv_models_v2.SEGMENT_TYPE_TRUNK]:
+        elif segment_type in [c_const.NETWORK_TYPE_OVERLAY,
+                              c_const.NETWORK_TYPE_MULTI_SEGMENT,
+                              c_const.NETWORK_TYPE_TRUNK]:
             profiles = _get_network_profiles()
             if ((seg_min < 4096) or (seg_max > 16000000)):
                 msg = _("segment range is invalid. Valid range is :"
@@ -1348,6 +1349,22 @@ class NetworkProfile_db_mixin(object):
                         filter_by(name=name).one())
             except exc.NoResultFound:
                 raise c_exc.NetworkProfileNotFound(profile=name)
+
+    def _replace_fake_tenant_id_with_real(self, context):
+        """
+        Replace default tenant-id with admin tenant-ids.
+
+        Default tenant-ids are populated in profile bindings when plugin is
+        initialized. Replace these tenant-ids with admin's tenant-id.
+        :param context: neutron api request context
+        """
+        if context.is_admin and context.tenant_id:
+            tenant_id = context.tenant_id
+            db_session = context.session
+            with db_session.begin(subtransactions=True):
+                (db_session.query(n1kv_models_v2.ProfileBinding).
+                 filter_by(tenant_id=c_const.TENANT_ID_NOT_SET).
+                 update({'tenant_id': tenant_id}))
 
 
 class PolicyProfile_db_mixin(object):
@@ -1526,22 +1543,6 @@ class PolicyProfile_db_mixin(object):
                          in_(a_set & b_set), n1kv_models_v2.ProfileBinding.
                          tenant_id == c_const.TENANT_ID_NOT_SET)).
              delete(synchronize_session="fetch"))
-
-    def _replace_fake_tenant_id_with_real(self, context):
-        """
-        Replace default tenant-id with admin tenant-ids.
-
-        Default tenant-ids are populated in profile bindings when plugin is
-        initialized. Replace these tenant-ids with admin's tenant-id.
-        :param context: neutron api request context
-        """
-        if context.is_admin and context.tenant_id:
-            tenant_id = context.tenant_id
-            db_session = context.session
-            with db_session.begin(subtransactions=True):
-                (db_session.query(n1kv_models_v2.ProfileBinding).
-                 filter_by(tenant_id=c_const.TENANT_ID_NOT_SET).
-                 update({'tenant_id': tenant_id}))
 
     def _add_policy_profile(self,
                             policy_profile_name,
