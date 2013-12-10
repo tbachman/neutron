@@ -109,7 +109,7 @@ class OVS_Lib_Test(base.BaseTestCase):
     def setUp(self):
         super(OVS_Lib_Test, self).setUp()
         self.BR_NAME = "br-int"
-        self.TO = "--timeout=2"
+        self.TO = "--timeout=10"
 
         self.mox = mox.Mox()
         self.root_helper = 'sudo'
@@ -161,7 +161,11 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.br.reset_bridge()
         self.mox.VerifyAll()
 
-    def test_delete_port(self):
+    def _build_timeout_opt(self, exp_timeout):
+        return "--timeout=%d" % exp_timeout if exp_timeout else self.TO
+
+    def _test_delete_port(self, exp_timeout=None):
+        exp_timeout_str = self._build_timeout_opt(exp_timeout)
         pname = "tap5"
         utils.execute(["ovs-vsctl", self.TO, "--", "--if-exists",
                        "del-port", self.BR_NAME, pname],
@@ -170,6 +174,17 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.mox.ReplayAll()
         self.br.delete_port(pname)
         self.mox.VerifyAll()
+
+    def test_delete_port(self):
+        self._test_delete_port()
+
+    def test_call_command_non_default_timeput(self):
+        # This test is only for verifying a non-default timeout
+        # is correctly applied. Does not need to be repeated for
+        # every ovs_lib method
+        new_timeout = 5
+        self.br.vsctl_timeout = new_timeout
+        self._test_delete_port(new_timeout)
 
     def test_add_flow(self):
         ofport = "99"
@@ -577,7 +592,7 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.assertEqual(port_name, 'dhc5c1321a7-c7')
         self.assertEqual(ofport, 2)
 
-    def test_iface_to_br(self):
+    def _test_iface_to_br(self, exp_timeout=None):
         iface = 'tap0'
         br = 'br-int'
         root_helper = 'sudo'
@@ -587,6 +602,14 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.mox.ReplayAll()
         self.assertEqual(ovs_lib.get_bridge_for_iface(root_helper, iface), br)
         self.mox.VerifyAll()
+
+    def test_iface_to_br(self):
+        self._test_iface_to_br()
+
+    def test_iface_to_br_non_default_timeout(self):
+        new_timeout = 5
+        cfg.CONF.set_override('ovs_vsctl_timeout', new_timeout)
+        self._test_iface_to_br(new_timeout)
 
     def test_iface_to_br_handles_ovs_vsctl_exception(self):
         iface = 'tap0'
@@ -621,7 +644,7 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.br.delete_ports(all_ports=False)
         self.mox.VerifyAll()
 
-    def test_get_bridges(self):
+    def _test_get_bridges(self, exp_timeout=None):
         bridges = ['br-int', 'br-ex']
         root_helper = 'sudo'
         utils.execute(["ovs-vsctl", self.TO, "list-br"],
@@ -630,6 +653,14 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.mox.ReplayAll()
         self.assertEqual(ovs_lib.get_bridges(root_helper), bridges)
         self.mox.VerifyAll()
+
+    def test_get_bridges(self):
+        self._test_get_bridges()
+
+    def test_get_bridges_not_default_timeout(self):
+        new_timeout = 5
+        cfg.CONF.set_override('ovs_vsctl_timeout', new_timeout)
+        self._test_get_bridges(new_timeout)
 
     def test_get_local_port_mac_succeeds(self):
         with mock.patch('neutron.agent.linux.ip_lib.IpLinkCommand',
