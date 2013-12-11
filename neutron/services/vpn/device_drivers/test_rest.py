@@ -154,6 +154,26 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             self.assertIsNone(location)
         
+    def test_post_already_exists(self):
+        """Negative test of a duplicate POST."""
+        with HTTMock(csr_request.token, csr_request.post_first,
+                     csr_request.post_second):
+            location = self.csr.post_request(
+                'global/local-users',
+                payload={'username': 'test-user',
+                         'password': 'pass12345',
+                         'privilege': 15})
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('global/local-users/test-user', location)
+            
+            location = self.csr.post_request(
+                'global/local-users',
+                payload={'username': 'test-user',
+                         'password': 'pass12345',
+                         'privilege': 15})
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            self.assertIsNone(location)
+        
 
 class TestCsrPutRestApi(unittest.TestCase):
 

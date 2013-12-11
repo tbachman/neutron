@@ -222,6 +222,26 @@ def post(url, request):
         return response(wexc.HTTPCreated.code, headers=headers)
 
 
+@filter(['post'], 'global/local-users')
+@repeat(1)
+@urlmatch(netloc=r'localhost')
+def post_first(url, request):
+    LOG.debug("DEBUG: POST first of duplicate mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    headers = {'location': '%s/test-user' % url.geturl()}
+    return response(wexc.HTTPCreated.code, headers=headers)
+
+    
+@filter(['post'], 'global/local-users')
+@urlmatch(netloc=r'localhost')
+def post_second(url, request):
+    LOG.debug("DEBUG: POST second of duplicate mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPNotFound.code}            
+
+
 @urlmatch(netloc=r'localhost')
 def put(url, request):
     if request.method != 'PUT':
