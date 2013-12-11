@@ -62,14 +62,15 @@ class Client(object):
         try:
             response = requests.request(method, url, verify=False, **kwargs)
         except (Timeout, SSLError) as te:
-            self.status = wexc.HTTPRequestTimeout.code
+            # Should never see SSLError, unless requests package is old (<2.0)
             LOG.warning(_("%(method)s: Request timeout%(ssl)s #%(attempt)d "
-                          "(%(interval)f) for CSR(%(host)s)"),
+                          "(%(interval).3f sec) for CSR(%(host)s)"),
                         {'method': method, 'attempt': attempt + 1,
                          'interval': kwargs.get('timeout', 0.0),
                          'ssl': '(SSLError)' 
                              if isinstance(te, SSLError) else '',
                          'host': self.host})
+            self.status = wexc.HTTPRequestTimeout.code
         except ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
                         "%(error)s"),
@@ -142,17 +143,16 @@ class Client(object):
         headers = {'Accept': 'application/json', 'X-auth-token': self.token}
         if more_headers:
             headers.update(more_headers)
-        LOG.debug(_("%(method)s: Request for %(resource)s headers: "
-                    "%(headers)s payload: %(payload)s"),
-                  {'method': method.upper(), 'resource': url,
-                   'payload': payload, 'headers': headers})
         if payload:
             payload = jsonutils.dumps(payload)
         try_num = 0
         timeout = self.timeout_interval
         while try_num < self.max_tries:
-            # TODO(pcm): Fix timeout so no SSLError thrown!
-            response = self._request(method, url, try_num, # timeout=timeout,
+            LOG.debug(_("%(method)s: Request for %(resource)s headers: "
+                        "%(headers)s payload: %(payload)s"),
+                      {'method': method.upper(), 'resource': url,
+                       'payload': payload, 'headers': headers})
+            response = self._request(method, url, try_num, timeout=timeout,
                                      headers=headers, data=payload)
             if self.status == wexc.HTTPUnauthorized.code:
                 if not self.authenticate():

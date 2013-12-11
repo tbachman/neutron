@@ -156,8 +156,26 @@ class TestCsrPostRestApi(unittest.TestCase):
         
     def test_post_already_exists(self):
         """Negative test of a duplicate POST."""
-        with HTTMock(csr_request.token, csr_request.post_first,
-                     csr_request.post_second):
+        with HTTMock(csr_request.token, csr_request.post):
+                location = self.csr.post_request(
+                    'global/local-users',
+                    payload={'username': 'test-user',
+                             'password': 'pass12345',
+                             'privilege': 15})
+                self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+                self.assertIn('global/local-users/test-user', location)
+        with HTTMock(csr_request.token, csr_request.post_duplicate):
+                location = self.csr.post_request(
+                    'global/local-users',
+                    payload={'username': 'test-user',
+                             'password': 'pass12345',
+                             'privilege': 15})
+                self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
+                self.assertIsNone(location)
+        
+    def test_post_changing_value(self):
+        """Negative test of a POST trying to change a value."""
+        with HTTMock(csr_request.token, csr_request.post):
             location = self.csr.post_request(
                 'global/local-users',
                 payload={'username': 'test-user',
@@ -165,11 +183,11 @@ class TestCsrPostRestApi(unittest.TestCase):
                          'privilege': 15})
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('global/local-users/test-user', location)
-            
+        with HTTMock(csr_request.token, csr_request.post_change_attempt):
             location = self.csr.post_request(
                 'global/local-users',
                 payload={'username': 'test-user',
-                         'password': 'pass12345',
+                         'password': 'changed',
                          'privilege': 15})
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
             self.assertIsNone(location)
@@ -414,6 +432,7 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             location = self.csr.create_ike_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
+            # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ike-policy',
@@ -421,6 +440,23 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
                                u'local-auth-method': u'pre-share'}
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
+
+    def test_create_duplicate_ike_policy(self):
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            policy_id = u'2'
+            policy_info = {u'priority-id': policy_id,
+                           u'encryption': u'aes',
+                           u'hash': u'sha',
+                           u'dhGroup': 5,
+                           u'lifetime': 3600}
+            location = self.csr.create_ike_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
+        with HTTMock(csr_request.token, csr_request.post_duplicate):
+            location = self.csr.create_ike_policy(policy_info)
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
+            self.assertIsNone(location)
+
 
 # IPSec....
 #             policy_id = '22652e97-5cbb-4598-9590-fafba0576265'
@@ -457,17 +493,22 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
 # Functional tests with a real CSR
 if True:
+    # TODO(pcm): Set to 1.0, once resolve issues with CSR slowness and
+    # timeout handling for POST operations.
+    INITIAL_TIMEOUT_DELAY = 7.0
     class TestLiveCsrLoginRestApi(TestCsrLoginRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
 
     class TestLiveCsrGetRestApi(TestCsrGetRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
 
     def _cleanup_user(for_test, name):
         """Clean up existing user.
@@ -489,7 +530,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
             _cleanup_user(self, 'test-user')
             self.addCleanup(_cleanup_user, self, 'test-user')
 
@@ -506,7 +548,8 @@ if True:
             """
 
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
             self._save_resources()
             self.addCleanup(self._restore_resources, 'stack', 'cisco')
 
@@ -514,7 +557,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
             _cleanup_user(self, 'dummy')
             self.addCleanup(_cleanup_user, self, 'dummy')
 
@@ -522,7 +566,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
 
     class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
 
@@ -543,7 +588,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
-                                         'stack', 'cisco', timeout=1.0)
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
             self._ensure_no_existing_policy()
             self.addCleanup(self._ensure_no_existing_policy)
 
