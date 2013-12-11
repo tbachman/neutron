@@ -209,6 +209,10 @@ def post(url, request):
     if 'interfaces/GigabitEthernet' in url.path:
         return {'status_code': wexc.HTTPNoContent.code}
     if 'global/local-users' in url.path:
+        if 'username' not in request.body:
+            return {'status_code': wexc.HTTPBadRequest.code}
+        if '"privilege": 20' in request.body:
+            return {'status_code': wexc.HTTPBadRequest.code}            
         headers = {'location': '%s/test-user' % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:

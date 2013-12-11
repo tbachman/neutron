@@ -133,13 +133,24 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('global/local-users/test-user', location)
 
-    def not_test_post_missing_required_attribute(self):
+    def test_post_missing_required_attribute(self):
         """Negative test of POST with missing mandatory info."""
         with HTTMock(csr_request.token, csr_request.post):
             location = self.csr.post_request(
                 'global/local-users',
                 payload={'password': 'pass12345',
                          'privilege': 15})
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
+            self.assertIsNone(location)
+        
+    def test_post_invalid_attribute(self):
+        """Negative test of POST with invalid info."""
+        with HTTMock(csr_request.token, csr_request.post):
+            location = self.csr.post_request(
+                'global/local-users',
+                payload={'username': 'test-user',
+                         'password': 'pass12345',
+                         'privilege': 20})
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             self.assertIsNone(location)
         
@@ -275,7 +286,6 @@ class TestCsrDeleteRestApi(unittest.TestCase):
 
     def _make_dummy_user(self):
         """Create a user that will be later deleted."""
-
         self.csr.post_request('global/local-users',
                               payload={'username': 'dummy',
                                        'password': 'dummy',

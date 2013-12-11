@@ -63,12 +63,13 @@ class Client(object):
             response = requests.request(method, url, verify=False, **kwargs)
         except (Timeout, SSLError) as te:
             self.status = wexc.HTTPRequestTimeout.code
-            LOG.debug(_("%(method)s: Request timeout%(ssl)s #%(attempt)d "
-                        "(%(interval)f) for CSR(%(host)s)"),
-                      {'method': method, 'attempt': attempt + 1,
-                       'interval': kwargs.get('timeout', 0.0),
-                       'ssl': '(SSLError)' if isinstance(te, SSLError) else '',
-                       'host': self.host})
+            LOG.warning(_("%(method)s: Request timeout%(ssl)s #%(attempt)d "
+                          "(%(interval)f) for CSR(%(host)s)"),
+                        {'method': method, 'attempt': attempt + 1,
+                         'interval': kwargs.get('timeout', 0.0),
+                         'ssl': '(SSLError)' 
+                             if isinstance(te, SSLError) else '',
+                         'host': self.host})
         except ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
                         "%(error)s"),
@@ -150,7 +151,8 @@ class Client(object):
         try_num = 0
         timeout = self.timeout_interval
         while try_num < self.max_tries:
-            response = self._request(method, url, try_num, timeout=timeout,
+            # TODO(pcm): Fix timeout so no SSLError thrown!
+            response = self._request(method, url, try_num, # timeout=timeout,
                                      headers=headers, data=payload)
             if self.status == wexc.HTTPUnauthorized.code:
                 if not self.authenticate():
