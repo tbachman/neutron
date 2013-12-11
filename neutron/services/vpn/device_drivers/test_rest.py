@@ -27,7 +27,7 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 # Enables debug logging to console
-if False:
+if True:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
 
@@ -133,6 +133,16 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('global/local-users/test-user', location)
 
+    def not_test_post_missing_required_attribute(self):
+        """Negative test of POST with missing mandatory info."""
+        with HTTMock(csr_request.token, csr_request.post):
+            location = self.csr.post_request(
+                'global/local-users',
+                payload={'password': 'pass12345',
+                         'privilege': 15})
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
+            self.assertIsNone(location)
+        
 
 class TestCsrPutRestApi(unittest.TestCase):
 
@@ -439,10 +449,10 @@ if True:
         """
 
         with HTTMock(csr_request.token, csr_request.delete):
-            for_test.csr.delete_request('global/local-users/test-user')
+            for_test.csr.delete_request('global/local-users/%s' % name)
             if for_test.csr.status not in (wexc.HTTPNoContent.code,
                                            wexc.HTTPNotFound.code):
-                for_test.fail("Unable to clean up existing user")
+                for_test.fail("Unable to clean up existing user '%s'" % name)
         for_test.csr.token = None
 
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):

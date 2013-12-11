@@ -16,6 +16,7 @@
 #
 # @author: Paul Michali, Cisco Systems, Inc.
 import requests
+from requests.exceptions import ConnectionError, Timeout, SSLError
 from webob import exc as wexc
 
 from neutron.openstack.common import jsonutils
@@ -59,16 +60,16 @@ class Client(object):
     def _request(self, method, url, attempt, **kwargs):
         """Perform REST request and save response info."""
         try:
-            response = requests.request(method, url, verify=False,
-                                        timeout=None,
-                                        **kwargs)
-        except requests.Timeout:
+            response = requests.request(method, url, verify=False, **kwargs)
+        except (Timeout, SSLError) as te:
             self.status = wexc.HTTPRequestTimeout.code
-            LOG.debug(_("%(method)s: Request timeout #%(attempt)d "
+            LOG.debug(_("%(method)s: Request timeout%(ssl)s #%(attempt)d "
                         "(%(interval)f) for CSR(%(host)s)"),
                       {'method': method, 'attempt': attempt + 1,
-                       'interval': self.timeout_interval, 'host': self.host})
-        except requests.ConnectionError as ce:
+                       'interval': kwargs.get('timeout', 0.0),
+                       'ssl': '(SSLError)' if isinstance(te, SSLError) else '',
+                       'host': self.host})
+        except ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
                         "%(error)s"),
                       {'method': method, 'host': self.host, 'error': ce})
@@ -103,7 +104,7 @@ class Client(object):
         # QUESTION: Should we display user/password in log?
         LOG.debug(_("Authenticate request %(resource)s as %(auth)s"),
                   {'resource': url, 'auth': self.auth})
-        response = self._request("POST", url, 1,
+        response = self._request("POST", url, attempt=1,
                                  headers=headers, auth=self.auth)
         if response:
             self.token = response['token-id']
@@ -140,15 +141,16 @@ class Client(object):
         headers = {'Accept': 'application/json', 'X-auth-token': self.token}
         if more_headers:
             headers.update(more_headers)
-        LOG.debug(_("%(method)s: Request for %(resource)s headers "
-                    "%(headers)s payload %(payload)s"),
+        LOG.debug(_("%(method)s: Request for %(resource)s headers: "
+                    "%(headers)s payload: %(payload)s"),
                   {'method': method.upper(), 'resource': url,
                    'payload': payload, 'headers': headers})
         if payload:
             payload = jsonutils.dumps(payload)
         try_num = 0
+        timeout = self.timeout_interval
         while try_num < self.max_tries:
-            response = self._request(method, url, try_num,
+            response = self._request(method, url, try_num, timeout=timeout,
                                      headers=headers, data=payload)
             if self.status == wexc.HTTPUnauthorized.code:
                 if not self.authenticate():
@@ -164,7 +166,7 @@ class Client(object):
                 if not self.timeout_interval:
                     break  # Cannot retry when no interval specified
                 try_num += 1
-                self.timeout_interval *= 2.0
+                timeout *= 2.0
             else:
                 return response
         LOG.error(_("%(method)s: Request timeout %(tries)d times "
