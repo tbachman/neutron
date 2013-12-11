@@ -104,7 +104,7 @@ class Client(object):
         headers.update(HEADER_CONTENT_TYPE_JSON)
         self.token = None
         # QUESTION: Should we display user/password in log?
-        LOG.debug(_("Authenticate request %(resource)s as %(auth)s"),
+        LOG.debug(_("Authenticating request %(resource)s as %(auth)s"),
                   {'resource': url, 'auth': self.auth})
         response = self._request("POST", url, attempt=1,
                                  headers=headers, auth=self.auth)
@@ -152,8 +152,9 @@ class Client(object):
                         "%(headers)s payload: %(payload)s"),
                       {'method': method.upper(), 'resource': url,
                        'payload': payload, 'headers': headers})
-            response = self._request(method, url, try_num, timeout=timeout,
-                                     headers=headers, data=payload)
+            response = self._request(method, url, try_num,
+                                     timeout=timeout, data=payload,
+                                     headers=headers)
             if self.status == wexc.HTTPUnauthorized.code:
                 if not self.authenticate():
                     return
@@ -163,7 +164,8 @@ class Client(object):
                           {'method': method.upper(), 'resource': url,
                            'payload': payload, 'headers': headers})
                 response = self._request(method, url, try_num,
-                                         headers=headers, data=payload)
+                                         timeout=timeout, data=payload,
+                                         headers=headers)
             if self.status == wexc.HTTPRequestTimeout.code:
                 if not self.timeout_interval:
                     break  # Cannot retry when no interval specified
