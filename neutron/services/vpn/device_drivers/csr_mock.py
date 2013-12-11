@@ -212,13 +212,16 @@ def post(url, request):
         if 'username' not in request.body:
             return {'status_code': wexc.HTTPBadRequest.code}
         if '"privilege": 20' in request.body:
-            return {'status_code': wexc.HTTPBadRequest.code}            
+            return {'status_code': wexc.HTTPBadRequest.code}
         headers = {'location': '%s/test-user' % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:
         return {'status_code': wexc.HTTPCreated.code}
     if 'vpn-svc/ike/policies' in url.path:
         headers = {'location': "%s/2" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
+    if 'vpn-svc/site-to-site' in url.path:
+        headers = {'location': "%s/Tunnel0" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
 
 
@@ -228,14 +231,15 @@ def post_change_attempt(url, request):
     LOG.debug("DEBUG: POST change value mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPNotFound.code}            
+    return {'status_code': wexc.HTTPNotFound.code}
+
 
 @urlmatch(netloc=r'localhost')
 def post_duplicate(url, request):
     LOG.debug("DEBUG: POST duplicate mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code}            
+    return {'status_code': wexc.HTTPBadRequest.code}
 
 
 @urlmatch(netloc=r'localhost')

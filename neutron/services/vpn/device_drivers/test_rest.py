@@ -142,7 +142,7 @@ class TestCsrPostRestApi(unittest.TestCase):
                          'privilege': 15})
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             self.assertIsNone(location)
-        
+
     def test_post_invalid_attribute(self):
         """Negative test of POST with invalid info."""
         with HTTMock(csr_request.token, csr_request.post):
@@ -153,10 +153,10 @@ class TestCsrPostRestApi(unittest.TestCase):
                          'privilege': 20})
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             self.assertIsNone(location)
-        
+
     def test_post_already_exists(self):
         """Negative test of a duplicate POST.
-        
+
         Uses the lower level _do_request() API to just perform the POST and
         obtain the response, without any error processing.
         """
@@ -186,7 +186,7 @@ class TestCsrPostRestApi(unittest.TestCase):
     # and raise an exception.
 #     def test_post_retry(self):
 #         """Test of a retry for a timed-out POST.
-#         
+#
 #         If a POST is performed and the server does not respond within the
 #         timeout period, the POST will be re-attempted (with a longer timeout
 #         interval). This second attempt will likely encounter a 400 error,
@@ -396,7 +396,7 @@ class TestCsrDeleteRestApi(unittest.TestCase):
 class TestCsrRestApiFailures(unittest.TestCase):
 
     """Test failure cases common for all REST APIs.
-    
+
     Uses the lower level _do_request() to just perform the operation and get
     the result, without any error handling.
     """
@@ -518,20 +518,27 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
     """Test IPSec site-to-site connection REST requests."""
 
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
+
     def test_create_ipsec_connection(self):
         """Create an IPSec connection request."""
-        pass
-#         with HTTMock(csr_request.token, csr_request.post):
-#             connection_info = {
-#                 'vpn-interface-name': 'tunnel1',
-#                 'ipsec-policy-id': "VTI",
-#                 'local-device': {'ip-address': '10.3.0.1/30',
-#                                  'tunnel-ip-address': '172.24.4.23'},
-#                 'remote-device': {'tunnel-ip-address': '172.24.4.11'}
-#                 }
-#             self.csr.create_ipsec_connection(connection_info)
-#             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+        with HTTMock(csr_request.token, csr_request.post):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel0',
+                u'ipsec-policy-id': u'VTI',
+                u'ip-version': u'ipv4',
+                u'local-device': {u'ip-address': u'10.3.0.1/30',
+                                  u'tunnel-ip-address': u'172.24.4.23'},
+                u'remote-device': {u'tunnel-ip-address': '172.24.4.11'}
+            }
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
 
+    # TODO(pcm): Tests for no IPSec profile, no PSK, mismatched IP addr and
+    # ip-version, another tunnel trying to use exlusive resources of the
+    # first tunnel.
 
 # Functional tests with a real CSR
 if True:
@@ -539,6 +546,7 @@ if True:
     # timeout handling for PUT operations, which are taking up to 6 secs.
     # Should take 1.x seconds.
     INITIAL_TIMEOUT_DELAY = 7.0
+
     class TestLiveCsrLoginRestApi(TestCsrLoginRestApi):
 
         def setUp(self):
@@ -554,7 +562,7 @@ if True:
                                          timeout=INITIAL_TIMEOUT_DELAY)
 
     def _cleanup_user(for_test, name):
-        """Clean up existing user.
+        """Ensure that the specified user does not exist.
 
         Invoked before and after tests, so that we can ensure that
         the CSR is in a clean state. Clear the token, so that test
@@ -615,7 +623,7 @@ if True:
     class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
 
         def _ensure_no_existing_policy(self):
-            """Ensure no IKE policy exists.
+            """Ensure that the IKE policy does not exists.
 
             Invoked before and after tests, so that we can ensure that
             the CSR is in a clean state. Clear the token, so that test
@@ -626,7 +634,7 @@ if True:
                 self.csr.delete_request('vpn-svc/ike/policies/2')
                 if self.csr.status not in (wexc.HTTPNoContent.code,
                                            wexc.HTTPNotFound.code):
-                    self.fail("Unable to clean up existing user")
+                    self.fail("Unable to clean up existing policy")
             self.csr.token = None
 
         def setUp(self):
@@ -635,6 +643,31 @@ if True:
                                          timeout=INITIAL_TIMEOUT_DELAY)
             self._ensure_no_existing_policy()
             self.addCleanup(self._ensure_no_existing_policy)
+
+    class TestLiveCsrRestIPSecConnectionCreate(
+            TestCsrRestIPSecConnectionCreate):
+
+        def _ensure_no_existing_connection(self):
+            """Ensure that the IPSec connection does not exists.
+
+            Invoked before and after tests, so that we can ensure that
+            the CSR is in a clean state. Clear the token, so that test
+            cases will act as they would normally, as if no prior access
+            to the CSR.
+            """
+            with HTTMock(csr_request.token, csr_request.delete):
+                self.csr.delete_request('vpn-svc/site-to-site/Tunnel0')
+                if self.csr.status not in (wexc.HTTPNoContent.code,
+                                           wexc.HTTPNotFound.code):
+                    self.fail("Unable to clean up existing connection")
+            self.csr.token = None
+
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20',
+                                         'stack', 'cisco',
+                                         timeout=INITIAL_TIMEOUT_DELAY)
+            self._ensure_no_existing_connection()
+            self.addCleanup(self._ensure_no_existing_connection)
 
 
 if __name__ == '__main__':

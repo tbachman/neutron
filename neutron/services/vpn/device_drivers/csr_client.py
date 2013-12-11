@@ -22,6 +22,7 @@ from webob import exc as wexc
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
+# TODO(pcm): Redesign for asynchronous operation.
 
 LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
@@ -67,8 +68,8 @@ class Client(object):
                           "(%(interval).3f sec) for CSR(%(host)s)"),
                         {'method': method, 'attempt': attempt + 1,
                          'interval': kwargs.get('timeout', 0.0),
-                         'ssl': '(SSLError)' 
-                             if isinstance(te, SSLError) else '',
+                         'ssl': '(SSLError)'
+                         if isinstance(te, SSLError) else '',
                          'host': self.host})
             self.status = wexc.HTTPRequestTimeout.code
         except ConnectionError as ce:
@@ -201,6 +202,12 @@ class Client(object):
                                 u'local-auth-method': u'pre-share'}
         policy_info.update(base_ike_policy_info)
         return self.post_request('vpn-svc/ike/policies', payload=policy_info)
+
+    def create_ipsec_connection(self, connection_info):
+        base_connection_info = {u'vpn-type': u'site-to-site'}
+        connection_info.update(base_connection_info)
+        return self.post_request('vpn-svc/site-to-site',
+                                 payload=connection_info)
 
 
 if __name__ == '__main__':
