@@ -64,7 +64,7 @@ class Client(object):
             LOG.debug(_("%(method)s: Request for %(resource)s headers: "
                         "%(headers)s payload: %(payload)s"),
                       {'method': method.upper(), 'resource': url,
-                       'payload': kwargs.get('payload'),
+                       'payload': kwargs.get('data'),
                        'headers': kwargs.get('headers')})
             response = requests.request(method, url, verify=False,
                                         timeout=self.timeout, **kwargs)
@@ -90,6 +90,7 @@ class Client(object):
             self.status = wexc.HTTPInternalServerError.code
         else:
             self.status = response.status_code
+            LOG.debug("Response content: %s", response.content)
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
                       {'method': method, 'status': self.status})
             return self._response_info_for(response, method, url)
@@ -98,12 +99,7 @@ class Client(object):
         return self.token
 
     def authenticate(self):
-        """Obtain a token to use for subsequent CSR REST requests.
-
-        This does not use a timeout with retry count, like _do_request(). Was
-        seeing that a ConnectionError, instead of a Timeout exception occuring,
-        when using a one second timeout.
-        """
+        """Obtain a token to use for subsequent CSR REST requests."""
 
         url = URL_BASE % {'host': self.host, 'resource': 'auth/token-services'}
         headers = {'Content-Length': '0',
@@ -125,8 +121,8 @@ class Client(object):
                     "[%(status)s]"),
                   {'host': self.host, 'status': self.status})
 
-    def _do_request(self, method, resource,
-                    payload=None, more_headers=None, full_url=False):
+    def _do_request(self, method, resource, payload=None, more_headers=None,
+                    full_url=False):
         """Perform a REST request to a CSR resource.
 
         If this is the first time interacting with the CSR, a token will
@@ -153,7 +149,7 @@ class Client(object):
             if not self.authenticate():
                 return
             headers['X-auth-token'] = self.token
-            response = self._request(method, url, data=payload, 
+            response = self._request(method, url, data=payload,
                                      headers=headers)
         if self.status != wexc.HTTPRequestTimeout.code:
             return response
@@ -182,8 +178,16 @@ class Client(object):
     def create_ike_policy(self, policy_info):
         base_ike_policy_info = {u'version': u'v1',
                                 u'local-auth-method': u'pre-share'}
-        policy_info.update(base_ike_policy_info)
-        return self.post_request('vpn-svc/ike/policies', payload=policy_info)
+        base_ike_policy_info.update(policy_info)
+        return self.post_request('vpn-svc/ike/policies',
+                                 payload=base_ike_policy_info)
+
+    def create_ipsec_policy(self, policy_info):
+        base_ipsec_policy_info = {u'mode': u'tunnel',
+                                  u'anti-replay-window-size': u'Disable'}
+        base_ipsec_policy_info.update(policy_info)
+        return self.post_request('vpn-svc/ipsec/policies',
+                                 payload=base_ipsec_policy_info)
 
     def create_ipsec_connection(self, connection_info):
         base_connection_info = {u'vpn-type': u'site-to-site'}

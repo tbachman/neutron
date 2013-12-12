@@ -517,7 +517,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """
         LOG.debug("PCM: Commented out _update_nat()")
         return
-    
+
         local_cidr = vpnservice['subnet']['cidr']
         router_id = vpnservice['router_id']
         for ipsec_site_connection in vpnservice['ipsec_site_connections']:

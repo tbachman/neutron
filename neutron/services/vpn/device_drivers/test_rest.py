@@ -459,18 +459,71 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             self.assertIsNone(location)
 
 
-# IPSec....
-#             policy_id = '22652e97-5cbb-4598-9590-fafba0576265'
-#             policy_info = {
-#                 'policy-id': policy_id,
-#                 'protection-suite': {
-#                     'esp-encryption': 'esp-aes',
-#                     'esp-authentication': 'esp-sha-hmac',
-#                     'ah': 'ah-sha-hmac',
-#                 },
-#                 'lifetime-sec': 3600,
-#                'pfs': 'group5',
-#             }
+class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
+
+    """Test IPSec policy create REST requests."""
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
+
+    def test_create_ipsec_policy(self):
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            policy_id = u'123'
+            policy_info = {
+                u'policy-id': policy_id,
+                u'protection-suite': {
+                    u'esp-encryption': u'esp-aes',
+                    u'esp-authentication': u'esp-sha-hmac',
+                    u'ah': u'ah-sha-hmac',
+                },
+                u'lifetime-sec': 120,
+                u'pfs': u'group5',
+                # TODO(pcm): Remove when CSR fixes 'Disable'
+                u'anti-replay-window-size': u'128'
+            }
+            location = self.csr.create_ipsec_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_policy = {u'kind': u'object#ipsec-policy',
+                               u'mode': u'tunnel',
+                               # TODO(pcm): Uncomment, when fixed on CSR
+                               # u'anti-replay-window-size': 'Disable',
+                               u'lifetime-kb': None,
+                               u'idle-time': None}
+            LOG.debug("ACTUAL %s", content)
+            expected_policy.update(policy_info)
+            self.assertEqual(expected_policy, content)
+
+    def test_create_ipsec_policy_with_defaults(self):
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            policy_id = u'321'
+            policy_info = {
+                u'policy-id': policy_id,
+                # Override, as we normally force this to 'Disable'
+                u'anti-replay-window-size': u'64',
+            }
+            location = self.csr.create_ipsec_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_policy = {u'kind': u'object#ipsec-policy',
+                               u'policy-id': policy_id,
+                               u'mode': u'tunnel',
+                               u'protection-suite': {},
+                               u'lifetime-sec': None,
+                               u'pfs': u'Disable',
+                               u'anti-replay-window-size': u'64',
+                               u'lifetime-kb': None,
+                               u'idle-time': None}
+            LOG.debug("ACTUAL %s", content)
+            self.assertEqual(expected_policy, content)
+
+    # TODO(pcm) try POST with all defaults and see if reads back values
 
 
 class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
@@ -520,8 +573,8 @@ if True:
                                          'stack', 'cisco',
                                          timeout=CSR_TIMEOUT)
 
-    def _cleanup_user(for_test, name):
-        """Ensure that the specified user does not exist.
+    def _cleanup_resource(for_test, resource):
+        """Ensure that the specified resource does not exist.
 
         Invoked before and after tests, so that we can ensure that
         the CSR is in a clean state. Clear the token, so that test
@@ -530,10 +583,10 @@ if True:
         """
 
         with HTTMock(csr_request.token, csr_request.delete):
-            for_test.csr.delete_request('global/local-users/%s' % name)
+            for_test.csr.delete_request(resource)
             if for_test.csr.status not in (wexc.HTTPNoContent.code,
                                            wexc.HTTPNotFound.code):
-                for_test.fail("Unable to clean up existing user '%s'" % name)
+                for_test.fail("Unable to clean up resource '%s'" % resource)
         for_test.csr.token = None
 
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):
@@ -542,8 +595,9 @@ if True:
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
                                          timeout=CSR_TIMEOUT)
-            _cleanup_user(self, 'test-user')
-            self.addCleanup(_cleanup_user, self, 'test-user')
+            _cleanup_resource(self, 'global/local-users/test-user')
+            self.addCleanup(_cleanup_resource, self,
+                            'global/local-users/test-user')
 
     class TestLiveCsrPutRestApi(TestCsrPutRestApi):
 
@@ -569,8 +623,9 @@ if True:
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
                                          timeout=CSR_TIMEOUT)
-            _cleanup_user(self, 'dummy')
-            self.addCleanup(_cleanup_user, self, 'dummy')
+            _cleanup_resource(self, 'global/local-users/dummy')
+            self.addCleanup(_cleanup_resource, self,
+                            'global/local-users/dummy')
 
     class TestLiveCsrRestApiFailures(TestCsrRestApiFailures):
 
@@ -581,52 +636,37 @@ if True:
 
     class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
 
-        def _ensure_no_existing_policy(self):
-            """Ensure that the IKE policy does not exists.
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20',
+                                         'stack', 'cisco',
+                                         timeout=CSR_TIMEOUT)
+            _cleanup_resource(self, 'vpn-svc/ike/policies/2')
+            self.addCleanup(_cleanup_resource, self,
+                            'vpn-svc/ike/policies/2')
 
-            Invoked before and after tests, so that we can ensure that
-            the CSR is in a clean state. Clear the token, so that test
-            cases will act as they would normally, as if no prior access
-            to the CSR.
-            """
-            with HTTMock(csr_request.token, csr_request.delete):
-                self.csr.delete_request('vpn-svc/ike/policies/2')
-                if self.csr.status not in (wexc.HTTPNoContent.code,
-                                           wexc.HTTPNotFound.code):
-                    self.fail("Unable to clean up existing policy")
-            self.csr.token = None
+    class TestLiveCsrRestIPSecPolicyCreate(TestCsrRestIPSecPolicyCreate):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
                                          timeout=CSR_TIMEOUT)
-            self._ensure_no_existing_policy()
-            self.addCleanup(self._ensure_no_existing_policy)
+            _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
+            self.addCleanup(_cleanup_resource, self,
+                            'vpn-svc/ipsec/policies/123')
+            _cleanup_resource(self, 'vpn-svc/ipsec/policies/321')
+            self.addCleanup(_cleanup_resource, self,
+                            'vpn-svc/ipsec/policies/321')
 
     class TestLiveCsrRestIPSecConnectionCreate(
             TestCsrRestIPSecConnectionCreate):
 
-        def _ensure_no_existing_connection(self):
-            """Ensure that the IPSec connection does not exists.
-
-            Invoked before and after tests, so that we can ensure that
-            the CSR is in a clean state. Clear the token, so that test
-            cases will act as they would normally, as if no prior access
-            to the CSR.
-            """
-            with HTTMock(csr_request.token, csr_request.delete):
-                self.csr.delete_request('vpn-svc/site-to-site/Tunnel0')
-                if self.csr.status not in (wexc.HTTPNoContent.code,
-                                           wexc.HTTPNotFound.code):
-                    self.fail("Unable to clean up existing connection")
-            self.csr.token = None
-
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
                                          timeout=CSR_TIMEOUT)
-            self._ensure_no_existing_connection()
-            self.addCleanup(self._ensure_no_existing_connection)
+            _cleanup_resource(self, 'vpn-svc/site-to-site/Tunnel0')
+            self.addCleanup(_cleanup_resource, self,
+                            'vpn-svc/site-to-site/Tunnel0')
 
 
 if __name__ == '__main__':

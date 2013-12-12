@@ -164,16 +164,32 @@ def get(url, request):
                    u'verify-unicast-source': False,
                    u'type': u'ethernet'}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/ipsec/policies/' in url.path:
+    if 'vpn-svc/ipsec/policies/123' in url.path:
         content = {u'kind': u'object#ipsec-policy',
-                   # FIX...
-                   u'priority-id': '...',
-                   u'version': u'v1',
-                   u'local-auth-method': u'pre-share',
-                   u'encryption': u'aes',
-                   u'hash': u'sha',
-                   u'hGroup': 5,
-                   u'lifetime': 3600}
+                   u'mode': u'tunnel',
+                   # TODO(pcm): Use 'Disable', when fixed on CSR
+                   u'anti-replay-window-size': u'128',
+                   u'policy-id': u'123',
+                   u'protection-suite': {
+                       u'esp-encryption': u'esp-aes',
+                       u'esp-authentication': u'esp-sha-hmac',
+                       u'ah': u'ah-sha-hmac',
+                   },
+                   u'lifetime-sec': 120,
+                   u'pfs': u'group5',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
+        return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ipsec/policies/321' in url.path:
+        content = {u'kind': u'object#ipsec-policy',
+                   u'mode': u'tunnel',
+                   u'anti-replay-window-size': u'64',
+                   u'policy-id': u'321',
+                   u'protection-suite': {},
+                   u'lifetime-sec': None,
+                   u'pfs': u'Disable',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ike/policies/' in url.path:
         content = {u'kind': u'object#ike-policy',
@@ -203,10 +219,14 @@ def post(url, request):
             return {'status_code': wexc.HTTPBadRequest.code}
         headers = {'location': '%s/test-user' % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
-    if 'vpn-svc/ipsec/policies' in url.path:
-        return {'status_code': wexc.HTTPCreated.code}
     if 'vpn-svc/ike/policies' in url.path:
         headers = {'location': "%s/2" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
+    if 'vpn-svc/ipsec/policies' in url.path:
+        if '"policy-id": "123"' in request.body:
+            headers = {'location': "%s/123" % url.geturl()}
+        else:
+            headers = {'location': "%s/321" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
         headers = {'location': "%s/Tunnel0" % url.geturl()}
