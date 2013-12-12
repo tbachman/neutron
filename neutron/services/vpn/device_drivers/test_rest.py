@@ -442,6 +442,28 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 
+    def test_create_ike_policy_with_defaults(self):
+        with HTTMock(csr_request.token, csr_request.post,
+                     csr_request.get_defaults):
+            policy_id = u'2'
+            policy_info = {u'priority-id': policy_id}
+            location = self.csr.create_ike_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_policy = {u'kind': u'object#ike-policy',
+                               u'version': u'v1',
+                               u'encryption': u'des',
+                               u'hash': u'sha',
+                               u'dhGroup': 1,
+                               u'lifetime': 86400,
+                               # Lower level sets this, but it is the default
+                               u'local-auth-method': u'pre-share'}
+            expected_policy.update(policy_info)
+            self.assertEqual(expected_policy, content)
+
     def test_create_duplicate_ike_policy(self):
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             policy_id = u'2'
@@ -498,8 +520,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             self.assertEqual(expected_policy, content)
 
     def test_create_ipsec_policy_with_defaults(self):
-        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            policy_id = u'321'
+        with HTTMock(csr_request.token, csr_request.post,
+                     csr_request.get_defaults):
+            policy_id = u'123'
             policy_info = {
                 u'policy-id': policy_id,
                 # Override, as we normally force this to 'Disable'
@@ -653,9 +676,6 @@ if True:
             _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
             self.addCleanup(_cleanup_resource, self,
                             'vpn-svc/ipsec/policies/123')
-            _cleanup_resource(self, 'vpn-svc/ipsec/policies/321')
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ipsec/policies/321')
 
     class TestLiveCsrRestIPSecConnectionCreate(
             TestCsrRestIPSecConnectionCreate):

@@ -164,6 +164,16 @@ def get(url, request):
                    u'verify-unicast-source': False,
                    u'type': u'ethernet'}
         return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ike/policies/2' in url.path:
+        content = {u'kind': u'object#ike-policy',
+                   u'priority-id': u'2',
+                   u'version': u'v1',
+                   u'local-auth-method': u'pre-share',
+                   u'encryption': u'aes',
+                   u'hash': u'sha',
+                   u'dhGroup': 5,
+                   u'lifetime': 3600}
+        return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ipsec/policies/123' in url.path:
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
@@ -180,26 +190,35 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/ipsec/policies/321' in url.path:
+
+
+@urlmatch(netloc=r'localhost')
+def get_defaults(url, request):
+    if request.method != 'GET':
+        return
+    LOG.debug("DEBUG: GET mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    if 'vpn-svc/ike/policies/2' in url.path:
+        content = {u'kind': u'object#ike-policy',
+                   u'priority-id': u'2',
+                   u'version': u'v1',
+                   u'local-auth-method': u'pre-share',
+                   u'encryption': u'des',
+                   u'hash': u'sha',
+                   u'dhGroup': 1,
+                   u'lifetime': 86400}
+        return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ipsec/policies/123' in url.path:
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
                    u'anti-replay-window-size': u'64',
-                   u'policy-id': u'321',
+                   u'policy-id': u'123',
                    u'protection-suite': {},
                    u'lifetime-sec': None,
                    u'pfs': u'Disable',
                    u'lifetime-kb': None,
                    u'idle-time': None}
-        return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/ike/policies/' in url.path:
-        content = {u'kind': u'object#ike-policy',
-                   u'priority-id': u'2',
-                   u'version': u'v1',
-                   u'local-auth-method': u'pre-share',
-                   u'encryption': u'aes',
-                   u'hash': u'sha',
-                   u'dhGroup': 5,
-                   u'lifetime': 3600}
         return response(wexc.HTTPOk.code, content=content)
 
 
