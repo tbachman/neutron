@@ -33,9 +33,6 @@ import cisco_csr_snippets as snippets
 
 LOG = logging.getLogger(__name__)
 
-# INTERNAL_INTFC = 'GigabitEthernet'
-# SEP = '.'
-
 DEV_NAME_LEN = 14
 
 
@@ -47,10 +44,7 @@ class CiscoCSRDriver(RoutingDriver):
         self._csr_user = csr_user
         self._csr_password = csr_password
         self._csr_conn = None
-        self._allow_agent = False
         self._intfs_enabled = False
-        # Public Key lookup
-        self._look_for_keys = False
 
     ###### Public Functions ########
 
@@ -215,6 +209,33 @@ class CiscoCSRDriver(RoutingDriver):
 
     ###### Native Internal Functions ####
 
+    def _get_connection(self):
+        """Make SSH connection to the CSR """
+        try:
+            if self._csr_conn and self._csr_conn.connected:
+                return self._csr_conn
+            else:
+                self._csr_conn = manager.connect(host=self._csr_host,
+                                                 port=self._csr_ssh_port,
+                                                 username=self._csr_user,
+                                                 password=self._csr_password,
+                                                 device_params={'name': "csr"},
+                                                 timeout=30
+                )
+                #self._csr_conn.async_mode = True
+                if not self._intfs_enabled:
+                    self._intfs_enabled = self._enable_intfs(self._csr_conn)
+            return self._csr_conn
+        except Exception:
+            LOG.exception(_("Failed connecting to CSR1000v. \n"
+                            "Connection Params Host:%(host)s "
+                            "Port:%(port)s User:%(user)s Password:%(pass)s"),
+                          {'host': self._csr_host, 'port': self._csr_ssh_port,
+                           'user': self._csr_user, 'pass': self._csr_password})
+
+    def clear_connection(self):
+        self._csr_conn = None
+
     def _get_interface_name_from_hosting_port(self, port):
         vlan = self._get_interface_vlan_from_hosting_port(port)
         int_no = self._get_interface_no_from_hosting_port(port)
@@ -236,32 +257,6 @@ class CiscoCSRDriver(RoutingDriver):
         else:
             LOG.error(_('Unknown interface name: %s'), if_type)
         return no
-
-    def _get_connection(self):
-        """Make SSH connection to the CSR """
-        try:
-            if self._csr_conn and self._csr_conn.connected:
-                return self._csr_conn
-            else:
-                self._csr_conn = manager.connect(host=self._csr_host,
-                                                 port=self._csr_ssh_port,
-                                                 username=self._csr_user,
-                                                 password=self._csr_password,
-                                                 allow_agent=self._allow_agent,
-                                                 look_for_keys=self._look_for_keys)
-                #self._csr_conn.async_mode = True
-                if not self._intfs_enabled:
-                    self._intfs_enabled = self._enable_intfs(self._csr_conn)
-            return self._csr_conn
-        except Exception:
-            LOG.exception(_("Failed connecting to CSR1000v. \n"
-                            "Connection Params Host:%(host)s "
-                            "Port:%(port)s User:%(user)s Password:%(pass)s"),
-                          {'host': self._csr_host, 'port': self._csr_ssh_port,
-                           'user': self._csr_user, 'pass': self._csr_password})
-
-    def clear_connection(self):
-        self._csr_conn = None
 
     def _get_interfaces(self):
         """
@@ -307,11 +302,11 @@ class CiscoCSRDriver(RoutingDriver):
             return False
 
     def _enable_intfs(self, conn):
-        #interfaces = ['GigabitEthernet 1', 'GigabitEthernet 2']
         # CSR1kv, in release 3.11 GigabitEthernet 0 is gone.
         # so GigabitEthernet 1 is used as management and 2 up
         # is used for data.
         interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
+        #interfaces = ['GigabitEthernet 1']
         try:
             for i in interfaces:
                 confstr = snippets.ENABLE_INTF % i
@@ -622,16 +617,18 @@ class CiscoCSRDriver(RoutingDriver):
 ##################
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, filemode="w")
-    driver = CiscoCSRDriver("localhost", 8000, "lab", 'lab')
+    logging.basicConfig(level=logging.DEBUG, filemode="w")
+    driver = CiscoCSRDriver("172.29.74.81", 22, "stack", 'cisco')
     if driver._get_connection():
         logging.info('Connection Established!')
         #driver.get_capabilities()
         #print driver.get_running_config()
         #driver.set_interface(conn, 'GigabitEthernet1', '10.0.200.1')
         #driver.get_interfaces(conn)
-        #driver.get_interface_ip(conn, 'GigabitEthernet1')
-        #driver.create_vrf('nrouter-dummy')
+        #driver.get_inter
+
+        # face_ip(conn, 'GigabitEthernet1')
+        driver.create_vrf('my_dummy_vrf')
         #driver.create_router(1, 'qrouter-dummy2', '10.0.110.1', 11)
         #driver.create_subinterface('GigabitEthernet1.11', 'qrouter-131666dc', '10.0.11.1', '11', '255.255.255.0')
         #driver.remove_subinterface('GigabitEthernet1.11', 'qrouter-131666dc', '10.0.11.1', '11', '255.255.255.0')
@@ -650,7 +647,7 @@ if __name__ == "__main__":
         #driver.remove_vrf('wrong_vrf') #Wrong vrf
         #driver.create_vrf("my_dummy_vrf")
         #driver.get_vrfs()
-        #driver.remove_vrf("my_dummy_vrf")
+        driver.remove_vrf("my_dummy_vrf")
         #driver._get_floating_ip_cfg()
         #print driver._check_acl('acl_10', '10.0.3.0', '0.0.0.255')
         #print driver._check_acl('acl_10', '10.0.4.0', '0.0.0.255')
