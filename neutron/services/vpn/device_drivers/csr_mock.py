@@ -99,18 +99,6 @@ def token_timeout(url, request):
     raise requests.Timeout()
 
 
-@filter(['get'], 'global/local-users')
-@all_requests
-@repeat(4)
-def timeout_four_times(url, request):
-    """Simulated timeout of a normal request four times."""
-
-    LOG.debug("DEBUG:Get timeout(4)")
-    if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    raise requests.Timeout()
-
-
 @filter(['get'], 'global/host-name')
 @all_requests
 def timeout(url, request):

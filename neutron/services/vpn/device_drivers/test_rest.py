@@ -27,7 +27,7 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 # Enables debug logging to console
-if True:
+if False:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
 
@@ -181,35 +181,6 @@ class TestCsrPostRestApi(unittest.TestCase):
                 # TODO(pcm): Uncomment, once CSR fixes response status
                 # self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
                 self.assertIsNone(location)
-
-    # TODO(pcm): REMOVE if we determine that timeouts will not be handled
-    # and raise an exception.
-#     def test_post_retry(self):
-#         """Test of a retry for a timed-out POST.
-#
-#         If a POST is performed and the server does not respond within the
-#         timeout period, the POST will be re-attempted (with a longer timeout
-#         interval). This second attempt will likely encounter a 400 error,
-#         because the server will have eventually completed the action. This
-#         will test that the client detects this, and reports successs.
-#         """
-#         with HTTMock(csr_request.token, csr_request.post):
-#             location = self.csr.post_request(
-#                 'global/local-users',
-#                 payload={'username': 'test-user',
-#                          'password': 'pass12345',
-#                          'privilege': 15})
-#             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-#             self.assertIn('global/local-users/test-user', location)
-#         with HTTMock(csr_request.token, csr_request.post_duplicate,
-#                      csr_request.get):
-#             location = self.csr.post_request(
-#                 'global/local-users',
-#                 payload={'username': 'test-user',
-#                          'password': 'pass12345',
-#                          'privilege': 15})
-#             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-#             self.assertIn('global/local-users/test-user', location)
 
     def test_post_changing_value(self):
         """Negative test of a POST trying to change a value."""
@@ -419,18 +390,6 @@ class TestCsrRestApiFailures(unittest.TestCase):
             self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
             self.assertEqual(None, content)
 
-    def test_timeout_with_retries_during_request(self):
-        """Negative test of retries for timeout during REST request.
-
-        Simulate timeouts four times and then, on fifth request, use
-        the normal handler resulting in success.
-        """
-        with HTTMock(csr_request.token, csr_request.timeout_four_times,
-                     csr_request.get):
-            content = self.csr._do_request('GET', 'global/local-users')
-            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-            self.assertIn('users', content)
-
     def test_token_expired_on_request(self):
         """Token expired before trying a REST request.
 
@@ -545,21 +504,21 @@ if True:
     # TODO(pcm): Set to 2.0, once resolve issues with CSR slowness and
     # timeout handling for PUT operations, which are taking up to 6 secs.
     # Should take 1.x seconds.
-    INITIAL_TIMEOUT_DELAY = 7.0
+    CSR_TIMEOUT = 7.0
 
     class TestLiveCsrLoginRestApi(TestCsrLoginRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
 
     class TestLiveCsrGetRestApi(TestCsrGetRestApi):
 
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
 
     def _cleanup_user(for_test, name):
         """Ensure that the specified user does not exist.
@@ -582,7 +541,7 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
             _cleanup_user(self, 'test-user')
             self.addCleanup(_cleanup_user, self, 'test-user')
 
@@ -600,7 +559,7 @@ if True:
 
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
             self._save_resources()
             self.addCleanup(self._restore_resources, 'stack', 'cisco')
 
@@ -609,7 +568,7 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
             _cleanup_user(self, 'dummy')
             self.addCleanup(_cleanup_user, self, 'dummy')
 
@@ -618,7 +577,7 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
 
     class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
 
@@ -640,7 +599,7 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
             self._ensure_no_existing_policy()
             self.addCleanup(self._ensure_no_existing_policy)
 
@@ -665,7 +624,7 @@ if True:
         def setUp(self):
             self.csr = csr_client.Client('192.168.200.20',
                                          'stack', 'cisco',
-                                         timeout=INITIAL_TIMEOUT_DELAY)
+                                         timeout=CSR_TIMEOUT)
             self._ensure_no_existing_connection()
             self.addCleanup(self._ensure_no_existing_connection)
 

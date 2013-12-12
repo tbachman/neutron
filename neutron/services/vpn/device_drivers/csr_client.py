@@ -38,7 +38,7 @@ class Client(object):
         self.auth = (username, password)
         self.token = None
         self.status = wexc.HTTPOk.code
-        self.timeout_interval = timeout
+        self.timeout = timeout
         self.max_tries = 5
 
     def _response_info_for(self, response, method, url):
@@ -58,16 +58,22 @@ class Client(object):
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
             return response.headers.get('location', '')
 
-    def _request(self, method, url, attempt, **kwargs):
+    def _request(self, method, url, **kwargs):
         """Perform REST request and save response info."""
         try:
-            response = requests.request(method, url, verify=False, **kwargs)
+            LOG.debug(_("%(method)s: Request for %(resource)s headers: "
+                        "%(headers)s payload: %(payload)s"),
+                      {'method': method.upper(), 'resource': url,
+                       'payload': kwargs.get('payload'),
+                       'headers': kwargs.get('headers')})
+            response = requests.request(method, url, verify=False,
+                                        timeout=self.timeout, **kwargs)
         except (Timeout, SSLError) as te:
             # Should never see SSLError, unless requests package is old (<2.0)
-            LOG.warning(_("%(method)s: Request timeout%(ssl)s #%(attempt)d "
-                          "(%(interval).3f sec) for CSR(%(host)s)"),
-                        {'method': method, 'attempt': attempt + 1,
-                         'interval': kwargs.get('timeout', 0.0),
+            LOG.warning(_("%(method)s: Request timeout%(ssl)s "
+                          "(%(timeout).3f sec) for CSR(%(host)s)"),
+                        {'method': method,
+                         'timeout': self.timeout if not None else '0.0',
                          'ssl': '(SSLError)'
                          if isinstance(te, SSLError) else '',
                          'host': self.host})
@@ -107,8 +113,7 @@ class Client(object):
         # QUESTION: Should we display user/password in log?
         LOG.debug(_("Authenticating request %(resource)s as %(auth)s"),
                   {'resource': url, 'auth': self.auth})
-        response = self._request("POST", url, attempt=1,
-                                 headers=headers, auth=self.auth)
+        response = self._request("POST", url, headers=headers, auth=self.auth)
         if response:
             self.token = response['token-id']
             # QUESTION: Should we display token in log?
@@ -127,14 +132,11 @@ class Client(object):
         If this is the first time interacting with the CSR, a token will
         be obtained. If the request fails, due to an expired token, the
         token will be obtained and the request will be retried once more.
-
-        If there is a timeout, we'll retry, up to the define number of
-        retries, doubling the timeout interval on each try.
         """
 
         if not self.authenticated():
             if not self.authenticate():
-                return None
+                return
 
         if full_url:
             url = resource
@@ -146,37 +148,17 @@ class Client(object):
             headers.update(more_headers)
         if payload:
             payload = jsonutils.dumps(payload)
-        try_num = 0
-        timeout = self.timeout_interval
-        while try_num < self.max_tries:
-            LOG.debug(_("%(method)s: Request for %(resource)s headers: "
-                        "%(headers)s payload: %(payload)s"),
-                      {'method': method.upper(), 'resource': url,
-                       'payload': payload, 'headers': headers})
-            response = self._request(method, url, try_num,
-                                     timeout=timeout, data=payload,
+        response = self._request(method, url, data=payload, headers=headers)
+        if self.status == wexc.HTTPUnauthorized.code:
+            if not self.authenticate():
+                return
+            headers['X-auth-token'] = self.token
+            response = self._request(method, url, data=payload, 
                                      headers=headers)
-            if self.status == wexc.HTTPUnauthorized.code:
-                if not self.authenticate():
-                    return
-                headers['X-auth-token'] = self.token
-                LOG.debug(_("%(method)s: Retry request for %(resource)s "
-                            "headers %(headers)s payload %(payload)s"),
-                          {'method': method.upper(), 'resource': url,
-                           'payload': payload, 'headers': headers})
-                response = self._request(method, url, try_num,
-                                         timeout=timeout, data=payload,
-                                         headers=headers)
-            if self.status == wexc.HTTPRequestTimeout.code:
-                if not self.timeout_interval:
-                    break  # Cannot retry when no interval specified
-                try_num += 1
-                timeout *= 2.0
-            else:
-                return response
-        LOG.error(_("%(method)s: Request timeout %(tries)d times "
-                    "for CSR(%(host)s)"),
-                  {'method': method, 'tries': try_num, 'host': self.host})
+        if self.status != wexc.HTTPRequestTimeout.code:
+            return response
+        LOG.error(_("%(method)s: Request timeout for CSR(%(host)s)"),
+                  {'method': method, 'host': self.host})
 
     def get_request(self, resource, full_url=False):
         """Perform a REST GET requests for a CSR resource."""
