@@ -174,6 +174,15 @@ def get(url, request):
                    u'dhGroup': 5,
                    u'lifetime': 3600}
         return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ike/keyrings' in url.path:
+        content = {u'kind': u'object#ike-keyring',
+                   u'keyring-name': u'5',
+                   u'pre-shared-key-list': [
+                       {u'key': u'super-secret',
+                        u'encrypted': False,
+                        u'peer-address': u'10.10.10.20 255.255.255.0'}
+                   ]}
+        return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ipsec/policies/123' in url.path:
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
@@ -190,6 +199,36 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/site-to-site' in url.path:
+        content = {u'kind': u'object#vpn-site-to-site',
+                   u'vpn-interface-name': u'Tunnel0',
+                   u'ip-version': u'ipv4',
+                   u'vpn-type': u'site-to-site',
+                   u'ipsec-policy-id': u'123',
+                   u'local-device': {
+                       u'ip-address': '10.3.0.1/24',
+                       u'tunnel-ip-address': '10.10.10.10'
+                   },
+                   u'remote-device': {
+                       u'tunnel-ip-address': '10.10.10.20'
+                   }}
+        return response(wexc.HTTPOk.code, content=content)
+
+
+@filter(['get'], 'vpn-svc/ike/keyrings')
+@urlmatch(netloc=r'localhost')
+def get_fqdn(url, request):
+    LOG.debug("DEBUG: GET FQDN mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    content = {u'kind': u'object#ike-keyring',
+               u'keyring-name': u'5',
+               u'pre-shared-key-list': [
+                   {u'key': u'super-secret',
+                    u'encrypted': False,
+                    u'peer-address': u'cisco.com'}
+               ]}
+    return response(wexc.HTTPOk.code, content=content)
 
 
 @urlmatch(netloc=r'localhost')
@@ -247,6 +286,9 @@ def post(url, request):
         else:
             headers = {'location': "%s/321" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
+    if 'vpn-svc/ike/keyrings' in url.path:
+        headers = {'location': "%s/5" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
         headers = {'location': "%s/Tunnel0" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
@@ -267,6 +309,34 @@ def post_duplicate(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     return {'status_code': wexc.HTTPBadRequest.code}
+
+
+@filter(['post'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def post_missing_ipsec_policy(url, request):
+    LOG.debug("DEBUG: POST missing ipsec policy mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPBadRequest.code}
+
+
+@filter(['post'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def post_missing_ike_policy(url, request):
+    LOG.debug("DEBUG: POST missing ike policy mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPBadRequest.code}
+
+
+@filter(['post'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def post_bad_ip(url, request):
+    LOG.debug("DEBUG: POST bad IP mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    # TODO(pcm): See if this is the right error
+    return {'status_code': wexc.HTTPInternalServerError.code}
 
 
 @urlmatch(netloc=r'localhost')

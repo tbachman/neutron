@@ -189,8 +189,12 @@ class Client(object):
         return self.post_request('vpn-svc/ipsec/policies',
                                  payload=base_ipsec_policy_info)
 
+    def create_pre_shared_key(self, psk_info):
+        return self.post_request('vpn-svc/ike/keyrings', payload=psk_info)
+
     def create_ipsec_connection(self, connection_info):
-        base_connection_info = {u'vpn-type': u'site-to-site'}
+        base_connection_info = {u'vpn-type': u'site-to-site',
+                                u'ip-version': u'ipv4'}
         connection_info.update(base_connection_info)
         return self.post_request('vpn-svc/site-to-site',
                                  payload=connection_info)
