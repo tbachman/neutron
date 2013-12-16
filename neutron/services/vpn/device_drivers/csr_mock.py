@@ -300,7 +300,10 @@ def post_change_attempt(url, request):
     LOG.debug("DEBUG: POST change value mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPNotFound.code}
+    return {'status_code': wexc.HTTPNotFound.code,
+            'content': {
+                u'error-code': -1,
+                u'error-message': u'user test-user already exists'}}
 
 
 @urlmatch(netloc=r'localhost')
@@ -308,7 +311,11 @@ def post_duplicate(url, request):
     LOG.debug("DEBUG: POST duplicate mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code}
+    return {'status_code': wexc.HTTPBadRequest.code,
+            'content': {
+                u'error-code': -1,
+                u'error-message': u'policy 2 exist, not allow to '
+                                  u'update policy using POST method'}}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -369,7 +376,10 @@ def delete_unknown(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # Any resource
-    return {'status_code': wexc.HTTPNotFound.code}
+    return {'status_code': wexc.HTTPNotFound.code,
+            'content': {
+                u'error-code': -1,
+                u'error-message': 'user unknown not found'}}
 
 
 @urlmatch(netloc=r'localhost')

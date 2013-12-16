@@ -44,12 +44,16 @@ class Client(object):
     def _response_info_for(self, response, method, url):
         """Return contents or location from response.
 
-        A temporary function, until the CSR fixes authentication to return
-        the token via a 200 status, for which we can remove this function
-        and do the check for GET and 200 in the caller.
+        Temporary check of 201 for an authentication POST response,
+        where we want to return the token. In the future, the CSR will
+        return this as a 200, and the special test here can be removed.
 
         For a POST with a 201 response, we return the header's location,
         which contains the identifier for the created resource.
+
+        If there is an error, we'll return the response content, so that
+        it can be used in error processing ('error-code', 'error-message',
+        and 'detail' fields).
         """
         if (('auth/token-services' in url and
              self.status == wexc.HTTPCreated.code) or
@@ -57,6 +61,11 @@ class Client(object):
             return response.json()
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
             return response.headers.get('location', '')
+        if self.status >= wexc.HTTPBadRequest.code and response.content:
+            if 'error-code' in response.content:
+                content = jsonutils.loads(response.content)
+                # LOG.debug("Error response content %s", content)
+                return content
 
     def _request(self, method, url, **kwargs):
         """Perform REST request and save response info."""
@@ -90,7 +99,6 @@ class Client(object):
             self.status = wexc.HTTPInternalServerError.code
         else:
             self.status = response.status_code
-            LOG.debug("Response content: %s", response.content)
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
                       {'method': method, 'status': self.status})
             return self._response_info_for(response, method, url)
@@ -167,13 +175,13 @@ class Client(object):
 
     def put_request(self, resource, payload=None):
         """Perform a PUT request to a CSR resource."""
-        self._do_request('PUT', resource, payload=payload,
-                         more_headers=HEADER_CONTENT_TYPE_JSON)
+        return self._do_request('PUT', resource, payload=payload,
+                                more_headers=HEADER_CONTENT_TYPE_JSON)
 
     def delete_request(self, resource):
         """Perform a DELETE request on a CSR resource."""
-        self._do_request('DELETE', resource,
-                         more_headers=HEADER_CONTENT_TYPE_JSON)
+        return self._do_request('DELETE', resource,
+                                more_headers=HEADER_CONTENT_TYPE_JSON)
 
     def create_ike_policy(self, policy_info):
         base_ike_policy_info = {u'version': u'v1',

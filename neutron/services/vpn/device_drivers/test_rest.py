@@ -134,23 +134,19 @@ class TestCsrPostRestApi(unittest.TestCase):
     def test_post_missing_required_attribute(self):
         """Negative test of POST with missing mandatory info."""
         with HTTMock(csr_request.token, csr_request.post):
-            location = self.csr.post_request(
-                'global/local-users',
-                payload={'password': 'pass12345',
-                         'privilege': 15})
+            self.csr.post_request('global/local-users',
+                                  payload={'password': 'pass12345',
+                                           'privilege': 15})
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-            self.assertIsNone(location)
 
     def test_post_invalid_attribute(self):
         """Negative test of POST with invalid info."""
         with HTTMock(csr_request.token, csr_request.post):
-            location = self.csr.post_request(
-                'global/local-users',
-                payload={'username': 'test-user',
-                         'password': 'pass12345',
-                         'privilege': 20})
+            self.csr.post_request('global/local-users',
+                                  payload={'username': 'test-user',
+                                           'password': 'pass12345',
+                                           'privilege': 20})
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-            self.assertIsNone(location)
 
     def test_post_already_exists(self):
         """Negative test of a duplicate POST.
@@ -169,7 +165,7 @@ class TestCsrPostRestApi(unittest.TestCase):
                 self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
                 self.assertIn('global/local-users/test-user', location)
         with HTTMock(csr_request.token, csr_request.post_duplicate):
-                location = self.csr._do_request(
+                self.csr._do_request(
                     'POST',
                     'global/local-users',
                     payload={'username': 'test-user',
@@ -178,7 +174,6 @@ class TestCsrPostRestApi(unittest.TestCase):
                     more_headers=csr_client.HEADER_CONTENT_TYPE_JSON)
                 # TODO(pcm): Uncomment, once CSR fixes response status
                 # self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-                self.assertIsNone(location)
 
     def test_post_changing_value(self):
         """Negative test of a POST trying to change a value."""
@@ -191,13 +186,14 @@ class TestCsrPostRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('global/local-users/test-user', location)
         with HTTMock(csr_request.token, csr_request.post_change_attempt):
-            location = self.csr.post_request(
-                'global/local-users',
-                payload={'username': 'test-user',
-                         'password': 'changed',
-                         'privilege': 15})
+            content = self.csr.post_request('global/local-users',
+                                            payload={'username': 'test-user',
+                                                     'password': 'changed',
+                                                     'privilege': 15})
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-            self.assertIsNone(location)
+            expected = {u'error-code': -1,
+                        u'error-message': u'user test-user already exists'}
+            self.assertDictContainsSubset(expected, content)
 
 
 class TestCsrPutRestApi(unittest.TestCase):
@@ -352,8 +348,11 @@ class TestCsrDeleteRestApi(unittest.TestCase):
     def test_delete_non_existent_entry(self):
         """Negative test of trying to delete a non-existent user."""
         with HTTMock(csr_request.token, csr_request.delete_unknown):
-            self.csr.delete_request('global/local-users/unknown')
+            content = self.csr.delete_request('global/local-users/unknown')
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            expected = {u'error-code': -1,
+                        u'error-message': u'user unknown not found'}
+            self.assertDictContainsSubset(expected, content)
 
     def test_delete_not_allowed(self):
         """Negative test of trying to delete the host-name."""
@@ -377,16 +376,15 @@ class TestCsrRestApiFailures(unittest.TestCase):
     def test_request_for_non_existent_resource(self):
         """Negative test of non-existent resource on REST request."""
         with HTTMock(csr_request.token, csr_request.no_such_resource):
-            content = self.csr._do_request('POST', 'no/such/request')
+            self.csr.post_request('no/such/request')
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-            self.assertIsNone(content)
+            # The result is HTTP 404 message, so no error content to check
 
     def test_timeout_during_request(self):
         """Negative test of timeout during REST request."""
         with HTTMock(csr_request.token, csr_request.timeout):
-            content = self.csr._do_request('GET', 'global/host-name')
+            self.csr._do_request('GET', 'global/host-name')
             self.assertEqual(wexc.HTTPRequestTimeout.code, self.csr.status)
-            self.assertEqual(None, content)
 
     def test_token_expired_on_request(self):
         """Token expired before trying a REST request.
@@ -408,9 +406,8 @@ class TestCsrRestApiFailures(unittest.TestCase):
         """Negative test of unauthorized user for REST request."""
         self.csr.auth = ('stack', 'bogus')
         with HTTMock(csr_request.token_unauthorized):
-            content = self.csr._do_request('GET', 'global/host-name')
+            self.csr._do_request('GET', 'global/host-name')
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-            self.assertIsNone(content)
 
 
 class TestCsrRestIkePolicyCreate(unittest.TestCase):
@@ -479,7 +476,10 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
         with HTTMock(csr_request.token, csr_request.post_duplicate):
             location = self.csr.create_ike_policy(policy_info)
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-            self.assertIsNone(location)
+            expected = {u'error-code': -1,
+                        u'error-message': u'policy 2 exist, not allow to '
+                        u'update policy using POST method'}
+            self.assertDictContainsSubset(expected, location)
 
 
 class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
@@ -620,9 +620,8 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
                                      u'encrypted': False,
                                      u'peer-address': u'10.10.10.20/24'}
                                 ]}
-            location = self.csr.create_ike_policy(another_psk_info)
+            self.csr.create_ike_policy(another_psk_info)
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-            self.assertIsNone(location)
 
 
 class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
@@ -699,7 +698,11 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(expected_connection, content)
 
     def test_create_ipsec_connection_no_pre_shared_key(self):
-        """Test of connection create without associated pre-shared key."""
+        """Test of connection create without associated pre-shared key.
+
+        The CSR will create the connection, but will not be able to pass
+        traffic without the pre-shared key.
+        """
         self._make_ike_policy_for_test()
         self._make_ipsec_policy_for_test()
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
@@ -711,7 +714,6 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                 u'remote-device': {u'tunnel-ip-address': '10.10.10.20'}
             }
             location = self.csr.create_ipsec_connection(connection_info)
-            # TODO(pcm): See if this is the right response!
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
             # Check the hard-coded items that get set as well...
@@ -723,7 +725,11 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(expected_connection, content)
 
     def test_create_ipsec_connection_missing_ike_policy(self):
-        """Test of connection create without IKE policy (uses default)."""
+        """Test of connection create without IKE policy (uses default).
+
+        Without an IKE policy, the CSR will use a built-in default IKE
+        policy setting for the connection.
+        """
         self._make_psk_for_test()
         self._make_ipsec_policy_for_test()
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
@@ -736,7 +742,6 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             }
             location = self.csr.create_ipsec_connection(connection_info)
             self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
-            # TODO(pcm): See if this is the right response!
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
@@ -758,9 +763,8 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                                   u'tunnel-ip-address': u'10.10.10.10'},
                 u'remote-device': {u'tunnel-ip-address': '10.10.10.20'}
             }
-            location = self.csr.create_ipsec_connection(connection_info)
+            self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-            self.assertIsNone(location)
 
     def test_create_ipsec_connection_conficting_tunnel_ip(self):
         """Negative test of connection create with conflicting tunnel IP.
@@ -782,7 +786,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
             }
             self.csr.create_ipsec_connection(connection_info)
-            # TODO(pcm): Confirm this is the right code
+            # TODO(pcm): This should be a 400 error - waiting for fix.
             self.assertEqual(wexc.HTTPInternalServerError.code,
                              self.csr.status)
 
