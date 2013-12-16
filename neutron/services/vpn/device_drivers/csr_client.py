@@ -64,8 +64,9 @@ class Client(object):
         if self.status >= wexc.HTTPBadRequest.code and response.content:
             if 'error-code' in response.content:
                 content = jsonutils.loads(response.content)
-                # LOG.debug("Error response content %s", content)
+                LOG.debug("Error response content %s", content)
                 return content
+        # LOG.debug("Response content %s", response.content)
 
     def _request(self, method, url, **kwargs):
         """Perform REST request and save response info."""
@@ -207,6 +208,10 @@ class Client(object):
         return self.post_request('vpn-svc/site-to-site',
                                  payload=connection_info)
 
+    def configure_ike_keepalive(self, keepalive_info):
+        base_keepalive_info = {u'periodic': True}
+        keepalive_info.update(base_keepalive_info)
+        return self.put_request('vpn-svc/ike/keepalive', keepalive_info)
 
 if __name__ == '__main__':
     csr = Client('192.168.200.20', 'stack', 'cisco')

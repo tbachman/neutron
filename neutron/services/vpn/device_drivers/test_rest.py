@@ -791,6 +791,49 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                              self.csr.status)
 
 
+class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
+
+    """Test IKE keepalive REST requests.
+
+    This is a global configuration that will apply to all VPN tunnels and
+    is used to specify Dead Peer Detection information. Currently, the API
+    supports DELETE API, but a bug has been created to remove the API and
+    add an indicator of when the capability is disabled.
+
+    TODO(pcm): revise tests, once CSR is updated.
+    """
+
+    def setUp(self):
+        self.csr = csr_client.Client('localhost', 'stack', 'cisco')
+
+    def test_configure_ike_keepalive(self):
+        """Set IKE keep-alive (aka Dead Peer Detection) for the CSR."""
+        with HTTMock(csr_request.token, csr_request.put, csr_request.get):
+            keepalive_info = {'interval': 60, 'retry': 4}
+            self.csr.configure_ike_keepalive(keepalive_info)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request('vpn-svc/ike/keepalive')
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected = {'periodic': False}
+            expected.update(keepalive_info)
+            self.assertDictContainsSubset(expected, content)
+
+    def test_disable_ike_keepalive(self):
+        """Disable IKE keep-alive (aka Dead Peer Detection) for the CSR."""
+        with HTTMock(csr_request.token, csr_request.delete, csr_request.put,
+                     csr_request.get_not_configured):
+            # TODO(pcm): When CSR is updated, comment out and update the
+            # following code to do the disable. Remove the delete mock, above.
+#             keepalive_info = {'interval': 0, 'retry': 4}
+#             self.csr.configure_ike_keepalive(keepalive_info)
+#             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            self.csr.delete_request('vnc-svc/ike/keepalive')
+            self.assertIn(self.csr.status,
+                          (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code))
+            self.csr.get_request('vpn-svc/ike/keepalive')
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+
+
 # Functional tests with a real CSR
 if True:
     # TODO(pcm): Set to 2.0, once resolve issues with CSR slowness and
@@ -930,6 +973,18 @@ if True:
                             'vpn-svc/ike/keyrings/5')
             self.addCleanup(_cleanup_resource, self,
                             'vpn-svc/site-to-site/Tunnel0')
+
+    class TestLiveCsrRestIkeKeepaliveCreate(TestCsrRestIkeKeepaliveCreate):
+
+        def setUp(self):
+            self.csr = csr_client.Client('192.168.200.20',
+                                         'stack', 'cisco',
+                                         timeout=CSR_TIMEOUT)
+            # TODO(pcm): Remvoe, once CSR changes API to remove delete. Will
+            # then need to do a put with a 'disabled' indication.
+            _cleanup_resource(self, 'vpn-svc/ike/policy')
+            self.csr.token = None
+            self.addCleanup(_cleanup_resource, self, 'vpn-svc/ike/keepalive')
 
 
 if __name__ == '__main__':

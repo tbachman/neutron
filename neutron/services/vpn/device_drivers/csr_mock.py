@@ -213,6 +213,11 @@ def get(url, request):
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
         return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ike/keepalive' in url.path:
+        content = {u'interval': 60,
+                   u'retry': 4,
+                   u'periodic': True}
+        return response(wexc.HTTPOk.code, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keyrings')
@@ -259,6 +264,14 @@ def get_defaults(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
+
+
+@filter(['get'], 'vpn-svc/ike/keepalive')
+@urlmatch(netloc=r'localhost')
+def get_not_configured(url, request):
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPNotFound.code}
 
 
 @urlmatch(netloc=r'localhost')
