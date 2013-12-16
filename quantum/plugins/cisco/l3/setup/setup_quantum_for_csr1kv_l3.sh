@@ -1,4 +1,4 @@
-q#!/bin/bash
+#!/bin/bash
 
 # Default values
 # --------------
@@ -35,6 +35,17 @@ n1kvNwProfileTypes=(vlan trunk trunk)
 n1kvNwSubprofileTypes=(None vlan vlan)
 n1kvNwProfileSegRange=($mgmtProviderVlanId-$mgmtProviderVlanId 500-2000 2001-3000)
 n1kvPortPolicyProfileNames=(osn_mgmt_pp osn_t1_pp osn_t2_pp)
+
+cisco=`quantum help | awk '/network-profile-create/ { if ($1 == "network-profile-create") { print "No"; } else { print "Yes"; }}'`
+if [ "$cisco" == "Yes" ]; then
+    CMD_NETWORK_PROFILE_LIST=cisco-network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=cisco-network-profile-create
+    CMD_POLICY_PROFILE_LIST=cisco-policy-profile-list
+else
+    CMD_NETWORK_PROFILE_LIST=network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=network-profile-create
+    CMD_POLICY_PROFILE_LIST=policy-profile-list
+fi
 
 
 function _configure_vsm_port_profiles() {
@@ -89,7 +100,7 @@ function get_network_profile_id() {
     local c=0
     local opt_param=
 
-    nProfileId=`quantum cisco-network-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+    nProfileId=`quantum $CMD_NETWORK_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
     if [ "$nProfileId" == "None" ]; then
         echo "   Network profile $name does not exist. Creating it."
         if [ "$subType" != "None" ]; then
@@ -98,10 +109,10 @@ function get_network_profile_id() {
         if [ "$segRange" != "None" ]; then
             opt_param=$opt_param" --segment_range $segRange"
         fi
-        quantum cisco-network-profile-create --tenant-id $tenantId --physical_network $phyNet $opt_param $name $type
+        quantum $CMD_NETWORK_PROFILE_CREATE --tenant-id $tenantId --physical_network $phyNet $opt_param $name $type
     fi
     while [ $c -le 5 ] && [ "$nProfileId" == "None" ]; do
-        nProfileId=`quantum cisco-network-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+        nProfileId=`quantum $CMD_NETWORK_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
         let c+=1
     done
 }
@@ -110,13 +121,13 @@ function get_network_profile_id() {
 function get_port_profile_id() {
     name=$1
     local c=0
-    pProfileId=`quantum cisco-policy-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+    pProfileId=`quantum $CMD_POLICY_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
     if [ "$pProfileId" == "None" ]; then
         echo "   Port policy profile $name does not exist. Creating it."
         _configure_vsm_port_profiles $vsmIP $vsmUsername $vsmPassword $name
     fi
     while [ $c -le 5 ] && [ "$pProfileId" == "None" ]; do
-        pProfileId=`quantum cisco-policy-profile-list | awk 'BEGIN { res="No"; } /'"$name"'/ { res=$2; } END { print res;}'`
+        pProfileId=`quantum $CMD_POLICY_PROFILE_LIST | awk 'BEGIN { res="No"; } /'"$name"'/ { res=$2; } END { print res;}'`
         let c+=1
         sleep 1
     done
