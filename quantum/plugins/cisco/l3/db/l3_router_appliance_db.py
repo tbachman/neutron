@@ -406,8 +406,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
     def create_router(self, context, router):
         r = router['router']
         # Bob: Hard coding router type for now
-#        r['router_type'] = cfg.CONF.default_router_type
-        r['router_type'] = cl3_const.HARDWARE_ROUTER_TYPE
+        r['router_type'] = cfg.CONF.default_router_type
+#        r['router_type'] = cl3_const.HARDWARE_ROUTER_TYPE
         r['share_host'] = True
         if (r['router_type'] != cl3_const.NAMESPACE_ROUTER_TYPE and
                 self.mgmt_nw_id()) is None:
