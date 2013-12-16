@@ -96,6 +96,7 @@ config.register_root_helper(cfg.CONF)
 cfg.CONF.register_opts(scheduler.AGENTS_SCHEDULER_OPTS)
 
 # shortcuts
+CONF = cfg.CONF
 CISCO = cfg.CONF.CISCO
 CISCO_N1K = cfg.CONF.CISCO_N1K
 CISCO_PLUGINS = cfg.CONF.PLUGINS
