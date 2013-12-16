@@ -197,8 +197,8 @@ class HA_db_mixin(object):
         created in DB.
         """
         if (ha.HA_ENABLED not in router_requested or
-                not router_requested[ha.ENABLED]):
-            new_router[HA.ENABLED] = False
+                not router_requested[ha.HA_ENABLED]):
+            new_router[ha.HA_ENABLED] = False
             return
         with context.session.begin(subtransactions=True):
             priority = DEFAULT_MASTER_PRIORITY
