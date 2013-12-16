@@ -196,7 +196,10 @@ class HA_db_mixin(object):
         """To be called in create_router() AFTER router has been
         created in DB.
         """
-        if not router_requested.get(ha.HA_ENABLED, False):
+        if ha.HA_ENABLED not in router_requested:
+            new_router[HA.ENABLED] = False
+            return
+        elif not router_requested[ha.HA_ENABLED]:
             return
         with context.session.begin(subtransactions=True):
             priority = DEFAULT_MASTER_PRIORITY
