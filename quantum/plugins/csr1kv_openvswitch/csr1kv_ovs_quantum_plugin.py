@@ -54,6 +54,7 @@ from quantum.openstack.common import log as logging
 from quantum.openstack.common import rpc
 from quantum.openstack.common.rpc import proxy
 import quantum.plugins
+from quantum.plugins.cisco.common import config as conf
 from quantum.plugins.cisco.l3.db import ha_db
 from quantum.plugins.cisco.l3.db import l3_router_appliance_db
 from quantum.plugins.cisco.l3.db import composite_agentschedulers_db as agt_sch_db
@@ -363,6 +364,8 @@ class CSR1kv_OVSQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
             cfg.CONF.router_scheduler_driver)
         self.hosting_scheduler = importutils.import_object(
             cfg.CONF.hosting_scheduler_driver)
+        conf.CiscoConfigOptions()
+        self.register_hardware_hosting_entities()
 
     def setup_rpc(self):
         # RPC support
