@@ -1360,6 +1360,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                                  subnet)
         self._send_create_subnet_request(context, sub)
         LOG.debug(_("Created subnet: %s"), sub['id'])
+        # Schedule network to a DHCP agent
+        net = self.get_network(context, sub['network_id'])
+        self.schedule_network(context, net)
         return sub
 
     def update_subnet(self, context, id, subnet):
