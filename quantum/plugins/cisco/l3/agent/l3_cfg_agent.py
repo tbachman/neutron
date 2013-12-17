@@ -287,6 +287,10 @@ class RouterInfo(object):
         self.use_namespaces = use_namespaces
         self.router = router
         self.routes = []
+        self.ha_info = None
+        # Set 'ha_info' if present
+        if router['ha_info']:
+            self.ha_info = router['ha_info']
 
     def router_name(self):
         return N_ROUTER_PREFIX + self.router_id
