@@ -243,7 +243,7 @@ class TestNiciraPortsV2(NiciraPluginV2TestCase,
                 self._verify_no_orphan_left(net_id)
 
     def test_create_port_neutron_error_no_orphan_left(self):
-        with mock.patch.object(nicira_db, 'add_neutron_nvp_port_mapping',
+        with mock.patch.object(nicira_db, 'add_neutron_nsx_port_mapping',
                                side_effect=ntn_exc.NeutronException):
             with self.network() as net:
                 net_id = net['network']['id']
@@ -622,20 +622,25 @@ class TestNiciraL3NatTestCase(NiciraL3NatTest,
             nvplib, 'create_lrouter', new=obsolete_response):
             self._test_router_create_with_distributed(None, False, '2.2')
 
+    def _create_router_with_gw_info_for_test(self, subnet):
+        data = {'router': {'tenant_id': 'whatever',
+                           'name': 'router1',
+                           'external_gateway_info':
+                           {'network_id': subnet['subnet']['network_id']}}}
+        router_req = self.new_create_request(
+            'routers', data, self.fmt)
+        return router_req.get_response(self.ext_api)
+
     def test_router_create_nvp_error_returns_500(self, vlan_id=None):
         with mock.patch.object(nvplib,
                                'create_router_lport',
                                side_effect=NvpApiClient.NvpApiException):
             with self._create_l3_ext_network(vlan_id) as net:
                 with self.subnet(network=net) as s:
-                    data = {'router': {'tenant_id': 'whatever'}}
-                    data['router']['name'] = 'router1'
-                    data['router']['external_gateway_info'] = {
-                        'network_id': s['subnet']['network_id']}
-                    router_req = self.new_create_request(
-                        'routers', data, self.fmt)
-                    res = router_req.get_response(self.ext_api)
-                    self.assertEqual(500, res.status_int)
+                    res = self._create_router_with_gw_info_for_test(s)
+                    self.assertEqual(
+                        webob.exc.HTTPInternalServerError.code,
+                        res.status_int)
 
     def test_router_add_gateway_invalid_network_returns_404(self):
         # NOTE(salv-orlando): This unit test has been overriden
@@ -646,6 +651,41 @@ class TestNiciraL3NatTestCase(NiciraL3NatTest,
                 r['router']['id'],
                 uuidutils.generate_uuid(),
                 expected_code=webob.exc.HTTPNotFound.code)
+
+    def _verify_router_rollback(self):
+        # Check that nothing is left on DB
+        # TODO(salv-orlando): Verify whehter this is thread-safe
+        # w.r.t. sqllite and parallel testing
+        self._test_list_resources('router', [])
+        # Check that router is not in NVP
+        self.assertFalse(self.fc._fake_lrouter_dict)
+
+    def test_router_create_with_gw_info_neutron_fail_does_rollback(self):
+        # Simulate get subnet error while building list of ips with prefix
+        with mock.patch.object(self._plugin_class,
+                               '_build_ip_address_list',
+                               side_effect=ntn_exc.SubnetNotFound(
+                                   subnet_id='xxx')):
+            with self._create_l3_ext_network() as net:
+                with self.subnet(network=net) as s:
+                    res = self._create_router_with_gw_info_for_test(s)
+                    self.assertEqual(
+                        webob.exc.HTTPNotFound.code,
+                        res.status_int)
+                    self._verify_router_rollback()
+
+    def test_router_create_with_gw_info_nvp_fail_does_rollback(self):
+        # Simulate error while fetching nvp router gw port
+        with mock.patch.object(self._plugin_class,
+                               '_find_router_gw_port',
+                               side_effect=NvpApiClient.NvpApiException):
+            with self._create_l3_ext_network() as net:
+                with self.subnet(network=net) as s:
+                    res = self._create_router_with_gw_info_for_test(s)
+                    self.assertEqual(
+                        webob.exc.HTTPInternalServerError.code,
+                        res.status_int)
+                    self._verify_router_rollback()
 
     def _test_router_update_gateway_on_l3_ext_net(self, vlan_id=None,
                                                   validate_ext_gw=True):
@@ -1376,6 +1416,41 @@ class TestNiciraNetworkGateway(test_l2_gw.NetworkGatewayDbTestCase,
         with self._network_gateway(name=name) as nw_gw:
             # Assert Neutron name is not truncated
             self.assertEqual(nw_gw[self.resource]['name'], name)
+
+    def test_update_network_gateway_with_name_calls_backend(self):
+        with mock.patch.object(
+            nvplib, 'update_l2_gw_service') as mock_update_gw:
+            with self._network_gateway(name='cavani') as nw_gw:
+                nw_gw_id = nw_gw[self.resource]['id']
+                self._update(nvp_networkgw.COLLECTION_NAME, nw_gw_id,
+                             {self.resource: {'name': 'higuain'}})
+                mock_update_gw.assert_called_once_with(
+                    mock.ANY, nw_gw_id, 'higuain')
+
+    def test_update_network_gateway_without_name_does_not_call_backend(self):
+        with mock.patch.object(
+            nvplib, 'update_l2_gw_service') as mock_update_gw:
+            with self._network_gateway(name='something') as nw_gw:
+                nw_gw_id = nw_gw[self.resource]['id']
+                self._update(nvp_networkgw.COLLECTION_NAME, nw_gw_id,
+                             {self.resource: {}})
+                self.assertEqual(mock_update_gw.call_count, 0)
+
+    def test_update_network_gateway_name_exceeds_40_chars(self):
+        new_name = 'this_is_a_gateway_whose_name_is_longer_than_40_chars'
+        with self._network_gateway(name='something') as nw_gw:
+            nw_gw_id = nw_gw[self.resource]['id']
+            self._update(nvp_networkgw.COLLECTION_NAME, nw_gw_id,
+                         {self.resource: {'name': new_name}})
+            req = self.new_show_request(nvp_networkgw.COLLECTION_NAME,
+                                        nw_gw_id)
+            res = self.deserialize('json', req.get_response(self.ext_api))
+            # Assert Neutron name is not truncated
+            self.assertEqual(new_name, res[self.resource]['name'])
+            # Assert NVP name is truncated
+            self.assertEqual(
+                new_name[:40],
+                self.fc._fake_gatewayservice_dict[nw_gw_id]['display_name'])
 
     def test_create_network_gateway_nvp_error_returns_500(self):
         def raise_nvp_api_exc(*args, **kwargs):
