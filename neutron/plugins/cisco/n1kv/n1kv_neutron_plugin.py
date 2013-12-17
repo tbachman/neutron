@@ -1504,9 +1504,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         session = context.session
         with session.begin(subtransactions=True):
-            rtr = (super(N1kvQuantumPluginV2, self).
+            rtr = (super(N1kvNeutronPluginV2, self).
                    create_router(context, router))
             LOG.debug(_("Scheduling router %s"), rtr['id'])
-            self.schedule_router(context, rtr)
+            self.schedule_router(context, rtr['id'])
         return rtr
 
