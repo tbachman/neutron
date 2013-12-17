@@ -145,18 +145,6 @@ class CiscoConfigOptions():
                             first_device_ip = dev_ip
                         device_dictionary[dev_id, dev_ip, dev_key] = value[0]
 
-    def _create_device_dictionary_old(self):
-        """
-        Create the device dictionary from the cisco_plugins.ini
-        device supported sections. Ex. NEXUS_SWITCH, N1KV.
-        """
-        for parsed_file in cfg.CONF._cparser.parsed:
-            for parsed_item in parsed_file.keys():
-                dev_id, sep, dev_ip = parsed_item.partition(':')
-                if dev_id == 'NEXUS_SWITCH' or dev_id == 'N1KV':
-                    for dev_key, value in parsed_file[parsed_item].items():
-                        device_dictionary[dev_id, dev_ip, dev_key] = value[0]
-
 
 def get_device_dictionary():
     return device_dictionary
