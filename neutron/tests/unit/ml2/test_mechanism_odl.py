@@ -14,10 +14,10 @@
 #    under the License.
 # @author: Kyle Mestery, Cisco Systems, Inc.
 
+from neutron.plugins.common import constants
 from neutron.plugins.ml2 import config as config
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import mechanism_odl
-from neutron.plugins.openvswitch.common import constants
 from neutron.tests.unit import test_db_plugin as test_plugin
 
 PLUGIN_NAME = 'neutron.plugins.ml2.plugin.Ml2Plugin'

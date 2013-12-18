@@ -18,9 +18,9 @@ from oslo.config import cfg
 import requests
 
 from neutron.extensions import portbindings
-from neutron.openstack.common import constants
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
+from neutron.plugins.common import constants
 from neutron.plugins.ml2 import driver_api as api
 
 LOG = log.getLogger(__name__)
