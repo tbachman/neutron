@@ -32,7 +32,7 @@ BASE_IPSEC_VERSION = '1.0'
 
 
 class CiscoCsrIPsecVpnDriverCallBack(object):
-    """Callback for CiscoCsrIPSecVpnDriver rpc."""
+    """Handler for agent to plugin RPC messaging."""
 
     # history
     #   1.0 Initial version
@@ -60,12 +60,12 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
 
 
 class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
-    """Agent RPC API for CiscoCsrIPsecVPNAgent."""
+    """API and handler for plugin to agent RPC messaging."""
 
     RPC_API_VERSION = BASE_IPSEC_VERSION
 
     def _agent_notification(self, context, method, router_id,
-                            version=None):
+                            version=None, **kwargs):
         """Notify update for the agent.
 
         This method will find where is the router, and
@@ -84,9 +84,10 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
                         '%(method)s'),
                       {'topic': topics.CISCO_IPSEC_AGENT_TOPIC,
                        'host': l3_agent.host,
-                       'method': method})
+                       'method': method,
+                       'args': kwargs})
             self.cast(
-                context, self.make_msg(method),
+                context, self.make_msg(method, **kwargs),
                 version=version,
                 topic='%s.%s' % (topics.CISCO_IPSEC_AGENT_TOPIC,
                                  l3_agent.host))
@@ -96,6 +97,11 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
         method = 'vpnservice_updated'
         self._agent_notification(context, method, router_id)
 
+    def create_ipsec_site_connection(self, context, router_id, conn_id):
+        """Send device driver create IPSec site-to-site connection request."""
+        self._agent_notification(context, 'create_ipsec_site_connection',
+                                 router_id, conn_id=conn_id)
+        
 
 class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
     """Cisco CSR VPN Service Driver class for IPsec."""
@@ -116,6 +122,12 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
     def service_type(self):
         return IPSEC
 
+    def create_ipsec_site_connection_new(self, context, ipsec_site_connection):
+        router_id = self.service_plugin._get_vpnservice(
+            context, ipsec_site_connection['vpnservice_id'])['router_id']
+        self.agent_rpc.create_ipsec_site_connection(
+            context, router_id, conn_id=ipsec_site_connection['id'])
+        
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])

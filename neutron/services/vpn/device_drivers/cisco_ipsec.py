@@ -437,7 +437,7 @@ class OpenSwanProcess(BaseSwanProcess):
 
 
 class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
-    """CiscoCsrIPSecVpnDriver RPC api."""
+    """RPC API for agent to plugin messaging."""
     IPSEC_PLUGIN_VERSION = '1.0'
 
     def get_vpn_services_on_host(self, context, host):
@@ -531,6 +531,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
+    def create_ipsec_site_connection(self, context, conn_id):
+        LOG.info('PCM: Device driver:create_ipsec_site_connecition %s',
+                 conn_id)
+
     def vpnservice_updated(self, context, **kwargs):
         """Vpnservice updated rpc handler
 
@@ -538,7 +542,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         when vpnservices updated.
         Then this method start sync with server.
         """
-        self.sync(context, [])
+        LOG.info("PCM: Ignoring vpnservice_updated message")
+        # self.sync(context, [])
 
     @abc.abstractmethod
     def create_process(self, process_id, vpnservice, namespace):
