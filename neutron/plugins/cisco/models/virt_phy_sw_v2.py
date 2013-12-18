@@ -161,17 +161,11 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
         else:
             return func(*args, **kwargs)
 
-    def _get_segmentation_id(self, id):
-        plugin_output = self._invoke_plugin_per_device(const.VSWITCH_PLUGIN,
-                                                        self._func_name(),
-                                                        [id])
-        return plugin_output[0]
-        """
+    def _get_segmentation_id(self, network_id):
         binding_seg_id = odb.get_network_binding(None, network_id)
         if not binding_seg_id:
             raise cexc.NetworkSegmentIDNotFound(net_id=network_id)
         return binding_seg_id.segmentation_id
-        """
 
     def _get_provider_vlan_id(self, network):
         if (all(attributes.is_attr_set(network.get(attr))
