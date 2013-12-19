@@ -482,6 +482,7 @@ class HA_db_mixin(object):
         ha_s = self._get_ha_settings_by_router_id(context, user_router_id)
         if ha_s is None:
             # Router does not have HA enabled
+            router['ha_info'] = {ha.HA_ENABLED: False}
             return
         # We add the HA settings from user visible router to
         # its redundancy routers.

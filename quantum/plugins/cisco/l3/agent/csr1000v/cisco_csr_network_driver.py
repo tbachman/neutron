@@ -54,7 +54,7 @@ class CiscoCSRDriver(RoutingDriver):
 
     def internal_network_added(self, ri, ex_gw_port, port):
         self._csr_create_subinterface(ri, port)
-        if port['ha_info']:
+        if port.get('ha_info') is not None and ri.ha_info['ha:enabled']:
             self._csr_add_ha(ri, port)
         if ex_gw_port:
             self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)

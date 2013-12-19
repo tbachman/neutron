@@ -45,6 +45,7 @@ from quantum.plugins.cisco.l3.common import constants as cl3_constants
 from quantum.plugins.cisco.l3.agent.csr1000v import cisco_csr_network_driver
 from quantum import service as quantum_service
 from quantum.openstack.common import timeutils
+from quantum.plugins.cisco.l3.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
@@ -412,6 +413,7 @@ class L3NATAgent(manager.Manager):
     def process_router(self, ri):
 
         ex_gw_port = self._get_ex_gw_port(ri)
+        ri.ha_info = ri.router['ha_info'][ha.HA_ENABLED]
         internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
         existing_port_ids = set([p['id'] for p in ri.internal_ports])
         current_port_ids = set([p['id'] for p in internal_ports
