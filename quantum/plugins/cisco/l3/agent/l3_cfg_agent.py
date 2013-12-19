@@ -413,7 +413,7 @@ class L3NATAgent(manager.Manager):
     def process_router(self, ri):
 
         ex_gw_port = self._get_ex_gw_port(ri)
-        ri.ha_info = ri.router['ha_info'][ha.HA_ENABLED]
+        ri.ha_info = ri.router['ha_info']
         internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
         existing_port_ids = set([p['id'] for p in ri.internal_ports])
         current_port_ids = set([p['id'] for p in internal_ports
