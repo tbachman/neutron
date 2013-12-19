@@ -22,7 +22,6 @@ import time
 import netaddr
 
 from ncclient import manager
-from ncclient import xml_
 import xml.etree.ElementTree as ET
 from ciscoconfparse import CiscoConfParse
 
@@ -34,7 +33,6 @@ import cisco_csr_snippets as snippets
 LOG = logging.getLogger(__name__)
 
 DEV_NAME_LEN = 14
-
 
 class CiscoCSRDriver(RoutingDriver):
     """CSR1000v Driver Main Class."""
@@ -429,13 +427,11 @@ class CiscoCSRDriver(RoutingDriver):
             LOG.warning("VRF %s not present" % vrf_name)
 
     def create_subinterface(self, subinterface, vlan_id, vrf_name, ip, mask):
-        conn = self._get_connection()
         if vrf_name not in self.get_vrfs():
             LOG.error("VRF %s not present" % vrf_name)
         confstr = snippets.CREATE_SUBINTERFACE % (subinterface, vlan_id,
                                                   vrf_name, ip, mask)
-        rpc_obj = conn.edit_config(target='running', config=confstr)
-        print self._check_response(rpc_obj, 'CREATE_SUBINTERFACE')
+        self.edit_running_config(confstr, 'CREATE_SUBINTERFACE')
 
     def remove_subinterface(self, subinterface, vlan_id, vrf_name, ip):
         #Optional : verify this is the correct subinterface
@@ -446,14 +442,18 @@ class CiscoCSRDriver(RoutingDriver):
             print self._check_response(rpc_obj, 'REMOVE_SUBINTERFACE')
 
     def _set_ha_HSRP(self, subinterface, vrf_name, priority, group, ip):
-        conn = self._get_connection()
         if vrf_name not in self.get_vrfs():
             LOG.error("VRF %s not present" % vrf_name)
-        confstr = snippets.SET_INTC_HSRP % (subinterface, vrf_name, priority,
-                                            group, ip)
-        rpc_obj = conn.edit_config(target='running', config=confstr)
-        print self._check_response(rpc_obj, 'SET_INTC_HSRP')
+        confstr = snippets.SET_INTC_HSRP % (subinterface, vrf_name, group,
+                                            priority, group, ip)
+        action = "SET_INTC_HSRP (Group: % s, Priority: % s)" % (group, priority)
+        self.edit_running_config(confstr, action)
 
+    def _remove_ha_HSRP(self, subinterface, group):
+        confstr = snippets.REMOVE_INTC_HSRP % (subinterface, group)
+        action = ("REMOVE_INTC_HSRP (subinterface:%s, Group:%s)"
+                  % (subinterface, group))
+        self.edit_running_config(confstr, action)
 
     def _get_interface_cfg(self, interface):
         ioscfg = self.get_running_config()
@@ -467,7 +467,7 @@ class CiscoCSRDriver(RoutingDriver):
                                       outer_intfc,
                                       vrf_name):
         conn = self._get_connection()
-        #ToDo(Hareesh):Duplicate ACL creation throws error, so checking
+        # Duplicate ACL creation throws error, so checking
         # it first. Remove it in future as this is not common in production
         acl_present = self._check_acl(acl_no, network, netmask)
         #We acquire a lock on the running config and process the edits
@@ -492,39 +492,6 @@ class CiscoCSRDriver(RoutingDriver):
             print self._check_response(rpc_obj, 'SET_NAT')
         # finally:
         #     conn.unlock(target='running')
-
-    #ToDo(Hareesh): Not used now. To be cleaned up when rebasing on icehouse trunk.
-    def old_remove_nat_rules_for_internet_access(self, acl_no,
-                                             network,
-                                             netmask,
-                                             inner_intfc,
-                                             outer_intfc,
-                                             vrf_name):
-        conn = self._get_connection()
-        #We acquire a lock on the running config and process the edits
-        #as a transaction
-        with conn.locked(target='running'):
-            #First remove NAT inside and outside
-            confstr = snippets.REMOVE_NAT % (inner_intfc, 'inside')
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            print self._check_response(rpc_obj, 'REMOVE_NAT inside')
-
-            confstr = snippets.REMOVE_NAT % (outer_intfc, 'outside')
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            print self._check_response(rpc_obj, 'REMOVE_NAT outside')
-
-
-            confstr = snippets.SNAT_CFG % (acl_no, outer_intfc, vrf_name)
-            if self.cfg_exists(confstr):
-                confstr = snippets.REMOVE_DYN_SRC_TRL_INTFC % (acl_no,
-                                                               outer_intfc,
-                                                               vrf_name)
-                rpc_obj = conn.edit_config(target='running', config=confstr)
-                print self._check_response(rpc_obj, 'REMOVE_DYN_SRC_TRL_INTFC')
-
-            confstr = snippets.REMOVE_ACL % acl_no
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            print self._check_response(rpc_obj, 'REMOVE_ACL')
 
     def add_interface_nat(self, intfc_name, type):
         conn = self._get_connection()
@@ -611,13 +578,14 @@ class CiscoCSRDriver(RoutingDriver):
                 rpc_obj = conn.edit_config(target='running', config=confstr)
                 print self._check_response(rpc_obj, 'REMOVE_DEFAULT_ROUTE')
 
-    def _check_response_E(self, rpc_obj, snippet_name):
-        #ToDo(Hareesh): This is not working. Need to be fixed
-        LOG.debug("RPCReply for %s is %s" % (snippet_name, rpc_obj.xml))
-        if rpc_obj.ok:
-            return True
+    def edit_running_config(self, confstr, snippet):
+        conn = self._get_connection()
+        rpc_obj = conn.edit_config(target='running', config=confstr)
+        if self._check_response(rpc_obj, snippet):
+                LOG.info("%s successfully executed" % snippet)
         else:
-            raise rpc_obj.error
+                LOG.exception("Failed executing %s" % snippet)
+        return
 
     def _check_response(self, rpc_obj, snippet_name):
         LOG.debug("RPCReply for %s is %s" % (snippet_name, rpc_obj.xml))
@@ -645,6 +613,15 @@ class CiscoCSRDriver(RoutingDriver):
             raise Exception("Error!")
             return False
 
+    def _check_response_non_working(self, rpc_obj, snippet_name):
+        # ToDo(Hareesh): This is not working for some reason.
+        # Kept for investigation
+        LOG.debug("RPCReply for %s is %s" % (snippet_name, rpc_obj.xml))
+        if rpc_obj.ok:
+            return True
+        else:
+            raise rpc_obj.error
+
 
 ##################
 # Main
@@ -652,7 +629,8 @@ class CiscoCSRDriver(RoutingDriver):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, filemode="w")
-    driver = CiscoCSRDriver("172.29.74.81", 22, "stack", 'cisco')
+    #driver = CiscoCSRDriver("172.29.74.81", 22, "stack", 'cisco')
+    driver = CiscoCSRDriver("172.16.6.141", 22, "stack", 'cisco')
     if driver._get_connection():
         logging.info('Connection Established!')
         #driver.get_capabilities()
@@ -662,9 +640,11 @@ if __name__ == "__main__":
         #driver.get_inter
 
         # face_ip(conn, 'GigabitEthernet1')
-        driver.create_vrf('my_dummy_vrf')
+        driver.create_vrf('dummy_vrf')
         #driver.create_router(1, 'qrouter-dummy2', '10.0.110.1', 11)
-        driver.create_subinterface('GigabitEthernet1.11', 'my_dummy_vrf', '10.0.11.1', '11', '255.255.255.0')
+        driver.create_subinterface('GigabitEthernet2.500', '500', 'dummy_vrf', '10.0.100.1', '255.255.255.0')
+        driver._set_ha_HSRP('GigabitEthernet2.500', 'dummy_vrf', '30', '888', '10.0.100.100')
+        driver._remove_ha_HSRP('GigabitEthernet2.500', '888')
         #driver.remove_subinterface('GigabitEthernet1.11', 'qrouter-131666dc', '10.0.11.1', '11', '255.255.255.0')
 
         #driver.nat_rules_for_internet_access('acl_230', '10.0.230.0', '0.0.0.255',

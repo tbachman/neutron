@@ -140,6 +140,22 @@ SET_INTC_HSRP = """
 
 """
 
+#=================================================#
+# Remove HSRP on a Subinterface
+# $(config)interface GigabitEthernet 2.500
+# $(config)no standby version 2
+# $(config)no standby <group>
+#=================================================#
+REMOVE_INTC_HSRP = """
+<config>
+        <cli-config-data>
+            <cmd>interface %s</cmd>
+            <cmd>no standby %s</cmd>
+            <cmd>no standby version 2</cmd>
+        </cli-config-data>
+</config>
+
+"""
 
 
 #=================================================#
