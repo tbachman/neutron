@@ -17,7 +17,7 @@
 # @author: Paul Michali, Cisco Systems, Inc.
 # REMOVE import json
 
-"""Mock requests to Cisco Cloud Services Router."""
+"""Mock REST requests to Cisco Cloud Services Router."""
 
 from functools import wraps
 from httmock import urlmatch, all_requests, response

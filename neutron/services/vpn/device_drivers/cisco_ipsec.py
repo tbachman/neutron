@@ -23,6 +23,7 @@ import shutil
 import jinja2
 import netaddr
 from oslo.config import cfg
+from webob import exc as wexc
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -37,6 +38,9 @@ from neutron.plugins.common import constants
 from neutron.plugins.common import utils as plugin_utils
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import device_drivers
+from neutron.services.vpn.device_drivers import (
+        cisco_csr_rest_client as csr_client)
+
 
 LOG = logging.getLogger(__name__)
 TEMPLATE_PATH = os.path.dirname(__file__)
@@ -534,6 +538,58 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def create_ipsec_site_connection(self, context, conn_id):
         LOG.info('PCM: Device driver:create_ipsec_site_connecition %s',
                  conn_id)
+        # Obtain login info for CSR
+        csr = csr_client.CsrRestClient('192.168.200.20',
+                                         'stack', 'cisco',
+                                         timeout=csr_client.TIMEOUT)
+        # Setup PSK
+        psk_info = {u'keyring-name': conn_id,
+                    u'pre-shared-key-list': [
+                        {u'key': u'secret',
+                         u'encrypted': False,
+                         u'peer-address': u'172.24.4.11/24'}
+                    ]}
+        csr.create_pre_shared_key(psk_info)
+        if csr.status != wexc.HTTPCreated.code:
+            LOG.exception("Unable to create PSK: %d", csr.status)
+        # Setup IKE policy
+        policy_info = {u'priority-id': 2,
+                       u'encryption': u'aes',
+                       u'hash': u'sha',
+                       u'dhGroup': 5,
+                       u'lifetime': 3600}
+        self.csr.create_ike_policy(policy_info)
+        if csr.status != wexc.HTTPCreated.code:
+            LOG.exception("Unable to create IKE policy: %d", csr.status)
+        # Setup IPSec policy
+        policy_info = {
+           u'policy-id': conn_id,
+           u'protection-suite': {
+               u'esp-encryption': u'esp-aes',
+               u'esp-authentication': u'esp-sha-hmac',
+               u'ah': u'ah-sha-hmac',
+           },
+           u'lifetime-sec': 120,
+           u'pfs': u'group5',
+           # TODO(pcm): Remove when CSR fixes 'Disable'
+           u'anti-replay-window-size': u'128'
+        }
+        self.csr.create_ipsec_policy(policy_info)
+        if csr.status != wexc.HTTPCreated.code:
+            LOG.exception("Unable to create IPSec policy: %d", csr.status)
+        # Create IPSec site-to-site connection
+        connection_info = {
+            u'vpn-interface-name': u'Tunnel0',
+            u'ipsec-policy-id': conn_id,
+            u'local-device': {u'ip-address': u'10.3.0.1/24',
+                              u'tunnel-ip-address': u'172.24.4.23'},
+            u'remote-device': {u'tunnel-ip-address': u'172.24.4.11'}
+        }
+        self.csr.create_ipsec_connection(connection_info)
+        if csr.status != wexc.HTTPCreated.code:
+            LOG.exception("Unable to create IPSec connection: %d", csr.status)
+        # Set connection status to PENDING_CREATE
+
 
     def vpnservice_updated(self, context, **kwargs):
         """Vpnservice updated rpc handler

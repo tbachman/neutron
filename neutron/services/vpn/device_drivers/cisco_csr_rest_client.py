@@ -22,6 +22,12 @@ from webob import exc as wexc
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
+
+# TODO(pcm): Set to 2.0, once resolve issues with CSR slowness and
+# timeout handling for PUT operations, which are taking up to 6 secs.
+# Should take 1.x seconds.
+TIMEOUT = 7.0
+
 # TODO(pcm): Redesign for asynchronous operation.
 
 LOG = logging.getLogger(__name__)
@@ -29,9 +35,9 @@ HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
 
-class Client(object):
+class CsrRestClient(object):
 
-    """REST Client for accessing the Cisco Cloud Services Router."""
+    """REST CsrRestClient for accessing the Cisco Cloud Services Router."""
 
     def __init__(self, host, username, password, timeout=None):
         self.host = host
@@ -214,7 +220,7 @@ class Client(object):
         return self.put_request('vpn-svc/ike/keepalive', keepalive_info)
 
 if __name__ == '__main__':
-    csr = Client('192.168.200.20', 'stack', 'cisco')
+    csr = CsrRestClient('192.168.200.20', 'stack', 'cisco')
 
     content = csr.post_request('interfaces/gigabitEthernet0/statistics',
                                payload={'action': 'clear'})

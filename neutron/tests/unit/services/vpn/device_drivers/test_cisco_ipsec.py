@@ -62,7 +62,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.driver.agent_rpc = mock.Mock()
 
     def test_create_ipsec_connection(self):
-        with 
+        pass
+
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:
 #             context = mock.Mock()
