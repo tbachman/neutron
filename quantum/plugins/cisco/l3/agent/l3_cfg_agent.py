@@ -289,7 +289,7 @@ class RouterInfo(object):
         self.routes = []
         self.ha_info = None
         # Set 'ha_info' if present
-        if router['ha_info']:
+        if router.get('ha_info') is not None:
             self.ha_info = router['ha_info']
 
     def router_name(self):
