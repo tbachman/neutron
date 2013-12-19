@@ -42,6 +42,7 @@ from quantum.db import l3_db
 from quantum.db import model_base
 from quantum.db import models_v2
 from quantum.extensions import providernet as pr_net
+from quantum.plugins.cisco.common import config
 from quantum.plugins.cisco.extensions import n1kv_profile
 from quantum.plugins.cisco.l3.common import service_vm_lib
 from quantum.plugins.cisco.l3.common import l3_rpc_joint_agent_api
@@ -644,6 +645,26 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         r_he_b = self._get_router_binding_info(context, id, load_he_info=False)
 
         return r_he_b.router_type
+
+
+    #TODO(bob-melander): Refactor - to new resource management class
+    def register_hardware_hosting_entities(self):
+        """To be called late during plugin initialization so that any
+        Nexus hardware devices are registered as hosting entities."""
+        _dev_dict = config.get_device_dictionary()
+        for dev_id, dev_ip, dev_key in _dev_dict:
+            if dev_key == const.USERNAME:
+                try:
+                    cdb.add_credential(
+                        dev_ip,
+                        _dev_dict[dev_id, dev_ip, const.USERNAME],
+                        _dev_dict[dev_id, dev_ip, const.PASSWORD],
+                        dev_id)
+                except cexc.CredentialAlreadyExists:
+                    # We are quietly ignoring this, since it only happens
+                    # if this class module is loaded more than once, in
+                    # which case, the credentials are already populated
+                    pass
 
     #TODO(bob-melander): Refactor - to new resource management class
     def create_csr1kv_vm_hosting_entities(self, context, num,
