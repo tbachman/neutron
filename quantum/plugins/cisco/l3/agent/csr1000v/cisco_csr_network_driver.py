@@ -122,9 +122,9 @@ class CiscoCSRDriver(RoutingDriver):
 
     def _csr_add_ha(self, ri, port):
         func_dict = {
-            'HSRP': self._csr_add_ha_HSRP,
-            'VRRP': self._csr_add_ha_VRRP,
-            'GBLP': self._csr_add_ha_GBLP
+            'HSRP': CiscoCSRDriver._csr_add_ha_HSRP,
+            'VRRP': CiscoCSRDriver._csr_add_ha_VRRP,
+            'GBLP': CiscoCSRDriver._csr_add_ha_GBLP
         }
         #Call the right function for the protocol
         func_dict[ri.ha_info['ha:type']](ri, port)
