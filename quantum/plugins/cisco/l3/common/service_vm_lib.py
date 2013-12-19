@@ -73,7 +73,7 @@ class ServiceVMManager:
         try:
             cfg = self.generate_config_for_csr(mgmt_port)
             cfg_f = open(cfg)
-            files = {'iosxe_config.txt': cfg}
+            files = {'iosxe_config.txt': cfg_f}
         except IOError:
             return None
 
