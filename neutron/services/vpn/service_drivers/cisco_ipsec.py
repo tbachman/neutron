@@ -99,8 +99,8 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
 
     def create_ipsec_site_connection(self, context, router_id, conn_id):
         """Send device driver create IPSec site-to-site connection request."""
-        LOG.debug("PCM: create IPsec connection called for service_driver %d",
-                  conn_id):
+        LOG.debug("PCM: IPSec connection create with %(router)s %(conn)s",
+                  {'router': router_id, 'conn': conn_id})
         self._agent_notification(context, 'create_ipsec_site_connection',
                                  router_id, conn_id=conn_id)
         
