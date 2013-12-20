@@ -552,6 +552,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         csr.create_pre_shared_key(psk_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create PSK: %d", csr.status)
+            return
         LOG.debug("PCM: Set up PSK")
         # Setup IKE policy
         policy_info = {u'priority-id': 2,
@@ -559,9 +560,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                        u'hash': u'sha',
                        u'dhGroup': 5,
                        u'lifetime': 3600}
-        self.csr.create_ike_policy(policy_info)
+        csr.create_ike_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IKE policy: %d", csr.status)
+            return
         LOG.debug("PCM: Set up IKE policy")
         # Setup IPSec policy
         policy_info = {
@@ -576,9 +578,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
            # TODO(pcm): Remove when CSR fixes 'Disable'
            u'anti-replay-window-size': u'128'
         }
-        self.csr.create_ipsec_policy(policy_info)
+        csr.create_ipsec_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec policy: %d", csr.status)
+            return
         LOG.debug("PCM: Set up IPSec policy")
         # Create IPSec site-to-site connection
         connection_info = {
@@ -588,9 +591,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                               u'tunnel-ip-address': u'172.24.4.23'},
             u'remote-device': {u'tunnel-ip-address': u'172.24.4.11'}
         }
-        self.csr.create_ipsec_connection(connection_info)
+        csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec connection: %d", csr.status)
+            return
         LOG.debug("PCM: Set up IPSec connection DONE!")
         # Set connection status to PENDING_CREATE
 
