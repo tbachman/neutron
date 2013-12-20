@@ -551,7 +551,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     ]}
         csr.create_pre_shared_key(psk_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("Unable to create PSK: %d", csr.status)
+            LOG.exception("PCM: Unable to create PSK: %d", csr.status)
+        LOG.debug("PCM: Set up PSK")
         # Setup IKE policy
         policy_info = {u'priority-id': 2,
                        u'encryption': u'aes',
@@ -560,7 +561,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                        u'lifetime': 3600}
         self.csr.create_ike_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("Unable to create IKE policy: %d", csr.status)
+            LOG.exception("PCM: Unable to create IKE policy: %d", csr.status)
+        LOG.debug("PCM: Set up IKE policy")
         # Setup IPSec policy
         policy_info = {
            u'policy-id': conn_id,
@@ -576,7 +578,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         }
         self.csr.create_ipsec_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("Unable to create IPSec policy: %d", csr.status)
+            LOG.exception("PCM: Unable to create IPSec policy: %d", csr.status)
+        LOG.debug("PCM: Set up IPSec policy")
         # Create IPSec site-to-site connection
         connection_info = {
             u'vpn-interface-name': u'Tunnel0',
@@ -587,7 +590,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         }
         self.csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("Unable to create IPSec connection: %d", csr.status)
+            LOG.exception("PCM: Unable to create IPSec connection: %d", csr.status)
+        LOG.debug("PCM: Set up IPSec connection DONE!")
         # Set connection status to PENDING_CREATE
 
 
@@ -601,7 +605,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         LOG.info("PCM: Ignoring vpnservice_updated message")
         # self.sync(context, [])
 
-    @abc.abstractmethod
     def create_process(self, process_id, vpnservice, namespace):
         pass
 
