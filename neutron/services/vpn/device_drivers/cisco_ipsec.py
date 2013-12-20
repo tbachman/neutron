@@ -567,7 +567,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         LOG.debug("PCM: Set up IKE policy")
         # Setup IPSec policy
         policy_info = {
-           u'policy-id': conn_id,
+           u'policy-id': u'1234',
            u'protection-suite': {
                u'esp-encryption': u'esp-aes',
                u'esp-authentication': u'esp-sha-hmac',
@@ -586,7 +586,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         # Create IPSec site-to-site connection
         connection_info = {
             u'vpn-interface-name': u'Tunnel0',
-            u'ipsec-policy-id': conn_id,
+            u'ipsec-policy-id': u'1234',
             u'local-device': {u'ip-address': u'10.3.0.1/24',
                               u'tunnel-ip-address': u'172.24.4.23'},
             u'remote-device': {u'tunnel-ip-address': u'172.24.4.11'}
