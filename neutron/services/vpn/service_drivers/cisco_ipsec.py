@@ -99,6 +99,8 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
 
     def create_ipsec_site_connection(self, context, router_id, conn_id):
         """Send device driver create IPSec site-to-site connection request."""
+        LOG.debug("PCM: create IPsec connection called for service_driver %d",
+                  conn_id):
         self._agent_notification(context, 'create_ipsec_site_connection',
                                  router_id, conn_id=conn_id)
         
@@ -122,13 +124,13 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
     def service_type(self):
         return IPSEC
 
-    def create_ipsec_site_connection_new(self, context, ipsec_site_connection):
+    def create_ipsec_site_connection(self, context, ipsec_site_connection):
         router_id = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])['router_id']
         self.agent_rpc.create_ipsec_site_connection(
             context, router_id, conn_id=ipsec_site_connection['id'])
         
-    def create_ipsec_site_connection(self, context, ipsec_site_connection):
+    def create_ipsec_site_connection_old(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
