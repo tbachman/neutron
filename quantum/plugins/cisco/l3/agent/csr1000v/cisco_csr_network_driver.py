@@ -55,7 +55,7 @@ class CiscoCSRDriver(RoutingDriver):
     def internal_network_added(self, ri, ex_gw_port, port):
         self._csr_create_subinterface(ri, port)
         if port.get('ha_info') is not None and ri.ha_info['ha:enabled']:
-            self._csr_add_ha_HSRP(ri, port)
+            self._csr_add_ha(ri, port)
         if ex_gw_port:
             self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
 
@@ -126,8 +126,8 @@ class CiscoCSRDriver(RoutingDriver):
             'VRRP': CiscoCSRDriver._csr_add_ha_VRRP,
             'GBLP': CiscoCSRDriver._csr_add_ha_GBLP
         }
-        #Call the right function for the protocol
-        func_dict[ri.ha_info['ha:type']](ri, port)
+        #Invoke the right function for the ha type
+        func_dict[ri.ha_info['ha:type']](self, ri, port)
 
     def _csr_add_ha_HSRP(self, ri, port):
         priority = ri.ha_info['priority']
@@ -138,6 +138,12 @@ class CiscoCSRDriver(RoutingDriver):
             vrf_name = self._csr_get_vrf_name(ri)
             subinterface = self._get_interface_name_from_hosting_port(port)
             self._set_ha_HSRP(subinterface, vrf_name, priority, group, ip)
+
+    def _csr_add_ha_VRRP(self, ri, port):
+        raise NotImplementedError
+
+    def _csr_add_ha_GBLP(self, ri, port):
+        raise NotImplementedError
 
     def _csr_remove_ha(self, ri, port):
         pass
@@ -623,9 +629,9 @@ class CiscoCSRDriver(RoutingDriver):
             raise rpc_obj.error
 
 
-##################
-# Main
-##################
+##############################
+# Main. Some simple test code
+#############################
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, filemode="w")
@@ -643,13 +649,15 @@ if __name__ == "__main__":
         driver.create_vrf('dummy_vrf')
         #driver.create_router(1, 'qrouter-dummy2', '10.0.110.1', 11)
         driver.create_subinterface('GigabitEthernet2.500', '500', 'dummy_vrf', '10.0.100.1', '255.255.255.0')
-        driver._set_ha_HSRP('GigabitEthernet2.500', 'dummy_vrf', '30', '888', '10.0.100.100')
-        driver._remove_ha_HSRP('GigabitEthernet2.500', '888')
+        driver.create_subinterface('GigabitEthernet2.600', '600', 'dummy_vrf', '10.0.200.1', '255.255.255.0')
+
+        #driver._set_ha_HSRP('GigabitEthernet2.500', 'dummy_vrf', '30', '888', '10.0.100.100')
+        #driver._remove_ha_HSRP('GigabitEthernet2.500', '888')
         #driver.remove_subinterface('GigabitEthernet1.11', 'qrouter-131666dc', '10.0.11.1', '11', '255.255.255.0')
 
-        #driver.nat_rules_for_internet_access('acl_230', '10.0.230.0', '0.0.0.255',
-        #                                     'GigabitEthernet1.230', 'GigabitEthernet2.230',
-        #                                     'qrouter-dummy')
+        driver.nat_rules_for_internet_access('acl_500', '10.0.100.0', '0.0.0.255',
+                                             'GigabitEthernet2.500', 'GigabitEthernet2.600',
+                                             'dummy_vrf')
         #driver.remove_nat_rules_for_internet_access('acl_230', '10.0.230.0', '0.0.0.255',
         #                                     'GigabitEthernet1.230', 'GigabitEthernet2.230',
         #                                     'qrouter-dummy')
