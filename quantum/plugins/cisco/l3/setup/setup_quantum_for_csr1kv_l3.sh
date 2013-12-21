@@ -60,22 +60,22 @@ function _configure_vsm_port_profiles() {
 	send "feature network-segmentation-manager\n"
 	expect -re ".*# "
 
-        send "port-profile $env(profile_name)\n"
+    send "port-profile type vethernet $env(profile_name)\n"
 	expect -re ".*# "
 
-        send "no shut\n"
+    send "no shut\n"
 	expect -re ".*# "
 
-        send "state enabled\n"
+    send "state enabled\n"
 	expect -re ".*# "
 
-        send "publish port-profile\n"
+    send "publish port-profile\n"
 	expect -re ".*# "
 
-        send "end\n"
-        expect -re ".*# "
+    send "end\n"
+    expect -re ".*# "
 
-        send "exit\n"
+    send "exit\n"
     '
 }
 
