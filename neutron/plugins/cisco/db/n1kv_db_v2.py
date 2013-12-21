@@ -921,6 +921,21 @@ def create_profile_binding(tenant_id, profile_id, profile_type):
         db_session.add(binding)
         return binding
 
+def create_profile_binding_2(db_session, tenant_id, profile_id, profile_type):
+    """Create Network/Policy Profile association with a tenant."""
+    if profile_type not in ["network", "policy"]:
+        raise q_exc.NeutronException(_("Invalid profile type"))
+
+    if _profile_binding_exists(tenant_id, profile_id, profile_type):
+        return get_profile_binding(tenant_id, profile_id)
+
+    #db_session = db.get_session()
+    with db_session.begin(subtransactions=True):
+        binding = n1kv_models_v2.ProfileBinding(profile_type=profile_type,
+                                                profile_id=profile_id,
+                                                tenant_id=tenant_id)
+        db_session.add(binding)
+        return binding
 
 def _profile_binding_exists(tenant_id, profile_id, profile_type):
     db_session = db.get_session()
@@ -1051,7 +1066,7 @@ class NetworkProfile_db_mixin(object):
                 sync_vlan_allocations(context.session, net_profile)
             elif net_profile.segment_type == c_const.NETWORK_TYPE_OVERLAY:
                 sync_vxlan_allocations(context.session, net_profile)
-            create_profile_binding(context.tenant_id,
+            create_profile_binding_2(context.session, context.tenant_id,
                                    net_profile.id,
                                    c_const.NETWORK)
             if p.get("add_tenant"):
