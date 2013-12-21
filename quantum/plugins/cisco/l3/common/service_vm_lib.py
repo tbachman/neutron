@@ -86,7 +86,8 @@ class ServiceVMManager:
         try:
             server = self._nclient.servers.create('csr1kv_nrouter', image.id,
                                                   flavor.id, nics=nics,
-                                                  files=files)
+                                                  files=files,
+                                                  config_drive=True)
         except (n_exc.UnsupportedVersion, n_exc.CommandError,
                 n_exc.AuthorizationFailure, n_exc.NoUniqueMatch,
                 n_exc.AuthSystemNotFound, n_exc.NoTokenLookupException,
