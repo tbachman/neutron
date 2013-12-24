@@ -24,6 +24,7 @@ import re
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import and_
 
+from neutron.api.v2 import attributes
 from neutron.common import exceptions as q_exc
 import neutron.db.api as db
 from neutron.db import models_v2
@@ -1233,6 +1234,35 @@ class NetworkProfile_db_mixin(object):
         self._validate_network_profile(p)
         self._validate_segment_range_uniqueness(context, p)
 
+    def _validate_multicast_ip_range(self, network_profile):
+         """
+         Validate multicast ip range values.
+
+         :param network_profile: network profile object
+         """
+         try:
+             LOG.debug("multicast_ip_range %s",
+                       network_profile['multicast_ip_range'])
+             min_ip, max_ip = network_profile['multicast_ip_range'].split('-')
+             LOG.debug("min_ip %s, max_ip %s", min_ip, max_ip)
+             if not netaddr.IPAddress(min_ip).is_multicast():
+                 msg = (_("'%s' is not a valid multicast ip") % min_ip)
+                 LOG.exception(msg)
+                 raise q_exc.InvalidInput(error_message=msg)
+             if not netaddr.IPAddress(max_ip).is_multicast():
+                 msg = (_("'%s' is not a valid multicast ip") % max_ip)
+                 LOG.exception(msg)
+                 raise q_exc.InvalidInput(error_message=msg)
+         except q_exc.InvalidInput:
+             LOG.exception(msg)
+             raise q_exc.InvalidInput(error_message=msg)
+         except Exception:
+             msg = _("invalid multicast ip address range. "
+                     "example range: 224.1.1.1-224.1.1.10")
+             LOG.exception(msg)
+             raise q_exc.InvalidInput(error_message=msg)
+ 
+
     def _validate_segment_range(self, network_profile):
         """
         Validate segment range values.
@@ -1287,9 +1317,16 @@ class NetworkProfile_db_mixin(object):
         if segment_type == c_const.NETWORK_TYPE_OVERLAY:
             if net_p['sub_type'] != c_const.NETWORK_SUBTYPE_NATIVE_VXLAN:
                 net_p['multicast_ip_range'] = '0.0.0.0'
+            else:
+                multicast_ip_range = net_p.get("multicast_ip_range")
+                if not attributes.is_attr_set(multicast_ip_range):
+                   msg = _("argument multicast_ip_range missing"
+                        "for VXLAN multicast network profile")
+                   LOG.exception(msg)
+                   raise q_exc.InvalidInput(error_message=msg)
+                self._validate_multicast_ip_range(net_p)
         else:
-            net_p['multicast_ip_range'] = '0.0.0.0'
-
+           net_p['multicast_ip_range'] = '0.0.0.0'     
     def _validate_segment_range_uniqueness(self, context, net_p, id=None):
         """
         Validate that segment range doesn't overlap.
