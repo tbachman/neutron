@@ -334,6 +334,34 @@ RESOURCE_ATTRIBUTE_MAP = {
     }
 }
 
+def build_plural_mappings(special_mappings, resource_map):
+    plural_mappings = []
+    for plural in resource_map:
+        singular = special_mappings.get(plural, plural[:-1])
+        plural_mappings.append((plural, singular))
+    
+    return plural_mappings
+
+def build_resource_info(self, plural_mappings, resource_map, which_service):
+    resources = []
+    plugin = manager.NeutronManager.get_service_plugins()[which_service]
+    for collection_name in resource_map:
+        resource_name = plural_mappings[collection_name]
+        params = resource_map[collection_name]
+        collection_name = collection_name.replace('_', '-')
+        quota.QUOTAS.register_resource_by_name(resource_name)
+        controller = base.create_resource(
+            collection_name, resource_name, plugin, params, 
+            allow_pagination=cfg.CONF.allow_pagination, 
+            allow_sorting=cfg.CONF.allow_sorting)
+        resource = extensions.ResourceExtension(
+            collection_name, 
+            controller, 
+            path_prefix=constants.COMMON_PREFIXES[which_service], 
+            attr_map=params)
+        resources.append(resource)
+    return resources
+
 
 class Vpnaas(extensions.ExtensionDescriptor):
 
@@ -359,38 +387,14 @@ class Vpnaas(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_resources(cls):
-        plural_mapping = {
-            'ikepolicies': 'ikepolicy',
-            'ipsecpolicies': 'ipsecpolicy'
-        }
-        my_plurals = []
-        for plural in RESOURCE_ATTRIBUTE_MAP:
-            singular = plural_mapping.get(plural, plural[:-1])
-            my_plurals.append((plural, singular))
-        my_plurals.append(('peer_cidrs', 'peer_cidr'))
-        attr.PLURALS.update(dict(my_plurals))
-        resources = []
-        plugin = manager.NeutronManager.get_service_plugins()[
-            constants.VPN]
-        for collection_name in RESOURCE_ATTRIBUTE_MAP:
-            resource_name = plural_mapping.get(
-                collection_name, collection_name[:-1])
-            params = RESOURCE_ATTRIBUTE_MAP[collection_name]
-            collection_name = collection_name.replace('_', '-')
-
-            quota.QUOTAS.register_resource_by_name(resource_name)
-            controller = base.create_resource(
-                collection_name, resource_name, plugin, params,
-                allow_pagination=cfg.CONF.allow_pagination,
-                allow_sorting=cfg.CONF.allow_sorting)
-
-            resource = extensions.ResourceExtension(
-                collection_name,
-                controller,
-                path_prefix=constants.COMMON_PREFIXES[constants.VPN],
-                attr_map=params)
-            resources.append(resource)
-        return resources
+        special_mappings = {'ikepolicies':'ikepolicy', 
+                            'ipsecpolicies':'ipsecpolicy'}
+        plural_mappings = build_plural_mappings(special_mappings,
+                                                RESOURCE_ATTRIBUTE_MAP)
+        plural_mappings.append(('peer_cidrs', 'peer_cidr'))
+        attr.PLURALS.update(dict(plural_mappings))
+        return build_resource_info(plural_mappings, RESOURCE_ATTRIBUTE_MAP,
+                                   constants.VPN)
 
     @classmethod
     def get_plugin_interface(cls):
