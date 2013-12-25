@@ -551,7 +551,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         if 'port_id' in interface_info:
             port_db = self._get_port(context, interface_info['port_id'])
             net_id = port_db['network_id']
-            subnet_id = port_db['fixed_ips']['subnet_id']
+            subnet_id = port_db['fixed_ips'][0]['subnet_id']
         elif 'subnet_id' in interface_info:
             subnet_db = self._get_subnet(context, interface_info['subnet_id'])
             subnet_id = subnet_db['id']
