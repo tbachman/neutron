@@ -570,7 +570,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             if_chg_status = {
                 'changed': True,
                 'old_hosting_port_name': self._get_hosting_port_name(
-                    context, trunk_network_id),
+                    context.elevated(), trunk_network_id),
                 'old_hosting_port_id': hosting_port_id,
                 'old_trunk_nw_id': trunk_network_id}
         # process any HA
