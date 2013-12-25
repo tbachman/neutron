@@ -36,8 +36,10 @@ from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import l3_rpc_base
 from neutron.db import portbindings_db
+from neutron.db import quota_db
 from neutron.extensions import portbindings
 from neutron.extensions import providernet
+from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.openstack.common import uuidutils as uuidutils
@@ -55,8 +57,8 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                       l3_rpc_base.L3RpcCallbackMixin):
+class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
+#                       l3_rpc_base.L3RpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
@@ -75,12 +77,13 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
-                          l3_db.L3_NAT_db_mixin,
+#                          l3_db.L3_NAT_db_mixin,
                           portbindings_db.PortBindingMixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
-                          agentschedulers_db.AgentSchedulerDbMixin):
+                          agentschedulers_db.AgentSchedulerDbMixin,
+                          quota_db.DbQuotaDriver):
 
     """
     Implement the Neutron abstractions using Cisco Nexus1000V.
@@ -95,8 +98,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     __native_bulk_support = False
     supported_extension_aliases = ["provider", "agent",
                                    "n1kv", "network_profile",
-                                   "policy_profile", "external-net", "router",
-                                   "binding", "credential"]
+                                   "policy_profile", "external-net", #"router",
+                                   "binding", "credential", "quotas"]
 
     def __init__(self, configfile=None):
         """
@@ -120,14 +123,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _setup_rpc(self):
         # RPC support
-        self.service_topics = {svc_constants.CORE: topics.PLUGIN,
-                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
+        self.service_topics = {svc_constants.CORE: topics.PLUGIN}#,
+#                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.conn = rpc.create_connection(new=True)
         self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
-        self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+#        self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
@@ -216,8 +219,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.vxlan_id_ranges = []
         network_profiles = n1kv_db_v2._get_network_profiles()
         for network_profile in network_profiles:
+            # Bob Melander: Temporary workaround for trunk networks.
             seg_min, seg_max = self._get_segment_range(
-                network_profile['segment_range'])
+                network_profile['segment_range'] or "0-0")
             if network_profile['segment_type'] == c_const.NETWORK_TYPE_VLAN:
                 self._add_network_vlan_range(network_profile[
                     'physical_network'], int(seg_min), int(seg_max))
@@ -1247,12 +1251,13 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
-        if l3_port_check:
-            self.prevent_l3_port_deletion(context, id)
-        with context.session.begin(subtransactions=True):
-            self.disassociate_floatingips(context, id)
-            self._send_delete_port_request(context, id)
-            super(N1kvNeutronPluginV2, self).delete_port(context, id)
+        l3plugin = manager.NeutronManager.get_service_plugins().get(
+            svc_constants.L3_ROUTER_NAT)
+        if l3plugin and l3_port_check:
+            l3plugin.prevent_l3_port_deletion(context, id)
+            l3plugin.disassociate_floatingips(context, id)
+        self._send_delete_port_request(context, id)
+        return super(N1kvNeutronPluginV2, self).delete_port(context, id)
 
     def get_port(self, context, id, fields=None):
         """
@@ -1264,7 +1269,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: port dictionary
         """
         LOG.debug(_("Get port: %s"), id)
-        port = super(N1kvNeutronPluginV2, self).get_port(context, id, fields)
+        port = super(N1kvNeutronPluginV2, self).get_port(context, id, None)
         self._extend_port_dict_profile(context, port)
         return self._fields(port, fields)
 
@@ -1285,7 +1290,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_("Get ports"))
         ports = super(N1kvNeutronPluginV2, self).get_ports(context, filters,
-                                                           fields)
+                                                           None)
         for port in ports:
             self._extend_port_dict_profile(context, port)
 
@@ -1350,7 +1355,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug(_("Get subnet: %s"), id)
         subnet = super(N1kvNeutronPluginV2, self).get_subnet(context, id,
-                                                             fields)
+                                                             None)
         return self._fields(subnet, fields)
 
     def get_subnets(self, context, filters=None, fields=None):
@@ -1371,7 +1376,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_("Get subnets"))
         subnets = super(N1kvNeutronPluginV2, self).get_subnets(context,
                                                                filters,
-                                                               fields)
+                                                               None)
         return [self._fields(subnet, fields) for subnet in subnets]
 
     def create_network_profile(self, context, network_profile):
