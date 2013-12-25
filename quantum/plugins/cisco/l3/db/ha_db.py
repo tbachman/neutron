@@ -230,7 +230,8 @@ class HA_db_mixin(object):
         has_gateway = router.get('external_gateway_info',
                                  current['external_gateway_info'] is not None)
         ha_enabled = router.get(ha.HA_ENABLED,
-                                current[ha.HA_ENABLED] is not None)
+                                current[ha.HA_ENABLED]
+                                if ha.HA_ENABLED in current else False)
         if ha_enabled:
             if not cfg.CONF.ha_support_enabled:
                 raise ha.HADisabled()
