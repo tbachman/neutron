@@ -24,6 +24,12 @@ from neutron import quota
 
 
 def build_plural_mappings(special_mappings, resource_map):
+    """Create plural to singular mapping for all resources.
+
+    Allows for special mappings to be provided, like policies -> policy.
+    Otherwise, will strip off the last character for normal mappings, like
+    routers -> router.
+    """
     plural_mappings = {}
     for plural in resource_map:
         singular = special_mappings.get(plural, plural[:-1])
@@ -33,12 +39,13 @@ def build_plural_mappings(special_mappings, resource_map):
 
 def build_resource_info(plural_mappings, resource_map, which_service,
                         action_map={}, register_quota=False,
-                        translate_name=False):
+                        translate_name=False, allow_bulk=False):
+    """Build resources for a service plugin."""
     resources = []
     plugin = manager.NeutronManager.get_service_plugins()[which_service]
     for collection_name in resource_map:
         resource_name = plural_mappings[collection_name]
-        params = resource_map[collection_name]
+        params = resource_map.get(collection_name, {})
         if translate_name:
             collection_name = collection_name.replace('_', '-')
         if register_quota:
@@ -47,6 +54,7 @@ def build_resource_info(plural_mappings, resource_map, which_service,
         controller = base.create_resource(
             collection_name, resource_name, plugin, params,
             member_actions=member_actions,
+            allow_bulk=allow_bulk,
             allow_pagination=cfg.CONF.allow_pagination,
             allow_sorting=cfg.CONF.allow_sorting)
         resource = extensions.ResourceExtension(
