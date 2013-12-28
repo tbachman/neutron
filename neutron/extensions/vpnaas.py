@@ -331,6 +331,34 @@ RESOURCE_ATTRIBUTE_MAP = {
     }
 }
 
+def build_plural_mappings(special_mappings, resource_map):
+    plural_mappings = []
+    for plural in resource_map:
+        singular = special_mappings.get(plural, plural[:-1])
+        plural_mappings.append((plural, singular))
+    
+    return plural_mappings
+
+def build_resource_info(self, plural_mappings, resource_map, which_service):
+    resources = []
+    plugin = manager.NeutronManager.get_service_plugins()[which_service]
+    for collection_name in resource_map:
+        resource_name = plural_mappings[collection_name]
+        params = resource_map[collection_name]
+        collection_name = collection_name.replace('_', '-')
+        quota.QUOTAS.register_resource_by_name(resource_name)
+        controller = base.create_resource(
+            collection_name, resource_name, plugin, params, 
+            allow_pagination=cfg.CONF.allow_pagination, 
+            allow_sorting=cfg.CONF.allow_sorting)
+        resource = extensions.ResourceExtension(
+            collection_name, 
+            controller, 
+            path_prefix=constants.COMMON_PREFIXES[which_service], 
+            attr_map=params)
+        resources.append(resource)
+    return resources
+
 
 class Vpnaas(extensions.ExtensionDescriptor):
 
