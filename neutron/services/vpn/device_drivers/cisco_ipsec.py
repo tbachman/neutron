@@ -571,7 +571,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
            u'protection-suite': {
                u'esp-encryption': u'esp-aes',
                u'esp-authentication': u'esp-sha-hmac',
-               u'ah': u'ah-sha-hmac',
            },
            u'lifetime-sec': 120,
            u'pfs': u'group5',
