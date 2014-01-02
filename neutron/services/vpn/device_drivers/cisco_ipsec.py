@@ -535,6 +535,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
+    def create_psk(self):
+        pass
+
     def create_ipsec_site_connection(self, context, conn_id):
         LOG.info('PCM: Device driver:create_ipsec_site_connecition %s',
                  conn_id)
@@ -552,48 +555,45 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         csr.create_pre_shared_key(psk_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create PSK: %d", csr.status)
-            return
         LOG.debug("PCM: Set up PSK")
         # Setup IKE policy
-        policy_info = {u'priority-id': "2",
+        policy_info = {u'priority-id': 2,
                        u'encryption': u'aes',
                        u'hash': u'sha',
                        u'dhGroup': 5,
                        u'lifetime': 3600}
-        csr.create_ike_policy(policy_info)
+        self.csr.create_ike_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IKE policy: %d", csr.status)
-            return
         LOG.debug("PCM: Set up IKE policy")
         # Setup IPSec policy
         policy_info = {
-           u'policy-id': u'1234',
+           u'policy-id': conn_id,
            u'protection-suite': {
                u'esp-encryption': u'esp-aes',
                u'esp-authentication': u'esp-sha-hmac',
+               u'ah': u'ah-sha-hmac',
            },
            u'lifetime-sec': 120,
            u'pfs': u'group5',
            # TODO(pcm): Remove when CSR fixes 'Disable'
            u'anti-replay-window-size': u'128'
         }
-        csr.create_ipsec_policy(policy_info)
+        self.csr.create_ipsec_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec policy: %d", csr.status)
-            return
         LOG.debug("PCM: Set up IPSec policy")
         # Create IPSec site-to-site connection
         connection_info = {
             u'vpn-interface-name': u'Tunnel0',
-            u'ipsec-policy-id': u'1234',
+            u'ipsec-policy-id': conn_id,
             u'local-device': {u'ip-address': u'10.3.0.1/24',
                               u'tunnel-ip-address': u'172.24.4.23'},
             u'remote-device': {u'tunnel-ip-address': u'172.24.4.11'}
         }
-        csr.create_ipsec_connection(connection_info)
+        self.csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec connection: %d", csr.status)
-            return
         LOG.debug("PCM: Set up IPSec connection DONE!")
         # Set connection status to PENDING_CREATE
 
@@ -633,6 +633,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         Agent calls this method, when the process namespace
         is ready.
         """
+        LOG.debug("PCM: Ignoring create_router call")
+        return
         if process_id in self.processes:
             # In case of vpnservice is created
             # before router's namespace
@@ -646,6 +648,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         Agent calls this method, when the process namespace
         is deleted.
         """
+        LOG.debug("PCM: Ignoring destroy_router call")
+        return
         if process_id in self.processes:
             process = self.processes[process_id]
             process.disable()
@@ -686,6 +690,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         }
 
     def report_status(self, context):
+        LOG.debug("PCM: Ignoring report_status call")
+        return
+
         status_changed_vpn_services = []
         for process in self.processes.values():
             previous_status = self.get_process_status_cache(process)
@@ -719,6 +726,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         In order to handle, these failure cases,
         This driver takes simple sync strategies.
         """
+        LOG.debug("PCM: Ignoring sync call - should not see this")
+        return
+
         vpnservices = self.agent_rpc.get_vpn_services_on_host(
             context, self.host)
         router_ids = [vpnservice['router_id'] for vpnservice in vpnservices]

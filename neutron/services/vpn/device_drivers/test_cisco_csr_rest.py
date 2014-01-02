@@ -28,6 +28,9 @@ LOG = logging.getLogger(__name__)
 if True:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
+# TODO(pcm): Uncomment once bug is resolved.
+# dumnmy_uuid = '1eb4ee6b-0870-45a0-b554-7b69096a809c'
+dummy_uuid = '1eb4ee6b-0870-45a0-b554-7b69096'
 
 
 class TestCsrLoginRestApi(unittest.TestCase):
@@ -547,6 +550,36 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                                u'idle-time': None}
             self.assertEqual(expected_policy, content)
 
+    def test_create_ipsec_policy_with_uuid(self):
+        """Create IPSec policy using UUID for id."""
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            policy_info = {
+                u'policy-id': u'%s' % dummy_uuid,
+                u'protection-suite': {
+                    u'esp-encryption': u'esp-aes',
+                    u'esp-authentication': u'esp-sha-hmac',
+                    u'ah': u'ah-sha-hmac',
+                },
+                u'lifetime-sec': 120,
+                u'pfs': u'group5',
+                # TODO(pcm): Remove when CSR fixes 'Disable'
+                u'anti-replay-window-size': u'128'
+            }
+            location = self.csr.create_ipsec_policy(policy_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('vpn-svc/ipsec/policies/%s' % dummy_uuid, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_policy = {u'kind': u'object#ipsec-policy',
+                               u'mode': u'tunnel',
+                               # TODO(pcm): Uncomment, when fixed on CSR
+                               # u'anti-replay-window-size': 'Disable',
+                               u'lifetime-kb': None,
+                               u'idle-time': None}
+            expected_policy.update(policy_info)
+            self.assertEqual(expected_policy, content)
+
 
 class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
 
@@ -942,9 +975,12 @@ if True:
                                          'stack', 'cisco',
                                          timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
+            _cleanup_resource(self, 'vpn-svc/ipsec/policies/%s' % dummy_uuid)
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self,
                             'vpn-svc/ipsec/policies/123')
+            self.addCleanup(_cleanup_resource, self,
+                            'vpn-svc/ipsec/policies/%s' % dummy_uuid)
 
     class TestLiveCsrRestIPSecConnectionCreate(
             TestCsrRestIPSecConnectionCreate):

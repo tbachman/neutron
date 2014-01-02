@@ -19,6 +19,8 @@
 
 """Mock REST requests to Cisco Cloud Services Router."""
 
+import re
+
 from functools import wraps
 from httmock import urlmatch, all_requests, response
 import requests
@@ -199,6 +201,23 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
+    uuid = '1eb4ee6b-0870-45a0-b554-7b69096a809c'
+    if 'vpn-svc/ipsec/policies/%s' % uuid in url.path:
+        content = {u'kind': u'object#ipsec-policy',
+                   u'mode': u'tunnel',
+                   # TODO(pcm): Use 'Disable', when fixed on CSR
+                   u'anti-replay-window-size': u'128',
+                   u'policy-id': u'%s' % uuid,
+                   u'protection-suite': {
+                       u'esp-encryption': u'esp-aes',
+                       u'esp-authentication': u'esp-sha-hmac',
+                       u'ah': u'ah-sha-hmac',
+                   },
+                   u'lifetime-sec': 120,
+                   u'pfs': u'group5',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
+        return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/site-to-site' in url.path:
         content = {u'kind': u'object#vpn-site-to-site',
                    u'vpn-interface-name': u'Tunnel0',
@@ -294,11 +313,10 @@ def post(url, request):
         headers = {'location': "%s/2" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:
-        if '"policy-id": "123"' in request.body:
-            headers = {'location': "%s/123" % url.geturl()}
-        else:
-            headers = {'location': "%s/321" % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        m = re.search(r'"policy-id": "(\S+)"', request.body)
+        if m:
+            headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
+            return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/ike/keyrings' in url.path:
         headers = {'location': "%s/5" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)

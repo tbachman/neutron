@@ -26,7 +26,7 @@ from neutron.openstack.common import log as logging
 # TODO(pcm): Set to 2.0, once resolve issues with CSR slowness and
 # timeout handling for PUT operations, which are taking up to 6 secs.
 # Should take 1.x seconds.
-TIMEOUT = 7.0
+TIMEOUT = 10.0
 
 # TODO(pcm): Redesign for asynchronous operation.
 
