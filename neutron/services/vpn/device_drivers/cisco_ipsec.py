@@ -535,66 +535,87 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
-    def create_psk(self):
-        pass
+    def create_psk_info(self, info):
+        conn_info = info['site_conn']
+        return {u'keyring-name': conn_info['id'],
+                u'pre-shared-key-list': [
+                    {u'key': conn_info['psk'],
+                     u'encrypted': False,
+                     u'peer-address': conn_info['peer_address']}]}
 
-    def create_ipsec_site_connection(self, context, conn_id):
+    def create_ike_policy_info(self, info):
+        # TODO(pcm) Create ID via a mapping function, map for encryption,
+        # hash, group, and look-up lifetime (ensure in seconds, else reject)
+        policy_info = info['ike_policy']
+        return {u'priority-id': '2',
+                u'encryption': u'aes',
+                u'hash': u'sha',
+                u'dhGroup': 5,
+                u'lifetime': policy_info['lifetime']['value']}
+
+    def create_ipsec_policy_info(self, info):
+        policy_info = info['ipsec_policy']
+        # TODO(pcm): Use UUID for ID, once bug fixed, convert protection
+        # info, pfs, and lifetime (ensure in seconds, else reject)
+        return {u'policy-id': '8',
+                u'protection-suite': {
+                    u'esp-encryption': u'esp-aes',
+                    u'esp-authentication': u'esp-sha-hmac',
+                    u'ah': u'ah-sha-hmac'},
+                u'lifetime-sec': policy_info['lifetime']['value'],
+                u'pfs': u'group5',
+                # TODO(pcm): Remove when CSR fixes 'Disable'
+                u'anti-replay-window-size': u'128'}
+
+    def create_site_connection_info(self, info):
+        # TODO(pcm): Use mapping to get tunnel ID, use UUID once bug fixed for
+        # policy, may need API extnsion to set ip address of tunnel, need to
+        # get router public address for local tunnel ip
+        conn_info = info['site_conn']
+        return {u'vpn-interface-name': u'Tunnel0',
+            u'ipsec-policy-id': '8',
+            u'local-device': {u'ip-address': u'10.3.0.1/24',
+                              u'tunnel-ip-address': u'172.24.4.23'},
+            u'remote-device': {
+                u'tunnel-ip-address': conn_info['peer_address']}
+        }
+
+    def create_ipsec_site_connection(self, context, conn_info):
         LOG.info('PCM: Device driver:create_ipsec_site_connecition %s',
-                 conn_id)
+                 conn_info['site_conn']['id'])
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
                                          'stack', 'cisco',
                                          timeout=csr_client.TIMEOUT)
-        # Setup PSK
-        psk_info = {u'keyring-name': conn_id,
-                    u'pre-shared-key-list': [
-                        {u'key': u'secret',
-                         u'encrypted': False,
-                         u'peer-address': u'172.24.4.11/24'}
-                    ]}
+        # TODO(pcm) if unable to map, do we raise exception or rollback and
+        # return failure?
+        psk_info = self.create_psk_info(conn_info)
         csr.create_pre_shared_key(psk_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create PSK: %d", csr.status)
-        LOG.debug("PCM: Set up PSK")
-        # Setup IKE policy
-        policy_info = {u'priority-id': 2,
-                       u'encryption': u'aes',
-                       u'hash': u'sha',
-                       u'dhGroup': 5,
-                       u'lifetime': 3600}
-        self.csr.create_ike_policy(policy_info)
+        LOG.debug("PCM: PSK is configured")
+
+        policy_info = self.create_ike_policy_info(conn_info)
+        csr.create_ike_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IKE policy: %d", csr.status)
-        LOG.debug("PCM: Set up IKE policy")
-        # Setup IPSec policy
-        policy_info = {
-           u'policy-id': conn_id,
-           u'protection-suite': {
-               u'esp-encryption': u'esp-aes',
-               u'esp-authentication': u'esp-sha-hmac',
-               u'ah': u'ah-sha-hmac',
-           },
-           u'lifetime-sec': 120,
-           u'pfs': u'group5',
-           # TODO(pcm): Remove when CSR fixes 'Disable'
-           u'anti-replay-window-size': u'128'
-        }
-        self.csr.create_ipsec_policy(policy_info)
+        LOG.debug("PCM: IKE policy is configured")
+
+        policy_info = self.create_ipsec_policy_info(conn_info)
+        csr.create_ipsec_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec policy: %d", csr.status)
-        LOG.debug("PCM: Set up IPSec policy")
-        # Create IPSec site-to-site connection
-        connection_info = {
-            u'vpn-interface-name': u'Tunnel0',
-            u'ipsec-policy-id': conn_id,
-            u'local-device': {u'ip-address': u'10.3.0.1/24',
-                              u'tunnel-ip-address': u'172.24.4.23'},
-            u'remote-device': {u'tunnel-ip-address': u'172.24.4.11'}
-        }
-        self.csr.create_ipsec_connection(connection_info)
+        LOG.debug("PCM: IPSec policy is configured")
+
+        connection_info = self.create_site_connection_info(conn_info)
+        csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
             LOG.exception("PCM: Unable to create IPSec connection: %d", csr.status)
         LOG.debug("PCM: Set up IPSec connection DONE!")
+        
+        # TODO(pcm): Setup static route(s), configure MTU on tunnel, do DPD
+        # as separate REST API.
+        
         # Set connection status to PENDING_CREATE
 
 
