@@ -408,7 +408,7 @@ class TestCsrRestApiFailures(unittest.TestCase):
         with HTTMock(csr_request.token_unauthorized):
             self.csr._do_request('GET', 'global/host-name')
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-
+        
 
 class TestCsrRestIkePolicyCreate(unittest.TestCase):
 
@@ -687,7 +687,12 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
 
 class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
-    """Test IPSec site-to-site connection REST requests."""
+    """Test IPSec site-to-site connection REST requests.
+    
+    This requires us to have first created an IKE policy, IPSec policy,
+    and pre-shared key, so it's more of an itegration test, when used
+    with a real CSR (as we can't mock out these pre-conditions.
+    """
 
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
@@ -861,7 +866,8 @@ class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
     supports DELETE API, but a bug has been created to remove the API and
     add an indicator of when the capability is disabled.
 
-    TODO(pcm): revise tests, once CSR is updated.
+    TODO(pcm): revise tests  to not delete, but change to disabled, once
+    the CSR is updated.
     """
 
     def setUp(self):
@@ -923,7 +929,7 @@ class TestCsrRestStaticRoute(unittest.TestCase):
             expected_route.update(route_info)
             self.assertEqual(expected_route, content)
 
-
+    
 # Functional tests with a real CSR
 if True:
     def _cleanup_resource(for_test, resource):
