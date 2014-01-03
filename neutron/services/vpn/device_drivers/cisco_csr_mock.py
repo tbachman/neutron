@@ -237,6 +237,11 @@ def get(url, request):
                    u'retry': 4,
                    u'periodic': True}
         return response(wexc.HTTPOk.code, content=content)
+    if 'routing-svc/static-routes' in url.path:
+        content = {u'destination-network': u'10.1.0.0/24',
+                   u'outgoing-interface': u'gigabitEthernet1',
+                   u'admin-distance': 1}
+        return response(wexc.HTTPOk.code, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keyrings')
@@ -322,6 +327,10 @@ def post(url, request):
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
         headers = {'location': "%s/Tunnel0" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
+    if 'routing-svc/static-routes' in url.path:
+        headers = {'location': 
+                   "%s/10.1.0.0_24_gigabitEthernet1" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
 
 

@@ -867,6 +867,35 @@ class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
 
+class TestCsrRestStaticRoute(unittest.TestCase):
+
+    """Test static route REST requests.
+
+    A static route is added for the peer's private network. Would create
+    a route for each of the peer CIDRs specified for the VPN connection.
+    """
+
+    def setUp(self):
+        self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
+
+    def test_create_static_route(self):
+        """Create a static route for the tunnel."""
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            route_info = {u'destination-network': u'10.1.0.0/24',
+                          u'outgoing-interface': u'GigabitEthernet1'}
+            location = self.csr.create_static_route(route_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.assertIn('routing-svc/static-routes/', location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_route = {u'kind': u'object#static-route',
+                              u'next-hop-router': None,
+                              u'admin-distance': 1}
+            expected_route.update(route_info)
+            self.assertEqual(expected_route, content)
+            
+
 # Functional tests with a real CSR
 if True:
     def _cleanup_resource(for_test, resource):
@@ -1017,6 +1046,17 @@ if True:
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self, 'vpn-svc/ike/keepalive')
 
+    class TestLiveCsrRestStaticRoute(TestCsrRestStaticRoute):
+
+        def setUp(self):
+            self.csr = csr_client.CsrRestClient('192.168.200.20',
+                                         'stack', 'cisco',
+                                         timeout=csr_client.TIMEOUT)
+            route1 = '10.1.0.0_24_GigabitEthernet1'
+            _cleanup_resource(self, 'routing-svc/static-routes/%s' % route1)
+            self.csr.token = None
+            self.addCleanup(_cleanup_resource, self,
+                            'routing-svc/static-routes/%s' % route1)
 
 if __name__ == '__main__':
     unittest.main()

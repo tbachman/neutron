@@ -219,6 +219,10 @@ class CsrRestClient(object):
         keepalive_info.update(base_keepalive_info)
         return self.put_request('vpn-svc/ike/keepalive', keepalive_info)
 
+    def create_static_route(self, route_info):
+        return self.post_request('routing-svc/static-routes',
+                                 payload=route_info)
+
 if __name__ == '__main__':
     csr = CsrRestClient('192.168.200.20', 'stack', 'cisco')
 
