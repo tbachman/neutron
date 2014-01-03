@@ -575,7 +575,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             u'vpn-interface-name': u'Tunnel0',
             u'ipsec-policy-id': '8',
             u'local-device': {
-                u'ip-address': u'10.3.0.1/24',
+                u'ip-address': u'10.3.0.1/31',
                 u'tunnel-ip-address': u'172.24.4.23'
             },
             u'remote-device': {
@@ -625,6 +625,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
         # TODO(pcm) Use mapping to determine tunnel interface name
         tunnel_interface = u'Tunnel0'
+        if not peer_cidrs:
+            LOG.exception(_("PCM: No peer CIDRs specified!"))
         for peer_cidr in peer_cidrs:
             route_info = self.create_route_info(tunnel_interface, peer_cidr)
             csr.create_static_route(route_info)
@@ -632,8 +634,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 LOG.exception(_("PCM: Unable to create static route %s: %d"),
                               peer_cidr, csr.status)
             LOG.debug(_("PCM: Route to %s configured"), peer_cidr)
-        else:
-            LOG.exception(_("PCM: No peer CIDRs specified!"))
 
         LOG.debug(_("PCM: Set up IPSec connection DONE!"))
 
