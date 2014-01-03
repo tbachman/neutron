@@ -18,8 +18,8 @@ from httmock import HTTMock
 import unittest
 from webob import exc as wexc
 
-import cisco_csr_rest_client as csr_client
 import cisco_csr_mock as csr_request
+import cisco_csr_rest_client as csr_client
 from neutron.openstack.common import log as logging
 
 
@@ -374,7 +374,7 @@ class TestCsrRestApiFailures(unittest.TestCase):
 
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco',
-                                     timeout=0.1)
+                                            timeout=0.1)
 
     def test_request_for_non_existent_resource(self):
         """Negative test of non-existent resource on REST request."""
@@ -894,7 +894,7 @@ class TestCsrRestStaticRoute(unittest.TestCase):
                               u'admin-distance': 1}
             expected_route.update(route_info)
             self.assertEqual(expected_route, content)
-            
+
 
 # Functional tests with a real CSR
 if True:
@@ -917,22 +917,22 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
 
     class TestLiveCsrGetRestApi(TestCsrGetRestApi):
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
 
     class TestLiveCsrPostRestApi(TestCsrPostRestApi):
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'global/local-users/test-user')
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self,
@@ -951,8 +951,8 @@ if True:
             """
 
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             self._save_resources()
             self.csr.token = None
             self.addCleanup(self._restore_resources, 'stack', 'cisco')
@@ -961,8 +961,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'global/local-users/dummy')
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self,
@@ -972,15 +972,15 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
 
     class TestLiveCsrRestIkePolicyCreate(TestCsrRestIkePolicyCreate):
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'vpn-svc/ike/policies/2')
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self,
@@ -990,8 +990,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'vpn-svc/ike/keyrings/5')
             self.csr.token = None
             self.addCleanup(_cleanup_resource, self,
@@ -1001,8 +1001,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
             _cleanup_resource(self, 'vpn-svc/ipsec/policies/%s' % dummy_uuid)
             self.csr.token = None
@@ -1016,8 +1016,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             _cleanup_resource(self, 'vpn-svc/site-to-site/Tunnel0')
             _cleanup_resource(self, 'vpn-svc/ike/keyrings/5')
             _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
@@ -1038,8 +1038,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             # TODO(pcm): Remvoe, once CSR changes API to remove delete. Will
             # then need to do a put with a 'disabled' indication.
             _cleanup_resource(self, 'vpn-svc/ike/policy')
@@ -1050,8 +1050,8 @@ if True:
 
         def setUp(self):
             self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                                'stack', 'cisco',
+                                                timeout=csr_client.TIMEOUT)
             route1 = '10.1.0.0_24_GigabitEthernet1'
             _cleanup_resource(self, 'routing-svc/static-routes/%s' % route1)
             self.csr.token = None

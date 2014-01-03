@@ -103,7 +103,7 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
                   {'router': router_id, 'conn': conn_info})
         self._agent_notification(context, 'create_ipsec_site_connection',
                                  router_id, conn_info=conn_info)
-        
+
 
 class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
     """Cisco CSR VPN Service Driver class for IPsec."""
@@ -125,21 +125,22 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
         return IPSEC
 
     def _build_ipsec_site_conn_info(self, context, site_conn):
-        ike_info = self.service_plugin.get_ikepolicy(
-                        context, site_conn['ikepolicy_id'])
+        ike_info = self.service_plugin.get_ikepolicy(context,
+                                                     site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(
-                        context, site_conn['ipsecpolicy_id'])
+            context, site_conn['ipsecpolicy_id'])
         return {'site_conn': site_conn,
                 'ike_policy': ike_info,
                 'ipsec_policy': ipsec_info}
-        
+
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         router_id = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])['router_id']
-        conn_info = self._build_ipsec_site_conn_info(context, ipsec_site_connection)
+        conn_info = self._build_ipsec_site_conn_info(context,
+                                                     ipsec_site_connection)
         self.agent_rpc.create_ipsec_site_connection(
             context, router_id, conn_info=conn_info)
-        
+
     def create_ipsec_site_connection_old(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])

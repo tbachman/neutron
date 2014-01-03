@@ -39,7 +39,7 @@ from neutron.plugins.common import utils as plugin_utils
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import device_drivers
 from neutron.services.vpn.device_drivers import (
-        cisco_csr_rest_client as csr_client)
+    cisco_csr_rest_client as csr_client)
 
 
 LOG = logging.getLogger(__name__)
@@ -572,12 +572,16 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         # policy, may need API extnsion to set ip address of tunnel, need to
         # get router public address for local tunnel ip
         conn_info = info['site_conn']
-        return {u'vpn-interface-name': u'Tunnel0',
+        return {
+            u'vpn-interface-name': u'Tunnel0',
             u'ipsec-policy-id': '8',
-            u'local-device': {u'ip-address': u'10.3.0.1/24',
-                              u'tunnel-ip-address': u'172.24.4.23'},
+            u'local-device': {
+                u'ip-address': u'10.3.0.1/24',
+                u'tunnel-ip-address': u'172.24.4.23'
+            },
             u'remote-device': {
-                u'tunnel-ip-address': conn_info['peer_address']}
+                u'tunnel-ip-address': conn_info['peer_address']
+            }
         }
 
     def create_ipsec_site_connection(self, context, conn_info):
@@ -585,8 +589,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                  conn_info['site_conn']['id'])
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
-                                         'stack', 'cisco',
-                                         timeout=csr_client.TIMEOUT)
+                                       'stack', 'cisco',
+                                       timeout=csr_client.TIMEOUT)
         # TODO(pcm) if unable to map, do we raise exception or rollback and
         # return failure?
         psk_info = self.create_psk_info(conn_info)
@@ -610,14 +614,14 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         connection_info = self.create_site_connection_info(conn_info)
         csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("PCM: Unable to create IPSec connection: %d", csr.status)
+            LOG.exception("PCM: Unable to create IPSec connection: %d",
+                          csr.status)
         LOG.debug("PCM: Set up IPSec connection DONE!")
-        
+
         # TODO(pcm): Setup static route(s), configure MTU on tunnel, do DPD
         # as separate REST API.
-        
-        # Set connection status to PENDING_CREATE
 
+        # Set connection status to PENDING_CREATE
 
     def vpnservice_updated(self, context, **kwargs):
         """Vpnservice updated rpc handler

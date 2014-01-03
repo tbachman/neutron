@@ -77,22 +77,22 @@ class TestIPsecDriver(base.BaseTestCase):
 #         self._test_update(self.driver.create_ipsec_site_connection,
 #                           [FAKE_VPN_CONNECTION],
 #                           method_name='create_ipsec_site_connection')
-# 
+#
 #     def test_update_ipsec_site_connection(self):
 #         self._test_update(self.driver.update_ipsec_site_connection,
 #                           [FAKE_VPN_CONNECTION, FAKE_VPN_CONNECTION],
 #                           method_name='update_ipsec_site_connection')
-# 
+#
 #     def test_delete_ipsec_site_connection(self):
 #         self._test_update(self.driver.delete_ipsec_site_connection,
 #                           [FAKE_VPN_CONNECTION],
 #                           method_name='delete_ipsec_site_connection')
-# 
+#
 #     def test_update_vpnservice(self):
 #         self._test_update(self.driver.update_vpnservice,
 #                           [FAKE_VPN_SERVICE, FAKE_VPN_SERVICE],
 #                           method_name='update_vpnservice')
-# 
+#
 #     def test_delete_vpnservice(self):
 #         self._test_update(self.driver.delete_vpnservice,
 #                           [FAKE_VPN_SERVICE],

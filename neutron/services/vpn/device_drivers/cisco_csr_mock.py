@@ -329,7 +329,7 @@ def post(url, request):
         headers = {'location': "%s/Tunnel0" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'routing-svc/static-routes' in url.path:
-        headers = {'location': 
+        headers = {'location':
                    "%s/10.1.0.0_24_gigabitEthernet1" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
 

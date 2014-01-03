@@ -69,7 +69,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 #             context = mock.Mock()
 #             self.driver.vpnservice_updated(context)
 #             sync.assert_called_once_with(context, [])
-# 
+#
 #     def test_create_router(self):
 #         process_id = _uuid()
 #         process = mock.Mock()
@@ -78,7 +78,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 #             process_id: process}
 #         self.driver.create_router(process_id)
 #         process.enable.assert_called_once_with()
-# 
+#
 #     def test_destroy_router(self):
 #         process_id = _uuid()
 #         process = mock.Mock()
@@ -88,7 +88,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 #         self.driver.destroy_router(process_id)
 #         process.disable.assert_called_once_with()
 #         self.assertNotIn(process_id, self.driver.processes)
-# 
+#
 #     def test_sync_added(self):
 #         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [
 #             FAKE_VPN_SERVICE]
@@ -136,7 +136,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 #              'ipsec_site_connections': {},
 #              'updated_pending_status': True,
 #              'id': FAKE_VPN_SERVICE['id']}])
-# 
+#
 #     def test_sync_removed(self):
 #         self.driver.agent_rpc.get_vpn_services_on_host.return_value = []
 #         context = mock.Mock()
@@ -148,7 +148,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 #         self.driver.sync(context, [])
 #         process.disable.assert_called_once_with()
 #         self.assertNotIn(process_id, self.driver.processes)
-# 
+#
 #     def test_sync_removed_router(self):
 #         self.driver.agent_rpc.get_vpn_services_on_host.return_value = []
 #         context = mock.Mock()
