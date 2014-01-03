@@ -560,8 +560,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         return {u'policy-id': '8',
                 u'protection-suite': {
                     u'esp-encryption': u'esp-aes',
-                    u'esp-authentication': u'esp-sha-hmac',
-                    u'ah': u'ah-sha-hmac'},
+                    u'esp-authentication': u'esp-sha-hmac'},
                 u'lifetime-sec': policy_info['lifetime']['value'],
                 u'pfs': u'group5',
                 # TODO(pcm): Remove when CSR fixes 'Disable'
@@ -584,8 +583,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             }
         }
 
+    def create_route_info(self, interface, peer_cidr):
+        return {u'destination-network': peer_cidr,
+                u'outgoing-interface': interface}
+
     def create_ipsec_site_connection(self, context, conn_info):
-        LOG.info('PCM: Device driver:create_ipsec_site_connecition %s',
+        LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'),
                  conn_info['site_conn']['id'])
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
@@ -596,27 +599,43 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         psk_info = self.create_psk_info(conn_info)
         csr.create_pre_shared_key(psk_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("PCM: Unable to create PSK: %d", csr.status)
-        LOG.debug("PCM: PSK is configured")
+            LOG.exception(_("PCM: Unable to create PSK: %d"), csr.status)
+        LOG.debug(_("PCM: PSK is configured"))
 
         policy_info = self.create_ike_policy_info(conn_info)
         csr.create_ike_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("PCM: Unable to create IKE policy: %d", csr.status)
-        LOG.debug("PCM: IKE policy is configured")
+            LOG.exception(_("PCM: Unable to create IKE policy: %d"),
+                          csr.status)
+        LOG.debug(_("PCM: IKE policy is configured"))
 
         policy_info = self.create_ipsec_policy_info(conn_info)
         csr.create_ipsec_policy(policy_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("PCM: Unable to create IPSec policy: %d", csr.status)
-        LOG.debug("PCM: IPSec policy is configured")
+            LOG.exception(_("PCM: Unable to create IPSec policy: %d"),
+                          csr.status)
+        LOG.debug(_("PCM: IPSec policy is configured"))
 
         connection_info = self.create_site_connection_info(conn_info)
         csr.create_ipsec_connection(connection_info)
         if csr.status != wexc.HTTPCreated.code:
-            LOG.exception("PCM: Unable to create IPSec connection: %d",
+            LOG.exception(_("PCM: Unable to create IPSec connection: %d"),
                           csr.status)
-        LOG.debug("PCM: Set up IPSec connection DONE!")
+
+        peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
+        # TODO(pcm) Use mapping to determine tunnel interface name
+        tunnel_interface = u'Tunnel0'
+        for peer_cidr in peer_cidrs:
+            route_info = self.create_route_info(tunnel_interface, peer_cidr)
+            csr.create_static_route(route_info)
+            if csr.status != wexc.HTTPCreated.code:
+                LOG.exception(_("PCM: Unable to create static route %s: %d"),
+                              peer_cidr, csr.status)
+            LOG.debug(_("PCM: Route to %s configured"), peer_cidr)
+        else:
+            LOG.exception(_("PCM: No peer CIDRs specified!"))
+
+        LOG.debug(_("PCM: Set up IPSec connection DONE!"))
 
         # TODO(pcm): Setup static route(s), configure MTU on tunnel, do DPD
         # as separate REST API.

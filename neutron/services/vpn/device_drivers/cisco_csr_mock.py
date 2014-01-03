@@ -30,6 +30,9 @@ from neutron.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
+# TODO(pcm): Uncomment once bug is resolved.
+# dumnmy_uuid = '1eb4ee6b-0870-45a0-b554-7b69096a809c'
+dummy_uuid = '1eb4ee6b-0870-45a0-b554-7b69096'
 
 
 def repeat(n):
@@ -201,17 +204,31 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
-    uuid = '1eb4ee6b-0870-45a0-b554-7b69096a809c'
-    if 'vpn-svc/ipsec/policies/%s' % uuid in url.path:
+    if 'vpn-svc/ipsec/policies/%s' % dummy_uuid in url.path:
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
                    # TODO(pcm): Use 'Disable', when fixed on CSR
                    u'anti-replay-window-size': u'128',
-                   u'policy-id': u'%s' % uuid,
+                   u'policy-id': u'%s' % dummy_uuid,
                    u'protection-suite': {
                        u'esp-encryption': u'esp-aes',
                        u'esp-authentication': u'esp-sha-hmac',
                        u'ah': u'ah-sha-hmac',
+                   },
+                   u'lifetime-sec': 120,
+                   u'pfs': u'group5',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
+        return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ipsec/policies/10' in url.path:
+        content = {u'kind': u'object#ipsec-policy',
+                   u'mode': u'tunnel',
+                   # TODO(pcm): Use 'Disable', when fixed on CSR
+                   u'anti-replay-window-size': u'128',
+                   u'policy-id': u'10',
+                   u'protection-suite': {
+                       u'esp-encryption': u'esp-aes',
+                       u'esp-authentication': u'esp-sha-hmac',
                    },
                    u'lifetime-sec': 120,
                    u'pfs': u'group5',
@@ -239,7 +256,9 @@ def get(url, request):
         return response(wexc.HTTPOk.code, content=content)
     if 'routing-svc/static-routes' in url.path:
         content = {u'destination-network': u'10.1.0.0/24',
-                   u'outgoing-interface': u'gigabitEthernet1',
+                   u'kind': u'object#static-route',
+                   u'next-hop-router': None,
+                   u'outgoing-interface': u'GigabitEthernet1',
                    u'admin-distance': 1}
         return response(wexc.HTTPOk.code, content=content)
 
@@ -330,7 +349,7 @@ def post(url, request):
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'routing-svc/static-routes' in url.path:
         headers = {'location':
-                   "%s/10.1.0.0_24_gigabitEthernet1" % url.geturl()}
+                   "%s/10.1.0.0_24_GigabitEthernet1" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
 
 
