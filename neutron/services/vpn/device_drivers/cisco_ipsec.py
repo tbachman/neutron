@@ -594,10 +594,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
     def _check_create(self, status, resource, which):
         if status == wexc.HTTPCreated.code:
-            LOG.debug("%{resource} %{which} is configured",
-                      {'resoure': resource, 'which': which})
+            LOG.debug("PCM: %(resource)s %(which)s is configured",
+                      {'resource': resource, 'which': which})
             return True
-        LOG.error(_("Unable to create %{resource}s %{which}s: %{status}d"),
+        LOG.error(_("PCM: Unable to create %(resource)s %(which)s: %(status)d"),
                   {'resource': resource, 'which': which, 'status': status})
         # ToDO(pcm): Set state to error
 
@@ -608,14 +608,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         mtu, and (future) DPD. TODO(pcm): Rollback on error.
         """
         conn_id = conn_info['site_conn']['id']
-        LOG.info(_('Device driver:create_ipsec_site_connecition %s'), conn_id)
+        LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'), conn_id)
 
-        # TODO(pcm): Look up tunnel name, IPSec policy, and IKE policy. Do we
-        # need to i18n these?
-        site_conn_id = 'Tunnel0'
-        ike_policy_id = '2'
+        site_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
+        ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
         # TODO(pcm): Use conn_id, once bug fixed
-        ipsec_policy_id = '8'
+        ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
 
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
@@ -664,8 +662,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def _verify_deleted(self, status, resource, which):
         if status not in (wexc.HTTPNoContent.code,
                           wexc.HTTPNotFound.code):
-            LOG.warning(_("Unable to delete %{resource}s %{which}s: "
-                          "%{status}d"), {'resource': resource,
+            LOG.warning(_("PCM: Unable to delete %(resource)s %(which)s: "
+                          "%(status)d"), {'resource': resource,
                                           'which': which,
                                           'status': status})
 
@@ -676,13 +674,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         failures.
         """
         conn_id = conn_info['site_conn']['id']
-        LOG.info(_('Device driver:create_ipsec_site_connection %s'), conn_id)
+        LOG.info(_('PCM: Device driver:delete_ipsec_site_connection %s'), conn_id)
 
-        # TODO(pcm): Look up tunnel name, IPSec policy, and IKE policy
-        ipsec_conn_id = 'Tunnel0'
+        ipsec_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
         # TODO(pcm): Can be conn_id, once bug fixed
-        ipsec_policy_id = '8'
-        ike_policy_id = '2'
+        ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
+        ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
 
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
@@ -694,11 +691,11 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         for peer_cidr in peer_cidrs:
             csr.delete_static_route(peer_cidr, ipsec_conn_id)
             self._verify_deleted(csr.status, 'static route', peer_cidr)
-        csr.delete_site_connection(ipsec_conn_id)
+        csr.delete_ipsec_connection(ipsec_conn_id)
         self._verify_deleted(csr.status, 'IPSec connection', ipsec_conn_id)
         csr.delete_ipsec_policy(ipsec_policy_id)
         self._verify_deleted(csr.status, 'IPSec policy', ipsec_policy_id)
-        csr.delete_ipsec_policy(ike_policy_id)
+        csr.delete_ike_policy(ike_policy_id)
         self._verify_deleted(csr.status, 'IKE policy', ike_policy_id)
         csr.delete_pre_shared_key(conn_id)
         self._verify_deleted(csr.status, 'pre-shared key', conn_id)
