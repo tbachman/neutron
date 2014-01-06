@@ -535,37 +535,35 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
-    def create_psk_info(self, info):
+    def create_psk_info(self, psk_id, info):
         conn_info = info['site_conn']
-        return {u'keyring-name': conn_info['id'],
+        return {u'keyring-name': psk_id,
                 u'pre-shared-key-list': [
                     {u'key': conn_info['psk'],
                      u'encrypted': False,
                      u'peer-address': conn_info['peer_address']}]}
 
-    def create_ike_policy_info(self, info):
+    def create_ike_policy_info(self, ike_policy_id, info):
         # TODO(pcm) Create ID via a mapping function, map for encryption,
         # hash, group, and look-up lifetime (ensure in seconds, else reject)
         policy_info = info['ike_policy']
-        return {u'priority-id': '2',
+        return {u'priority-id': ike_policy_id,
                 u'encryption': u'aes',
                 u'hash': u'sha',
                 u'dhGroup': 5,
                 u'lifetime': policy_info['lifetime']['value']}
 
-    def create_ipsec_policy_info(self, info):
+    def create_ipsec_policy_info(self, ipsec_policy_id, info):
         """Collect attributes needed for IPSec policy.
-        
+
         Initially, will use UUID of site connection, to identify the IPSec
         policy. In future, can consider using the IPSec policy UUID, but
         will need to reference count for delete.
         """
-        conn_info = info['site_conn']
         policy_info = info['ipsec_policy']
-        # TODO(pcm): Use UUID for connectionID, once bug fixed, convert
-        # protection info, pfs, and lifetime (ensure in seconds, else reject)
-        policy_id = '8'  # PCM: Temp hack
-        return {u'policy-id': policy_id,  # conn_info['id']
+        # TODO(pcm): Convert protection info, pfs, and lifetime (ensure
+        # in seconds, else reject)
+        return {u'policy-id': ipsec_policy_id,
                 u'protection-suite': {
                     u'esp-encryption': u'esp-aes',
                     u'esp-authentication': u'esp-sha-hmac'},
@@ -574,14 +572,13 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 # TODO(pcm): Remove when CSR fixes 'Disable'
                 u'anti-replay-window-size': u'128'}
 
-    def create_site_connection_info(self, info):
-        # TODO(pcm): Use mapping to get tunnel ID, use UUID once bug fixed for
-        # policy, may need API extnsion to set ip address of tunnel, need to
-        # get router public address for local tunnel ip
+    def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
+        # TODO(pcm): May need API extension to set ip address of tunnel,
+        # and need router's public IP for local tunnel IP address
         conn_info = info['site_conn']
         return {
-            u'vpn-interface-name': u'Tunnel0',
-            u'ipsec-policy-id': '8',
+            u'vpn-interface-name': site_conn_id,
+            u'ipsec-policy-id': ipsec_policy_id,
             u'local-device': {
                 u'ip-address': u'10.3.0.1/31',
                 u'tunnel-ip-address': u'172.24.4.23'
@@ -591,67 +588,71 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             }
         }
 
-    def create_route_info(self, interface, peer_cidr):
+    def create_route_info(self, peer_cidr, interface):
         return {u'destination-network': peer_cidr,
                 u'outgoing-interface': interface}
 
-    def _record_failure(self, msg, *args):
-        LOG.exception(msg, args)
+    def _check_create(self, status, resource, which):
+        if status == wexc.HTTPCreated.code:
+            LOG.debug("%{resource} %{which} is configured",
+                      {'resoure': resource, 'which': which})
+            return True
+        LOG.error(_("Unable to create %{resource}s %{which}s: %{status}d"),
+                  {'resource': resource, 'which': which, 'status': status})
         # ToDO(pcm): Set state to error
 
     def create_ipsec_site_connection(self, context, conn_info):
         """Creates an IPSec site-to-site connection on CSR.
-        
+
         Create the PSK, IKE policy, IPSec policy, connection, static route,
         mtu, and (future) DPD. TODO(pcm): Rollback on error.
         """
         conn_id = conn_info['site_conn']['id']
         LOG.info(_('Device driver:create_ipsec_site_connecition %s'), conn_id)
+
+        # TODO(pcm): Look up tunnel name, IPSec policy, and IKE policy. Do we
+        # need to i18n these?
+        site_conn_id = 'Tunnel0'
+        ike_policy_id = '2'
+        # TODO(pcm): Use conn_id, once bug fixed
+        ipsec_policy_id = '8'
+
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
                                        'stack', 'cisco',
                                        timeout=csr_client.TIMEOUT)
-        # TODO(pcm) if unable to map attributes, do we raise exception or
-        # rollback and set status (probably latter)?
-        # TODO(pcm) figure out how to handle failures. Rollback?
-        psk_info = self.create_psk_info(conn_info)
+        # TODO(pcm): Rollback handling for failures
+        psk_info = self.create_psk_info(conn_id, conn_info)
         csr.create_pre_shared_key(psk_info)
-        if csr.status != wexc.HTTPCreated.code:
-            self._record_failure(_("Unable to create PSK: %d"), csr.status)
-        LOG.debug(_("PSK is configured"))
+        if not self._check_create(csr.status, 'Pre-Shared Key', conn_id):
+            pass  # rollback and quit
 
-        policy_info = self.create_ike_policy_info(conn_info)
+        policy_info = self.create_ike_policy_info(ike_policy_id, conn_info)
         csr.create_ike_policy(policy_info)
-        if csr.status != wexc.HTTPCreated.code:
-            self._record_failure(_("Unable to create IKE policy: %d"),
-                                 csr.status)
-        LOG.debug(_("IKE policy is configured"))
+        if not self._check_create(csr.status, 'IKE Policy', ike_policy_id):
+            pass  # rollback and quit
 
-        policy_info = self.create_ipsec_policy_info(conn_info)
+        policy_info = self.create_ipsec_policy_info(ipsec_policy_id, conn_info)
         csr.create_ipsec_policy(policy_info)
-        if csr.status != wexc.HTTPCreated.code:
-            self._record_failure(_("Unable to create IPSec policy: %d"),
-                                 csr.status)
-        LOG.debug(_("IPSec policy is configured"))
+        if not self._check_create(csr.status, 'IPSec Policy', ipsec_policy_id):
+            pass  # rollback and quit
 
-        connection_info = self.create_site_connection_info(conn_info)
+        connection_info = self.create_site_connection_info(site_conn_id,
+                                                           ipsec_policy_id,
+                                                           conn_info)
         csr.create_ipsec_connection(connection_info)
-        if csr.status != wexc.HTTPCreated.code:
-            self._record_failure(_("Unable to create IPSec connection: %d"),
-                                 csr.status)
+        if not self._check_create(csr.status, 'IPSec Connection',
+                                  site_conn_id):
+            pass  # rollback and quit
 
         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
-        # TODO(pcm) Use mapping to determine tunnel interface name
-        tunnel_interface = u'Tunnel0'
         if not peer_cidrs:
             self._record_failure(_("No peer CIDRs specified!"))
         for peer_cidr in peer_cidrs:
-            route_info = self.create_route_info(tunnel_interface, peer_cidr)
+            route_info = self.create_route_info(peer_cidr, site_conn_id)
             csr.create_static_route(route_info)
-            if csr.status != wexc.HTTPCreated.code:
-                self._record_failure(_("Unable to create static route %s: %d"),
-                                     peer_cidr, csr.status)
-            LOG.debug(_("Route to %s configured"), peer_cidr)
+            if not self._check_create(csr.status, 'Static Route', peer_cidr):
+                pass  # rollback and quit
 
         LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
                  conn_id)
@@ -660,36 +661,47 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
         # Set connection status to PENDING_CREATE?
 
+    def _verify_deleted(self, status, resource, which):
+        if status not in (wexc.HTTPNoContent.code,
+                          wexc.HTTPNotFound.code):
+            LOG.warning(_("Unable to delete %{resource}s %{which}s: "
+                          "%{status}d"), {'resource': resource,
+                                          'which': which,
+                                          'status': status})
+
     def delete_ipsec_site_connection(self, context, conn_info):
-        """Delete site-to-site IPSec connection."""
+        """Delete site-to-site IPSec connection.
+
+        This will be best effort and will continue, if there are any
+        failures.
+        """
         conn_id = conn_info['site_conn']['id']
-        LOG.info(_('Device driver:create_ipsec_site_connecition %s'), conn_id)
+        LOG.info(_('Device driver:create_ipsec_site_connection %s'), conn_id)
+
+        # TODO(pcm): Look up tunnel name, IPSec policy, and IKE policy
+        ipsec_conn_id = 'Tunnel0'
+        # TODO(pcm): Can be conn_id, once bug fixed
+        ipsec_policy_id = '8'
+        ike_policy_id = '2'
+
         # Obtain login info for CSR
         csr = csr_client.CsrRestClient('192.168.200.20',
                                        'stack', 'cisco',
                                        timeout=csr_client.TIMEOUT)
-        # TODO(pcm): Do we continue, if error?
+
+        # TODO(pcm): Remove IKE keepalive (DPD) in future
         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
         for peer_cidr in peer_cidrs:
-            ip = netaddr.IPNetwork(peer_cidr)
-            # TODO(pcm): determine tunnel name
-            uri = 'routing-svc/static-routes/%s_%s_%s' % (ip.network,
-                                                          ip.prefixlen,
-                                                          'Tunnel0')
-            csr.delete_request(uri)
-            if csr.status not in (wexc.HTTPNoContent.code,
-                                  wexc.HTTPNotFound.code):
-                self._record_failure(_("Unable to delete static route %s: %d"),
-                                     peer_cidr, csr.status)
-
-        # TODO(pcm): Look up tunnel name
-        ipsec_conn_id = 'Tunnel0'
-        csr.delete_request('vpn-svc/site-to-site/%s' % ipsec_conn_id)
-        if csr.status not in (wexc.HTTPNoContent.code,
-                              wexc.HTTPNotFound.code):
-            self._record_failure(_("Unable to delete IPSec site-to-site "
-                                   "connection %s: %d"),
-                                 ipsec_conn_id, csr.status)
+            csr.delete_static_route(peer_cidr, ipsec_conn_id)
+            self._verify_deleted(csr.status, 'static route', peer_cidr)
+        csr.delete_site_connection(ipsec_conn_id)
+        self._verify_deleted(csr.status, 'IPSec connection', ipsec_conn_id)
+        csr.delete_ipsec_policy(ipsec_policy_id)
+        self._verify_deleted(csr.status, 'IPSec policy', ipsec_policy_id)
+        csr.delete_ipsec_policy(ike_policy_id)
+        self._verify_deleted(csr.status, 'IKE policy', ike_policy_id)
+        csr.delete_pre_shared_key(conn_id)
+        self._verify_deleted(csr.status, 'pre-shared key', conn_id)
 
         LOG.info(_("SUCCESS: Deleted IPSec site-to-site connection %s"),
                  conn_id)

@@ -408,7 +408,7 @@ class TestCsrRestApiFailures(unittest.TestCase):
         with HTTMock(csr_request.token_unauthorized):
             self.csr._do_request('GET', 'global/host-name')
             self.assertEqual(wexc.HTTPUnauthorized.code, self.csr.status)
-        
+
 
 class TestCsrRestIkePolicyCreate(unittest.TestCase):
 
@@ -439,7 +439,7 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             self.assertEqual(expected_policy, content)
         # Now delete and verify the IKE policy is gone
         with HTTMock(csr_request.token, csr_request.delete,
-                     csr_request.no_such_resource): 
+                     csr_request.no_such_resource):
             self.csr.delete_ike_policy(policy_id)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             content = self.csr.get_request(location, full_url=True)
@@ -709,7 +709,7 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
 class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
     """Test IPSec site-to-site connection REST requests.
-    
+
     This requires us to have first created an IKE policy, IPSec policy,
     and pre-shared key, so it's more of an itegration test, when used
     with a real CSR (as we can't mock out these pre-conditions.
@@ -973,7 +973,7 @@ class TestCsrRestStaticRoute(unittest.TestCase):
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
-    
+
 # Functional tests with a real CSR
 if True:
     def _cleanup_resource(for_test, resource):
@@ -1059,10 +1059,9 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            _cleanup_resource(self, 'vpn-svc/ike/policies/2')
+            self.csr.delete_ike_policy('2')
             self.csr.token = None
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ike/policies/2')
+            self.addCleanup(self.csr.delete_ike_policy, '2')
 
     class TestLiveCsrRestPreSharedKeyCreate(TestCsrRestPreSharedKeyCreate):
 
@@ -1070,10 +1069,9 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            _cleanup_resource(self, 'vpn-svc/ike/keyrings/5')
+            self.csr.delete_pre_shared_key('5')
             self.csr.token = None
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ike/keyrings/5')
+            self.addCleanup(self.csr.delete_pre_shared_key, '5')
 
     class TestLiveCsrRestIPSecPolicyCreate(TestCsrRestIPSecPolicyCreate):
 
@@ -1081,18 +1079,14 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
-            _cleanup_resource(
-                self, 'vpn-svc/ipsec/policies/%s' % csr_request.dummy_uuid)
-            _cleanup_resource(self, 'vpn-svc/ipsec/policies/10')
+            self.csr.delete_ipsec_policy('123')
+            self.csr.delete_ipsec_policy(csr_request.dummy_uuid)
+            self.csr.delete_ipsec_policy('10')
             self.csr.token = None
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ipsec/policies/123')
-            self.addCleanup(
-                _cleanup_resource, self,
-                'vpn-svc/ipsec/policies/%s' % csr_request.dummy_uuid)
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ipsec/policies/10')
+            self.addCleanup(self.csr.delete_ipsec_policy, '123')
+            self.addCleanup(self.csr.delete_ipsec_policy,
+                            csr_request.dummy_uuid)
+            self.addCleanup(self.csr.delete_ipsec_policy, '10')
 
     class TestLiveCsrRestIPSecConnectionCreate(
             TestCsrRestIPSecConnectionCreate):
@@ -1101,21 +1095,17 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            _cleanup_resource(self, 'vpn-svc/site-to-site/Tunnel0')
-            _cleanup_resource(self, 'vpn-svc/ike/keyrings/5')
-            _cleanup_resource(self, 'vpn-svc/ipsec/policies/123')
-            _cleanup_resource(self, 'vpn-svc/ike/policies/2')
+            self.csr.delete_ipsec_connection('Tunnel0')
+            self.csr.delete_pre_shared_key('5')
+            self.csr.delete_ipsec_policy('123')
+            self.csr.delete_ike_policy('2')
             self.csr.token = None
             # These will be deleted in reverse order, which is required, as
             # you cannot delete the IPSec policy, when in use by a tunnel.
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ike/policies/2')
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ipsec/policies/123')
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/ike/keyrings/5')
-            self.addCleanup(_cleanup_resource, self,
-                            'vpn-svc/site-to-site/Tunnel0')
+            self.addCleanup(self.csr.delete_ike_policy, '2')
+            self.addCleanup(self.csr.delete_ipsec_policy, '123')
+            self.addCleanup(self.csr.delete_pre_shared_key, '5')
+            self.addCleanup(self.csr.delete_ipsec_connection, 'Tunnel0')
 
     class TestLiveCsrRestIkeKeepaliveCreate(TestCsrRestIkeKeepaliveCreate):
 
@@ -1135,11 +1125,10 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            route1 = '10.1.0.0_24_GigabitEthernet1'
-            _cleanup_resource(self, 'routing-svc/static-routes/%s' % route1)
+            self.csr.delete_static_route('10.1.0.0/24', 'GigabitEthernet1')
             self.csr.token = None
-            self.addCleanup(_cleanup_resource, self,
-                            'routing-svc/static-routes/%s' % route1)
+            self.addCleanup(self.csr.delete_static_route, '10.1.0.0/24',
+                            'GigabitEthernet1')
 
 if __name__ == '__main__':
     unittest.main()
