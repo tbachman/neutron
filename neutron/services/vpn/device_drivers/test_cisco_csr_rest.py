@@ -417,11 +417,11 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
 
-    def test_create_ike_policy(self):
-        """Create IKE policy."""
+    def test_create_delete_ike_policy(self):
+        """Create and then delete IKE policy."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            policy_id = u'2'
-            policy_info = {u'priority-id': policy_id,
+            policy_id = '2'
+            policy_info = {u'priority-id': u'%s' % policy_id,
                            u'encryption': u'aes',
                            u'hash': u'sha',
                            u'dhGroup': 5,
@@ -437,13 +437,20 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
                                u'local-auth-method': u'pre-share'}
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
+        # Now delete and verify the IKE policy is gone
+        with HTTMock(csr_request.token, csr_request.delete,
+                     csr_request.no_such_resource): 
+            self.csr.delete_ike_policy(policy_id)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
     def test_create_ike_policy_with_defaults(self):
         """Create IKE policy using defaults for all optional values."""
         with HTTMock(csr_request.token, csr_request.post,
                      csr_request.get_defaults):
-            policy_id = u'2'
-            policy_info = {u'priority-id': policy_id}
+            policy_id = '2'
+            policy_info = {u'priority-id': u'%s' % policy_id}
             location = self.csr.create_ike_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ike/policies/%s' % policy_id, location)
@@ -464,8 +471,8 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
     def test_create_duplicate_ike_policy(self):
         """Negative test of trying to create a dulicate IKE policy."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            policy_id = u'2'
-            policy_info = {u'priority-id': policy_id,
+            policy_id = '2'
+            policy_info = {u'priority-id': u'%s' % policy_id,
                            u'encryption': u'aes',
                            u'hash': u'sha',
                            u'dhGroup': 5,
@@ -489,12 +496,12 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
 
-    def test_create_ipsec_policy(self):
-        """Create IPSec policy."""
+    def test_create_delete_ipsec_policy(self):
+        """Create and then delete IPSec policy."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            policy_id = u'123'
+            policy_id = '123'
             policy_info = {
-                u'policy-id': policy_id,
+                u'policy-id': u'%s' % policy_id,
                 u'protection-suite': {
                     u'esp-encryption': u'esp-aes',
                     u'esp-authentication': u'esp-sha-hmac',
@@ -519,14 +526,21 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                                u'idle-time': None}
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
+        # Now delete and verify the IPSec policy is gone
+        with HTTMock(csr_request.token, csr_request.delete,
+                     csr_request.no_such_resource):
+            self.csr.delete_ipsec_policy(policy_id)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
     def test_create_ipsec_policy_with_defaults(self):
         """Create IPSec policy with default for all optional values."""
         with HTTMock(csr_request.token, csr_request.post,
                      csr_request.get_defaults):
-            policy_id = u'123'
+            policy_id = '123'
             policy_info = {
-                u'policy-id': policy_id,
+                u'policy-id': u'%s' % policy_id,
                 # Override, as we normally force this to 'Disable'
                 u'anti-replay-window-size': u'64',
             }
@@ -581,9 +595,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
     def test_create_ipsec_policy_without_ah(self):
         """Create IPSec policy."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            policy_id = u'10'
+            policy_id = '10'
             policy_info = {
-                u'policy-id': policy_id,
+                u'policy-id': u'%s' % policy_id,
                 u'protection-suite': {
                     u'esp-encryption': u'esp-aes',
                     u'esp-authentication': u'esp-sha-hmac',
@@ -616,11 +630,11 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
 
-    def test_create_pre_shared_key(self):
-        """Create a keyring entry for pre-shared key."""
+    def test_create_delete_pre_shared_key(self):
+        """Create and then delete a keyring entry for pre-shared key."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            psk_id = u'5'
-            psk_info = {u'keyring-name': psk_id,
+            psk_id = '5'
+            psk_info = {u'keyring-name': u'%s' % psk_id,
                         u'pre-shared-key-list': [
                             {u'key': u'super-secret',
                              u'encrypted': False,
@@ -638,13 +652,20 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
             expected_policy[u'pre-shared-key-list'][0][u'peer-address'] = (
                 u'10.10.10.20 255.255.255.0')
             self.assertEqual(expected_policy, content)
+        # Now delete and verify pre-shared key is gone
+        with HTTMock(csr_request.token, csr_request.delete,
+                     csr_request.no_such_resource):
+            self.csr.delete_pre_shared_key(psk_id)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
     def test_create_pre_shared_key_with_fqdn_peer(self):
         """Create pre-shared key using FQDN for peer address."""
         with HTTMock(csr_request.token, csr_request.post,
                      csr_request.get_fqdn):
-            psk_id = u'5'
-            psk_info = {u'keyring-name': psk_id,
+            psk_id = '5'
+            psk_info = {u'keyring-name': u'%s' % psk_id,
                         u'pre-shared-key-list': [
                             {u'key': u'super-secret',
                              u'encrypted': False,
@@ -663,8 +684,8 @@ class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
     def test_create_pre_shared_key_with_duplicate_peer_address(self):
         """Negative test of creating a second pre-shared key with same peer."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            psk_id = u'5'
-            psk_info = {u'keyring-name': psk_id,
+            psk_id = '5'
+            psk_info = {u'keyring-name': u'%s' % psk_id,
                         u'pre-shared-key-list': [
                             {u'key': u'super-secret',
                              u'encrypted': False,
@@ -738,15 +759,16 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             if self.csr.status != wexc.HTTPCreated.code:
                 self.fail("Unable to create IPSec policy for test case")
 
-    def test_create_ipsec_connection(self):
-        """Create an IPSec connection request."""
+    def test_create_delete_ipsec_connection(self):
+        """Create and then delete an IPSec connection."""
         # Setup needed items for test
         self._make_ike_policy_for_test()
         self._make_psk_for_test()
         self._make_ipsec_policy_for_test()
+        tunnel_id = 'Tunnel0'
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel0',
+                u'vpn-interface-name': u'%s' % tunnel_id,
                 u'ipsec-policy-id': u'123',
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
@@ -754,7 +776,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             }
             location = self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-            self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
+            self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
             # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
@@ -762,6 +784,14 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                                    u'ip-version': u'ipv4'}
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
+        # Now delete and verify that site-to-site connection is gone
+        with HTTMock(csr_request.token, csr_request.delete,
+                     csr_request.no_such_resource):
+            # Only delete connection. Cleanup will take care of prerequisites
+            self.csr.delete_ipsec_connection(tunnel_id)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
     def test_create_ipsec_connection_no_pre_shared_key(self):
         """Test of connection create without associated pre-shared key.
@@ -771,9 +801,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         """
         self._make_ike_policy_for_test()
         self._make_ipsec_policy_for_test()
+        tunnel_id = 'Tunnel0'
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel0',
+                u'vpn-interface-name': u'%s' % tunnel_id,
                 u'ipsec-policy-id': u'123',
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
@@ -781,7 +812,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             }
             location = self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-            self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
+            self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
             # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
@@ -798,16 +829,17 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         """
         self._make_psk_for_test()
         self._make_ipsec_policy_for_test()
+        tunnel_id = 'Tunnel0'
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel0',
+                u'vpn-interface-name': u'%s' % tunnel_id,
                 u'ipsec-policy-id': u'123',
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
                 u'remote-device': {u'tunnel-ip-address': '10.10.10.20'}
             }
             location = self.csr.create_ipsec_connection(connection_info)
-            self.assertIn('vpn-svc/site-to-site/Tunnel0', location)
+            self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
@@ -821,9 +853,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         """Negative test of connection create without IPSec policy."""
         self._make_ike_policy_for_test()
         self._make_psk_for_test()
+        tunnel_id = 'Tunnel0'
         with HTTMock(csr_request.token, csr_request.post_missing_ipsec_policy):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel0',
+                u'vpn-interface-name': u'%s' % tunnel_id,
                 u'ipsec-policy-id': u'NoSuchPolicy',
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
@@ -843,9 +876,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         self._make_ike_policy_for_test()
         self._make_psk_for_test()
         self._make_ipsec_policy_for_test()
+        tunnel_id = 'Tunnel0'
         with HTTMock(csr_request.token, csr_request.post_bad_ip):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel0',
+                u'vpn-interface-name': u'%s' % tunnel_id,
                 u'ipsec-policy-id': u'123',
                 u'local-device': {u'ip-address': u'10.2.0.10/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
@@ -912,14 +946,18 @@ class TestCsrRestStaticRoute(unittest.TestCase):
     def setUp(self):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
 
-    def test_create_static_route(self):
-        """Create a static route for the tunnel."""
+    def test_create_delete_static_route(self):
+        """Create and then delete a static route for the tunnel."""
+        cidr = u'10.1.0.0/24'
+        interface = u'GigabitEthernet1'
+        expected_id = '10.1.0.0_24_GigabitEthernet1'
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-            route_info = {u'destination-network': u'10.1.0.0/24',
-                          u'outgoing-interface': u'GigabitEthernet1'}
+            route_info = {u'destination-network': cidr,
+                          u'outgoing-interface': interface}
             location = self.csr.create_static_route(route_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-            self.assertIn('routing-svc/static-routes/', location)
+            self.assertIn('routing-svc/static-routes/%s' % expected_id,
+                          location)
             # Check the hard-coded items that get set as well...
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
@@ -928,7 +966,13 @@ class TestCsrRestStaticRoute(unittest.TestCase):
                               u'admin-distance': 1}
             expected_route.update(route_info)
             self.assertEqual(expected_route, content)
-
+        # Now delete and verify that static route is gone
+        with HTTMock(csr_request.token, csr_request.delete,
+                     csr_request.no_such_resource):
+            self.csr.delete_static_route(cidr, interface)
+            self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
     
 # Functional tests with a real CSR
 if True:

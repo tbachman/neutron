@@ -15,6 +15,8 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
+import netaddr
+
 import requests
 from requests.exceptions import ConnectionError, Timeout, SSLError
 from webob import exc as wexc
@@ -222,6 +224,27 @@ class CsrRestClient(object):
     def create_static_route(self, route_info):
         return self.post_request('routing-svc/static-routes',
                                  payload=route_info)
+
+    def delete_static_route(self, cidr, interface):
+        net = netaddr.IPNetwork(cidr)
+        return self.delete_request('routing-svc/static-routes/'
+                                   '%(network)s_%(prefix)s_%(interface)s' %
+                                   {'network': net.network,
+                                    'prefix': net.prefixlen,
+                                    'interface': interface})
+
+    def delete_ipsec_connection(self, conn_id):
+        return self.delete_request('vpn-svc/site-to-site/%s' % conn_id)
+
+    def delete_ipsec_policy(self, policy_id):
+        return self.delete_request('vpn-svc/ipsec/policies/%s' % policy_id)
+
+    def delete_ike_policy(self, policy_id):
+        return self.delete_request('vpn-svc/ike/policies/%s' % policy_id)
+
+    def delete_pre_shared_key(self, key_id):
+        return self.delete_request('vpn-svc/ike/keyrings/%s' % key_id)
+
 
 if __name__ == '__main__':
     csr = CsrRestClient('192.168.200.20', 'stack', 'cisco')

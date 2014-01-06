@@ -141,11 +141,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
         self.agent_rpc.create_ipsec_site_connection(
             context, router_id, conn_info=conn_info)
 
-    def create_ipsec_site_connection_old(self, context, ipsec_site_connection):
-        vpnservice = self.service_plugin._get_vpnservice(
-            context, ipsec_site_connection['vpnservice_id'])
-        self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
-
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
@@ -156,6 +151,11 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VPNDriver):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
+
+#     def delete_ipsec_site_connection(self, context, ipsec_site_connection):
+#         vpnservice = self.service_plugin._get_vpnservice(
+#             context, ipsec_site_connection['vpnservice_id'])
+#         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     def create_ikepolicy(self, context, ikepolicy):
         pass
