@@ -597,7 +597,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             LOG.debug("PCM: %(resource)s %(which)s is configured",
                       {'resource': resource, 'which': which})
             return True
-        LOG.error(_("PCM: Unable to create %(resource)s %(which)s: %(status)d"),
+        LOG.error(_("PCM: Unable to create %(resource)s %(which)s: "
+                    "%(status)d"),
                   {'resource': resource, 'which': which, 'status': status})
         # ToDO(pcm): Set state to error
 
@@ -608,7 +609,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         mtu, and (future) DPD. TODO(pcm): Rollback on error.
         """
         conn_id = conn_info['site_conn']['id']
-        LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'), conn_id)
+        LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'),
+                 conn_id)
 
         site_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
         ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
@@ -660,8 +662,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         # Set connection status to PENDING_CREATE?
 
     def _verify_deleted(self, status, resource, which):
-        if status not in (wexc.HTTPNoContent.code,
-                          wexc.HTTPNotFound.code):
+        if status in (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code):
+            LOG.debug("PCM: %(resource)s configuration %(which)s is removed",
+                      {'resource': resource, 'which': which})
+        else:
             LOG.warning(_("PCM: Unable to delete %(resource)s %(which)s: "
                           "%(status)d"), {'resource': resource,
                                           'which': which,
@@ -674,7 +678,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         failures.
         """
         conn_id = conn_info['site_conn']['id']
-        LOG.info(_('PCM: Device driver:delete_ipsec_site_connection %s'), conn_id)
+        LOG.info(_('PCM: Device driver:delete_ipsec_site_connection %s'),
+                 conn_id)
 
         ipsec_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
         # TODO(pcm): Can be conn_id, once bug fixed
