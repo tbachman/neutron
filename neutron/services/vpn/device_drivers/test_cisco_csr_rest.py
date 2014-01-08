@@ -969,7 +969,8 @@ class TestCsrRestStaticRoute(unittest.TestCase):
         # Now delete and verify that static route is gone
         with HTTMock(csr_request.token, csr_request.delete,
                      csr_request.no_such_resource):
-            self.csr.delete_static_route(cidr, interface)
+            route_id = self.csr.make_route_id(cidr, interface)
+            self.csr.delete_static_route(route_id)
             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
@@ -1125,10 +1126,10 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            self.csr.delete_static_route('10.1.0.0/24', 'GigabitEthernet1')
+            route_id = self.csr.make_route_id('10.1.0.0/24', 'GigabitEthernet1')
+            self.csr.delete_static_route(route_id)
             self.csr.token = None
-            self.addCleanup(self.csr.delete_static_route, '10.1.0.0/24',
-                            'GigabitEthernet1')
+            self.addCleanup(self.csr.delete_static_route, route_id)
 
 if __name__ == '__main__':
     unittest.main()

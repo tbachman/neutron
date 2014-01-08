@@ -225,13 +225,15 @@ class CsrRestClient(object):
         return self.post_request('routing-svc/static-routes',
                                  payload=route_info)
 
-    def delete_static_route(self, cidr, interface):
+    def make_route_id(self, cidr, interface):
         net = netaddr.IPNetwork(cidr)
-        return self.delete_request('routing-svc/static-routes/'
-                                   '%(network)s_%(prefix)s_%(interface)s' %
-                                   {'network': net.network,
-                                    'prefix': net.prefixlen,
-                                    'interface': interface})
+        return '%(network)s_%(prefix)s_%(interface)s' % {
+                    'network': net.network,
+                    'prefix': net.prefixlen,
+                    'interface': interface}
+
+    def delete_static_route(self, route_id):
+        return self.delete_request('routing-svc/static-routes/%s' % route_id)
 
     def delete_ipsec_connection(self, conn_id):
         return self.delete_request('vpn-svc/site-to-site/%s' % conn_id)

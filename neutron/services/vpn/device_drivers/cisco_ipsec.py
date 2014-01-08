@@ -15,6 +15,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import abc
+from collections import namedtuple
 import copy
 import os
 import re
@@ -79,6 +80,8 @@ STATUS_MAP = {
     'erouted': constants.ACTIVE,
     'unrouted': constants.DOWN
 }
+
+RollbackStep = namedtuple('RollbackStep', ['action', 'resource_id'])
 
 
 def _get_template(template_file):
@@ -543,10 +546,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                      u'encrypted': False,
                      u'peer-address': conn_info['peer_address']}]}
 
-    def create_ike_policy_info(self, ike_policy_id, info):
+    def create_ike_policy_info(self, ike_policy_id, conn_info):
         # TODO(pcm) Create ID via a mapping function, map for encryption,
         # hash, group, and look-up lifetime (ensure in seconds, else reject)
-        policy_info = info['ike_policy']
+        policy_info = conn_info['ike_policy']
         return {u'priority-id': ike_policy_id,
                 u'encryption': u'aes',
                 u'hash': u'sha',
@@ -602,6 +605,18 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                   {'resource': resource, 'which': which, 'status': status})
         # ToDO(pcm): Set state to error
 
+    def do_create_action(self, csr, create_action, delete_action, steps,
+                         info, resource_id, name):
+        create_action(info)
+        if self._check_create(csr.status, name, resource_id):
+            steps.append(RollbackStep(delete_action, resource_id))
+            return True
+        self.do_rollback(csr, steps)
+
+    def do_rollback(self, csr, steps):
+        for step in steps:
+            step.action(self, csr, step.resource_id)
+
     def create_ipsec_site_connection(self, context, conn_info):
         """Creates an IPSec site-to-site connection on CSR.
 
@@ -618,41 +633,52 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
 
         # Obtain login info for CSR
+        # TODO(pcm) Maybe new class that saves CSR info away and then
+        # don't have to pass around.
         csr = csr_client.CsrRestClient('192.168.200.20',
                                        'stack', 'cisco',
                                        timeout=csr_client.TIMEOUT)
-        # TODO(pcm): Rollback handling for failures
+        steps = []
+        
         psk_info = self.create_psk_info(conn_id, conn_info)
-        csr.create_pre_shared_key(psk_info)
-        if not self._check_create(csr.status, 'Pre-Shared Key', conn_id):
-            pass  # rollback and quit
-
+        if not self.do_create_action(csr, csr.create_pre_shared_key,
+                                     csr.delete_pre_shared_key, steps,
+                                     psk_info, conn_id, 'Pre-Shared Key'):
+            return
+        
         policy_info = self.create_ike_policy_info(ike_policy_id, conn_info)
-        csr.create_ike_policy(policy_info)
-        if not self._check_create(csr.status, 'IKE Policy', ike_policy_id):
-            pass  # rollback and quit
-
+        if not self.do_create_action(csr, csr.create_ike_policy,
+                                     csr.delete_ike_policy, steps,
+                                     policy_info, ike_policy_id, 'IKE Policy'):
+            return
+        
         policy_info = self.create_ipsec_policy_info(ipsec_policy_id, conn_info)
-        csr.create_ipsec_policy(policy_info)
-        if not self._check_create(csr.status, 'IPSec Policy', ipsec_policy_id):
-            pass  # rollback and quit
+        if not self.do_create_action(csr, csr.create_ipsec_policy,
+                                     csr.delete_ipsec_policy, steps,
+                                     policy_info, ipsec_policy_id,
+                                     'IPSec Policy'):
+            return
 
         connection_info = self.create_site_connection_info(site_conn_id,
                                                            ipsec_policy_id,
                                                            conn_info)
-        csr.create_ipsec_connection(connection_info)
-        if not self._check_create(csr.status, 'IPSec Connection',
-                                  site_conn_id):
-            pass  # rollback and quit
-
+        if not self.do_create_action(csr, csr.create_ipsec_connection,
+                                     csr.delete_ipsec_connection, steps,
+                                     connection_info, conn_id,
+                                     'IPSec Connection'):
+            return
+                     
         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
         if not peer_cidrs:
             self._record_failure(_("No peer CIDRs specified!"))
         for peer_cidr in peer_cidrs:
             route_info = self.create_route_info(peer_cidr, site_conn_id)
-            csr.create_static_route(route_info)
-            if not self._check_create(csr.status, 'Static Route', peer_cidr):
-                pass  # rollback and quit
+            route_id = csr.make_route_id(peer_cidr, site_conn_id)
+            if not self.do_create_action(csr, csr.create_static_route,
+                                         csr.delete_static_route, steps,
+                                         route_info, route_id,
+                                         'Static Route'):
+                return
 
         LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
                  conn_id)
@@ -670,6 +696,26 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                           "%(status)d"), {'resource': resource,
                                           'which': which,
                                           'status': status})
+
+    def delete_static_route(self, csr, route_id):
+        csr.delete_static_route(route_id)
+        self._verify_deleted(csr.status, 'static route', route_id)
+
+    def delete_ipsec_connection(self, csr, ipsec_conn_id):
+        csr.delete_ipsec_connection(ipsec_conn_id)
+        self._verify_deleted(csr.status, 'IPSec connection', ipsec_conn_id)
+
+    def delete_ipsec_policy(self, csr, ipsec_policy_id):
+        csr.delete_ipsec_policy(ipsec_policy_id)
+        self._verify_deleted(csr.status, 'IPSec policy', ipsec_policy_id)
+
+    def delete_ike_policy(self, csr, ike_policy_id):
+        csr.delete_ike_policy(ike_policy_id)
+        self._verify_deleted(csr.status, 'IKE Policy', ike_policy_id)
+
+    def delete_pre_shared_key(self, csr, psk_id):
+        csr.delete_pre_shared_key(psk_id)
+        self._verify_deleted(csr.status, 'Pre-shared Key', psk_id)
 
     def delete_ipsec_site_connection(self, context, conn_info):
         """Delete site-to-site IPSec connection.
@@ -694,16 +740,13 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         # TODO(pcm): Remove IKE keepalive (DPD) in future
         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
         for peer_cidr in peer_cidrs:
-            csr.delete_static_route(peer_cidr, ipsec_conn_id)
-            self._verify_deleted(csr.status, 'static route', peer_cidr)
-        csr.delete_ipsec_connection(ipsec_conn_id)
-        self._verify_deleted(csr.status, 'IPSec connection', ipsec_conn_id)
-        csr.delete_ipsec_policy(ipsec_policy_id)
-        self._verify_deleted(csr.status, 'IPSec policy', ipsec_policy_id)
-        csr.delete_ike_policy(ike_policy_id)
-        self._verify_deleted(csr.status, 'IKE policy', ike_policy_id)
-        csr.delete_pre_shared_key(conn_id)
-        self._verify_deleted(csr.status, 'pre-shared key', conn_id)
+            route_id = csr.make_route_id(peer_cidr, ipsec_conn_id)
+            self.delete_static_route(csr, route_id)
+            
+        self.delete_ipsec_connection(csr, ipsec_conn_id)
+        self.delete_ipsec_policy(csr, ipsec_policy_id)
+        self.delete_ike_policy(csr, ike_policy_id)
+        self.delete_pre_shared_key(csr, conn_id)
 
         LOG.info(_("SUCCESS: Deleted IPSec site-to-site connection %s"),
                  conn_id)
