@@ -45,8 +45,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
     def setUp(self, driver=ipsec_driver.CiscoCsrIPsecDriver):
         super(TestIPsecDeviceDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
-
-# DELETE START
+        # Don't need many of these...
         for klass in [
             'os.makedirs',
             'os.path.isdir',
@@ -55,30 +54,120 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             'neutron.services.vpn.device_drivers.ipsec.'
                 'OpenSwanProcess._gen_config_content',
             'shutil.rmtree',
+            'neutron.services.vpn.device_drivers.'
+                'cisco_csr_rest_client.CsrRestClient'
         ]:
             mock.patch(klass).start()
         self.execute = mock.patch(
             'neutron.agent.linux.utils.execute').start()
-# DELETE END
         self.agent = mock.Mock()
-        self.driver = driver(
-            self.agent,
-            FAKE_HOST)
+        self.driver = driver(self.agent, FAKE_HOST)
 #         self.driver.agent_rpc = mock.Mock()
 
-    def test_create_psk(self):
-        conn_info = {'site_conn': {'id': 123,
-                                   'psk': 'secret',
-                                   'peer_address': '192.168.1.2'},
-                     'cisco': {'site_conn_id': 'Tunnel0',
-                               'ike_policy_id': 222,
-                               'ipsec_policy_id': 333}
-                     }
+    def test_create_ipsec_site_connection(self):
+        conn_info = {
+            'site_conn': {'id': '123',
+                          'psk': 'secret',
+                          'peer_address': '192.168.1.2'},
+            'ike_policy': {},
+            'ipsec_policy': {},
+            'cisco': {'site_conn_id': 'Tunnel0',
+                      'ike_policy_id': 222,
+                      'ipsec_policy_id': 333}
+        }
         with mock.patch(CSR_REST_CLIENT) as MockCsr:
             mock_csr = MockCsr.return_value
+            # mock_csr.status = 201
             context = mock.Mock()
             self.driver.create_ipsec_site_connection(context, conn_info)
             self.assertEqual(mock_csr.mock_calls, [])
+
+
+class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
+
+    """Verifies that configuration info is transformed correctly."""
+
+    def setUp(self):
+        super(TestCsrIPsecDeviceDriverCreateTransforms, self).setUp()
+        self.addCleanup(mock.patch.stopall)
+        for klass in ['neutron.openstack.common.rpc.create_connection',
+                      'neutron.context.get_admin_context_without_session',
+#                       'neutron.openstack.common.loopingcall.'
+#                       'FixedIntervalLoopingCall',
+                      'neutron.services.vpn.device_drivers.'
+                        'cisco_csr_rest_client.CsrRestClient']:
+            mock.patch(klass).start()
+        self.agent = mock.Mock()
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.info = {
+            'site_conn': {'id': '123',
+                          'psk': 'secret',
+                          'peer_address': '192.168.1.2'},
+            'ike_policy': {'lifetime': {'value': 3600}},
+            'ipsec_policy': {'lifetime': {'value': 3600}},
+                'cisco': {'site_conn_id': 'Tunnel0',
+                          'ike_policy_id': 222,
+                          'ipsec_policy_id': 333}
+        }
+
+    def test_psk_create_info(self):
+        expected = {u'keyring-name': '123',
+                    u'pre-shared-key-list': [
+                        {u'key': 'secret',
+                         u'encrypted': False,
+                         u'peer-address': '192.168.1.2'}]}
+        psk_id = self.info['site_conn']['id']
+        psk_info = self.driver.create_psk_info(psk_id, self.info)
+        self.assertEqual(expected, psk_info)
+
+    def test_ike_policy_info(self):
+        expected = {u'priority-id': 222,
+                    u'encryption': u'aes',
+                    u'hash': u'sha',
+                    u'dhGroup': 5,
+                    u'lifetime': 3600}
+        ike_policy_id = self.info['cisco']['ike_policy_id']
+        policy_info = self.driver.create_ike_policy_info(ike_policy_id,
+                                                         self.info)
+        self.assertEqual(expected, policy_info)
+
+    def test_ipsec_policy_info(self):
+        expected = {u'policy-id': 333,
+                    u'protection-suite': {
+                        u'esp-encryption': u'esp-aes',
+                        u'esp-authentication': u'esp-sha-hmac'
+                    },
+                    u'lifetime-sec': 3600,
+                    u'pfs': u'group5',
+                    u'anti-replay-window-size': u'128'}
+        ipsec_policy_id = self.info['cisco']['ipsec_policy_id']
+        policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
+                                                           self.info)
+        self.assertEqual(expected, policy_info)
+
+    def test_site_connection_info(self):
+        expected = {u'vpn-interface-name': 'Tunnel0',
+                    u'ipsec-policy-id': 333,
+                    u'local-device': {
+                        u'ip-address': u'10.3.0.1/31',
+                        u'tunnel-ip-address': u'172.24.4.23'
+                    },
+                    u'remote-device': {
+                        u'tunnel-ip-address': '192.168.1.2'
+                    }}
+        ipsec_policy_id = self.info['cisco']['ipsec_policy_id']
+        site_conn_id = self.info['cisco']['site_conn_id']
+        conn_info = self.driver.create_site_connection_info(site_conn_id,
+                                                            ipsec_policy_id,
+                                                            self.info)
+        self.assertEqual(expected, conn_info)
+
+    def test_static_route_info(self):
+        expected = {u'destination-network': '10.2.0.0/24',
+                    u'outgoing-interface': 'Tunnel0'}
+        route_info = self.driver.create_route_info('10.2.0.0/24', 'Tunnel0')
+        self.assertEqual(expected, route_info)
 
 
 #     def test_vpnservice_updated(self):

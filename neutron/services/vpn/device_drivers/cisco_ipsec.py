@@ -94,7 +94,7 @@ def _get_template(template_file):
 
 
 class CsrResourceCreateFailure(exceptions.NeutronException):
-    message = _("Cisco CSR failed to create %(resource)s (%(which))")
+    message = _("Cisco CSR failed to create %(resource)s (%(which)s)")
 
 
 class BaseSwanProcess():
@@ -517,7 +517,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.process_status_cache_check.start(
             interval=self.conf.ipsec.ipsec_status_check_interval)
 
-        # PCM: TEMP Stuff...targeted for single CSR right now
+        # PCM: TEMP Stuff...Will only communicate with a hard coded CSR.
+        # Later, will want to do a lazy connect on first use and get the
+        # connection info for the desired router.
         # Obtain login info for CSR
         self.csr = csr_client.CsrRestClient('192.168.200.20',
                                             'stack', 'cisco',

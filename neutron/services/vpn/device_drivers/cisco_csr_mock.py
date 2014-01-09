@@ -309,6 +309,26 @@ def get_defaults(url, request):
         return response(wexc.HTTPOk.code, content=content)
 
 
+@filter(['get'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def get_unnumbered(url, request):
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    content = {u'kind': u'object#vpn-site-to-site',
+               u'vpn-interface-name': u'Tunnel0',
+               u'ip-version': u'ipv4',
+               u'vpn-type': u'site-to-site',
+               u'ipsec-policy-id': u'123',
+               u'local-device': {
+                   u'ip-address': 'unnumbered GigabitEthernet3',
+                   u'tunnel-ip-address': '10.10.10.10'
+               },
+               u'remote-device': {
+                   u'tunnel-ip-address': '10.10.10.20'
+               }}
+    return response(wexc.HTTPOk.code, content=content)
+
+
 @filter(['get'], 'vpn-svc/ike/keepalive')
 @urlmatch(netloc=r'localhost')
 def get_not_configured(url, request):
