@@ -18,8 +18,6 @@ import mock
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.services.vpn.device_drivers import (
-    cisco_csr_rest_client as csr_client)
 from neutron.services.vpn.device_drivers import cisco_ipsec as ipsec_driver
 from neutron.tests import base
 
@@ -38,8 +36,10 @@ FAKE_VPN_SERVICE = {
         {'peer_cidrs': ['40.0.0.0/24',
                         '50.0.0.0/24']}]
 }
-CSR_REST_CLIENT=('neutron.services.vpn.device_drivers.'
-                 'cisco_csr_rest_client.CsrRestClient')
+
+CSR_REST_CLIENT = ('neutron.services.vpn.device_drivers.'
+                   'cisco_csr_rest_client.CsrRestClient')
+
 
 class TestIPsecDeviceDriver(base.BaseTestCase):
     def setUp(self, driver=ipsec_driver.CiscoCsrIPsecDriver):
@@ -59,7 +59,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             mock.patch(klass).start()
         self.execute = mock.patch(
             'neutron.agent.linux.utils.execute').start()
-# DELETE END            
+# DELETE END
         self.agent = mock.Mock()
         self.driver = driver(
             self.agent,
@@ -78,8 +78,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             mock_csr = MockCsr.return_value
             context = mock.Mock()
             self.driver.create_ipsec_site_connection(context, conn_info)
-            self.assertEqual(mock_csr.mock_calls, [call.create_pre_shared_key({u'keyring-name': 123, u'pre-shared-key-list': [{u'encrypted': False, u'key': 'secret', u'peer-address': '192.168.1.2'}]})])
-            
+            self.assertEqual(mock_csr.mock_calls, [])
+
 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:

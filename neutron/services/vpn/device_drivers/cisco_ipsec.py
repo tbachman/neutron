@@ -28,6 +28,7 @@ from webob import exc as wexc
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.common import exceptions
 from neutron.common import rpc as q_rpc
 from neutron import context
 from neutron.openstack.common import lockutils
@@ -90,6 +91,10 @@ def _get_template(template_file):
         templateLoader = jinja2.FileSystemLoader(searchpath="/")
         JINJA_ENV = jinja2.Environment(loader=templateLoader)
     return JINJA_ENV.get_template(template_file)
+
+
+class CsrResourceCreateFailure(exceptions.NeutronException):
+    message = _("Cisco CSR failed to create %(resource)s (%(which))")
 
 
 class BaseSwanProcess():
@@ -606,12 +611,33 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         if self.csr.status == wexc.HTTPCreated.code:
             LOG.debug("PCM: %(resource)s %(which)s is configured",
                       {'resource': resource, 'which': which})
-            return True
+            return
         LOG.error(_("PCM: Unable to create %(resource)s %(which)s: "
                     "%(status)d"),
                   {'resource': resource, 'which': which,
                    'status': self.csr.status})
         # ToDO(pcm): Set state to error
+        raise CsrResourceCreateFailure(resource=resource, which=which)
+
+    def do_create_action(self, action_suffix, info, resource_id, title):
+        create_action = 'create_%s' % action_suffix
+        try:
+            getattr(self.csr, create_action)(info)
+        except AttributeError:
+            LOG.exception(_("Internal error - '%s' is not defined"),
+                          create_action)
+        self._check_create(title, resource_id)
+        self.steps.append(RollbackStep(action_suffix, resource_id, title))
+
+    def _verify_deleted(self, status, resource, which):
+        if status in (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code):
+            LOG.debug("PCM: %(resource)s configuration %(which)s is removed",
+                      {'resource': resource, 'which': which})
+        else:
+            LOG.warning(_("PCM: Unable to delete %(resource)s %(which)s: "
+                          "%(status)d"), {'resource': resource,
+                                          'which': which,
+                                          'status': status})
 
     def do_rollback(self):
         for step in reversed(self.steps):
@@ -623,24 +649,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                               delete_action)
             self._verify_deleted(self.csr.status, step.title, step.resource_id)
 
-    def do_create_action(self, action_suffix, info, resource_id, title):
-        create_action = 'create_%s' % action_suffix
-        try:
-            getattr(self.csr, create_action)(info)
-        except AttributeError:
-            LOG.exception(_("Internal error - '%s' is not defined"),
-                          create_action)
-        if self._check_create(title, resource_id):
-            self.steps.append(RollbackStep(action_suffix, resource_id, title))
-            return True
-        self.do_rollback()
-        
     def create_ipsec_site_connection(self, context, conn_info):
         """Creates an IPSec site-to-site connection on CSR.
 
         Create the PSK, IKE policy, IPSec policy, connection, static route,
         mtu, and (future) DPD.
-        
+
         This is called for a SPECIFIC connection, hence CSR. Later will
         change to do a generic update and have a background task that
         cycles through each and does the needed create/delete/update.
@@ -655,76 +669,50 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'),
                  conn_id)
 
-        self.steps = []
-        psk_info = self.create_psk_info(conn_id, conn_info)
-        if not self.do_create_action('pre_shared_key', psk_info,
-                                     conn_id, 'Pre-Shared Key'):
-            return
-        
-        policy_info = self.create_ike_policy_info(ike_policy_id, conn_info)
-        if not self.do_create_action('ike_policy', policy_info,
-                                     ike_policy_id, 'IKE Policy'):
-            return
-        
-        policy_info = self.create_ipsec_policy_info(ipsec_policy_id, conn_info)
-        if not self.do_create_action('ipsec_policy', policy_info,
-                                     ipsec_policy_id, 'IPSec Policy'):
-            return
+        try:
+            self.steps = []
+            psk_info = self.create_psk_info(conn_id, conn_info)
+            self.do_create_action('pre_shared_key', psk_info,
+                                  conn_id, 'Pre-Shared Key')
 
-        connection_info = self.create_site_connection_info(site_conn_id,
-                                                           ipsec_policy_id,
-                                                           conn_info)
-        if not self.do_create_action('ipsec_connection', connection_info,
-                                     site_conn_id, 'IPSec Connection'):
-            return
-                     
-        peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
-        if not peer_cidrs:
-            self._record_failure(_("No peer CIDRs specified!"))
-        for peer_cidr in peer_cidrs:
-            route_info = self.create_route_info(peer_cidr, site_conn_id)
-            route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
-            if not self.do_create_action('static_route', route_info,
-                                         route_id, 'Static Route'):
-                return
+            policy_info = self.create_ike_policy_info(ike_policy_id,
+                                                      conn_info)
+            self.do_create_action('ike_policy', policy_info,
+                                  ike_policy_id, 'IKE Policy')
 
-        self.connections[conn_id] = self.steps
-        LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
-                 conn_id)
+            policy_info = self.create_ipsec_policy_info(ipsec_policy_id,
+                                                        conn_info)
+            self.do_create_action('ipsec_policy', policy_info,
+                                  ipsec_policy_id, 'IPSec Policy')
 
-        # TODO(pcm): Configure MTU on tunnel, do DPD as separate REST API.
+            connection_info = self.create_site_connection_info(site_conn_id,
+                                                               ipsec_policy_id,
+                                                               conn_info)
+            self.do_create_action('ipsec_connection', connection_info,
+                                  site_conn_id, 'IPSec Connection')
 
-        # Set connection status to PENDING_CREATE?
+            # TODO(pcm): Configure MTU on tunnel, do DPD as separate REST API.
 
-    def _verify_deleted(self, status, resource, which):
-        if status in (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code):
-            LOG.debug("PCM: %(resource)s configuration %(which)s is removed",
-                      {'resource': resource, 'which': which})
+            peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
+            if not peer_cidrs:
+                LOG.error(_("No peer CIDRs specified for connection %s"),
+                          conn_id)
+                raise CsrResourceCreateFailure(resource='Static Routes',
+                                               which='None')
+            for peer_cidr in peer_cidrs:
+                route_info = self.create_route_info(peer_cidr, site_conn_id)
+                route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
+                self.do_create_action('static_route', route_info,
+                                      route_id, 'Static Route')
+        except CsrResourceCreateFailure:
+            self.do_rollback()
+            LOG.info(_("FAILED: Create of IPSec site-to-site connection %s"),
+                     conn_id)
         else:
-            LOG.warning(_("PCM: Unable to delete %(resource)s %(which)s: "
-                          "%(status)d"), {'resource': resource,
-                                          'which': which,
-                                          'status': status})
-
-#     def delete_static_route(self, csr, route_id):
-#         self.csr.delete_static_route(route_id)
-#         self._verify_deleted(self.csr.status, 'static route', route_id)
-# 
-#     def delete_ipsec_connection(self, csr, ipsec_conn_id):
-#         self.csr.delete_ipsec_connection(ipsec_conn_id)
-#         self._verify_deleted(self.csr.status, 'IPSec connection', ipsec_conn_id)
-# 
-#     def delete_ipsec_policy(self, csr, ipsec_policy_id):
-#         self.csr.delete_ipsec_policy(ipsec_policy_id)
-#         self._verify_deleted(self.csr.status, 'IPSec policy', ipsec_policy_id)
-# 
-#     def delete_ike_policy(self, csr, ike_policy_id):
-#         self.csr.delete_ike_policy(ike_policy_id)
-#         self._verify_deleted(self.csr.status, 'IKE Policy', ike_policy_id)
-# 
-#     def delete_pre_shared_key(self, csr, psk_id):
-#         self.csr.delete_pre_shared_key(psk_id)
-#         self._verify_deleted(self.csr.status, 'Pre-shared Key', psk_id)
+            self.connections[conn_id] = self.steps
+            LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
+                     conn_id)
+            # Set connection status to PENDING_CREATE?
 
     def delete_ipsec_site_connection(self, context, conn_info):
         """Delete site-to-site IPSec connection.
@@ -741,28 +729,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         else:
             self.do_rollback()
 
-#         ipsec_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
-#         # TODO(pcm): Can be conn_id, once bug fixed
-#         ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
-#         ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
-# 
-#         # Obtain login info for CSR
-#         csr = csr_client.CsrRestClient('192.168.200.20',
-#                                        'stack', 'cisco',
-#                                        timeout=csr_client.TIMEOUT)
-# 
-#         # TODO(pcm): Remove IKE keepalive (DPD) in future
-#         peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
-#         for peer_cidr in peer_cidrs:
-#             route_id = self.csr.make_route_id(peer_cidr, ipsec_conn_id)
-#             self.delete_static_route(csr, route_id)
-#             
-#         self.delete_ipsec_connection(csr, ipsec_conn_id)
-#         self.delete_ipsec_policy(csr, ipsec_policy_id)
-#         self.delete_ike_policy(csr, ike_policy_id)
-#         self.delete_pre_shared_key(csr, conn_id)
-
-        LOG.info(_("SUCCESS: Deleted IPSec site-to-site connection %s"),
+        LOG.info(_("COMPLETED: Deleted IPSec site-to-site connection %s"),
                  conn_id)
 
     def vpnservice_updated(self, context, **kwargs):

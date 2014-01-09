@@ -60,8 +60,9 @@ class TestIPsecDriver(base.BaseTestCase):
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
 
     def test_create_ipsec_site_connection(self):
-        ctxt = context.Context('', 'somebody')
-# TODO complete... need to setup site_conn fields
+        pass
+        # ctxt = context.Context('', 'somebody')
+# TODO(pcm) complete... need to setup site_conn fields
 #         with mock.patch.object(self.driver.agent_rpc, 'cast') as cast:
 #             self.driver.create_ipsec_site_connection(
 #                 ctxt, FAKE_VPN_CONNECTION)

@@ -228,9 +228,9 @@ class CsrRestClient(object):
     def make_route_id(self, cidr, interface):
         net = netaddr.IPNetwork(cidr)
         return '%(network)s_%(prefix)s_%(interface)s' % {
-                    'network': net.network,
-                    'prefix': net.prefixlen,
-                    'interface': interface}
+            'network': net.network,
+            'prefix': net.prefixlen,
+            'interface': interface}
 
     def delete_static_route(self, route_id):
         return self.delete_request('routing-svc/static-routes/%s' % route_id)

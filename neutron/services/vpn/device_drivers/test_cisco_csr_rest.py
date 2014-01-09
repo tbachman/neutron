@@ -1126,7 +1126,8 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            route_id = self.csr.make_route_id('10.1.0.0/24', 'GigabitEthernet1')
+            route_id = self.csr.make_route_id('10.1.0.0/24',
+                                              'GigabitEthernet1')
             self.csr.delete_static_route(route_id)
             self.csr.token = None
             self.addCleanup(self.csr.delete_static_route, route_id)
