@@ -650,6 +650,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 LOG.exception(_("Internal error - '%s' is not defined"),
                               delete_action)
             self._verify_deleted(self.csr.status, step.title, step.resource_id)
+        self.steps = []
 
     def create_ipsec_site_connection(self, context, conn_info):
         """Creates an IPSec site-to-site connection on CSR.

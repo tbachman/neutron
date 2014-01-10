@@ -45,47 +45,87 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
     def setUp(self, driver=ipsec_driver.CiscoCsrIPsecDriver):
         super(TestIPsecDeviceDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
-        # Don't need many of these...
-        for klass in [
-            'os.makedirs',
-            'os.path.isdir',
-            'neutron.agent.linux.utils.replace_file',
-            'neutron.openstack.common.rpc.create_connection',
-            'neutron.services.vpn.device_drivers.ipsec.'
-                'OpenSwanProcess._gen_config_content',
-            'shutil.rmtree',
-            'neutron.services.vpn.device_drivers.'
-                'cisco_csr_rest_client.CsrRestClient'
-        ]:
+        for klass in ['neutron.openstack.common.rpc.create_connection',
+                      'neutron.context.get_admin_context_without_session',
+#                       'neutron.openstack.common.loopingcall.'
+#                       'FixedIntervalLoopingCall',
+                      'neutron.services.vpn.device_drivers.'
+                        'cisco_csr_rest_client.CsrRestClient']:
             mock.patch(klass).start()
-        self.execute = mock.patch(
-            'neutron.agent.linux.utils.execute').start()
         self.agent = mock.Mock()
-        self.driver = driver(self.agent, FAKE_HOST)
-#         self.driver.agent_rpc = mock.Mock()
-
-    def test_create_ipsec_site_connection(self):
-        conn_info = {
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.driver.csr.status = 201  # All calls succeed
+        self.info = {
             'site_conn': {'id': '123',
                           'psk': 'secret',
-                          'peer_address': '192.168.1.2'},
-            'ike_policy': {},
-            'ipsec_policy': {},
+                          'peer_address': '192.168.1.2',
+                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
+            'ike_policy': {'lifetime': {'value': 3600}},
+            'ipsec_policy': {'lifetime': {'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333}
         }
-        with mock.patch(CSR_REST_CLIENT) as MockCsr:
-            mock_csr = MockCsr.return_value
-            # mock_csr.status = 201
-            context = mock.Mock()
-            self.driver.create_ipsec_site_connection(context, conn_info)
-            self.assertEqual(mock_csr.mock_calls, [])
+
+    def test_create_ipsec_site_connection(self):
+        expected = ['create_pre_shared_key',
+                    'create_ike_policy',
+                    'create_ipsec_policy',
+                    'create_ipsec_connection',
+                    'make_route_id',
+                    'create_static_route',
+                    'make_route_id',
+                    'create_static_route']
+        rollback_steps = [
+            ipsec_driver.RollbackStep(action='pre_shared_key',
+                                      resource_id='123',
+                                      title='Pre-Shared Key'),
+            ipsec_driver.RollbackStep(action='ike_policy',
+                                      resource_id=222,
+                                      title='IKE Policy'),
+            ipsec_driver.RollbackStep(action='ipsec_policy',
+                                      resource_id=333,
+                                      title='IPSec Policy'),
+            ipsec_driver.RollbackStep(action='ipsec_connection',
+                                      resource_id='Tunnel0',
+                                      title='IPSec Connection'),
+            ipsec_driver.RollbackStep(action='static_route',
+                                      resource_id='10.1.0.0_24_Tunnel0',
+                                      title='Static Route'),
+            ipsec_driver.RollbackStep(action='static_route',
+                                      resource_id='10.2.0.0_24_Tunnel0',
+                                      title='Static Route')]
+        self.driver.csr.make_route_id.side_effect = ['10.1.0.0_24_Tunnel0',
+                                                     '10.2.0.0_24_Tunnel0']
+        context = mock.Mock()
+        self.driver.create_ipsec_site_connection(context, self.info)
+        client_calls = [c[0] for c in self.driver.csr.method_calls]
+        self.assertEqual(expected, client_calls)
+        self.assertEqual(rollback_steps, self.driver.connections['123'])
+
+    def test_create_ipsec_site_connection_with_rollback(self):
+        expected = ['create_pre_shared_key',
+                    'create_ike_policy',
+                    'create_ipsec_policy',
+                    'create_ipsec_connection',
+                     'delete_ipsec_connection',
+                     'delete_ipsec_policy',
+                     'delete_ike_policy',
+                     'delete_pre_shared_key']
+        # Simulate that peer_cidrs not provided, causing a failure at
+        # the last step, causing a rollback
+        del self.info['site_conn']['peer_cidrs']
+        context = mock.Mock()
+        self.driver.create_ipsec_site_connection(context, self.info)
+        client_calls = [c[0] for c in self.driver.csr.method_calls]
+        self.assertEqual(expected, client_calls)
+        self.assertNotIn('123', self.driver.connections)
 
 
 class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
 
-    """Verifies that configuration info is transformed correctly."""
+    """Verifies that config info is prepared/transformed correctly."""
 
     def setUp(self):
         super(TestCsrIPsecDeviceDriverCreateTransforms, self).setUp()
@@ -103,7 +143,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.info = {
             'site_conn': {'id': '123',
                           'psk': 'secret',
-                          'peer_address': '192.168.1.2'},
+                          'peer_address': '192.168.1.2',
+                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
             'ike_policy': {'lifetime': {'value': 3600}},
             'ipsec_policy': {'lifetime': {'value': 3600}},
                 'cisco': {'site_conn_id': 'Tunnel0',
