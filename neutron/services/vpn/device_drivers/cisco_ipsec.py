@@ -628,6 +628,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         except AttributeError:
             LOG.exception(_("Internal error - '%s' is not defined"),
                           create_action)
+            raise CsrResourceCreateFailure(resource=title,
+                                           which=resource_id)
         self._check_create(title, resource_id)
         self.steps.append(RollbackStep(action_suffix, resource_id, title))
 
@@ -649,6 +651,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             except AttributeError:
                 LOG.exception(_("Internal error - '%s' is not defined"),
                               delete_action)
+                raise CsrResourceCreateFailure(resource=step.title,
+                                               which=step.resource_id)
             self._verify_deleted(self.csr.status, step.title, step.resource_id)
         self.steps = []
 

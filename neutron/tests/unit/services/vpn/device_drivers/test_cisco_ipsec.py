@@ -15,6 +15,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import mock
+from webob import exc as wexc
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -46,12 +47,9 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         super(TestIPsecDeviceDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
         for klass in ['neutron.openstack.common.rpc.create_connection',
-                      'neutron.context.get_admin_context_without_session',
-#                       'neutron.openstack.common.loopingcall.'
-#                       'FixedIntervalLoopingCall',
-                      'neutron.services.vpn.device_drivers.'
-                        'cisco_csr_rest_client.CsrRestClient']:
+                      'neutron.context.get_admin_context_without_session']:
             mock.patch(klass).start()
+        mock.patch(CSR_REST_CLIENT, autospec=True).start()
         self.agent = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
@@ -69,6 +67,11 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         }
 
     def test_create_ipsec_site_connection(self):
+        """Ensure all steps are done to create an IPSec site connection.
+
+        Verify that each of the driver calls occur (in order), and
+        the right information is stored for later deletion.
+        """
         expected = ['create_pre_shared_key',
                     'create_ike_policy',
                     'create_ipsec_policy',
@@ -77,7 +80,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                     'create_static_route',
                     'make_route_id',
                     'create_static_route']
-        rollback_steps = [
+        expected_rollback_steps = [
             ipsec_driver.RollbackStep(action='pre_shared_key',
                                       resource_id='123',
                                       title='Pre-Shared Key'),
@@ -102,25 +105,60 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.driver.create_ipsec_site_connection(context, self.info)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
-        self.assertEqual(rollback_steps, self.driver.connections['123'])
+        self.assertEqual(expected_rollback_steps,
+                         self.driver.connections[self.info['site_conn']['id']])
 
     def test_create_ipsec_site_connection_with_rollback(self):
+        """Failure test of IPSec site conn creation that fails and rolls back.
+
+        Simulate a failure in the last create step (making routes for the
+        peer networks), and ensure that the create steps are called in
+        order (except for create_static_route), and that the delete
+        steps are called in reverse order. At the end, there should be no
+        rollback infromation for the connection.
+        """
         expected = ['create_pre_shared_key',
                     'create_ike_policy',
                     'create_ipsec_policy',
                     'create_ipsec_connection',
-                     'delete_ipsec_connection',
-                     'delete_ipsec_policy',
-                     'delete_ike_policy',
-                     'delete_pre_shared_key']
-        # Simulate that peer_cidrs not provided, causing a failure at
-        # the last step, causing a rollback
+                    'delete_ipsec_connection',
+                    'delete_ipsec_policy',
+                    'delete_ike_policy',
+                    'delete_pre_shared_key']
         del self.info['site_conn']['peer_cidrs']
         context = mock.Mock()
         self.driver.create_ipsec_site_connection(context, self.info)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
         self.assertNotIn('123', self.driver.connections)
+
+    def test_create_verification_with_error(self):
+        """Negative test of create check step had failed."""
+        self.driver.csr.status = wexc.HTTPNotFound.code
+        self.assertRaises(ipsec_driver.CsrResourceCreateFailure,
+                          self.driver._check_create, 'name', 'id')
+
+    def test_failure_with_invalid_create_step(self):
+        """Negative test of invalid create step (programming error)."""
+        self.driver.steps = []
+        try:
+            self.driver.do_create_action('bogus', None, '123', 'Bogus Step')
+        except ipsec_driver.CsrResourceCreateFailure:
+            pass
+        else:
+            self.fail('Expected exception with invalid create step')
+
+    def test_failure_with_invalid_delete_step(self):
+        """Negative test of invalid delete step (programming error)."""
+        self.driver.steps = [ipsec_driver.RollbackStep(action='bogus',
+                                                       resource_id='123',
+                                                       title='Bogus Step')]
+        try:
+            self.driver.do_rollback()
+        except ipsec_driver.CsrResourceCreateFailure:
+            pass
+        else:
+            self.fail('Expected exception with invalid delete step')
 
 
 class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
@@ -131,12 +169,9 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         super(TestCsrIPsecDeviceDriverCreateTransforms, self).setUp()
         self.addCleanup(mock.patch.stopall)
         for klass in ['neutron.openstack.common.rpc.create_connection',
-                      'neutron.context.get_admin_context_without_session',
-#                       'neutron.openstack.common.loopingcall.'
-#                       'FixedIntervalLoopingCall',
-                      'neutron.services.vpn.device_drivers.'
-                        'cisco_csr_rest_client.CsrRestClient']:
+                      'neutron.context.get_admin_context_without_session']:
             mock.patch(klass).start()
+        mock.patch(CSR_REST_CLIENT, autospec=True).start()
         self.agent = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
@@ -147,9 +182,9 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
             'ike_policy': {'lifetime': {'value': 3600}},
             'ipsec_policy': {'lifetime': {'value': 3600}},
-                'cisco': {'site_conn_id': 'Tunnel0',
-                          'ike_policy_id': 222,
-                          'ipsec_policy_id': 333}
+            'cisco': {'site_conn_id': 'Tunnel0',
+                      'ike_policy_id': 222,
+                      'ipsec_policy_id': 333}
         }
 
     def test_psk_create_info(self):
