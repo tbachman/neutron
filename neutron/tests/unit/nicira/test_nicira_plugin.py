@@ -20,6 +20,7 @@ import contextlib
 import mock
 import netaddr
 from oslo.config import cfg
+from sqlalchemy import exc as sql_exc
 import webob.exc
 
 from neutron.api.v2 import attributes
@@ -36,6 +37,7 @@ from neutron.extensions import providernet as pnet
 from neutron.extensions import securitygroup as secgrp
 from neutron import manager
 from neutron.manager import NeutronManager
+from neutron.openstack.common.db import exception as db_exc
 from neutron.openstack.common import uuidutils
 from neutron.plugins.nicira.common import exceptions as nvp_exc
 from neutron.plugins.nicira.common import sync
@@ -119,7 +121,6 @@ class NiciraPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
         self.mock_instance.return_value.get_nvp_version.return_value = (
             NVPVersion("2.9"))
         self.mock_instance.return_value.request.side_effect = _fake_request
-        plugin = plugin or PLUGIN_NAME
         super(NiciraPluginV2TestCase, self).setUp(plugin=plugin,
                                                   ext_mgr=ext_mgr)
         cfg.CONF.set_override('metadata_mode', None, 'NSX')
@@ -250,6 +251,17 @@ class TestNiciraPortsV2(NiciraPluginV2TestCase,
                 self._create_port(self.fmt, net_id,
                                   webob.exc.HTTPInternalServerError.code)
                 self._verify_no_orphan_left(net_id)
+
+    def test_create_port_db_error_no_orphan_left(self):
+        db_exception = db_exc.DBError(
+            inner_exception=sql_exc.IntegrityError(mock.ANY,
+                                                   mock.ANY,
+                                                   mock.ANY))
+        with mock.patch.object(nicira_db, 'add_neutron_nsx_port_mapping',
+                               side_effect=db_exception):
+            with self.network() as net:
+                with self.port(device_owner='network:dhcp'):
+                    self._verify_no_orphan_left(net['network']['id'])
 
     def test_create_port_maintenance_returns_503(self):
         with self.network() as net:
@@ -400,8 +412,8 @@ class TestNiciraPortSecurity(NiciraPortSecurityTestCase,
         pass
 
 
-class TestNiciraAllowedAddressPairs(test_addr_pair.TestAllowedAddressPairs,
-                                    NiciraPluginV2TestCase):
+class TestNiciraAllowedAddressPairs(NiciraPluginV2TestCase,
+                                    test_addr_pair.TestAllowedAddressPairs):
     pass
 
 
@@ -480,7 +492,7 @@ class NiciraL3NatTest(test_l3_plugin.L3BaseForIntTests,
     def _restore_l3_attribute_map(self):
         l3.RESOURCE_ATTRIBUTE_MAP = self._l3_attribute_map_bk
 
-    def setUp(self, plugin=None, ext_mgr=None, service_plugins=None):
+    def setUp(self, plugin=PLUGIN_NAME, ext_mgr=None, service_plugins=None):
         self._l3_attribute_map_bk = {}
         for item in l3.RESOURCE_ATTRIBUTE_MAP:
             self._l3_attribute_map_bk[item] = (
@@ -1248,8 +1260,7 @@ class NiciraNeutronNVPOutOfSync(NiciraPluginV2TestCase,
 
     def setUp(self):
         ext_mgr = test_l3_plugin.L3TestExtensionManager()
-        test_lib.test_config['extension_manager'] = ext_mgr
-        super(NiciraNeutronNVPOutOfSync, self).setUp()
+        super(NiciraNeutronNVPOutOfSync, self).setUp(ext_mgr=ext_mgr)
 
     def test_delete_network_not_in_nvp(self):
         res = self._create_network('json', 'net1', True)
@@ -1404,12 +1415,13 @@ class NiciraNeutronNVPOutOfSync(NiciraPluginV2TestCase,
                          constants.NET_STATUS_ERROR)
 
 
-class TestNiciraNetworkGateway(test_l2_gw.NetworkGatewayDbTestCase,
-                               NiciraPluginV2TestCase):
+class TestNiciraNetworkGateway(NiciraPluginV2TestCase,
+                               test_l2_gw.NetworkGatewayDbTestCase):
 
-    def setUp(self):
+    def setUp(self, plugin=PLUGIN_NAME, ext_mgr=None):
         cfg.CONF.set_override('api_extensions_path', NVPEXT_PATH)
-        super(TestNiciraNetworkGateway, self).setUp()
+        super(TestNiciraNetworkGateway,
+              self).setUp(plugin=plugin, ext_mgr=ext_mgr)
 
     def test_create_network_gateway_name_exceeds_40_chars(self):
         name = 'this_is_a_gateway_whose_name_is_longer_than_40_chars'
