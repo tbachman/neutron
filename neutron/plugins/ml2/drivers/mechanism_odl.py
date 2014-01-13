@@ -103,22 +103,56 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         subnets = context._plugin.get_subnets(dbcontext)
         ports = context._plugin.get_ports(dbcontext)
 
-        if len(networks) > 1:
-            self.sendjson('post', 'networks', {'networks': networks})
-        elif len(networks) == 1:
-            self.sendjson('post', 'networks', {'network': networks})
-        if len(subnets) > 1:
-            self.sendjson('post', 'subnets', {'subnets': subnets})
-        elif len(subnets) == 1:
-            self.sendjson('post', 'subnets', {'subnet': subnets})
+        nets = []
+        for network in networks:
+            try:
+                urlpath = 'networks' + '/' + network['id']
+                self.sendjson('get', urlpath, None)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    del network['status']
+                    del network['subnets']
+                    nets.append(network)
+                continue
+
+        if len(nets) > 1:
+            self.sendjson('post', 'networks', {'networks': nets})
+        elif len(nets) == 1:
+            self.sendjson('post', 'networks', {'network': nets})
+
+        snets = []
+        for subnet in subnets:
+            try:
+                urlpath = 'subnets' + '/' + subnet['id']
+                self.sendjson('get', urlpath, None)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    snets.append(subnet)
+                continue
+
+        if len(snets) > 1:
+            self.sendjson('post', 'subnets', {'subnets': snets})
+        elif len(snets) == 1:
+            self.sendjson('post', 'subnets', {'subnet': snets})
+
+        pports = []
         for port in ports:
-            self.add_security_groups(context, dbcontext, port)
-            # TODO(kmestery): Converting to uppercase due to ODL bug
-            port['mac_address'] = port['mac_address'].upper()
-        if len(ports) > 1:
-            self.sendjson('post', 'ports', {'ports': ports})
-        elif len(ports) == 1:
-            self.sendjson('post', 'ports', {'port': ports})
+            try:
+                urlpath = 'ports' + '/' + port['id']
+                self.sendjson('get', urlpath, None)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    self.add_security_groups(context, dbcontext, port)
+                    # TODO(kmestery): Converting to uppercase due to ODL bug
+                    port['mac_address'] = port['mac_address'].upper()
+                    del port['status']
+                    pports.append(port)
+                continue
+
+        if len(pports) > 1:
+            self.sendjson('post', 'ports', {'ports': pports})
+        elif len(pports) == 1:
+            self.sendjson('post', 'ports', {'port': pports})
         self.out_of_sync = False
 
     def sync_object(self, operation, object_type, context):
@@ -146,6 +180,9 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                     del network['status']
                     del network['subnets']
                     del network['tenant_id']
+                elif operation == 'create':
+                    del network['status']
+                    del network['subnets']
                 self.sendjson(method, urlpath, {'network': network})
             elif object_type == 'subnets':
                 subnet = context._plugin.get_subnet(dbcontext, id)
@@ -165,6 +202,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                 if operation == 'create':
                     # TODO(kmestery): Converting to uppercase due to ODL bug
                     port['mac_address'] = port['mac_address'].upper()
+                    del port['status']
                 elif operation == 'update':
                     # Remove the following for update calls
                     del port['network_id']
