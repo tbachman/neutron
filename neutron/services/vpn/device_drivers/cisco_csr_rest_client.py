@@ -52,10 +52,6 @@ class CsrRestClient(object):
     def _response_info_for(self, response, method, url):
         """Return contents or location from response.
 
-        Temporary check of 201 for an authentication POST response,
-        where we want to return the token. In the future, the CSR will
-        return this as a 200, and the special test here can be removed.
-
         For a POST with a 201 response, we return the header's location,
         which contains the identifier for the created resource.
 
@@ -63,9 +59,8 @@ class CsrRestClient(object):
         it can be used in error processing ('error-code', 'error-message',
         and 'detail' fields).
         """
-        if (('auth/token-services' in url and
-             self.status == wexc.HTTPCreated.code) or
-            (method == 'GET' and self.status == wexc.HTTPOk.code)):
+        if (method in ('POST', 'GET') and self.status == wexc.HTTPOk.code):
+            LOG.debug(_('RESPONSE: %s'), response.json())
             return response.json()
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
             return response.headers.get('location', '')

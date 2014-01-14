@@ -84,7 +84,7 @@ def filter(methods, resource):
 @urlmatch(netloc=r'localhost')
 def token(url, request):
     if 'auth/token-services' in url.path:
-        return {'status_code': wexc.HTTPCreated.code,
+        return {'status_code': wexc.HTTPOk.code,
                 'content': {'token-id': 'dummy-token'}}
 
 
