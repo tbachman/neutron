@@ -235,12 +235,17 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/site-to-site' in url.path:
+    if 'vpn-svc/site-to-site/Tunnel' in url.path:
+        tunnel_id = url.path.split('/')[-1]
+        # Use same number, to allow mock to generate IPSec policy ID
+        ipsec_policy_id = tunnel_id[6:]
         content = {u'kind': u'object#vpn-site-to-site',
-                   u'vpn-interface-name': u'Tunnel0',
+                   u'vpn-interface-name': u'%s' % tunnel_id,
                    u'ip-version': u'ipv4',
                    u'vpn-type': u'site-to-site',
-                   u'ipsec-policy-id': u'123',
+                   u'ipsec-policy-id': u'%s' % ipsec_policy_id,
+                   u'ike-profile-id': None,
+                   u'mtu': 1500,
                    u'local-device': {
                        u'ip-address': '10.3.0.1/24',
                        u'tunnel-ip-address': '10.10.10.10'
@@ -361,12 +366,16 @@ def post(url, request):
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
             return response(wexc.HTTPCreated.code, headers=headers)
+        return {'status_code': wexc.HTTPBadRequest.code}
     if 'vpn-svc/ike/keyrings' in url.path:
         headers = {'location': "%s/5" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
-        headers = {'location': "%s/Tunnel0" % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        m = re.search(r'"vpn-interface-name": "(\S+)"', request.body)
+        if m:
+            headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
+            return response(wexc.HTTPCreated.code, headers=headers)
+        return {'status_code': wexc.HTTPBadRequest.code}
     if 'routing-svc/static-routes' in url.path:
         headers = {'location':
                    "%s/10.1.0.0_24_GigabitEthernet1" % url.geturl()}
