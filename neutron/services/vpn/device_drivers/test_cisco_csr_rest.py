@@ -31,6 +31,17 @@ if True:
     logging.CONF.set_override('debug', True)
     logging.setup('neutron')
 
+# Note: Helper functions so that we can test with different and same ID
+# numbers between runs.
+def generate_pre_shared_key_id():
+    return random.randint(100, 200)
+
+def generate_ike_policy_id():
+    return random.randint(200, 300)
+
+def generate_ipsec_policy_id():
+    return random.randint(300, 400)
+
 
 class TestCsrLoginRestApi(unittest.TestCase):
 
@@ -722,7 +733,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         self.csr = csr_client.CsrRestClient('localhost', 'stack', 'cisco')
 
     def _make_psk_for_test(self):
-        psk_id = random.randint(100, 200)
+        psk_id = generate_pre_shared_key_id()
         self._remove_resource_for_test(self.csr.delete_pre_shared_key,
                                        psk_id)  
         with HTTMock(csr_request.token, csr_request.post):
@@ -740,7 +751,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             return psk_id
 
     def _make_ike_policy_for_test(self):
-        policy_id = random.randint(200, 300)
+        policy_id = generate_ike_policy_id()
         self._remove_resource_for_test(self.csr.delete_ike_policy,
                                        policy_id)  
         with HTTMock(csr_request.token, csr_request.post):
@@ -757,7 +768,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             return policy_id
 
     def _make_ipsec_policy_for_test(self):
-        policy_id = random.randint(300, 400)
+        policy_id = generate_ipsec_policy_id()
         self._remove_resource_for_test(self.csr.delete_ipsec_policy,
                                        policy_id)  
         with HTTMock(csr_request.token, csr_request.post):
@@ -783,16 +794,25 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         with HTTMock(csr_request.token, csr_request.delete):
             delete_resource(resource_id)
 
+    def _prepare_for_site_conn_create(self, skip_psk=False, skip_ike=False,
+                                      skip_ipsec=False):
+        """Create the policies and PSK so can then create site conn."""
+        if not skip_psk:
+            self._make_psk_for_test()
+        if not skip_ike:
+            self._make_ike_policy_for_test()
+        if not skip_ipsec:
+            ipsec_policy_id = self._make_ipsec_policy_for_test()
+        else:
+            ipsec_policy_id = generate_ipsec_policy_id()
+        # Note: Use same ID number for tunnel and IPSec policy, so that when
+        # GET tunnel info, the mocks can infer the IPSec policy ID from the
+        # tunnel number.
+        return (ipsec_policy_id, ipsec_policy_id)
+
     def test_create_delete_ipsec_connection(self):
         """Create and then delete an IPSec connection."""
-        # Setup needed items for test
-        self._make_ike_policy_for_test()
-        self._make_psk_for_test()
-        ipsec_policy_id = self._make_ipsec_policy_for_test()
-        # Note: Use same ID number for tunnel and IPSec policy, so that when
-        # GET tunnel info, the mock can infer the IPSec policy ID from the
-        # tunnel number.
-        tunnel_id = ipsec_policy_id
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             connection_info = {
                 u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
@@ -822,30 +842,29 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
-#     def test_create_ipsec_connection_with_no_tunnel_subnet(self):
-#         """Create an IPSec connection without an IP address on tunnel."""
-#         # Setup needed items for test
-#         self._make_ike_policy_for_test()
-#         self._make_psk_for_test()
-#         self._make_ipsec_policy_for_test()
-#         tunnel_id = 'Tunnel0'
-#         with HTTMock(csr_request.token, csr_request.post,
-#                      csr_request.get_unnumbered):
-#             connection_info = {
-#                 u'vpn-interface-name': u'%s' % tunnel_id,
-#                 u'ipsec-policy-id': u'123',
-#                 u'local-device': {u'ip-address': u'GigabitEthernet3',
-#                                   u'tunnel-ip-address': u'10.10.10.10'},
-#                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
-#             }
-#             location = self.csr.create_ipsec_connection(connection_info)
-#             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-#             self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
-#             # Check the hard-coded items that get set as well...
-#             content = self.csr.get_request(location, full_url=True)
-#             self.assertEqual(wexc.HTTPServerError.code, self.csr.status)
-            # TODO(pcm): When bug fixed, this should return 200 and can
-            # remove above line and uncomment code below
+    def test_create_ipsec_connection_with_no_tunnel_subnet(self):
+        """Create an IPSec connection without an IP address on tunnel."""
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        with HTTMock(csr_request.token, csr_request.post,
+                     csr_request.get_unnumbered):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'GigabitEthernet3',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
+            }
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
+            self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            # Note: This should work, but does not due to bug. 
+            self.assertEqual(wexc.HTTPServerError.code, self.csr.status)
+            # TODO(pcm): When bug is fixed, remove above line and uncomment
 #             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
 #             expected_connection = {u'kind': u'object#vpn-site-to-site',
 #                                    u'ip-version': u'ipv4'}
@@ -854,108 +873,105 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 #                 u'unnumbered GigabitEthernet3')
 #             self.assertEqual(expected_connection, content)
 
-#     def test_create_ipsec_connection_no_pre_shared_key(self):
-#         """Test of connection create without associated pre-shared key.
-# 
-#         The CSR will create the connection, but will not be able to pass
-#         traffic without the pre-shared key.
-#         """
-# 
-#         self._make_ike_policy_for_test()
-#         self._make_ipsec_policy_for_test()
-#         tunnel_id = 'Tunnel0'
-#         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-#             connection_info = {
-#                 u'vpn-interface-name': u'%s' % tunnel_id,
-#                 u'ipsec-policy-id': u'123',
-#                 u'local-device': {u'ip-address': u'10.3.0.1/24',
-#                                   u'tunnel-ip-address': u'10.10.10.10'},
-#                 u'remote-device': {u'tunnel-ip-address':u'10.10.10.20'}
-#             }
-#             location = self.csr.create_ipsec_connection(connection_info)
-#             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-#             self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
-#             # Check the hard-coded items that get set as well...
-#             content = self.csr.get_request(location, full_url=True)
-#             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-#             expected_connection = {u'kind': u'object#vpn-site-to-site',
-#                                    u'ip-version': u'ipv4',
-#                                    u'mtu': 1500,
-#                                    u'ike-profile-id': None}
-#             expected_connection.update(connection_info)
-#             self.assertEqual(expected_connection, content)
-# 
-#     def test_create_ipsec_connection_with_default_ike_policy(self):
-#         """Test of connection create without IKE policy (uses default).
-# 
-#         Without an IKE policy, the CSR will use a built-in default IKE
-#         policy setting for the connection.
-#         """
-# 
-#         self._make_psk_for_test()
-#         self._make_ipsec_policy_for_test()
-#         tunnel_id = 'Tunnel0'
-#         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
-#             connection_info = {
-#                 u'vpn-interface-name': u'%s' % tunnel_id,
-#                 u'ipsec-policy-id': u'123',
-#                 u'local-device': {u'ip-address': u'10.3.0.1/24',
-#                                   u'tunnel-ip-address': u'10.10.10.10'},
-#                 u'remote-device': {u'tunnel-ip-address':u'10.10.10.20'}
-#             }
-#             location = self.csr.create_ipsec_connection(connection_info)
-#             self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
-#             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
-#             # Check the hard-coded items that get set as well...
-#             content = self.csr.get_request(location, full_url=True)
-#             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
-#             expected_connection = {u'kind': u'object#vpn-site-to-site',
-#                                    u'ip-version': u'ipv4',
-#                                    u'mtu': 1500,
-#                                    u'ike-profile-id': None}
-#             expected_connection.update(connection_info)
-#             self.assertEqual(expected_connection, content)
-# 
-#     def test_create_ipsec_connection_missing_ipsec_policy(self):
-#         """Negative test of connection create without IPSec policy."""
-#         self._make_ike_policy_for_test()
-#         self._make_psk_for_test()
-#         tunnel_id = 'Tunnel0'
-#         with HTTMock(csr_request.token, csr_request.post_missing_ipsec_policy):
-#             connection_info = {
-#                 u'vpn-interface-name': u'%s' % tunnel_id,
-#                 u'ipsec-policy-id': u'NoSuchPolicy',
-#                 u'local-device': {u'ip-address': u'10.3.0.1/24',
-#                                   u'tunnel-ip-address': u'10.10.10.10'},
-#                 u'remote-device': {u'tunnel-ip-address': '10.10.10.20'}
-#             }
-#             self.csr.create_ipsec_connection(connection_info)
-#             self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
-# 
-#     def test_create_ipsec_connection_conficting_tunnel_ip(self):
-#         """Negative test of connection create with conflicting tunnel IP.
-# 
-#         The GigabitEthernet3 interface has an IP of 10.2.0.6. This will
-#         try a connection create with an IP that is on the same subnet.
-#         """
-# 
-#         # Setup needed items for test
-#         self._make_ike_policy_for_test()
-#         self._make_psk_for_test()
-#         self._make_ipsec_policy_for_test()
-#         tunnel_id = 'Tunnel0'
-#         with HTTMock(csr_request.token, csr_request.post_bad_ip):
-#             connection_info = {
-#                 u'vpn-interface-name': u'%s' % tunnel_id,
-#                 u'ipsec-policy-id': u'123',
-#                 u'local-device': {u'ip-address': u'10.2.0.10/24',
-#                                   u'tunnel-ip-address': u'10.10.10.10'},
-#                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
-#             }
-#             self.csr.create_ipsec_connection(connection_info)
-#             # TODO(pcm): This should be a 400 error - waiting for fix.
-#             self.assertEqual(wexc.HTTPBadRequest.code,
-#                              self.csr.status)
+    def test_create_ipsec_connection_no_pre_shared_key(self):
+        """Test of connection create without associated pre-shared key.
+ 
+        The CSR will create the connection, but will not be able to pass
+        traffic without the pre-shared key.
+        """
+ 
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create(
+                                        skip_psk=True)
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address':u'10.10.10.20'}
+            }
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
+            self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ip-version': u'ipv4',
+                                   u'mtu': 1500,
+                                   u'ike-profile-id': None}
+            expected_connection.update(connection_info)
+            self.assertEqual(expected_connection, content)
+ 
+    def test_create_ipsec_connection_with_default_ike_policy(self):
+        """Test of connection create without IKE policy (uses default).
+ 
+        Without an IKE policy, the CSR will use a built-in default IKE
+        policy setting for the connection.
+        """
+ 
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create(
+                                        skip_ike=True)
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address':u'10.10.10.20'}
+            }
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
+            self.assertIn('vpn-svc/site-to-site/%s' % tunnel_id, location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ip-version': u'ipv4',
+                                   u'mtu': 1500,
+                                   u'ike-profile-id': None}
+            expected_connection.update(connection_info)
+            self.assertEqual(expected_connection, content)
+ 
+    def test_create_ipsec_connection_missing_ipsec_policy(self):
+        """Negative test of connection create without IPSec policy."""
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create(
+                                        skip_ipsec=True)
+        with HTTMock(csr_request.token, csr_request.post_missing_ipsec_policy):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': '10.10.10.20'}
+            }
+            self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
+ 
+    def test_create_ipsec_connection_conficting_tunnel_ip(self):
+        """Negative test of connection create with conflicting tunnel IP.
+ 
+        The GigabitEthernet3 interface has an IP of 10.2.0.6. This will
+        try a connection create with an IP that is on the same subnet.
+        """
+ 
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        with HTTMock(csr_request.token, csr_request.post_bad_ip):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.2.0.10/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
+            }
+            self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
 
 
 class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
