@@ -378,6 +378,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         agent.process_router_floating_ip_nat_rules = mock.Mock()
         agent.process_router_floating_ip_addresses.return_value = {
             fake_fip_id: 'ACTIVE'}
+        agent.external_gateway_added = mock.Mock()
         router = self._prepare_router_data()
         fake_floatingips1 = {'floatingips': [
             {'id': fake_fip_id,
@@ -567,6 +568,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data(enable_snat=True)
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         # Process with NAT
         agent.process_router(ri)
         orig_nat_rules = ri.iptables_manager.ipv4['nat'].rules[:]
@@ -588,6 +590,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data(enable_snat=False)
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         # Process without NAT
         agent.process_router(ri)
         orig_nat_rules = ri.iptables_manager.ipv4['nat'].rules[:]
@@ -609,6 +612,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data()
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         # Process with NAT
         agent.process_router(ri)
         orig_nat_rules = ri.iptables_manager.ipv4['nat'].rules[:]
@@ -638,6 +642,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data(num_internal_ports=2)
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         # Process with NAT
         agent.process_router(ri)
         orig_nat_rules = ri.iptables_manager.ipv4['nat'].rules[:]
@@ -659,6 +664,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data()
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         with mock.patch.object(
                 l3_agent.L3NATAgent,
                 'internal_network_added') as internal_network_added:
@@ -684,6 +690,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         router = self._prepare_router_data()
         ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                  self.conf.use_namespaces, router=router)
+        agent.external_gateway_added = mock.Mock()
         # add an internal port
         agent.process_router(ri)
 
@@ -724,6 +731,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
             ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
                                      self.conf.use_namespaces, router=router)
+            agent.external_gateway_added = mock.Mock()
             agent.process_router(ri)
             # Assess the call for putting the floating IP up was performed
             mock_update_fip_status.assert_called_once_with(
