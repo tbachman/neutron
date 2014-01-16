@@ -28,11 +28,13 @@ from neutron.common import config
 from neutron import context
 from neutron.db import agentschedulers_db
 from neutron.db import l3_agentschedulers_db
+from neutron.db import servicetype_db as sdb
 from neutron.db.vpn import vpn_db
 from neutron import extensions
 from neutron.extensions import vpnaas
 from neutron import manager
 from neutron.plugins.common import constants
+from neutron.openstack.common import uuidutils
 from neutron.scheduler import l3_agent_scheduler
 from neutron.services.vpn import plugin as vpn_plugin
 from neutron.tests.unit import test_db_plugin
@@ -216,11 +218,13 @@ class VPNPluginDbTestCase(test_l3_plugin.L3NatTestCaseMixin,
     def _create_vpnservice(self, fmt, name,
                            admin_state_up,
                            router_id, subnet_id,
+                           provider='vpnaas',
                            expected_res_status=None, **kwargs):
         tenant_id = kwargs.get('tenant_id', self._tenant_id)
         data = {'vpnservice': {'name': name,
                                'subnet_id': subnet_id,
                                'router_id': router_id,
+                               'provider': provider,
                                'admin_state_up': admin_state_up,
                                'tenant_id': tenant_id}}
         for arg in ['description']:
@@ -242,6 +246,7 @@ class VPNPluginDbTestCase(test_l3_plugin.L3NatTestCaseMixin,
                    subnet=None,
                    router=None,
                    admin_state_up=True,
+                   provider='vpnaas',
                    no_delete=False,
                    plug_subnet=True, **kwargs):
         if not fmt:
