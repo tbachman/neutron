@@ -52,7 +52,7 @@ class CsrRestClient(object):
 
         For a POST or GET with a 200 response, the response content
         is returned.
-        
+
         For a POST with a 201 response, return the header's location,
         which contains the identifier for the created resource.
 

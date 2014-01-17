@@ -28,13 +28,11 @@ from neutron.common import config
 from neutron import context
 from neutron.db import agentschedulers_db
 from neutron.db import l3_agentschedulers_db
-from neutron.db import servicetype_db as sdb
 from neutron.db.vpn import vpn_db
 from neutron import extensions
 from neutron.extensions import vpnaas
 from neutron import manager
 from neutron.plugins.common import constants
-from neutron.openstack.common import uuidutils
 from neutron.scheduler import l3_agent_scheduler
 from neutron.services.vpn import plugin as vpn_plugin
 from neutron.tests.unit import test_db_plugin

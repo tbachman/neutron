@@ -17,7 +17,7 @@
 
 import mock
 
-from neutron import context
+# from neutron import context
 from neutron.openstack.common import uuidutils
 from neutron.services.vpn.service_drivers import cisco_ipsec as ipsec_driver
 from neutron.tests import base
@@ -53,6 +53,8 @@ class TestIPsecDriver(base.BaseTestCase):
         get_plugin.return_value = plugin
 
         self.service_plugin = mock.Mock()
+        self.service_plugin.get_l3_agents_hosting_routers.return_value = (
+            [l3_agent])
         self.service_plugin._get_vpnservice.return_value = {
             'router_id': FAKE_ROUTER_ID,
             'provider': 'fake_provider'

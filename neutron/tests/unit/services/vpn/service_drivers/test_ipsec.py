@@ -53,10 +53,12 @@ class TestIPsecDriver(base.BaseTestCase):
         get_service_plugin.return_value = {constants.L3_ROUTER_NAT: plugin}
 
         self.service_plugin = mock.Mock()
-        service_plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
+        self.service_plugin.get_l3_agents_hosting_routers.return_value = (
+            [l3_agent])
         self.service_plugin._get_vpnservice.return_value = {
             'router_id': _uuid(),
             'provider': 'fake_provider'
+        }
         self.driver = ipsec_driver.IPsecVPNDriver(self.service_plugin)
 
     def _test_update(self, func, args, method_name=''):
