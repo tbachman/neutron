@@ -84,10 +84,11 @@ class CsrRestClient(object):
                                         timeout=self.timeout, **kwargs)
         except (Timeout, SSLError) as te:
             # Should never see SSLError, unless requests package is old (<2.0)
+            timeout_val = 0.0 if self.timeout is None else self.timeout
             LOG.warning(_("%(method)s: Request timeout%(ssl)s "
                           "(%(timeout).3f sec) for CSR(%(host)s)"),
                         {'method': method,
-                         'timeout': self.timeout if not None else '0.0',
+                         'timeout': timeout_val,
                          'ssl': '(SSLError)'
                          if isinstance(te, SSLError) else '',
                          'host': self.host})
