@@ -28,6 +28,10 @@ from webob import exc as wexc
 
 from neutron.openstack.common import log as logging
 
+# Temporary flags, until we get fixes sorted out.
+FIXED_CSCul53598 = False
+FIXED_CSCum10044 = False
+V3_12_SUPPORT = False
 
 LOG = logging.getLogger(__name__)
 # TODO(pcm): Uncomment once bug is resolved.
@@ -84,8 +88,12 @@ def filter(methods, resource):
 @urlmatch(netloc=r'localhost')
 def token(url, request):
     if 'auth/token-services' in url.path:
-        return {'status_code': wexc.HTTPOk.code,
-                'content': {'token-id': 'dummy-token'}}
+        if FIXED_CSCul53598:
+            return {'status_code': wexc.HTTPOk.code,
+                    'content': {'token-id': 'dummy-token'}}
+        else:
+            return {'status_code': wexc.HTTPCreated.code,
+                    'content': {'token-id': 'dummy-token'}}
 
 
 @urlmatch(netloc=r'localhost')
@@ -214,8 +222,6 @@ def get(url, request):
                    u'ip-version': u'ipv4',
                    u'vpn-type': u'site-to-site',
                    u'ipsec-policy-id': u'%s' % ipsec_policy_id,
-                   u'ike-profile-id': None,
-                   u'mtu': 1500,
                    u'local-device': {
                        u'ip-address': '10.3.0.1/24',
                        u'tunnel-ip-address': '10.10.10.10'
@@ -223,6 +229,9 @@ def get(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
+        if V3_12_SUPPORT:
+            content.update({u'ike-profile-id': None,
+                            u'mtu': 1500})
         return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ike/keepalive' in url.path:
         content = {u'interval': 60,

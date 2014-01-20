@@ -34,6 +34,11 @@ LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
+# Temporary flags, until we get fixes sorted out.
+FIXED_CSCul53598 = False
+FIXED_CSCum10044 = False
+FIXED_CSCum57533 = False
+V3_12_SUPPORT = False
 
 class CsrRestClient(object):
 
@@ -60,9 +65,16 @@ class CsrRestClient(object):
         it can be used in error processing ('error-code', 'error-message',
         and 'detail' fields).
         """
-        if (method in ('POST', 'GET') and self.status == wexc.HTTPOk.code):
-            LOG.debug(_('RESPONSE: %s'), response.json())
-            return response.json()
+        if FIXED_CSCul53598:
+            if (method in ('POST', 'GET') and self.status == wexc.HTTPOk.code):
+                LOG.debug(_('RESPONSE: %s'), response.json())
+                return response.json()
+        else:
+            if (('auth/token-services' in url and
+                 self.status == wexc.HTTPCreated.code) or
+                (method == 'GET' and self.status == wexc.HTTPOk.code)):
+                LOG.debug(_('RESPONSE: %s'), response.json())
+                return response.json()
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
             return response.headers.get('location', '')
         if self.status >= wexc.HTTPBadRequest.code and response.content:

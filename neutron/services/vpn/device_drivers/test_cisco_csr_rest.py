@@ -34,16 +34,26 @@ if True:
 
 # Note: Helper functions so that we can test with different and same ID
 # numbers between runs.
+# TODO(pcm): Decide if should leave with re-used IDs or unique.
 def generate_pre_shared_key_id():
-    return random.randint(100, 200)
+    if csr_client.FIXED_CSCum57533:
+        return 5
+    else:
+        return random.randint(100, 200)
 
 
 def generate_ike_policy_id():
-    return random.randint(200, 300)
+    if csr_client.FIXED_CSCum57533:
+        return 2
+    else:
+        return random.randint(200, 300)
 
 
 def generate_ipsec_policy_id():
-    return random.randint(300, 400)
+    if csr_client.FIXED_CSCum57533:
+        return 123
+    else:
+        return random.randint(300, 400)
 
 
 class TestCsrLoginRestApi(unittest.TestCase):
@@ -57,8 +67,10 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Obtain the token and its expiration time."""
         with HTTMock(csr_request.token):
             self.assertTrue(self.csr.authenticate())
-            # TODO(pcm): Once fixed on CSR, this should return HTTPOk
-            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            if csr_client.FIXED_CSCul53598:
+                self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            else:
+                self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIsNotNone(self.csr.token)
 
     def test_unauthorized_token_request(self):
@@ -833,9 +845,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
-                                   u'ip-version': u'ipv4',
-                                   u'ike-profile-id': None,
-                                   u'mtu': 1500}
+                                   u'ip-version': u'ipv4'}
+            if csr_client.V3_12_SUPPORT:
+                expected_connection.update({u'ike-profile-id': None,
+                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
         # Now delete and verify that site-to-site connection is gone
@@ -907,9 +920,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
-                                   u'ip-version': u'ipv4',
-                                   u'mtu': 1500,
-                                   u'ike-profile-id': None}
+                                   u'ip-version': u'ipv4'}
+            if csr_client.V3_12_SUPPORT:
+                expected_connection.update({u'ike-profile-id': None,
+                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
 
@@ -941,9 +955,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
-                                   u'ip-version': u'ipv4',
-                                   u'mtu': 1500,
-                                   u'ike-profile-id': None}
+                                   u'ip-version': u'ipv4'}
+            if csr_client.V3_12_SUPPORT:
+                expected_connection.update({u'ike-profile-id': None,
+                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
 
