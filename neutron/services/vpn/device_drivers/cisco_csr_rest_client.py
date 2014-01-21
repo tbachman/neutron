@@ -30,15 +30,12 @@ from neutron.openstack.common import log as logging
 # Should take 1.x seconds.
 TIMEOUT = 10.0
 
+# TODO(pcm): Redesign for asynchronous operation.
+
 LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
-# Temporary flags, until we get fixes sorted out.
-FIXED_CSCul53598 = False
-FIXED_CSCum10044 = False
-FIXED_CSCum57533 = False
-V3_12_SUPPORT = False
 
 class CsrRestClient(object):
 
@@ -55,26 +52,21 @@ class CsrRestClient(object):
     def _response_info_for(self, response, method, url):
         """Return contents or location from response.
 
-        For a POST or GET with a 200 response, the response content
-        is returned.
+        Temporary check of 201 for an authentication POST response,
+        where we want to return the token. In the future, the CSR will
+        return this as a 200, and the special test here can be removed.
 
-        For a POST with a 201 response, return the header's location,
+        For a POST with a 201 response, we return the header's location,
         which contains the identifier for the created resource.
 
-        If there is an error, return the response content, so that
+        If there is an error, we'll return the response content, so that
         it can be used in error processing ('error-code', 'error-message',
         and 'detail' fields).
         """
-        if FIXED_CSCul53598:
-            if (method in ('POST', 'GET') and self.status == wexc.HTTPOk.code):
-                LOG.debug(_('RESPONSE: %s'), response.json())
-                return response.json()
-        else:
-            if (('auth/token-services' in url and
-                 self.status == wexc.HTTPCreated.code) or
-                (method == 'GET' and self.status == wexc.HTTPOk.code)):
-                LOG.debug(_('RESPONSE: %s'), response.json())
-                return response.json()
+        if (('auth/token-services' in url and
+             self.status == wexc.HTTPCreated.code) or
+            (method == 'GET' and self.status == wexc.HTTPOk.code)):
+            return response.json()
         if method == 'POST' and self.status == wexc.HTTPCreated.code:
             return response.headers.get('location', '')
         if self.status >= wexc.HTTPBadRequest.code and response.content:
@@ -96,11 +88,10 @@ class CsrRestClient(object):
                                         timeout=self.timeout, **kwargs)
         except (Timeout, SSLError) as te:
             # Should never see SSLError, unless requests package is old (<2.0)
-            timeout_val = 0.0 if self.timeout is None else self.timeout
             LOG.warning(_("%(method)s: Request timeout%(ssl)s "
                           "(%(timeout).3f sec) for CSR(%(host)s)"),
                         {'method': method,
-                         'timeout': timeout_val,
+                         'timeout': self.timeout if not None else '0.0',
                          'ssl': '(SSLError)'
                          if isinstance(te, SSLError) else '',
                          'host': self.host})

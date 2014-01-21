@@ -28,10 +28,6 @@ from webob import exc as wexc
 
 from neutron.openstack.common import log as logging
 
-# Temporary flags, until we get fixes sorted out.
-FIXED_CSCul53598 = False
-FIXED_CSCum10044 = False
-V3_12_SUPPORT = False
 
 LOG = logging.getLogger(__name__)
 # TODO(pcm): Uncomment once bug is resolved.
@@ -88,12 +84,8 @@ def filter(methods, resource):
 @urlmatch(netloc=r'localhost')
 def token(url, request):
     if 'auth/token-services' in url.path:
-        if FIXED_CSCul53598:
-            return {'status_code': wexc.HTTPOk.code,
-                    'content': {'token-id': 'dummy-token'}}
-        else:
-            return {'status_code': wexc.HTTPCreated.code,
-                    'content': {'token-id': 'dummy-token'}}
+        return {'status_code': wexc.HTTPCreated.code,
+                'content': {'token-id': 'dummy-token'}}
 
 
 @urlmatch(netloc=r'localhost')
@@ -196,13 +188,12 @@ def get(url, request):
                         u'peer-address': u'10.10.10.20 255.255.255.0'}
                    ]}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/ipsec/policies/' in url.path:
-        ipsec_policy_id = url.path.split('/')[-1]
+    if 'vpn-svc/ipsec/policies/123' in url.path:
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
                    # TODO(pcm): Use 'Disable', when fixed on CSR
                    u'anti-replay-window-size': u'128',
-                   u'policy-id': u'%s' % ipsec_policy_id,
+                   u'policy-id': u'123',
                    u'protection-suite': {
                        u'esp-encryption': u'esp-aes',
                        u'esp-authentication': u'esp-sha-hmac',
@@ -213,15 +204,43 @@ def get(url, request):
                    u'lifetime-kb': None,
                    u'idle-time': None}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/site-to-site/Tunnel' in url.path:
-        tunnel = url.path.split('/')[-1]
-        # Use same number, to allow mock to generate IPSec policy ID
-        ipsec_policy_id = tunnel[6:]
+    if 'vpn-svc/ipsec/policies/%s' % dummy_uuid in url.path:
+        content = {u'kind': u'object#ipsec-policy',
+                   u'mode': u'tunnel',
+                   # TODO(pcm): Use 'Disable', when fixed on CSR
+                   u'anti-replay-window-size': u'128',
+                   u'policy-id': u'%s' % dummy_uuid,
+                   u'protection-suite': {
+                       u'esp-encryption': u'esp-aes',
+                       u'esp-authentication': u'esp-sha-hmac',
+                       u'ah': u'ah-sha-hmac',
+                   },
+                   u'lifetime-sec': 120,
+                   u'pfs': u'group5',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
+        return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/ipsec/policies/10' in url.path:
+        content = {u'kind': u'object#ipsec-policy',
+                   u'mode': u'tunnel',
+                   # TODO(pcm): Use 'Disable', when fixed on CSR
+                   u'anti-replay-window-size': u'128',
+                   u'policy-id': u'10',
+                   u'protection-suite': {
+                       u'esp-encryption': u'esp-aes',
+                       u'esp-authentication': u'esp-sha-hmac',
+                   },
+                   u'lifetime-sec': 120,
+                   u'pfs': u'group5',
+                   u'lifetime-kb': None,
+                   u'idle-time': None}
+        return response(wexc.HTTPOk.code, content=content)
+    if 'vpn-svc/site-to-site' in url.path:
         content = {u'kind': u'object#vpn-site-to-site',
-                   u'vpn-interface-name': u'%s' % tunnel,
+                   u'vpn-interface-name': u'Tunnel0',
                    u'ip-version': u'ipv4',
                    u'vpn-type': u'site-to-site',
-                   u'ipsec-policy-id': u'%s' % ipsec_policy_id,
+                   u'ipsec-policy-id': u'123',
                    u'local-device': {
                        u'ip-address': '10.3.0.1/24',
                        u'tunnel-ip-address': '10.10.10.10'
@@ -229,9 +248,6 @@ def get(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
-        if V3_12_SUPPORT:
-            content.update({u'ike-profile-id': None,
-                            u'mtu': 1500})
         return response(wexc.HTTPOk.code, content=content)
     if 'vpn-svc/ike/keepalive' in url.path:
         content = {u'interval': 60,
@@ -260,29 +276,6 @@ def get_fqdn(url, request):
                     u'encrypted': False,
                     u'peer-address': u'cisco.com'}
                ]}
-    return response(wexc.HTTPOk.code, content=content)
-
-
-@filter(['get'], 'vpn-svc/ipsec/policies/')
-@urlmatch(netloc=r'localhost')
-def get_no_ah(url, request):
-    LOG.debug("DEBUG: GET No AH mock for %s", url)
-    if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    ipsec_policy_id = url.path.split('/')[-1]
-    content = {u'kind': u'object#ipsec-policy',
-               u'mode': u'tunnel',
-               # TODO(pcm): Use 'Disable', when fixed on CSR
-               u'anti-replay-window-size': u'128',
-               u'policy-id': u'%s' % ipsec_policy_id,
-               u'protection-suite': {
-                   u'esp-encryption': u'esp-aes',
-                   u'esp-authentication': u'esp-sha-hmac',
-               },
-               u'lifetime-sec': 120,
-               u'pfs': u'group5',
-               u'lifetime-kb': None,
-               u'idle-time': None}
     return response(wexc.HTTPOk.code, content=content)
 
 
@@ -321,23 +314,19 @@ def get_defaults(url, request):
 def get_unnumbered(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
-    return response(wexc.HTTPServerError.code)
-    # TODO(pcm): Once the bug is fixed on the CSR, remove the above line,
-    # and uncomment the following lines...
-#     tunnel = url.path.split('/')[-1]
-#     content = {u'kind': u'object#vpn-site-to-site',
-#                u'vpn-interface-name': u'%s' % tunnel,
-#                u'ip-version': u'ipv4',
-#                u'vpn-type': u'site-to-site',
-#                u'ipsec-policy-id': u'123',
-#                u'local-device': {
-#                    u'ip-address': 'unnumbered GigabitEthernet3',
-#                    u'tunnel-ip-address': '10.10.10.10'
-#                },
-#                u'remote-device': {
-#                    u'tunnel-ip-address': '10.10.10.20'
-#                }}
-#     return response(wexc.HTTPOk.code, content=content)
+    content = {u'kind': u'object#vpn-site-to-site',
+               u'vpn-interface-name': u'Tunnel0',
+               u'ip-version': u'ipv4',
+               u'vpn-type': u'site-to-site',
+               u'ipsec-policy-id': u'123',
+               u'local-device': {
+                   u'ip-address': 'unnumbered GigabitEthernet3',
+                   u'tunnel-ip-address': '10.10.10.10'
+               },
+               u'remote-device': {
+                   u'tunnel-ip-address': '10.10.10.20'
+               }}
+    return response(wexc.HTTPOk.code, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keepalive')
@@ -372,16 +361,12 @@ def post(url, request):
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
             return response(wexc.HTTPCreated.code, headers=headers)
-        return {'status_code': wexc.HTTPBadRequest.code}
     if 'vpn-svc/ike/keyrings' in url.path:
         headers = {'location': "%s/5" % url.geturl()}
         return response(wexc.HTTPCreated.code, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
-        m = re.search(r'"vpn-interface-name": "(\S+)"', request.body)
-        if m:
-            headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
-            return response(wexc.HTTPCreated.code, headers=headers)
-        return {'status_code': wexc.HTTPBadRequest.code}
+        headers = {'location': "%s/Tunnel0" % url.geturl()}
+        return response(wexc.HTTPCreated.code, headers=headers)
     if 'routing-svc/static-routes' in url.path:
         headers = {'location':
                    "%s/10.1.0.0_24_GigabitEthernet1" % url.geturl()}
@@ -437,7 +422,7 @@ def post_bad_ip(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': wexc.HTTPUnauthorized.code}
     # TODO(pcm): See if this is the right error
-    return {'status_code': wexc.HTTPBadRequest.code}
+    return {'status_code': wexc.HTTPInternalServerError.code}
 
 
 @urlmatch(netloc=r'localhost')
