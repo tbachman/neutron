@@ -17,6 +17,7 @@
 from oslo.config import cfg
 import requests
 
+from neutron.common import exceptions as n_exc
 from neutron.extensions import portbindings
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
@@ -112,14 +113,27 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                 if e.response.status_code == 404:
                     for d in ['status', 'subnets']:
                         if d in network:
-                            del network[d]
+                            try:
+                                del network[d]
+                            except KeyError:
+                                pass
                     nets.append(network)
                 continue
 
         if len(nets) > 1:
-            self.sendjson('post', 'networks', {'networks': nets})
+            try:
+                self.sendjson('post', 'networks', {'networks': nets})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
         elif len(nets) == 1:
-            self.sendjson('post', 'networks', {'network': nets})
+            try:
+                self.sendjson('post', 'networks', {'network': nets})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
 
         snets = []
         for subnet in subnets:
@@ -132,9 +146,19 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                 continue
 
         if len(snets) > 1:
-            self.sendjson('post', 'subnets', {'subnets': snets})
+            try:
+                self.sendjson('post', 'subnets', {'subnets': snets})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
         elif len(snets) == 1:
-            self.sendjson('post', 'subnets', {'subnet': snets})
+            try:
+                self.sendjson('post', 'subnets', {'subnet': snets})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
 
         pports = []
         for port in ports:
@@ -147,14 +171,27 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                     # TODO(kmestery): Converting to uppercase due to ODL bug
                     port['mac_address'] = port['mac_address'].upper()
                     if 'status' in port:
-                        del port['status']
+                        try:
+                            del port['status']
+                        except KeyError:
+                            pass
                     pports.append(port)
                 continue
 
         if len(pports) > 1:
-            self.sendjson('post', 'ports', {'ports': pports})
+            try:
+                self.sendjson('post', 'ports', {'ports': pports})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
         elif len(pports) == 1:
-            self.sendjson('post', 'ports', {'port': pports})
+            try:
+                self.sendjson('post', 'ports', {'port': pports})
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
         self.out_of_sync = False
 
     def sync_object(self, operation, object_type, context):
@@ -165,7 +202,12 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         id = context.current['id']
         if operation == 'delete':
             urlpath = object_type + '/' + id
-            self.sendjson('delete', urlpath, None)
+            try:
+                self.sendjson('delete', urlpath, None)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Ignore 400 errors
+                    pass
         else:
             assert operation == 'create' or operation == 'update'
             if operation == 'create':
@@ -175,42 +217,84 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                 urlpath = object_type + '/' + id
                 method = 'put'
             if object_type == 'networks':
-                network = context._plugin.get_network(dbcontext, id)
-                # Remove the following for update calls
-                if operation == 'update':
-                    for d in ['id', 'status', 'subnets', 'tenant_id']:
-                        if d in network:
-                            del network[d]
-                elif operation == 'create':
-                    for d in ['status', 'subnets']:
-                        if d in network:
-                            del network[d]
-                self.sendjson(method, urlpath, {'network': network})
+                try:
+                    network = context._plugin.get_network(dbcontext, id)
+                except n_exc.NetworkNotFound:
+                    LOG.debug(_('Network not found (%d)') % id)
+                else:
+                    # Remove the following for update calls
+                    if operation == 'update':
+                        for d in ['id', 'status', 'subnets', 'tenant_id']:
+                            if d in network:
+                                try:
+                                    del network[d]
+                                except KeyError:
+                                    pass
+                    elif operation == 'create':
+                        for d in ['status', 'subnets']:
+                            if d in network:
+                                try:
+                                    del network[d]
+                                except KeyError:
+                                    pass
+                    try:
+                        self.sendjson(method, urlpath, {'network': network})
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 400:
+                            # Ignore 400 errors
+                            pass
             elif object_type == 'subnets':
-                subnet = context._plugin.get_subnet(dbcontext, id)
-                # Remove the following for update calls
-                if operation == 'update':
-                    for d in ['id', 'network_id', 'ip_version', 'cidr',
-                              'allocation_pools', 'tenant_id']:
-                        if d in subnet:
-                            del subnet[d]
-                self.sendjson(method, urlpath, {'subnet': subnet})
+                try:
+                    subnet = context._plugin.get_subnet(dbcontext, id)
+                except n_exc.SubnetNotFound:
+                    LOG.debug(_('Subnet not found (%d)') % id)
+                else:
+                    # Remove the following for update calls
+                    if operation == 'update':
+                        for d in ['id', 'network_id', 'ip_version', 'cidr',
+                                  'allocation_pools', 'tenant_id']:
+                            if d in subnet:
+                                try:
+                                    del subnet[d]
+                                except KeyError:
+                                    pass
+                    try:
+                        self.sendjson(method, urlpath, {'subnet': subnet})
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 400:
+                            # Ignore 400 errors
+                            pass
             else:
                 assert object_type == 'ports'
-                port = context._plugin.get_port(dbcontext, id)
-                self.add_security_groups(context, dbcontext, port)
-                if operation == 'create':
-                    # TODO(kmestery): Converting to uppercase due to ODL bug
-                    port['mac_address'] = port['mac_address'].upper()
-                    if 'status' in port:
-                        del port['status']
-                elif operation == 'update':
-                    # Remove the following for update calls
-                    for d in ['network_id', 'id', 'status', 'mac_address',
-                              'tenant_id', 'fixed_ips']:
-                        if d in port:
-                            del port[d]
-                self.sendjson(method, urlpath, {'port': port})
+                try:
+                    port = context._plugin.get_port(dbcontext, id)
+                    self.add_security_groups(context, dbcontext, port)
+                except n_exc.PortNotFound:
+                    LOG.debug(_('Port not found (%d)') % id)
+                else:
+                    if operation == 'create':
+                        # TODO(kmestery): Converting due to ODL bug
+                        port['mac_address'] = port['mac_address'].upper()
+                        if 'status' in port:
+                            try:
+                                del port['status']
+                            except KeyError:
+                                pass
+                    elif operation == 'update':
+                        # Remove the following for update calls
+                        for d in ['network_id', 'id', 'status', 'mac_address',
+                                  'tenant_id', 'fixed_ips']:
+                            if d in port:
+                                try:
+                                    del port[d]
+                                except KeyError:
+                                    pass
+                    try:
+                        self.sendjson(method, urlpath, {'port': port})
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 400:
+                            # Ignore 400 errors
+                            pass
         self.out_of_sync = False
 
     def add_security_groups(self, context, dbcontext, port):
