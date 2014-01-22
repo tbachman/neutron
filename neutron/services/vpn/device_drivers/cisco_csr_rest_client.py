@@ -16,6 +16,7 @@
 #
 # @author: Paul Michali, Cisco Systems, Inc.
 import netaddr
+import time
 
 import requests
 from requests.exceptions import ConnectionError, Timeout, SSLError
@@ -28,7 +29,7 @@ from neutron.openstack.common import log as logging
 # TODO(pcm): Set to 2.0, once resolve issues with CSR slowness and
 # timeout handling for PUT operations, which are taking up to 6 secs.
 # Should take 1.x seconds.
-TIMEOUT = 10.0
+TIMEOUT = 60.0
 
 # TODO(pcm): Redesign for asynchronous operation.
 
@@ -84,8 +85,12 @@ class CsrRestClient(object):
                       {'method': method.upper(), 'resource': url,
                        'payload': kwargs.get('data'),
                        'headers': kwargs.get('headers')})
+            start_time = time.time()
             response = requests.request(method, url, verify=False,
                                         timeout=self.timeout, **kwargs)
+            elapsed_time = time.time() - start_time
+            LOG.debug(_('%(method)s: Took %(time).2f seconds'),
+                      {'method': method.upper(), 'time': elapsed_time})
         except (Timeout, SSLError) as te:
             # Should never see SSLError, unless requests package is old (<2.0)
             LOG.warning(_("%(method)s: Request timeout%(ssl)s "
