@@ -32,9 +32,9 @@ from neutron.openstack.common import log as logging
 FIXED_CSCul53598 = True
 FIXED_CSCum10044 = True
 FIXED_CSCum57533 = True
-FIXED_CSCum50512 = False # Available?
-FIXED_CSCum03550 = False # Available?
-FIXED_CSCul82306 = False # Available?
+FIXED_CSCum03550 = True
+FIXED_CSCum50512 = False
+FIXED_CSCul82306 = True # False # Available?
 FIXED_CSCum35484 = False
 FIXED_CSCul82396 = False
 FIXED_CSCum10324 = False
@@ -203,14 +203,13 @@ def get(url, request):
         ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
-                   # TODO(pcm): Use 'Disable', when fixed on CSR
-                   u'anti-replay-window-size': u'128',
                    u'policy-id': u'%s' % ipsec_policy_id,
                    u'protection-suite': {
                        u'esp-encryption': u'esp-aes',
                        u'esp-authentication': u'esp-sha-hmac',
                        u'ah': u'ah-sha-hmac',
                    },
+                   u'anti-replay-window-size': u'128',
                    u'lifetime-sec': 120,
                    u'pfs': u'group5',
                    u'lifetime-kb': None,
@@ -275,7 +274,6 @@ def get_no_ah(url, request):
     ipsec_policy_id = url.path.split('/')[-1]
     content = {u'kind': u'object#ipsec-policy',
                u'mode': u'tunnel',
-               # TODO(pcm): Use 'Disable', when fixed on CSR
                u'anti-replay-window-size': u'128',
                u'policy-id': u'%s' % ipsec_policy_id,
                u'protection-suite': {
@@ -306,16 +304,20 @@ def get_defaults(url, request):
                    u'dhGroup': 1,
                    u'lifetime': 86400}
         return response(wexc.HTTPOk.code, content=content)
-    if 'vpn-svc/ipsec/policies/123' in url.path:
+    if 'vpn-svc/ipsec/policies/' in url.path:
+        ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
                    u'mode': u'tunnel',
-                   u'anti-replay-window-size': u'64',
-                   u'policy-id': u'123',
+                   u'policy-id': u'%s' % ipsec_policy_id,
                    u'protection-suite': {},
                    u'lifetime-sec': None,
                    u'pfs': u'Disable',
                    u'lifetime-kb': None,
                    u'idle-time': None}
+        if FIXED_CSCum03550:
+            content[u'anti-replay-window-size'] = u'None'
+        else:
+            content[u'anti-replay-window-size'] = u'64'
         return response(wexc.HTTPOk.code, content=content)
 
 

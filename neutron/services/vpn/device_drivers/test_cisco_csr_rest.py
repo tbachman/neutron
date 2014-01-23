@@ -542,9 +542,8 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 },
                 u'lifetime-sec': 120,
                 u'pfs': u'group5',
+                u'anti-replay-window-size': u'128'
             }
-            if not csr_request.FIXED_CSCum03550:
-                policy_info[u'anti-replay-window-size'] = u'128'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
@@ -555,8 +554,6 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                                u'mode': u'tunnel',
                                u'lifetime-kb': None,
                                u'idle-time': None}
-            if csr_request.FIXED_CSCum03550:
-                expected_policy[u'anti-replay-window-size'] = 'Disable'
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
         # Now delete and verify the IPSec policy is gone
@@ -574,9 +571,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             policy_id = '123'
             policy_info = {
                 u'policy-id': u'%s' % policy_id,
-                # Override, as we normally force this to 'Disable'
-                u'anti-replay-window-size': u'64',
             }
+            if not csr_request.FIXED_CSCum03550:
+                policy_info[u'anti-replay-window-size'] = u'64'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
@@ -584,14 +581,15 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ipsec-policy',
-                               u'policy-id': policy_id,
                                u'mode': u'tunnel',
                                u'protection-suite': {},
                                u'lifetime-sec': None,
                                u'pfs': u'Disable',
-                               u'anti-replay-window-size': u'64',
                                u'lifetime-kb': None,
                                u'idle-time': None}
+            if csr_request.FIXED_CSCum03550:
+                expected_policy[u'anti-replay-window-size'] = u'None'
+            expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 
     def test_create_ipsec_policy_with_uuid(self):
@@ -606,9 +604,8 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 },
                 u'lifetime-sec': 120,
                 u'pfs': u'group5',
+                u'anti-replay-window-size': u'128'
             }
-            if not csr_request.FIXED_CSCum03550:
-                policy_info[u'anti-replay-window-size'] = u'128'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % dummy_uuid,
@@ -620,8 +617,6 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                                u'mode': u'tunnel',
                                u'lifetime-kb': None,
                                u'idle-time': None}
-            if csr_request.FIXED_CSCum03550:
-                expected_policy[u'anti-replay-window-size'] = 'Disable'
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 

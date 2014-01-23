@@ -209,8 +209,7 @@ class CsrRestClient(object):
                                  payload=base_ike_policy_info)
 
     def create_ipsec_policy(self, policy_info):
-        base_ipsec_policy_info = {u'mode': u'tunnel',
-                                  u'anti-replay-window-size': u'Disable'}
+        base_ipsec_policy_info = {u'mode': u'tunnel'}
         base_ipsec_policy_info.update(policy_info)
         return self.post_request('vpn-svc/ipsec/policies',
                                  payload=base_ipsec_policy_info)
