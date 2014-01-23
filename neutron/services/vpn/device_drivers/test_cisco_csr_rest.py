@@ -309,7 +309,7 @@ class TestCsrPutRestApi(unittest.TestCase):
         here to prevent regression.
         """
         with HTTMock(csr_request.token, csr_request.put, csr_request.get):
-            payload = {'description': 'Changed description',
+            payload = {'description': u'Changed description',
                        'if-name': self.original_if['if-name'],
                        'ip-address': self.original_if['ip-address'],
                        'subnet-mask': self.original_if['subnet-mask'],
@@ -322,7 +322,7 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('description', content)
             if csr_request.FIXED_CSCul82306:
-                self.assertEqual('Changed description', content['description'])
+                self.assertEqual(u'Changed description', content['description'])
 
     def ignore_test_change_to_empty_interface_description(self):
         """Test that interface description can be changed to empty string.

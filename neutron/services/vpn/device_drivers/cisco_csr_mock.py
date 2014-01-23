@@ -33,8 +33,8 @@ FIXED_CSCul53598 = True
 FIXED_CSCum10044 = True
 FIXED_CSCum57533 = True
 FIXED_CSCum03550 = True
+FIXED_CSCul82306 = True
 FIXED_CSCum50512 = False
-FIXED_CSCul82306 = True # False # Available?
 FIXED_CSCum35484 = False
 FIXED_CSCul82396 = False
 FIXED_CSCum10324 = False
@@ -169,7 +169,7 @@ def get(url, request):
         actual_interface = url.path.split('/')[-1]
         ip = actual_interface[-1]
         content = {u'kind': u'object#interface',
-                   u'description': u'Nothing yet',
+                   u'description': u'Changed description',
                    u'if-name': actual_interface,
                    u'proxy-arp': True,
                    u'subnet-mask': u'255.255.255.0',
