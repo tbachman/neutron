@@ -31,10 +31,13 @@ from neutron.openstack.common import log as logging
 # Temporary flags, until we get fixes sorted out.
 FIXED_CSCul53598 = True
 FIXED_CSCum10044 = True
-FIXED_CSCum57533 = False
-FIXED_CSCum50512 = False
+FIXED_CSCum57533 = True
+FIXED_CSCum50512 = False # Available?
+FIXED_CSCum03550 = False # Available?
+FIXED_CSCul82306 = False # Available?
 FIXED_CSCum35484 = False
-V3_12_SUPPORT = True
+FIXED_CSCul82396 = False
+FIXED_CSCum10324 = False
 
 LOG = logging.getLogger(__name__)
 
@@ -229,7 +232,7 @@ def get(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
-        if V3_12_SUPPORT:
+        if FIXED_CSCum57533:
             content.update({u'ike-profile-id': None,
                             u'mtu': 1500})
         return response(wexc.HTTPOk.code, content=content)

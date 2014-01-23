@@ -40,21 +40,21 @@ else:
 # numbers between runs.
 # TODO(pcm): Decide if should leave with re-used IDs or unique.
 def generate_pre_shared_key_id():
-    if csr_client.FIXED_CSCum57533:
+    if csr_request.FIXED_CSCum57533:
         return 5
     else:
         return random.randint(100, 200)
 
 
 def generate_ike_policy_id():
-    if csr_client.FIXED_CSCum57533:
+    if csr_request.FIXED_CSCum57533:
         return 2
     else:
         return random.randint(200, 300)
 
 
 def generate_ipsec_policy_id():
-    if csr_client.FIXED_CSCum57533:
+    if csr_request.FIXED_CSCum57533:
         return 123
     else:
         return random.randint(300, 400)
@@ -71,7 +71,7 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Obtain the token and its expiration time."""
         with HTTMock(csr_request.token):
             self.assertTrue(self.csr.authenticate())
-            if csr_client.FIXED_CSCul53598:
+            if csr_request.FIXED_CSCul53598:
                 self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             else:
                 self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
@@ -243,10 +243,11 @@ class TestCsrPutRestApi(unittest.TestCase):
             if self.csr.status != wexc.HTTPOk.code:
                 self.fail("Unable to save interface Ge1 description")
             self.original_if = details
-            # TODO(pcm): Remove the next two lines of code, once the bug is
-            # fixed, where an empty string is always returned for description.
-            if not details.get('description', ''):
-                self.original_if['description'] = 'dummy'
+            if details.get('description', ''):
+                if csr_request.FIXED_CSCul82306:
+                    self.original_if['description'] = ''
+                else:
+                    self.original_if['description'] = 'dummy'
             self.csr.token = None
 
     def _restore_resources(self, user, password):
@@ -320,9 +321,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             content = self.csr.get_request('interfaces/GigabitEthernet1')
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('description', content)
-            # TODO(pcm): Currently bug in CSR and returns empty string always
-            # Uncomment assert, once fixed.
-            # self.assertEqual('Changed description', content['description'])
+            if csr_request.FIXED_CSCul82306:
+                self.assertEqual('Changed description', content['description'])
 
     def ignore_test_change_to_empty_interface_description(self):
         """Test that interface description can be changed to empty string.
@@ -542,9 +542,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 },
                 u'lifetime-sec': 120,
                 u'pfs': u'group5',
-                # TODO(pcm): Remove when CSR fixes 'Disable'
-                u'anti-replay-window-size': u'128'
             }
+            if not csr_request.FIXED_CSCum03550:
+                policy_info[u'anti-replay-window-size'] = u'128'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
@@ -553,10 +553,10 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ipsec-policy',
                                u'mode': u'tunnel',
-                               # TODO(pcm): Uncomment, when fixed on CSR
-                               # u'anti-replay-window-size': 'Disable',
                                u'lifetime-kb': None,
                                u'idle-time': None}
+            if csr_request.FIXED_CSCum03550:
+                expected_policy[u'anti-replay-window-size'] = 'Disable'
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
         # Now delete and verify the IPSec policy is gone
@@ -606,9 +606,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 },
                 u'lifetime-sec': 120,
                 u'pfs': u'group5',
-                # TODO(pcm): Remove when CSR fixes 'Disable'
-                u'anti-replay-window-size': u'128'
             }
+            if not csr_request.FIXED_CSCum03550:
+                policy_info[u'anti-replay-window-size'] = u'128'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % dummy_uuid,
@@ -618,10 +618,10 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ipsec-policy',
                                u'mode': u'tunnel',
-                               # TODO(pcm): Uncomment, when fixed on CSR
-                               # u'anti-replay-window-size': 'Disable',
                                u'lifetime-kb': None,
                                u'idle-time': None}
+            if csr_request.FIXED_CSCum03550:
+                expected_policy[u'anti-replay-window-size'] = 'Disable'
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 
@@ -638,7 +638,6 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 },
                 u'lifetime-sec': 120,
                 u'pfs': u'group5',
-                # TODO(pcm): Remove when CSR fixes 'Disable'
                 u'anti-replay-window-size': u'128'
             }
             location = self.csr.create_ipsec_policy(policy_info)
@@ -649,8 +648,6 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_policy = {u'kind': u'object#ipsec-policy',
                                u'mode': u'tunnel',
-                               # TODO(pcm): Uncomment, when fixed on CSR
-                               # u'anti-replay-window-size': 'Disable',
                                u'lifetime-kb': None,
                                u'idle-time': None}
             expected_policy.update(policy_info)
@@ -850,7 +847,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
                                    u'ip-version': u'ipv4'}
-            if csr_client.V3_12_SUPPORT:
+            if csr_request.FIXED_CSCum57533:
                 expected_connection.update({u'ike-profile-id': None,
                                             u'mtu': 1500})
             expected_connection.update(connection_info)
@@ -884,8 +881,8 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id,
                           location)
             # Check the hard-coded items that get set as well...
-            self.csr.get_request(location, full_url=True)
-            if csr_client.FIXED_CSCum50512:
+            content = self.csr.get_request(location, full_url=True)
+            if csr_request.FIXED_CSCum50512:
                 self.assertEqual(wexc.HTTPOk.code, self.csr.status)
                 expected_connection = {u'kind': u'object#vpn-site-to-site',
                                        u'ip-version': u'ipv4'}
@@ -925,7 +922,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
                                    u'ip-version': u'ipv4'}
-            if csr_client.V3_12_SUPPORT:
+            if csr_request.FIXED_CSCum57533:
                 expected_connection.update({u'ike-profile-id': None,
                                             u'mtu': 1500})
             expected_connection.update(connection_info)
@@ -960,7 +957,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
                                    u'ip-version': u'ipv4'}
-            if csr_client.V3_12_SUPPORT:
+            if csr_request.FIXED_CSCum57533:
                 expected_connection.update({u'ike-profile-id': None,
                                             u'mtu': 1500})
             expected_connection.update(connection_info)
@@ -998,7 +995,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
             }
             self.csr.create_ipsec_connection(connection_info)
-            if csr_client.FIXED_CSCum10044:
+            if csr_request.FIXED_CSCum10044:
                 self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             else:
                 self.assertEqual(wexc.HTTPServerError.code, self.csr.status)
@@ -1012,9 +1009,6 @@ class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
     is used to specify Dead Peer Detection information. Currently, the API
     supports DELETE API, but a bug has been created to remove the API and
     add an indicator of when the capability is disabled.
-
-    TODO(pcm): revise tests  to not delete, but change to disabled, once
-    the CSR is updated.
     """
 
     def setUp(self):
@@ -1036,16 +1030,17 @@ class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
         """Disable IKE keep-alive (aka Dead Peer Detection) for the CSR."""
         with HTTMock(csr_request.token, csr_request.delete, csr_request.put,
                      csr_request.get_not_configured):
-            # TODO(pcm): When CSR is updated, comment out and update the
-            # following code to do the disable. Remove the delete mock, above.
-#             keepalive_info = {'interval': 0, 'retry': 4}
-#             self.csr.configure_ike_keepalive(keepalive_info)
-#             self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
-            self.csr.delete_request('vnc-svc/ike/keepalive')
-            self.assertIn(self.csr.status,
-                          (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code))
-            self.csr.get_request('vpn-svc/ike/keepalive')
-            self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
+            if csr_request.FIXED_CSCum10324:
+                # TODO(pcm) Is this how to disable?
+                keepalive_info = {'interval': 0, 'retry': 4}
+                self.csr.configure_ike_keepalive(keepalive_info)
+                self.assertEqual(wexc.HTTPNoContent.code, self.csr.status)
+            else:
+                self.csr.delete_request('vnc-svc/ike/keepalive')
+                self.assertIn(self.csr.status,
+                              (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code))
+                self.csr.get_request('vpn-svc/ike/keepalive')
+                self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
 
 class TestCsrRestStaticRoute(unittest.TestCase):
@@ -1215,11 +1210,13 @@ if True:
             self.csr = csr_client.CsrRestClient('192.168.200.20',
                                                 'stack', 'cisco',
                                                 timeout=csr_client.TIMEOUT)
-            # TODO(pcm): Remvoe, once CSR changes API to remove delete. Will
-            # then need to do a put with a 'disabled' indication.
-            _cleanup_resource(self, 'vpn-svc/ike/policy')
+            if csr_request.FIXED_CSCum10324:
+                self.fail("Need to get current setting to later restore "
+                          "and setup cleanup to restore")
+            else:
+                _cleanup_resource(self, 'vpn-svc/ike/policy')
+                self.addCleanup(_cleanup_resource, self, 'vpn-svc/ike/keepalive')
             self.csr.token = None
-            self.addCleanup(_cleanup_resource, self, 'vpn-svc/ike/keepalive')
 
     class TestLiveCsrRestStaticRoute(TestCsrRestStaticRoute):
 

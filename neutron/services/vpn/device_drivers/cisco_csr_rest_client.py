@@ -34,11 +34,7 @@ URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
 # Temporary flags, until we get fixes sorted out.
 FIXED_CSCul53598 = True
-FIXED_CSCum10044 = True
-FIXED_CSCum57533 = False
-FIXED_CSCum50512 = False
-FIXED_CSCum35484 = False
-V3_12_SUPPORT = True
+
 
 class CsrRestClient(object):
 
