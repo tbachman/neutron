@@ -36,9 +36,9 @@ if csr_request.FIXED_CSCum35484:
 else:
     dummy_uuid = '1eb4ee6b-0870-45a0-b554-7b'
 
-# Note: Helper functions so that we can test with different and same ID
-# numbers between runs.
-# TODO(pcm): Decide if should leave with re-used IDs or unique.
+
+# Note: Helper functions to test reuse of IDs.
+# TODO(pcm): Decide if should leave with re-used IDs or not.
 def generate_pre_shared_key_id():
     if csr_request.FIXED_CSCum57533:
         return 5
@@ -322,7 +322,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             self.assertEqual(wexc.HTTPOk.code, self.csr.status)
             self.assertIn('description', content)
             if csr_request.FIXED_CSCul82306:
-                self.assertEqual(u'Changed description', content['description'])
+                self.assertEqual(u'Changed description',
+                                 content['description'])
 
     def ignore_test_change_to_empty_interface_description(self):
         """Test that interface description can be changed to empty string.
@@ -975,11 +976,11 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
 
     def test_create_ipsec_connection_conficting_tunnel_ip(self):
         """Negative test of connection create with conflicting tunnel IP.
- 
+
         The GigabitEthernet3 interface has an IP of 10.2.0.6. This will
         try a connection create with an IP that is on the same subnet.
         """
- 
+
         tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
         with HTTMock(csr_request.token, csr_request.post_bad_ip):
             connection_info = {
@@ -1033,7 +1034,8 @@ class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
             else:
                 self.csr.delete_request('vnc-svc/ike/keepalive')
                 self.assertIn(self.csr.status,
-                              (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code))
+                              (wexc.HTTPNoContent.code,
+                               wexc.HTTPNotFound.code))
                 self.csr.get_request('vpn-svc/ike/keepalive')
                 self.assertEqual(wexc.HTTPNotFound.code, self.csr.status)
 
@@ -1210,7 +1212,8 @@ if True:
                           "and setup cleanup to restore")
             else:
                 _cleanup_resource(self, 'vpn-svc/ike/policy')
-                self.addCleanup(_cleanup_resource, self, 'vpn-svc/ike/keepalive')
+                self.addCleanup(_cleanup_resource, self,
+                                'vpn-svc/ike/keepalive')
             self.csr.token = None
 
     class TestLiveCsrRestStaticRoute(TestCsrRestStaticRoute):

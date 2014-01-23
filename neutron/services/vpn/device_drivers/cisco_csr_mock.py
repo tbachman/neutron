@@ -345,7 +345,6 @@ def get_unnumbered(url, request):
         return response(wexc.HTTPServerError.code)
 
 
-
 @filter(['get'], 'vpn-svc/ike/keepalive')
 @urlmatch(netloc=r'localhost')
 def get_not_configured(url, request):
