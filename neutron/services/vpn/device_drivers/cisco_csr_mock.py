@@ -334,15 +334,42 @@ def get_unnumbered(url, request):
                    u'vpn-type': u'site-to-site',
                    u'ipsec-policy-id': u'123',
                    u'local-device': {
-                       u'ip-address': 'unnumbered GigabitEthernet3',
-                       u'tunnel-ip-address': '10.10.10.10'
+                       u'ip-address': u'unnumbered GigabitEthernet3',
+                       u'tunnel-ip-address': u'10.10.10.10'
                    },
                    u'remote-device': {
-                       u'tunnel-ip-address': '10.10.10.20'
+                       u'tunnel-ip-address': u'10.10.10.20'
                    }}
+        if FIXED_CSCum57533:
+            content.update({u'ike-profile-id': None,
+                            u'mtu': 1500})
         return response(wexc.HTTPOk.code, content=content)
     else:
         return response(wexc.HTTPServerError.code)
+
+
+@filter(['get'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def get_mtu(url, request):
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    tunnel = url.path.split('/')[-1]
+    content = {u'kind': u'object#vpn-site-to-site',
+               u'vpn-interface-name': u'%s' % tunnel,
+               u'ip-version': u'ipv4',
+               u'vpn-type': u'site-to-site',
+               u'ipsec-policy-id': u'123',
+               u'local-device': {
+                   u'ip-address': u'10.3.0.1/24',
+                   u'tunnel-ip-address': u'10.10.10.10'
+               },
+               u'remote-device': {
+                   u'tunnel-ip-address': u'10.10.10.20'
+               }}
+    if FIXED_CSCum57533:
+        content.update({u'ike-profile-id': None,
+                        u'mtu': 9192})
+    return response(wexc.HTTPOk.code, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keepalive')
@@ -445,6 +472,15 @@ def post_bad_ip(url, request):
         return {'status_code': wexc.HTTPBadRequest.code}
     else:
         return {'status_code': wexc.HTTPServerError.code}
+
+
+@filter(['post'], 'vpn-svc/site-to-site')
+@urlmatch(netloc=r'localhost')
+def post_bad_mtu(url, request):
+    LOG.debug("DEBUG: POST bad mtu mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': wexc.HTTPBadRequest.code}
 
 
 @urlmatch(netloc=r'localhost')

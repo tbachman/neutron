@@ -836,6 +836,9 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             }
             location = self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
             self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id,
                           location)
             # Check the hard-coded items that get set as well...
@@ -995,6 +998,52 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                 self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
             else:
                 self.assertEqual(wexc.HTTPServerError.code, self.csr.status)
+
+    def test_create_ipsec_connection_with_max_mtu(self):
+        """Create an IPSec connection with max MTU value."""
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get_mtu):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
+            }
+            if csr_request.FIXED_CSCum57533:
+                connection_info.update({u'mtu': 9192})
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPCreated.code, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
+            self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id,
+                          location)
+            # Check the hard-coded items that get set as well...
+            content = self.csr.get_request(location, full_url=True)
+            self.assertEqual(wexc.HTTPOk.code, self.csr.status)
+            expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ip-version': u'ipv4'}
+            if csr_request.FIXED_CSCum57533:
+                expected_connection.update({u'ike-profile-id': None})
+            expected_connection.update(connection_info)
+            self.assertEqual(expected_connection, content)
+
+    def test_create_ipsec_connection_with_bad_mtu(self):
+        """Negative test of connection create with unsupported MTU value."""
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        with HTTMock(csr_request.token, csr_request.post_bad_mtu):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
+            }
+            if csr_request.FIXED_CSCum57533:
+                connection_info.update({u'mtu': 9193})
+            self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(wexc.HTTPBadRequest.code, self.csr.status)
 
 
 class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
