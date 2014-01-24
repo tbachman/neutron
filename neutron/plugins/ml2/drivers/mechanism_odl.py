@@ -13,6 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 # @author: Kyle Mestery, Cisco Systems, Inc.
+# @author: Dave Tucker, Hewlett-Packard Development Company L.P.
+
+import datetime
 
 from oslo.config import cfg
 import requests
@@ -34,10 +37,57 @@ odl_opts = [
     cfg.StrOpt('password', secret=True,
                help=_("HTTP password for authentication")),
     cfg.IntOpt('timeout', default=10,
-               help=_("HTTP timeout in seconds."))
+               help=_("HTTP timeout in seconds.")),
+    cfg.IntOpt('session_timeout', default=30,
+               help=_("Tomcat session timeout in minutes.")),
 ]
 
 cfg.CONF.register_opts(odl_opts, "ml2_odl")
+
+class JsessionId(requests.auth.AuthBase):
+    """
+    Attaches the JSESSIONID and JSESSIONIDSSO cookies to an HTTP Request.
+    If the cookies are not available or when the session expires, a new 
+    set of cookies are obtained
+    """
+
+    def __init__(self, url, username, password):
+        self.url = url + '/networks'
+        self.username = username
+        self.password = password
+        self.auth_cookies = None
+        self.last_request = None
+        self.expired = None
+        self.session_timeout = cfg.CONF.ml2_odl.session_timeout
+
+    def obtain_auth_cookies(self):
+        url = self.url
+        r = requests.get(url, auth=(self.username, self.password))
+        r.raise_for_status()
+        jsessionid = r.cookies.get('JSESSIONID')
+        jsessionidsso = r.cookies.get('JSESSIONIDSSO')
+        if jsessionid and jsessionidsso:
+            self.auth_cookies = dict(JSESSIONID=jsessionid,
+                                     JSESSIONIDSSO=jsessionidsso)
+
+    def check_expiry(self):
+        if not self.last_request:
+            return True
+        # The cookies are good for the whole session
+        # Session timeout in Tomcat is about 30 mins...
+        delta = datetime.datetime.utcnow() - self.last_request
+        if delta > datetime.timedelta(minutes=self.session_timeout):
+            self.expired = True
+        else:
+            self.expired = False
+
+    def __call__(self, r):
+        self.check_expiry()
+        if self.auth_cookies is None or self.expired:
+            self.obtain_auth_cookies()
+        self.last_request = datetime.datetime.utcnow()
+        r.prepare_cookies(self.auth_cookies)
+        return r
 
 
 class OpenDaylightMechanismDriver(api.MechanismDriver):
@@ -48,7 +98,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
     exposed by ODL is slightly different from the API exposed by NCS,
     but the general concepts are the same.
     """
-
+    auth = None
     out_of_sync = True
 
     def initialize(self):
@@ -56,6 +106,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         self.timeout = cfg.CONF.ml2_odl.timeout
         self.username = cfg.CONF.ml2_odl.username
         self.password = cfg.CONF.ml2_odl.password
+        self.auth = JsessionId(self.url, self.username, self.password)
         self.vif_type = portbindings.VIF_TYPE_OVS
         self.cap_port_filter = False
 
@@ -309,16 +360,13 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
             data = None
         else:
             data = jsonutils.dumps(obj, indent=2)
-        auth = None
-        if self.username and self.password:
-            auth = (self.username, self.password)
         if self.url:
             url = '/'.join([self.url, urlpath])
             LOG.debug(_('ODL-----> sending URL (%s) <-----ODL') % url)
             LOG.debug(_('ODL-----> sending JSON (%s) <-----ODL') % obj)
             r = requests.request(method, url=url,
                                  headers=headers, data=data,
-                                 auth=auth, timeout=self.timeout)
+                                 auth=self.auth, timeout=self.timeout)
             r.raise_for_status()
 
     def bind_port(self, context):
