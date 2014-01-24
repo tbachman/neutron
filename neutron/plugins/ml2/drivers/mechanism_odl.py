@@ -363,8 +363,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
         """
         network_type = segment[api.NETWORK_TYPE]
         if network_type in [constants.TYPE_LOCAL, constants.TYPE_FLAT,
-                            constants.TYPE_VLAN, constants.TYPE_GRE,
-                            constants.TYPE_VXLAN]:
+                            constants.TYPE_GRE, constants.TYPE_VXLAN]:
             #TODO(mestery): Validate these
             return True
         else:
