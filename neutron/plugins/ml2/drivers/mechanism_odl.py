@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 # @author: Kyle Mestery, Cisco Systems, Inc.
+# @author: Dave Tucker, Hewlett-Packard Development Company L.P.
 
 import datetime
 
@@ -44,9 +45,11 @@ odl_opts = [
 cfg.CONF.register_opts(odl_opts, "ml2_odl")
 
 class JsessionId(requests.auth.AuthBase):
-    """ Attaches the JSESSIONID and JSESSIONIDSSO cookies to an HTTP Request.
-    If the cookies are not availaable,
-    When the session expires, a new set of cookies are obtained """
+    """
+    Attaches the JSESSIONID and JSESSIONIDSSO cookies to an HTTP Request.
+    If the cookies are not available or when the session expires, a new 
+    set of cookies are obtained
+    """
 
     def __init__(self, url, username, password):
         self.url = url + '/networks'
