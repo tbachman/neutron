@@ -906,7 +906,7 @@ def _get_policy_profiles():
         return db_session.query(n1kv_models_v2.PolicyProfile)
 
 
-def create_profile_binding(tenant_id, profile_id, profile_type):
+def create_profile_binding(db_session, tenant_id, profile_id, profile_type):
     """Create Network/Policy Profile association with a tenant."""
     if profile_type not in ["network", "policy"]:
         raise q_exc.NeutronException(_("Invalid profile type"))
@@ -914,7 +914,7 @@ def create_profile_binding(tenant_id, profile_id, profile_type):
     if _profile_binding_exists(tenant_id, profile_id, profile_type):
         return get_profile_binding(tenant_id, profile_id)
 
-    db_session = db.get_session()
+    db_session = db_session or db.get_session()
     with db_session.begin(subtransactions=True):
         binding = n1kv_models_v2.ProfileBinding(profile_type=profile_type,
                                                 profile_id=profile_id,
@@ -922,21 +922,6 @@ def create_profile_binding(tenant_id, profile_id, profile_type):
         db_session.add(binding)
         return binding
 
-def create_profile_binding_2(db_session, tenant_id, profile_id, profile_type):
-    """Create Network/Policy Profile association with a tenant."""
-    if profile_type not in ["network", "policy"]:
-        raise q_exc.NeutronException(_("Invalid profile type"))
-
-    if _profile_binding_exists(tenant_id, profile_id, profile_type):
-        return get_profile_binding(tenant_id, profile_id)
-
-    #db_session = db.get_session()
-    with db_session.begin(subtransactions=True):
-        binding = n1kv_models_v2.ProfileBinding(profile_type=profile_type,
-                                                profile_id=profile_id,
-                                                tenant_id=tenant_id)
-        db_session.add(binding)
-        return binding
 
 def _profile_binding_exists(tenant_id, profile_id, profile_type):
     db_session = db.get_session()
@@ -1067,11 +1052,12 @@ class NetworkProfile_db_mixin(object):
                 sync_vlan_allocations(context.session, net_profile)
             elif net_profile.segment_type == c_const.NETWORK_TYPE_OVERLAY:
                 sync_vxlan_allocations(context.session, net_profile)
-            create_profile_binding_2(context.session, context.tenant_id,
+            create_profile_binding(context.session, context.tenant_id,
                                    net_profile.id,
                                    c_const.NETWORK)
             if p.get("add_tenant"):
-                self.add_network_profile_tenant(net_profile.id,
+                self.add_network_profile_tenant(context.session,
+                                                net_profile.id,
                                                 p["add_tenant"])
         return self._make_network_profile_dict(net_profile)
 
@@ -1108,7 +1094,8 @@ class NetworkProfile_db_mixin(object):
         original_net_p = get_network_profile(context.session, id)
         # Update network profile to tenant id binding.
         if context.is_admin and "add_tenant" in p:
-            self.add_network_profile_tenant(id, p["add_tenant"])
+            self.add_network_profile_tenant(context.session, id, 
+                                            p["add_tenant"])
             return self._make_network_profile_dict(original_net_p)
         if context.is_admin and "remove_tenant" in p:
             delete_profile_binding(p["remove_tenant"], id)
@@ -1194,7 +1181,8 @@ class NetworkProfile_db_mixin(object):
                                                        NetworkProfile,
                                                        context.tenant_id)
 
-    def add_network_profile_tenant(self, network_profile_id, tenant_id):
+    def add_network_profile_tenant(self, db_session, network_profile_id,
+                                   tenant_id):
         """
         Add a tenant to a network profile.
 
@@ -1202,7 +1190,8 @@ class NetworkProfile_db_mixin(object):
         :param tenant_id: UUID representing the tenant
         :returns: profile binding object
         """
-        return create_profile_binding(tenant_id,
+        return create_profile_binding(db_session,
+                                      tenant_id,
                                       network_profile_id,
                                       c_const.NETWORK)
 
@@ -1527,7 +1516,8 @@ class PolicyProfile_db_mixin(object):
         """
         p = policy_profile["policy_profile"]
         if context.is_admin and "add_tenant" in p:
-            self.add_policy_profile_tenant(id, p["add_tenant"])
+            self.add_policy_profile_tenant(context.session, id,
+                                           p["add_tenant"])
             return self._make_policy_profile_dict(get_policy_profile(
                 context.session, id))
         if context.is_admin and "remove_tenant" in p:
@@ -1537,7 +1527,8 @@ class PolicyProfile_db_mixin(object):
         return self._make_policy_profile_dict(
             update_policy_profile(context.session, id, p))
 
-    def add_policy_profile_tenant(self, policy_profile_id, tenant_id):
+    def add_policy_profile_tenant(self, db_session, policy_profile_id,
+                                  tenant_id):
         """
         Add a tenant to a policy profile binding.
 
@@ -1545,7 +1536,8 @@ class PolicyProfile_db_mixin(object):
         :param tenant_id: UUID representing the tenant
         :returns: profile binding object
         """
-        return create_profile_binding(tenant_id,
+        return create_profile_binding(db_session,
+                                      tenant_id,
                                       policy_profile_id,
                                       c_const.POLICY)
 
@@ -1619,4 +1611,5 @@ class PolicyProfile_db_mixin(object):
         tenant_id = tenant_id or c_const.TENANT_ID_NOT_SET
         if not self._policy_profile_exists(policy_profile_id):
             create_policy_profile(policy_profile)
-        create_profile_binding(tenant_id, policy_profile["id"], c_const.POLICY)
+        create_profile_binding(None, tenant_id,
+                               policy_profile["id"], c_const.POLICY)
