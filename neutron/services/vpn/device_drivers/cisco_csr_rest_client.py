@@ -18,9 +18,9 @@
 import netaddr
 import time
 
+import httplib
 import requests
 from requests.exceptions import ConnectionError, Timeout, SSLError
-from webob import exc as wexc
 
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
@@ -44,7 +44,7 @@ class CsrRestClient(object):
         self.host = host
         self.auth = (username, password)
         self.token = None
-        self.status = wexc.HTTPOk.code
+        self.status = httplib.OK
         self.timeout = timeout
         self.max_tries = 5
 
@@ -62,18 +62,18 @@ class CsrRestClient(object):
         and 'detail' fields).
         """
         if FIXED_CSCul53598:
-            if (method in ('POST', 'GET') and self.status == wexc.HTTPOk.code):
+            if (method in ('POST', 'GET') and self.status == httplib.OK):
                 LOG.debug(_('RESPONSE: %s'), response.json())
                 return response.json()
         else:
             if (('auth/token-services' in url and
-                 self.status == wexc.HTTPCreated.code) or
-                (method == 'GET' and self.status == wexc.HTTPOk.code)):
+                 self.status == httplib.CREATED) or
+                (method == 'GET' and self.status == httplib.OK)):
                 LOG.debug(_('RESPONSE: %s'), response.json())
                 return response.json()
-        if method == 'POST' and self.status == wexc.HTTPCreated.code:
+        if method == 'POST' and self.status == httplib.CREATED:
             return response.headers.get('location', '')
-        if self.status >= wexc.HTTPBadRequest.code and response.content:
+        if self.status >= httplib.BAD_REQUEST and response.content:
             if 'error-code' in response.content:
                 content = jsonutils.loads(response.content)
                 LOG.debug("Error response content %s", content)
@@ -104,17 +104,17 @@ class CsrRestClient(object):
                          'ssl': '(SSLError)'
                          if isinstance(te, SSLError) else '',
                          'host': self.host})
-            self.status = wexc.HTTPRequestTimeout.code
+            self.status = httplib.REQUEST_TIMEOUT
         except ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
                         "%(error)s"),
                       {'method': method, 'host': self.host, 'error': ce})
-            self.status = wexc.HTTPNotFound.code
+            self.status = httplib.NOT_FOUND
         except Exception as e:
             LOG.error(_("%(method)s: Unexpected error for CSR (%(host)s): "
                         "%(error)s"),
                       {'method': method, 'host': self.host, 'error': e})
-            self.status = wexc.HTTPInternalServerError.code
+            self.status = httplib.INTERNAL_SERVER_ERROR
         else:
             self.status = response.status_code
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
@@ -171,13 +171,13 @@ class CsrRestClient(object):
         if payload:
             payload = jsonutils.dumps(payload)
         response = self._request(method, url, data=payload, headers=headers)
-        if self.status == wexc.HTTPUnauthorized.code:
+        if self.status == httplib.UNAUTHORIZED:
             if not self.authenticate():
                 return
             headers['X-auth-token'] = self.token
             response = self._request(method, url, data=payload,
                                      headers=headers)
-        if self.status != wexc.HTTPRequestTimeout.code:
+        if self.status != httplib.REQUEST_TIMEOUT:
             return response
         LOG.error(_("%(method)s: Request timeout for CSR(%(host)s)"),
                   {'method': method, 'host': self.host})

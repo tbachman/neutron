@@ -23,8 +23,8 @@ import re
 
 from functools import wraps
 from httmock import urlmatch, all_requests, response
+import httplib
 import requests
-from webob import exc as wexc
 
 from neutron.openstack.common import log as logging
 
@@ -92,17 +92,17 @@ def filter(methods, resource):
 def token(url, request):
     if 'auth/token-services' in url.path:
         if FIXED_CSCul53598:
-            return {'status_code': wexc.HTTPOk.code,
+            return {'status_code': httplib.OK,
                     'content': {'token-id': 'dummy-token'}}
         else:
-            return {'status_code': wexc.HTTPCreated.code,
+            return {'status_code': httplib.CREATED,
                     'content': {'token-id': 'dummy-token'}}
 
 
 @urlmatch(netloc=r'localhost')
 def token_unauthorized(url, request):
     if 'auth/token-services' in url.path:
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
 
 
 @urlmatch(netloc=r'wrong-host')
@@ -121,7 +121,7 @@ def timeout(url, request):
     """Simulated timeout of a normal request."""
 
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     raise requests.Timeout()
 
 
@@ -129,7 +129,7 @@ def timeout(url, request):
 def no_such_resource(url, request):
     """Indicate not found error, when invalid resource requested."""
     if 'no/such/request' in url.path:
-        return {'status_code': wexc.HTTPNotFound.code}
+        return {'status_code': httplib.NOT_FOUND}
 
 
 @filter(['get'], 'global/host-name')
@@ -147,7 +147,7 @@ def expired_request(url, request):
     different resource (e.g. 'global/local-users')
     """
 
-    return {'status_code': wexc.HTTPUnauthorized.code}
+    return {'status_code': httplib.UNAUTHORIZED}
 
 
 @urlmatch(netloc=r'localhost')
@@ -156,15 +156,15 @@ def get(url, request):
         return
     LOG.debug("DEBUG: GET mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     if 'global/host-name' in url.path:
         content = {u'kind': u'object#host-name',
                    u'host-name': u'Router'}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'global/local-users' in url.path:
         content = {u'kind': u'collection#local-user',
                    u'users': ['peter', 'paul', 'mary']}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'interfaces/GigabitEthernet' in url.path:
         actual_interface = url.path.split('/')[-1]
         ip = actual_interface[-1]
@@ -179,7 +179,7 @@ def get(url, request):
                    u'ip-address': u'192.168.200.%s' % ip,
                    u'verify-unicast-source': False,
                    u'type': u'ethernet'}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/ike/policies/2' in url.path:
         content = {u'kind': u'object#ike-policy',
                    u'priority-id': u'2',
@@ -189,7 +189,7 @@ def get(url, request):
                    u'hash': u'sha',
                    u'dhGroup': 5,
                    u'lifetime': 3600}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/ike/keyrings' in url.path:
         content = {u'kind': u'object#ike-keyring',
                    u'keyring-name': u'5',
@@ -198,7 +198,7 @@ def get(url, request):
                         u'encrypted': False,
                         u'peer-address': u'10.10.10.20 255.255.255.0'}
                    ]}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
         ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
@@ -214,7 +214,7 @@ def get(url, request):
                    u'pfs': u'group5',
                    u'lifetime-kb': None,
                    u'idle-time': None}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/site-to-site/Tunnel' in url.path:
         tunnel = url.path.split('/')[-1]
         # Use same number, to allow mock to generate IPSec policy ID
@@ -234,19 +234,19 @@ def get(url, request):
         if FIXED_CSCum57533:
             content.update({u'ike-profile-id': None,
                             u'mtu': 1500})
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/ike/keepalive' in url.path:
         content = {u'interval': 60,
                    u'retry': 4,
                    u'periodic': True}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'routing-svc/static-routes' in url.path:
         content = {u'destination-network': u'10.1.0.0/24',
                    u'kind': u'object#static-route',
                    u'next-hop-router': None,
                    u'outgoing-interface': u'GigabitEthernet1',
                    u'admin-distance': 1}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keyrings')
@@ -254,7 +254,7 @@ def get(url, request):
 def get_fqdn(url, request):
     LOG.debug("DEBUG: GET FQDN mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     content = {u'kind': u'object#ike-keyring',
                u'keyring-name': u'5',
                u'pre-shared-key-list': [
@@ -262,7 +262,7 @@ def get_fqdn(url, request):
                     u'encrypted': False,
                     u'peer-address': u'cisco.com'}
                ]}
-    return response(wexc.HTTPOk.code, content=content)
+    return response(httplib.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ipsec/policies/')
@@ -270,7 +270,7 @@ def get_fqdn(url, request):
 def get_no_ah(url, request):
     LOG.debug("DEBUG: GET No AH mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     ipsec_policy_id = url.path.split('/')[-1]
     content = {u'kind': u'object#ipsec-policy',
                u'mode': u'tunnel',
@@ -284,7 +284,7 @@ def get_no_ah(url, request):
                u'pfs': u'group5',
                u'lifetime-kb': None,
                u'idle-time': None}
-    return response(wexc.HTTPOk.code, content=content)
+    return response(httplib.OK, content=content)
 
 
 @urlmatch(netloc=r'localhost')
@@ -293,7 +293,7 @@ def get_defaults(url, request):
         return
     LOG.debug("DEBUG: GET mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     if 'vpn-svc/ike/policies/2' in url.path:
         content = {u'kind': u'object#ike-policy',
                    u'priority-id': u'2',
@@ -303,7 +303,7 @@ def get_defaults(url, request):
                    u'hash': u'sha',
                    u'dhGroup': 1,
                    u'lifetime': 86400}
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
         ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
@@ -318,14 +318,14 @@ def get_defaults(url, request):
             content[u'anti-replay-window-size'] = u'None'
         else:
             content[u'anti-replay-window-size'] = u'64'
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/site-to-site')
 @urlmatch(netloc=r'localhost')
 def get_unnumbered(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     if FIXED_CSCum50512:
         tunnel = url.path.split('/')[-1]
         content = {u'kind': u'object#vpn-site-to-site',
@@ -343,16 +343,16 @@ def get_unnumbered(url, request):
         if FIXED_CSCum57533:
             content.update({u'ike-profile-id': None,
                             u'mtu': 1500})
-        return response(wexc.HTTPOk.code, content=content)
+        return response(httplib.OK, content=content)
     else:
-        return response(wexc.HTTPServerError.code)
+        return response(httplib.INTERNAL_SERVER_ERROR)
 
 
 @filter(['get'], 'vpn-svc/site-to-site')
 @urlmatch(netloc=r'localhost')
 def get_mtu(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     tunnel = url.path.split('/')[-1]
     content = {u'kind': u'object#vpn-site-to-site',
                u'vpn-interface-name': u'%s' % tunnel,
@@ -369,15 +369,15 @@ def get_mtu(url, request):
     if FIXED_CSCum57533:
         content.update({u'ike-profile-id': None,
                         u'mtu': 9192})
-    return response(wexc.HTTPOk.code, content=content)
+    return response(httplib.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keepalive')
 @urlmatch(netloc=r'localhost')
 def get_not_configured(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPNotFound.code}
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.NOT_FOUND}
 
 
 @urlmatch(netloc=r'localhost')
@@ -386,38 +386,38 @@ def post(url, request):
         return
     LOG.debug("DEBUG: POST mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     if 'interfaces/GigabitEthernet' in url.path:
-        return {'status_code': wexc.HTTPNoContent.code}
+        return {'status_code': httplib.NO_CONTENT}
     if 'global/local-users' in url.path:
         if 'username' not in request.body:
-            return {'status_code': wexc.HTTPBadRequest.code}
+            return {'status_code': httplib.BAD_REQUEST}
         if '"privilege": 20' in request.body:
-            return {'status_code': wexc.HTTPBadRequest.code}
+            return {'status_code': httplib.BAD_REQUEST}
         headers = {'location': '%s/test-user' % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        return response(httplib.CREATED, headers=headers)
     if 'vpn-svc/ike/policies' in url.path:
         headers = {'location': "%s/2" % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        return response(httplib.CREATED, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:
         m = re.search(r'"policy-id": "(\S+)"', request.body)
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
-            return response(wexc.HTTPCreated.code, headers=headers)
-        return {'status_code': wexc.HTTPBadRequest.code}
+            return response(httplib.CREATED, headers=headers)
+        return {'status_code': httplib.BAD_REQUEST}
     if 'vpn-svc/ike/keyrings' in url.path:
         headers = {'location': "%s/5" % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        return response(httplib.CREATED, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
         m = re.search(r'"vpn-interface-name": "(\S+)"', request.body)
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
-            return response(wexc.HTTPCreated.code, headers=headers)
-        return {'status_code': wexc.HTTPBadRequest.code}
+            return response(httplib.CREATED, headers=headers)
+        return {'status_code': httplib.BAD_REQUEST}
     if 'routing-svc/static-routes' in url.path:
         headers = {'location':
                    "%s/10.1.0.0_24_GigabitEthernet1" % url.geturl()}
-        return response(wexc.HTTPCreated.code, headers=headers)
+        return response(httplib.CREATED, headers=headers)
 
 
 @filter(['post'], 'global/local-users')
@@ -425,8 +425,8 @@ def post(url, request):
 def post_change_attempt(url, request):
     LOG.debug("DEBUG: POST change value mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPNotFound.code,
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.NOT_FOUND,
             'content': {
                 u'error-code': -1,
                 u'error-message': u'user test-user already exists'}}
@@ -436,8 +436,8 @@ def post_change_attempt(url, request):
 def post_duplicate(url, request):
     LOG.debug("DEBUG: POST duplicate mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code,
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.BAD_REQUEST,
             'content': {
                 u'error-code': -1,
                 u'error-message': u'policy 2 exist, not allow to '
@@ -449,8 +449,8 @@ def post_duplicate(url, request):
 def post_missing_ipsec_policy(url, request):
     LOG.debug("DEBUG: POST missing ipsec policy mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code}
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -458,8 +458,8 @@ def post_missing_ipsec_policy(url, request):
 def post_missing_ike_policy(url, request):
     LOG.debug("DEBUG: POST missing ike policy mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code}
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -467,11 +467,11 @@ def post_missing_ike_policy(url, request):
 def post_bad_ip(url, request):
     LOG.debug("DEBUG: POST bad IP mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     if FIXED_CSCum10044:
-        return {'status_code': wexc.HTTPBadRequest.code}
+        return {'status_code': httplib.BAD_REQUEST}
     else:
-        return {'status_code': wexc.HTTPServerError.code}
+        return {'status_code': httplib.INTERNAL_SERVER_ERROR}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -479,8 +479,8 @@ def post_bad_ip(url, request):
 def post_bad_mtu(url, request):
     LOG.debug("DEBUG: POST bad mtu mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
-    return {'status_code': wexc.HTTPBadRequest.code}
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.BAD_REQUEST}
 
 
 @urlmatch(netloc=r'localhost')
@@ -489,9 +489,9 @@ def put(url, request):
         return
     LOG.debug("DEBUG: PUT mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     # Any resource
-    return {'status_code': wexc.HTTPNoContent.code}
+    return {'status_code': httplib.NO_CONTENT}
 
 
 @urlmatch(netloc=r'localhost')
@@ -500,9 +500,9 @@ def delete(url, request):
         return
     LOG.debug("DEBUG: DELETE mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     # Any resource
-    return {'status_code': wexc.HTTPNoContent.code}
+    return {'status_code': httplib.NO_CONTENT}
 
 
 @urlmatch(netloc=r'localhost')
@@ -511,9 +511,9 @@ def delete_unknown(url, request):
         return
     LOG.debug("DEBUG: DELETE unknown mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     # Any resource
-    return {'status_code': wexc.HTTPNotFound.code,
+    return {'status_code': httplib.NOT_FOUND,
             'content': {
                 u'error-code': -1,
                 u'error-message': 'user unknown not found'}}
@@ -525,6 +525,6 @@ def delete_not_allowed(url, request):
         return
     LOG.debug("DEBUG: DELETE not allowed mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': wexc.HTTPUnauthorized.code}
+        return {'status_code': httplib.UNAUTHORIZED}
     # Any resource
-    return {'status_code': wexc.HTTPMethodNotAllowed.code}
+    return {'status_code': httplib.METHOD_NOT_ALLOWED}
