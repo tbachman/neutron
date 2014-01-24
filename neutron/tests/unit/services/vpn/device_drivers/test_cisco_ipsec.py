@@ -107,10 +107,10 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.assertEqual(expected, client_calls)
         self.assertEqual(expected_rollback_steps,
                          self.driver.connections[self.info['site_conn']['id']])
-
+ 
     def test_create_ipsec_site_connection_with_rollback(self):
         """Failure test of IPSec site conn creation that fails and rolls back.
-
+ 
         Simulate a failure in the last create step (making routes for the
         peer networks), and ensure that the create steps are called in
         order (except for create_static_route), and that the delete
@@ -131,13 +131,13 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
         self.assertNotIn('123', self.driver.connections)
-
+ 
     def test_create_verification_with_error(self):
         """Negative test of create check step had failed."""
         self.driver.csr.status = wexc.HTTPNotFound.code
         self.assertRaises(ipsec_driver.CsrResourceCreateFailure,
                           self.driver._check_create, 'name', 'id')
-
+ 
     def test_failure_with_invalid_create_step(self):
         """Negative test of invalid create step (programming error)."""
         self.driver.steps = []
@@ -147,7 +147,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             pass
         else:
             self.fail('Expected exception with invalid create step')
-
+ 
     def test_failure_with_invalid_delete_step(self):
         """Negative test of invalid delete step (programming error)."""
         self.driver.steps = [ipsec_driver.RollbackStep(action='bogus',
@@ -159,12 +159,12 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             pass
         else:
             self.fail('Expected exception with invalid delete step')
-
-
+ 
+ 
 class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
-
+ 
     """Verifies that config info is prepared/transformed correctly."""
-
+ 
     def setUp(self):
         super(TestCsrIPsecDeviceDriverCreateTransforms, self).setUp()
         self.addCleanup(mock.patch.stopall)
@@ -186,7 +186,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333}
         }
-
+ 
     def test_psk_create_info(self):
         expected = {u'keyring-name': '123',
                     u'pre-shared-key-list': [
@@ -196,7 +196,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         psk_id = self.info['site_conn']['id']
         psk_info = self.driver.create_psk_info(psk_id, self.info)
         self.assertEqual(expected, psk_info)
-
+ 
     def test_ike_policy_info(self):
         expected = {u'priority-id': 222,
                     u'encryption': u'aes',
@@ -207,7 +207,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         policy_info = self.driver.create_ike_policy_info(ike_policy_id,
                                                          self.info)
         self.assertEqual(expected, policy_info)
-
+ 
     def test_ipsec_policy_info(self):
         expected = {u'policy-id': 333,
                     u'protection-suite': {
@@ -221,7 +221,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
                                                            self.info)
         self.assertEqual(expected, policy_info)
-
+ 
     def test_site_connection_info(self):
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
@@ -238,20 +238,20 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                             ipsec_policy_id,
                                                             self.info)
         self.assertEqual(expected, conn_info)
-
+ 
     def test_static_route_info(self):
         expected = {u'destination-network': '10.2.0.0/24',
                     u'outgoing-interface': 'Tunnel0'}
         route_info = self.driver.create_route_info('10.2.0.0/24', 'Tunnel0')
         self.assertEqual(expected, route_info)
-
-
+ 
+ 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:
 #             context = mock.Mock()
 #             self.driver.vpnservice_updated(context)
 #             sync.assert_called_once_with(context, [])
-
+ 
 #     def test_create_router(self):
 #         process_id = _uuid()
 #         process = mock.Mock()
