@@ -97,6 +97,11 @@ class CsrResourceCreateFailure(exceptions.NeutronException):
     message = _("Cisco CSR failed to create %(resource)s (%(which)s)")
 
 
+class CsrValidationFailure(exceptions.NeutronException):
+    message = _("Cisco CSR does not support %(resource)s attribute %(key)s "
+                "with value '%(value)s'")
+
+
 class BaseSwanProcess():
     """Swan Family Process Manager
 
@@ -552,6 +557,16 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
+    # Mapping...
+    DIALECT_MAP = {'v1': u'v1',
+                   'sha1': u'sha',
+                   'aes-128': u'aes',
+                   'aes-192': u'aes-192',
+                   'aes-256': u'aes-256',
+                   'Group2': 2,
+                   'Group5': 5,
+                   'Group14': 14}
+
     def create_psk_info(self, psk_id, info):
         conn_info = info['site_conn']
         return {u'keyring-name': psk_id,
@@ -560,14 +575,37 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                      u'encrypted': False,
                      u'peer-address': conn_info['peer_address']}]}
 
+    def translate_dialect(self, resource, attribute, info):
+        if info[attribute] in self.DIALECT_MAP:
+            return self.DIALECT_MAP[info[attribute]]
+        raise CsrValidationFailure(resource=resource,
+                                   key=attribute,
+                                   value=info[attribute])
+
     def create_ike_policy_info(self, ike_policy_id, conn_info):
-        # TODO(pcm) Create ID via a mapping function, map for encryption,
-        # hash, group, and look-up lifetime (ensure in seconds, else reject)
+        for_ike = 'IKE Policy'
         policy_info = conn_info['ike_policy']
+        version = self.translate_dialect(for_ike,
+                                         'ike_version',
+                                         policy_info)
+        encrypt_algorithm = self.translate_dialect(for_ike,
+                                                   'encryption_algorithm',
+                                                   policy_info)
+        auth_algorithm = self.translate_dialect(for_ike,
+                                                'auth_algorithm',
+                                                policy_info)
+        group = self.translate_dialect(for_ike,
+                                       'pfs',
+                                       policy_info)
+        if policy_info['lifetime']['value'] > 86400:
+            raise CsrValidationFailure(resource=for_ike,
+                                       key='lifetime:value',
+                                       value=policy_info['lifetime']['value'])
         return {u'priority-id': ike_policy_id,
-                u'encryption': u'aes',
-                u'hash': u'sha',
-                u'dhGroup': 5,
+                u'encryption': encrypt_algorithm,
+                u'hash': auth_algorithm,
+                u'dhGroup': group,
+                u'version': version,
                 u'lifetime': policy_info['lifetime']['value']}
 
     def create_ipsec_policy_info(self, ipsec_policy_id, info):
@@ -671,7 +709,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         conn_id = conn_info['site_conn']['id']
         site_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
         ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
-        # TODO(pcm): Use conn_id, once bug fixed
         ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
 
         LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'),

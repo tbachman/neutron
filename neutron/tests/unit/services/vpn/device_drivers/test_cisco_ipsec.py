@@ -47,19 +47,25 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         super(TestIPsecDeviceDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
         for klass in ['neutron.openstack.common.rpc.create_connection',
-                      'neutron.context.get_admin_context_without_session']:
+                      'neutron.context.get_admin_context_without_session',
+                      'neutron.openstack.common.'
+                      'loopingcall.FixedIntervalLoopingCall']:
             mock.patch(klass).start()
         mock.patch(CSR_REST_CLIENT, autospec=True).start()
         self.agent = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
         self.driver.csr.status = 201  # All calls succeed
-        self.info = {
+        self.conn_info = {
             'site_conn': {'id': '123',
                           'psk': 'secret',
                           'peer_address': '192.168.1.2',
                           'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
-            'ike_policy': {'lifetime': {'value': 3600}},
+            'ike_policy': {'auth_algorithm': 'sha1',
+                           'encryption_algorithm': 'aes-128',
+                           'pfs': 'Group5',
+                           'ike_version': 'v1',
+                           'lifetime': {'value': 3600}},
             'ipsec_policy': {'lifetime': {'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
@@ -102,15 +108,16 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.driver.csr.make_route_id.side_effect = ['10.1.0.0_24_Tunnel0',
                                                      '10.2.0.0_24_Tunnel0']
         context = mock.Mock()
-        self.driver.create_ipsec_site_connection(context, self.info)
+        self.driver.create_ipsec_site_connection(context, self.conn_info)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
-        self.assertEqual(expected_rollback_steps,
-                         self.driver.connections[self.info['site_conn']['id']])
- 
+        self.assertEqual(
+            expected_rollback_steps,
+            self.driver.connections[self.conn_info['site_conn']['id']])
+
     def test_create_ipsec_site_connection_with_rollback(self):
         """Failure test of IPSec site conn creation that fails and rolls back.
- 
+
         Simulate a failure in the last create step (making routes for the
         peer networks), and ensure that the create steps are called in
         order (except for create_static_route), and that the delete
@@ -125,19 +132,19 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                     'delete_ipsec_policy',
                     'delete_ike_policy',
                     'delete_pre_shared_key']
-        del self.info['site_conn']['peer_cidrs']
+        del self.conn_info['site_conn']['peer_cidrs']
         context = mock.Mock()
-        self.driver.create_ipsec_site_connection(context, self.info)
+        self.driver.create_ipsec_site_connection(context, self.conn_info)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
         self.assertNotIn('123', self.driver.connections)
- 
+
     def test_create_verification_with_error(self):
         """Negative test of create check step had failed."""
         self.driver.csr.status = wexc.HTTPNotFound.code
         self.assertRaises(ipsec_driver.CsrResourceCreateFailure,
                           self.driver._check_create, 'name', 'id')
- 
+
     def test_failure_with_invalid_create_step(self):
         """Negative test of invalid create step (programming error)."""
         self.driver.steps = []
@@ -147,7 +154,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             pass
         else:
             self.fail('Expected exception with invalid create step')
- 
+
     def test_failure_with_invalid_delete_step(self):
         """Negative test of invalid delete step (programming error)."""
         self.driver.steps = [ipsec_driver.RollbackStep(action='bogus',
@@ -159,55 +166,97 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             pass
         else:
             self.fail('Expected exception with invalid delete step')
- 
- 
+
+
 class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
- 
+
     """Verifies that config info is prepared/transformed correctly."""
- 
+
     def setUp(self):
         super(TestCsrIPsecDeviceDriverCreateTransforms, self).setUp()
         self.addCleanup(mock.patch.stopall)
         for klass in ['neutron.openstack.common.rpc.create_connection',
-                      'neutron.context.get_admin_context_without_session']:
+                      'neutron.context.get_admin_context_without_session',
+                      'neutron.openstack.common.'
+                      'loopingcall.FixedIntervalLoopingCall']:
             mock.patch(klass).start()
         mock.patch(CSR_REST_CLIENT, autospec=True).start()
         self.agent = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
-        self.info = {
+        self.conn_info = {
             'site_conn': {'id': '123',
                           'psk': 'secret',
                           'peer_address': '192.168.1.2',
                           'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
-            'ike_policy': {'lifetime': {'value': 3600}},
+            'ike_policy': {'auth_algorithm': 'sha1',
+                           'encryption_algorithm': 'aes-128',
+                           'pfs': 'Group5',
+                           'ike_version': 'v1',
+                           'lifetime': {'value': 3600}},
             'ipsec_policy': {'lifetime': {'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333}
         }
- 
+
     def test_psk_create_info(self):
         expected = {u'keyring-name': '123',
                     u'pre-shared-key-list': [
                         {u'key': 'secret',
                          u'encrypted': False,
                          u'peer-address': '192.168.1.2'}]}
-        psk_id = self.info['site_conn']['id']
-        psk_info = self.driver.create_psk_info(psk_id, self.info)
+        psk_id = self.conn_info['site_conn']['id']
+        psk_info = self.driver.create_psk_info(psk_id, self.conn_info)
         self.assertEqual(expected, psk_info)
- 
-    def test_ike_policy_info(self):
+
+    def test_create_ike_policy_info(self):
         expected = {u'priority-id': 222,
                     u'encryption': u'aes',
                     u'hash': u'sha',
                     u'dhGroup': 5,
+                    u'version': u'v1',
                     u'lifetime': 3600}
-        ike_policy_id = self.info['cisco']['ike_policy_id']
-        policy_info = self.driver.create_ike_policy_info(ike_policy_id,
-                                                         self.info)
+        policy_id = self.conn_info['cisco']['ike_policy_id']
+        policy_info = self.driver.create_ike_policy_info(policy_id,
+                                                         self.conn_info)
         self.assertEqual(expected, policy_info)
- 
+
+    def test_create_ike_policy_info_non_defaults(self):
+        self.conn_info['ike_policy'] = {
+            'auth_algorithm': 'sha1',
+            'encryption_algorithm': 'aes-256',
+            'pfs': 'Group14',
+            'ike_version': 'v1',
+            'lifetime': {'value': 60}
+        }
+        expected = {u'priority-id': 222,
+                    u'encryption': u'aes-256',
+                    u'hash': u'sha',
+                    u'dhGroup': 14,
+                    u'version': u'v1',
+                    u'lifetime': 60}
+        policy_id = self.conn_info['cisco']['ike_policy_id']
+        policy_info = self.driver.create_ike_policy_info(policy_id,
+                                                         self.conn_info)
+        self.assertEqual(expected, policy_info)
+
+    def test_failed_create_ike_policy_info_unsupported_version(self):
+        """Negative test of unsupported version for IKE policy."""
+        self.conn_info['ike_policy']['ike_version'] = 'v2'
+        policy_id = self.conn_info['cisco']['ike_policy_id']
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_ike_policy_info,
+                          policy_id, self.conn_info)
+
+    def test_failed_create_ike_policy_info_unsupported_lifetime(self):
+        """Negative test of unsupported lifetime value for IKE policy."""
+        self.conn_info['ike_policy']['lifetime']['value'] = 86401
+        policy_id = self.conn_info['cisco']['ike_policy_id']
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_ike_policy_info,
+                          policy_id, self.conn_info)
+
     def test_ipsec_policy_info(self):
         expected = {u'policy-id': 333,
                     u'protection-suite': {
@@ -217,11 +266,11 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                     u'lifetime-sec': 3600,
                     u'pfs': u'group5',
                     u'anti-replay-window-size': u'128'}
-        ipsec_policy_id = self.info['cisco']['ipsec_policy_id']
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
-                                                           self.info)
+                                                           self.conn_info)
         self.assertEqual(expected, policy_info)
- 
+
     def test_site_connection_info(self):
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
@@ -232,26 +281,26 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                     u'remote-device': {
                         u'tunnel-ip-address': '192.168.1.2'
                     }}
-        ipsec_policy_id = self.info['cisco']['ipsec_policy_id']
-        site_conn_id = self.info['cisco']['site_conn_id']
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
         conn_info = self.driver.create_site_connection_info(site_conn_id,
                                                             ipsec_policy_id,
-                                                            self.info)
+                                                            self.conn_info)
         self.assertEqual(expected, conn_info)
- 
+
     def test_static_route_info(self):
         expected = {u'destination-network': '10.2.0.0/24',
                     u'outgoing-interface': 'Tunnel0'}
         route_info = self.driver.create_route_info('10.2.0.0/24', 'Tunnel0')
         self.assertEqual(expected, route_info)
- 
- 
+
+
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:
 #             context = mock.Mock()
 #             self.driver.vpnservice_updated(context)
 #             sync.assert_called_once_with(context, [])
- 
+
 #     def test_create_router(self):
 #         process_id = _uuid()
 #         process = mock.Mock()

@@ -44,7 +44,7 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         super(TestCiscoIPsecDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
- 
+
         l3_agent = mock.Mock()
         l3_agent.host = FAKE_HOST
         plugin = mock.Mock()
@@ -52,7 +52,7 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
         get_plugin = plugin_p.start()
         get_plugin.return_value = plugin
- 
+
         self.service_plugin = mock.Mock()
         self.service_plugin.get_l3_agents_hosting_routers.return_value = (
             [l3_agent])
