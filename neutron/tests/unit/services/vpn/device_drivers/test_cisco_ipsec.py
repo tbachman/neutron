@@ -67,7 +67,10 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                            'ike_version': 'v1',
                            'lifetime': {'units': 'seconds',
                                         'value': 3600}},
-            'ipsec_policy': {'pfs': 'group5',
+            'ipsec_policy': {'transform_protocol': 'ah',
+                             'encryption_algorithm': 'aes-128',
+                             'auth_algorithm': 'sha1',
+                             'pfs': 'group5',
                              'lifetime': {'units': 'seconds',
                                           'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
@@ -198,7 +201,10 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                            'ike_version': 'v1',
                            'lifetime': {'units': 'seconds',
                                         'value': 3600}},
-            'ipsec_policy': {'pfs': 'group5',
+            'ipsec_policy': {'transform_protocol': 'ah',
+                             'encryption_algorithm': 'aes-128',
+                             'auth_algorithm': 'sha1',
+                             'pfs': 'group5',
                              'lifetime': {'units': 'seconds',
                                           'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
@@ -318,7 +324,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                          'value': 60}
         }
         expected = {u'priority-id': 222,
-                    u'encryption': u'aes-256',
+                    u'encryption': u'aes',  # TODO(pcm): fix
                     u'hash': u'sha',
                     u'dhGroup': 14,
                     u'version': u'v1',
@@ -340,10 +346,32 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         expected = {u'policy-id': 333,
                     u'protection-suite': {
                         u'esp-encryption': u'esp-aes',
-                        u'esp-authentication': u'esp-sha-hmac'
+                        u'esp-authentication': u'esp-sha-hmac',
+                        u'ah': u'ah-sha-hmac'
                     },
                     u'lifetime-sec': 3600,
                     u'pfs': u'group5',
+                    u'anti-replay-window-size': u'128'}
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
+        policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
+                                                           self.conn_info)
+        self.assertEqual(expected, policy_info)
+
+    def test_ipsec_policy_info_non_defaults(self):
+        self.conn_info['ipsec_policy'] = {'transform_protocol': 'ah',
+                                          'encryption_algorithm': '3des',
+                                          'auth_algorithm': 'sha1',
+                                          'pfs': 'group14',
+                                          'lifetime': {'units': 'seconds',
+                                                       'value': 120}}
+        expected = {u'policy-id': 333,
+                    u'protection-suite': {
+                        u'esp-encryption': u'esp-3des',
+                        u'esp-authentication': u'esp-sha-hmac',
+                        u'ah': u'ah-sha-hmac'
+                    },
+                    u'lifetime-sec': 120,
+                    u'pfs': u'group14',
                     u'anti-replay-window-size': u'128'}
         ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
