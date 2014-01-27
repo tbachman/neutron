@@ -102,6 +102,11 @@ class CsrValidationFailure(exceptions.NeutronException):
                 "with value '%(value)s'")
 
 
+class CsrDriverImplementationError(exceptions.NeutronException):
+    message = _("Required %(resource)s attribute %(attr)s for Cisco CSR "
+                "is missing")
+
+
 class BaseSwanProcess():
     """Swan Family Process Manager
 
@@ -558,16 +563,56 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.agent.iptables_apply(router_id)
 
     # Mapping...
-    DIALECT_MAP = {'v1': u'v1',
-                   'sha1': u'sha',
-                   'aes-128': u'aes',
-                   'aes-192': u'aes-192',
-                   'aes-256': u'aes-256',
-                   'Group2': 2,
-                   'Group5': 5,
-                   'Group14': 14}
+    DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
+                                  'v1': u'v1',
+                                  'sha1': u'sha',
+                                  'aes-128': u'aes',
+                                  'aes-192': u'aes-192',
+                                  'aes-256': u'aes-256',
+                                  'group2': 2,
+                                  'group5': 5,
+                                  'group14': 14},
+                   'ipsec_policy': {'name': 'IPSec Policy',
+                                    'group2': u'group2',
+                                    'group5': u'group5',
+                                    'group14': u'group14'}}
+
+    LIFETIME_MAP = {'ike_policy': {'min': 60, 'max': 86400},
+                    'ipsec_policy': {'min': 120, 'max': 2592000}}
+
+    def translate_dialect(self, resource, attribute, info):
+        """Map VPNaaS attributes values to CSR values for a resource."""
+        name = self.DIALECT_MAP[resource]['name']
+        if attribute not in info:
+            raise CsrDriverImplementationError(resource=name, attr=attribute)
+        value = info[attribute].lower()
+        if value in self.DIALECT_MAP[resource]:
+            return self.DIALECT_MAP[resource][value]
+        raise CsrValidationFailure(resource=name, key=attribute, value=value)
+
+    def validate_lifetime(self, resource, policy_info):
+        name = self.DIALECT_MAP[resource]['name']
+        if 'lifetime' not in policy_info:
+            raise CsrDriverImplementationError(resource=name, attr='lifetime')
+        lifetime_info = policy_info['lifetime']
+        if 'units' not in lifetime_info:
+            raise CsrDriverImplementationError(resource=name,
+                                               attr='lifetime:units')
+        if lifetime_info['units'] != 'seconds':
+            raise CsrValidationFailure(resource=name, key='lifetime:units',
+                                       value=lifetime_info['units'])
+        if 'value' not in lifetime_info:
+            raise CsrDriverImplementationError(resource=name,
+                                               attr='lifetime:value')
+        lifetime = lifetime_info['value']
+        if (self.LIFETIME_MAP[resource]['min'] <= lifetime <=
+            self.LIFETIME_MAP[resource]['max']):
+            return lifetime
+        raise CsrValidationFailure(resource=name, key='lifetime:value',
+                                   value=lifetime)
 
     def create_psk_info(self, psk_id, info):
+        """Collect/create attributes needed for pre-shared key."""
         conn_info = info['site_conn']
         return {u'keyring-name': psk_id,
                 u'pre-shared-key-list': [
@@ -575,16 +620,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                      u'encrypted': False,
                      u'peer-address': conn_info['peer_address']}]}
 
-    def translate_dialect(self, resource, attribute, info):
-        if info[attribute] in self.DIALECT_MAP:
-            return self.DIALECT_MAP[info[attribute]]
-        raise CsrValidationFailure(resource=resource,
-                                   key=attribute,
-                                   value=info[attribute])
-
     def create_ike_policy_info(self, ike_policy_id, conn_info):
-        for_ike = 'IKE Policy'
-        policy_info = conn_info['ike_policy']
+        """Collect/create/map attributes needed for IKE policy."""
+        for_ike = 'ike_policy'
+        policy_info = conn_info[for_ike]
         version = self.translate_dialect(for_ike,
                                          'ike_version',
                                          policy_info)
@@ -597,33 +636,29 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         group = self.translate_dialect(for_ike,
                                        'pfs',
                                        policy_info)
-        if policy_info['lifetime']['value'] > 86400:
-            raise CsrValidationFailure(resource=for_ike,
-                                       key='lifetime:value',
-                                       value=policy_info['lifetime']['value'])
-        return {u'priority-id': ike_policy_id,
+        lifetime = self.validate_lifetime(for_ike, policy_info)
+        return {u'version': version,
+                u'priority-id': ike_policy_id,
                 u'encryption': encrypt_algorithm,
                 u'hash': auth_algorithm,
                 u'dhGroup': group,
                 u'version': version,
-                u'lifetime': policy_info['lifetime']['value']}
+                u'lifetime': lifetime}
 
     def create_ipsec_policy_info(self, ipsec_policy_id, info):
-        """Collect attributes needed for IPSec policy.
+        """Collect/create attributes needed for IPSec policy."""
+        for_ipsec = 'ipsec_policy'
+        policy_info = info[for_ipsec]
+        # TODO(pcm): Convert protection info
 
-        Initially, will use UUID of site connection, to identify the IPSec
-        policy. In future, can consider using the IPSec policy UUID, but
-        will need to reference count for delete.
-        """
-        policy_info = info['ipsec_policy']
-        # TODO(pcm): Convert protection info, pfs, and lifetime (ensure
-        # in seconds, else reject)
+        group = self.translate_dialect(for_ipsec, 'pfs', policy_info)
+        lifetime = self.validate_lifetime(for_ipsec, policy_info)
         return {u'policy-id': ipsec_policy_id,
                 u'protection-suite': {
                     u'esp-encryption': u'esp-aes',
                     u'esp-authentication': u'esp-sha-hmac'},
-                u'lifetime-sec': policy_info['lifetime']['value'],
-                u'pfs': u'group5',
+                u'lifetime-sec': lifetime,
+                u'pfs': group,
                 # TODO(pcm): Remove when CSR fixes 'Disable'
                 u'anti-replay-window-size': u'128'}
 
@@ -699,14 +734,18 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """Creates an IPSec site-to-site connection on CSR.
 
         Create the PSK, IKE policy, IPSec policy, connection, static route,
-        mtu, and (future) DPD.
+        and (future) DPD.
 
-        This is called for a SPECIFIC connection, hence CSR. Later will
-        change to do a generic update and have a background task that
-        cycles through each and does the needed create/delete/update.
+        Note: This is a temp API that directly talks to a CSR in a synchronous
+        manner. In the future, will tie to L3 Cfg agent for asynchronous
+        operation.
         """
         # Get all the IDs
         conn_id = conn_info['site_conn']['id']
+        # TODO(pcm) Decide if map/persist IDs in service or device driver
+        # TODO(pcm) Decide if unique IKE/IPSec policy on CSR for each
+        # connection or share? Separate APIs if share?
+        psk_id = conn_id
         site_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
         ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
         ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
@@ -716,7 +755,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
         try:
             self.steps = []
-            psk_info = self.create_psk_info(conn_id, conn_info)
+            psk_info = self.create_psk_info(psk_id, conn_info)
             self.do_create_action('pre_shared_key', psk_info,
                                   conn_id, 'Pre-Shared Key')
 

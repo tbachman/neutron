@@ -65,8 +65,11 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
                            'ike_version': 'v1',
-                           'lifetime': {'value': 3600}},
-            'ipsec_policy': {'lifetime': {'value': 3600}},
+                           'lifetime': {'units': 'seconds',
+                                        'value': 3600}},
+            'ipsec_policy': {'pfs': 'group5',
+                             'lifetime': {'units': 'seconds',
+                                          'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333}
@@ -193,12 +196,95 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
                            'ike_version': 'v1',
-                           'lifetime': {'value': 3600}},
-            'ipsec_policy': {'lifetime': {'value': 3600}},
+                           'lifetime': {'units': 'seconds',
+                                        'value': 3600}},
+            'ipsec_policy': {'pfs': 'group5',
+                             'lifetime': {'units': 'seconds',
+                                          'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333}
         }
+
+    def test_invalid_attribute(self):
+        """Failure test of unknown attribute - programming error."""
+        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
+                          self.driver.translate_dialect,
+                          'ike_policy', 'bogus', self.conn_info)
+
+    def test_policy_missing_lifetime(self):
+        """Failure test of missing lifetime attribute.
+
+        Applies to IKE and IPSec policies.
+        """
+        del self.conn_info['ike_policy']['lifetime']
+        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+
+    def test_policy_missing_lifetime_units(self):
+        """Failure test of missing lifetime attribute.
+
+        Applies to IKE and IPSec policies.
+        """
+        del self.conn_info['ike_policy']['lifetime']['units']
+        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+
+    def test_policy_missing_lifetime_value(self):
+        """Failure test of missing lifetime attribute.
+
+        Applies to IKE and IPSec policies.
+        """
+        del self.conn_info['ike_policy']['lifetime']['value']
+        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+
+    def test_unsupported_lifetime_units(self):
+        """Failure test of non-seconds units for lifetime.
+
+        Applies to IKE and IPSec policies.
+        """
+        self.conn_info['ike_policy']['lifetime']['units'] = 'kilobytes'
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+
+    def test_valid_lifetime_seconds_values(self):
+        """Negative test of unsupported lifetime values for IKE/IPSec."""
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 60}}
+        actual = self.driver.validate_lifetime('ike_policy', policy_info)
+        self.assertEqual(60, actual)
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 86400}}
+        actual = self.driver.validate_lifetime('ike_policy', policy_info)
+        self.assertEqual(86400, actual)
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 120}}
+        actual = self.driver.validate_lifetime('ipsec_policy', policy_info)
+        self.assertEqual(120, actual)
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 2592000}}
+        actual = self.driver.validate_lifetime('ipsec_policy', policy_info)
+        self.assertEqual(2592000, actual)
+
+    def test_unsuported_lifetime_seconds_values(self):
+        """Negative test of unsupported lifetime values for IKE/IPSec."""
+        self.conn_info['ike_policy']['lifetime']['value'] = 59
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+        self.conn_info['ike_policy']['lifetime']['value'] = 86401
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_lifetime,
+                          'ike_policy', self.conn_info['ike_policy'])
+        self.conn_info['ipsec_policy']['lifetime']['value'] = 119
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_lifetime,
+                          'ipsec_policy', self.conn_info['ipsec_policy'])
+        self.conn_info['ipsec_policy']['lifetime']['value'] = 2592001
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_lifetime,
+                          'ipsec_policy', self.conn_info['ipsec_policy'])
 
     def test_psk_create_info(self):
         expected = {u'keyring-name': '123',
@@ -228,7 +314,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
             'encryption_algorithm': 'aes-256',
             'pfs': 'Group14',
             'ike_version': 'v1',
-            'lifetime': {'value': 60}
+            'lifetime': {'units': 'seconds',
+                         'value': 60}
         }
         expected = {u'priority-id': 222,
                     u'encryption': u'aes-256',
@@ -244,14 +331,6 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
     def test_failed_create_ike_policy_info_unsupported_version(self):
         """Negative test of unsupported version for IKE policy."""
         self.conn_info['ike_policy']['ike_version'] = 'v2'
-        policy_id = self.conn_info['cisco']['ike_policy_id']
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_ike_policy_info,
-                          policy_id, self.conn_info)
-
-    def test_failed_create_ike_policy_info_unsupported_lifetime(self):
-        """Negative test of unsupported lifetime value for IKE policy."""
-        self.conn_info['ike_policy']['lifetime']['value'] = 86401
         policy_id = self.conn_info['cisco']['ike_policy_id']
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.create_ike_policy_info,

@@ -501,7 +501,7 @@ class TestCsrRestIkePolicyCreate(unittest.TestCase):
             self.assertEqual(expected_policy, content)
 
     def test_create_duplicate_ike_policy(self):
-        """Negative test of trying to create a dulicate IKE policy."""
+        """Negative test of trying to create a duplicate IKE policy."""
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             policy_id = '2'
             policy_info = {u'priority-id': u'%s' % policy_id,
