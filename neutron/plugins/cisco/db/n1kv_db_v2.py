@@ -1232,7 +1232,9 @@ class NetworkProfile_db_mixin(object):
         :param p: network profile object
         """
         self._validate_network_profile(p)
-        self._validate_segment_range_uniqueness(context, p)
+        _segment_type = p['segment_type'].lower()
+        if _segment_type != c_const.NETWORK_TYPE_TRUNK:
+           self._validate_segment_range_uniqueness(context, p)
 
     def _validate_multicast_ip_range(self, network_profile):
          """
@@ -1297,6 +1299,11 @@ class NetworkProfile_db_mixin(object):
             if "physical_network" not in net_p:
                 msg = _("Argument physical_network missing "
                         "for network profile")
+                LOG.exception(msg)
+                raise q_exc.InvalidInput(error_message=msg)
+        if segment_type == c_const.NETWORK_TYPE_TRUNK:
+            if net_p["segment_range"]:
+                msg = _("segment_range not required for trunk")
                 LOG.exception(msg)
                 raise q_exc.InvalidInput(error_message=msg)
         if segment_type in [c_const.NETWORK_TYPE_TRUNK,
