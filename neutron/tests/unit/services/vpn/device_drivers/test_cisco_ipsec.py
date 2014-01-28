@@ -60,7 +60,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             'site_conn': {'id': '123',
                           'psk': 'secret',
                           'peer_address': '192.168.1.2',
-                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
+                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
+                          'mtu': 1500},
             'ike_policy': {'auth_algorithm': 'sha1',
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
@@ -194,7 +195,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
             'site_conn': {'id': '123',
                           'psk': 'secret',
                           'peer_address': '192.168.1.2',
-                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24']},
+                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
+                          'mtu': 1500},
             'ike_policy': {'auth_algorithm': 'sha1',
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
@@ -378,16 +380,21 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                            self.conn_info)
         self.assertEqual(expected, policy_info)
 
+    def test_ipsec_policy_info_protection_suite(self):
+        """Try other variations on protection suite settings"""
+        pass
+
     def test_site_connection_info(self):
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
                     u'local-device': {
-                        u'ip-address': u'10.3.0.1/31',
+                        u'ip-address': u'unnumbered GigabitEthernet3',
                         u'tunnel-ip-address': u'172.24.4.23'
                     },
                     u'remote-device': {
                         u'tunnel-ip-address': '192.168.1.2'
-                    }}
+                    },
+                    u'mtu': 1500}
         ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         site_conn_id = self.conn_info['cisco']['site_conn_id']
         conn_info = self.driver.create_site_connection_info(site_conn_id,

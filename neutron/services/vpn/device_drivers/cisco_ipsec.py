@@ -607,6 +607,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         raise CsrValidationFailure(resource=name, key=attribute, value=value)
 
     def validate_lifetime(self, resource, policy_info):
+        """Verify the lifetime is within supported range, based on policy."""
         name = self.DIALECT_MAP[resource]['name']
         if 'lifetime' not in policy_info:
             raise CsrDriverImplementationError(resource=name, attr='lifetime')
@@ -687,19 +688,22 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 u'anti-replay-window-size': u'128'}
 
     def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
-        # TODO(pcm): May need API extension to set ip address of tunnel,
-        # and need router's public IP for local tunnel IP address
+        # TODO(pcm): Need interface of CSR's local subnet port, and IP of
+        # router's public port interface.
         conn_info = info['site_conn']
         return {
             u'vpn-interface-name': site_conn_id,
             u'ipsec-policy-id': ipsec_policy_id,
             u'local-device': {
-                u'ip-address': u'10.3.0.1/31',
+                # TODO(pcm): Get CSR port of interface with local subnet
+                u'ip-address': u'unnumbered GigabitEthernet3',
+                # TODO(pcm): Get IP address of router's public I/F
                 u'tunnel-ip-address': u'172.24.4.23'
             },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
-            }
+            },
+            u'mtu': conn_info['mtu']
         }
 
     def create_route_info(self, peer_cidr, interface):
