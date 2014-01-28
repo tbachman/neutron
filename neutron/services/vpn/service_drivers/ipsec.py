@@ -98,7 +98,7 @@ class IPsecVpnAgentApi(proxy.RpcProxy):
         self._agent_notification(context, method, router_id)
 
 
-class IPsecVPNDriver(service_drivers.VpnDriver):
+class IPsecVPNDriver(service_drivers.VPNDriver):
     """VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):
@@ -120,6 +120,7 @@ class IPsecVPNDriver(service_drivers.VpnDriver):
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
+        LOG.debug(_("PCM: Reference driver create_ipsec_site_connection"))
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     def update_ipsec_site_connection(
