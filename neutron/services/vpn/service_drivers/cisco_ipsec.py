@@ -134,50 +134,57 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def service_type(self):
         return IPSEC
 
-    def get_cisco_connection_info(self, site_conn):
+    def get_cisco_connection_info(self, vpn_service):
         # TODO(pcm): Do database lookup for mappings using the connection ID
-        # TODO(pcm): IPSec policy ID can be connection UUID, once bug fixed
+        # TODO(pcm): Do we generate/persist here or in device driver
+        gw_port = vpn_service.router.gw_port
+        if gw_port and len(gw_port.fixed_ips) == 1:
+            public_ip = gw_port.fixed_ips[0].ip_address
+        else:
+            public_ip = None
         return {'site_conn_id': u'Tunnel0',
                 'ike_policy_id': u'2',
-                'ipsec_policy_id': u'8'}
+                'ipsec_policy_id': u'8',
+                'router_public_ip': public_ip}
 
-    def _build_ipsec_site_conn_create_info(self, context, site_conn):
+    def _build_ipsec_site_conn_create_info(self, context, site_conn, vpn_service):
         ike_info = self.service_plugin.get_ikepolicy(context,
                                                      site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(
             context, site_conn['ipsecpolicy_id'])
-        cisco_info = self.get_cisco_connection_info(site_conn)
+        cisco_info = self.get_cisco_connection_info(vpn_service)
         return {'site_conn': site_conn,
                 'ike_policy': ike_info,
                 'ipsec_policy': ipsec_info,
                 'cisco': cisco_info}
 
-    def _build_ipsec_site_conn_delete_info(self, site_conn):
-        cisco_info = self.get_cisco_connection_info(site_conn)
+    def _build_ipsec_site_conn_delete_info(self, context, vpn_service):
+        cisco_info = self.get_cisco_connection_info(vpn_service)
         return {'site_conn': site_conn,
                 'cisco': cisco_info}
 
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
-        router_id = self.service_plugin._get_vpnservice(
-            context, ipsec_site_connection['vpnservice_id'])['router_id']
+        vpn_service = self.service_plugin._get_vpnservice(
+            context, ipsec_site_connection['vpnservice_id'])
         conn_info = self._build_ipsec_site_conn_create_info(
-            context, ipsec_site_connection)
+            context, ipsec_site_connection, vpn_service)
         self.agent_rpc.create_ipsec_site_connection(
-            context, router_id, conn_info=conn_info)
+            context, vpn_service['router_id'], conn_info=conn_info)
 
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
+        # TODO(pcm): Implement...
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     def delete_ipsec_site_connection(self, context, ipsec_site_connection):
-        router_id = self.service_plugin._get_vpnservice(
-            context, ipsec_site_connection['vpnservice_id'])['router_id']
+        vpn_service = self.service_plugin._get_vpnservice(
+            context, ipsec_site_connection['vpnservice_id'])
         conn_info = self._build_ipsec_site_conn_delete_info(
-            ipsec_site_connection)
+            context, vpn_service)
         self.agent_rpc.delete_ipsec_site_connection(
-            context, router_id, conn_info=conn_info)
+            context, vpn_service['router_id'], conn_info=conn_info)
 
     def create_ikepolicy(self, context, ikepolicy):
         pass
