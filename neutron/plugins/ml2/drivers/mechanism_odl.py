@@ -47,7 +47,7 @@ cfg.CONF.register_opts(odl_opts, "ml2_odl")
 class JsessionId(requests.auth.AuthBase):
     """
     Attaches the JSESSIONID and JSESSIONIDSSO cookies to an HTTP Request.
-    If the cookies are not available or when the session expires, a new 
+    If the cookies are not available or when the session expires, a new
     set of cookies are obtained
     """
 
