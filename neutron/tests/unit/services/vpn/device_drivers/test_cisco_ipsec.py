@@ -231,13 +231,13 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         }
 
     def test_invalid_attribute(self):
-        """Failure test of unknown attribute - programming error."""
+        """Negative test of unknown attribute - programming error."""
         self.assertRaises(ipsec_driver.CsrDriverImplementationError,
                           self.driver.translate_dialect,
                           'ike_policy', 'bogus', self.conn_info)
 
     def test_policy_missing_lifetime(self):
-        """Failure test of missing lifetime attribute.
+        """Negative test of missing lifetime attribute.
 
         Applies to IKE and IPSec policies.
         """
@@ -247,7 +247,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           'ike_policy', self.conn_info['ike_policy'])
 
     def test_policy_missing_lifetime_units(self):
-        """Failure test of missing lifetime attribute.
+        """Negative test of missing lifetime attribute.
 
         Applies to IKE and IPSec policies.
         """
@@ -257,7 +257,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           'ike_policy', self.conn_info['ike_policy'])
 
     def test_policy_missing_lifetime_value(self):
-        """Failure test of missing lifetime attribute.
+        """Negative test of missing lifetime attribute.
 
         Applies to IKE and IPSec policies.
         """
@@ -267,7 +267,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           'ike_policy', self.conn_info['ike_policy'])
 
     def test_unsupported_lifetime_units(self):
-        """Failure test of non-seconds units for lifetime.
+        """negative test of non-seconds units for lifetime.
 
         Applies to IKE and IPSec policies.
         """
@@ -311,6 +311,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           'ipsec_policy', self.conn_info['ipsec_policy'])
 
     def test_psk_create_info(self):
+        """Ensure that pre-shared key info is created correctly."""
         expected = {u'keyring-name': '123',
                     u'pre-shared-key-list': [
                         {u'key': 'secret',
@@ -321,6 +322,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, psk_info)
 
     def test_create_ike_policy_info(self):
+        """Ensure that IKE policy info is mapped/created correctly."""
         expected = {u'priority-id': 222,
                     u'encryption': u'aes',
                     u'hash': u'sha',
@@ -333,6 +335,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, policy_info)
 
     def test_create_ike_policy_info_non_defaults(self):
+        """Ensure that IKE policy info with different values."""
         self.conn_info['ike_policy'] = {
             'auth_algorithm': 'sha1',
             'encryption_algorithm': 'aes-256',
@@ -361,6 +364,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           policy_id, self.conn_info)
 
     def test_ipsec_policy_info(self):
+        """Ensure that IPSec policy info is mapped/created correctly."""
         expected = {u'policy-id': 333,
                     u'protection-suite': {
                         u'esp-encryption': u'esp-aes',
@@ -376,6 +380,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, policy_info)
 
     def test_ipsec_policy_info_non_defaults(self):
+        """Create/map IPSec policy info with different values."""
         self.conn_info['ipsec_policy'] = {'transform_protocol': 'ah-esp',
                                           'encryption_algorithm': '3des',
                                           'auth_algorithm': 'sha1',
@@ -397,6 +402,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, policy_info)
 
     def test_site_connection_info(self):
+        """Ensure site-to-site connection info is created/mapped correctly."""
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
                     u'local-device': {
@@ -415,6 +421,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, conn_info)
 
     def test_site_connection_info_with_max_mtu(self):
+        """Create site-to-site conn info with maximum MTU for CSR."""
         self.conn_info['site_conn']['mtu'] = 9192
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
@@ -434,6 +441,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, conn_info)
 
     def test_site_connection_info_with_invalid_mtu(self):
+        """Negative test of site-to-site connection info with invalid MTUs."""
         self.conn_info['site_conn']['mtu'] = 9193
         ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         site_conn_id = self.conn_info['cisco']['site_conn_id']
@@ -446,7 +454,22 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                           self.driver.create_site_connection_info,
                           site_conn_id, ipsec_policy_id, self.conn_info)
 
+    def test_site_connection_info_with_missing_gw_ip(self):
+        """Negative test of site-to-site conn info with missing gateway IP.
+
+        This simulates the user creating an IPSec site-to-site connection
+        using a router, which does not have a gateway IP address (no public
+        interface).
+        """
+        self.conn_info['cisco']['router_public_ip'] = None
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_site_connection_info,
+                          site_conn_id, ipsec_policy_id, self.conn_info)
+
     def test_static_route_info(self):
+        """Create static route info for peer CIDRs."""
         expected = [('10.1.0.0_24_Tunnel0',
                      {u'destination-network': '10.1.0.0/24',
                       u'outgoing-interface': 'Tunnel0'}),
@@ -470,7 +493,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.create_routes_info,
                           site_conn_id, self.conn_info)
-        
+
 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:

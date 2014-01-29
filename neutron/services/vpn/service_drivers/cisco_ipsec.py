@@ -147,7 +147,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                 'ipsec_policy_id': u'8',
                 'router_public_ip': public_ip}
 
-    def _build_ipsec_site_conn_create_info(self, context, site_conn, vpn_service):
+    def _build_ipsec_site_conn_create_info(self, context, site_conn,
+                                           vpn_service):
         ike_info = self.service_plugin.get_ikepolicy(context,
                                                      site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(

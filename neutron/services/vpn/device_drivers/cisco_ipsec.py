@@ -715,7 +715,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 # TODO(pcm): Get IP address of router's public I/F, once CSR is
                 # used as embedded router.
                 u'tunnel-ip-address': u'172.24.4.23'
-                # u'tunnel-ip-address': u'%s' % info['cisco']['router_public_ip']
+                # u'tunnel-ip-address': u'%s' %
+                #    info['cisco']['router_public_ip']
             },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
