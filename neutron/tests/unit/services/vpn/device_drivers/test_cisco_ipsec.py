@@ -376,7 +376,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, policy_info)
 
     def test_ipsec_policy_info_non_defaults(self):
-        self.conn_info['ipsec_policy'] = {'transform_protocol': 'ah',
+        self.conn_info['ipsec_policy'] = {'transform_protocol': 'ah-esp',
                                           'encryption_algorithm': '3des',
                                           'auth_algorithm': 'sha1',
                                           'pfs': 'group14',
@@ -396,10 +396,6 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                            self.conn_info)
         self.assertEqual(expected, policy_info)
 
-    def test_ipsec_policy_info_protection_suite(self):
-        """Try other variations on protection suite settings"""
-        pass
-
     def test_site_connection_info(self):
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
@@ -418,6 +414,38 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                             self.conn_info)
         self.assertEqual(expected, conn_info)
 
+    def test_site_connection_info_with_max_mtu(self):
+        self.conn_info['site_conn']['mtu'] = 9192
+        expected = {u'vpn-interface-name': 'Tunnel0',
+                    u'ipsec-policy-id': 333,
+                    u'local-device': {
+                        u'ip-address': u'GigabitEthernet3',
+                        u'tunnel-ip-address': u'172.24.4.23'
+                    },
+                    u'remote-device': {
+                        u'tunnel-ip-address': '192.168.1.2'
+                    },
+                    u'mtu': 9192}
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
+        conn_info = self.driver.create_site_connection_info(site_conn_id,
+                                                            ipsec_policy_id,
+                                                            self.conn_info)
+        self.assertEqual(expected, conn_info)
+
+    def test_site_connection_info_with_invalid_mtu(self):
+        self.conn_info['site_conn']['mtu'] = 9193
+        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_site_connection_info,
+                          site_conn_id, ipsec_policy_id, self.conn_info)
+
+        self.conn_info['site_conn']['mtu'] = 1499
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_site_connection_info,
+                          site_conn_id, ipsec_policy_id, self.conn_info)
+
     def test_static_route_info(self):
         expected = [('10.1.0.0_24_Tunnel0',
                      {u'destination-network': '10.1.0.0/24',
@@ -433,6 +461,16 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEquals(2, len(routes_info))
         self.assertEqual(expected, routes_info)
 
+    def test_no_peer_cidrs_for_static_routes(self):
+        """Failure test of missing peer CIDRs prohibiting route creation."""
+        # Note: The VPN plugin would require that peer CIDRs are specified
+        # so this should not occur
+        del self.conn_info['site_conn']['peer_cidrs']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.create_routes_info,
+                          site_conn_id, self.conn_info)
+        
 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:

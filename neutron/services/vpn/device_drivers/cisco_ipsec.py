@@ -595,6 +595,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
     LIFETIME_MAP = {'ike_policy': {'min': 60, 'max': 86400},
                     'ipsec_policy': {'min': 120, 'max': 2592000}}
+    MIN_MTU = 1500
+    MAX_MTU = 9192
 
     def translate_dialect(self, resource, attribute, info):
         """Map VPNaaS attributes values to CSR values for a resource."""
@@ -700,6 +702,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             raise CsrValidationFailure(resource='Router', key='router-gateway',
                                        value='undefined')
         conn_info = info['site_conn']
+        mtu = conn_info['mtu']
+        if mtu > self.MAX_MTU or mtu < self.MIN_MTU:
+            raise CsrValidationFailure(resource='IPSec Site Connection',
+                                       key='mtu', value=mtu)
         return {
             u'vpn-interface-name': site_conn_id,
             u'ipsec-policy-id': ipsec_policy_id,
@@ -714,7 +720,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
             },
-            u'mtu': conn_info['mtu']
+            u'mtu': mtu
         }
 
     def create_routes_info(self, site_conn_id, info):
