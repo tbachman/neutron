@@ -14,6 +14,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import httplib
 import mock
 from webob import exc as wexc
 
@@ -76,7 +77,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                                           'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
-                      'ipsec_policy_id': 333}
+                      'ipsec_policy_id': 333,
+                      'router_public_ip': '172.24.4.23'}
         }
 
     def test_create_ipsec_site_connection(self):
@@ -85,13 +87,13 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         Verify that each of the driver calls occur (in order), and
         the right information is stored for later deletion.
         """
-        expected = ['create_pre_shared_key',
+        expected = ['make_route_id',
+                    'make_route_id',
+                    'create_pre_shared_key',
                     'create_ike_policy',
                     'create_ipsec_policy',
                     'create_ipsec_connection',
-                    'make_route_id',
                     'create_static_route',
-                    'make_route_id',
                     'create_static_route']
         expected_rollback_steps = [
             ipsec_driver.RollbackStep(action='pre_shared_key',
@@ -131,20 +133,34 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         steps are called in reverse order. At the end, there should be no
         rollback infromation for the connection.
         """
-        expected = ['create_pre_shared_key',
-                    'create_ike_policy',
-                    'create_ipsec_policy',
-                    'create_ipsec_connection',
-                    'delete_ipsec_connection',
-                    'delete_ipsec_policy',
-                    'delete_ike_policy',
-                    'delete_pre_shared_key']
-        del self.conn_info['site_conn']['peer_cidrs']
-        context = mock.Mock()
-        self.driver.create_ipsec_site_connection(context, self.conn_info)
-        client_calls = [c[0] for c in self.driver.csr.method_calls]
-        self.assertEqual(expected, client_calls)
-        self.assertNotIn('123', self.driver.connections)
+        def fake_route_check_fails(*args, **kwargs):
+            if args[0] == 'Static Route':
+                # So that subsequent calls to CSR rest client (for rollback)
+                # will fake as passing.
+                self.driver.csr.status = httplib.NO_CONTENT
+                raise ipsec_driver.CsrResourceCreateFailure(resource=args[0],
+                                                            which=args[1])
+
+        with mock.patch.object(ipsec_driver.CiscoCsrIPsecDriver,
+                               '_check_create',
+                               side_effect=fake_route_check_fails):
+
+            expected = ['make_route_id',
+                        'make_route_id',
+                        'create_pre_shared_key',
+                        'create_ike_policy',
+                        'create_ipsec_policy',
+                        'create_ipsec_connection',
+                        'create_static_route',
+                        'delete_ipsec_connection',
+                        'delete_ipsec_policy',
+                        'delete_ike_policy',
+                        'delete_pre_shared_key']
+            context = mock.Mock()
+            self.driver.create_ipsec_site_connection(context, self.conn_info)
+            client_calls = [c[0] for c in self.driver.csr.method_calls]
+            self.assertEqual(expected, client_calls)
+            self.assertNotIn('123', self.driver.connections)
 
     def test_create_verification_with_error(self):
         """Negative test of create check step had failed."""
@@ -211,7 +227,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                           'value': 3600}},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
-                      'ipsec_policy_id': 333}
+                      'ipsec_policy_id': 333,
+                      'router_public_ip': '172.24.4.23'}
         }
 
     def test_invalid_attribute(self):
@@ -388,7 +405,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         expected = {u'vpn-interface-name': 'Tunnel0',
                     u'ipsec-policy-id': 333,
                     u'local-device': {
-                        u'ip-address': u'unnumbered GigabitEthernet3',
+                        u'ip-address': u'GigabitEthernet3',
                         u'tunnel-ip-address': u'172.24.4.23'
                     },
                     u'remote-device': {
@@ -403,10 +420,19 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(expected, conn_info)
 
     def test_static_route_info(self):
-        expected = {u'destination-network': '10.2.0.0/24',
-                    u'outgoing-interface': 'Tunnel0'}
-        route_info = self.driver.create_route_info('10.2.0.0/24', 'Tunnel0')
-        self.assertEqual(expected, route_info)
+        expected = [('10.1.0.0_24_Tunnel0',
+                     {u'destination-network': '10.1.0.0/24',
+                      u'outgoing-interface': 'Tunnel0'}),
+                    ('10.2.0.0_24_Tunnel0',
+                     {u'destination-network': '10.2.0.0/24',
+                      u'outgoing-interface': 'Tunnel0'})]
+        self.driver.csr.make_route_id.side_effect = ['10.1.0.0_24_Tunnel0',
+                                                     '10.2.0.0_24_Tunnel0']
+        site_conn_id = self.conn_info['cisco']['site_conn_id']
+        routes_info = self.driver.create_routes_info(site_conn_id,
+                                                     self.conn_info)
+        self.assertEquals(2, len(routes_info))
+        self.assertEqual(expected, routes_info)
 
 
 #     def test_vpnservice_updated(self):

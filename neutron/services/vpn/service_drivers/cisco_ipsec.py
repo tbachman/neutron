@@ -158,7 +158,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                 'ipsec_policy': ipsec_info,
                 'cisco': cisco_info}
 
-    def _build_ipsec_site_conn_delete_info(self, context, vpn_service):
+    def _build_ipsec_site_conn_delete_info(self, site_conn, vpn_service):
         cisco_info = self.get_cisco_connection_info(vpn_service)
         return {'site_conn': site_conn,
                 'cisco': cisco_info}
@@ -182,7 +182,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         vpn_service = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         conn_info = self._build_ipsec_site_conn_delete_info(
-            context, vpn_service)
+            ipsec_site_connection, vpn_service)
         self.agent_rpc.delete_ipsec_site_connection(
             context, vpn_service['router_id'], conn_info=conn_info)
 

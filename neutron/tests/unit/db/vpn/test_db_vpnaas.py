@@ -260,7 +260,6 @@ class VPNPluginDbTestCase(test_l3_plugin.L3NatTestCaseMixin,
                    subnet=None,
                    router=None,
                    admin_state_up=True,
-                   provider='vpnaas',
                    no_delete=False,
                    provider='vpnaas',
                    plug_subnet=True, **kwargs):

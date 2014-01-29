@@ -831,7 +831,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                   site_conn_id, 'IPSec Connection')
 
             # TODO(pcm): Do DPD and handle if >1 connection and different DPD
-            for route_info, route_id in routes_info:
+            for route_id, route_info in routes_info:
                 self.do_create_action('static_route', route_info,
                                       route_id, 'Static Route')
         except CsrResourceCreateFailure:
