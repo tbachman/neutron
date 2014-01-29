@@ -705,9 +705,11 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             u'ipsec-policy-id': ipsec_policy_id,
             u'local-device': {
                 # TODO(pcm): Get CSR port of interface with local subnet
-                u'ip-address': u'unnumbered GigabitEthernet3',
-                # TODO(pcm): Get IP address of router's public I/F
-                u'tunnel-ip-address': u'%s' % info['cisco']['router_public_ip']
+                u'ip-address': u'GigabitEthernet3',
+                # TODO(pcm): Get IP address of router's public I/F, once CSR is
+                # used as embedded router.
+                u'tunnel-ip-address': u'172.24.4.23'
+                # u'tunnel-ip-address': u'%s' % info['cisco']['router_public_ip']
             },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
@@ -715,9 +717,19 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             u'mtu': conn_info['mtu']
         }
 
-    def create_route_info(self, peer_cidr, interface):
-        return {u'destination-network': peer_cidr,
-                u'outgoing-interface': interface}
+    def create_routes_info(self, site_conn_id, info):
+        peer_cidrs = info['site_conn'].get('peer_cidrs', [])
+        if not peer_cidrs:
+            raise CsrValidationFailure(resource='IPSec Site Connection',
+                                       key='peer-cidrs',
+                                       value='undefined')
+        routes_info = []
+        for peer_cidr in peer_cidrs:
+            route = {u'destination-network': peer_cidr,
+                     u'outgoing-interface': site_conn_id}
+            route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
+            routes_info.append((route_id, route))
+        return routes_info
 
     def _check_create(self, resource, which):
         if self.csr.status == wexc.HTTPCreated.code:
@@ -791,38 +803,35 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                  conn_id)
 
         try:
-            self.steps = []
             psk_info = self.create_psk_info(psk_id, conn_info)
-            self.do_create_action('pre_shared_key', psk_info,
-                                  conn_id, 'Pre-Shared Key')
-
-            policy_info = self.create_ike_policy_info(ike_policy_id,
-                                                      conn_info)
-            self.do_create_action('ike_policy', policy_info,
-                                  ike_policy_id, 'IKE Policy')
-
-            policy_info = self.create_ipsec_policy_info(ipsec_policy_id,
-                                                        conn_info)
-            self.do_create_action('ipsec_policy', policy_info,
-                                  ipsec_policy_id, 'IPSec Policy')
-
+            ike_policy_info = self.create_ike_policy_info(ike_policy_id,
+                                                          conn_info)
+            ipsec_policy_info = self.create_ipsec_policy_info(ipsec_policy_id,
+                                                              conn_info)
             connection_info = self.create_site_connection_info(site_conn_id,
                                                                ipsec_policy_id,
                                                                conn_info)
+            routes_info = self.create_routes_info(site_conn_id, conn_info)
+        except CsrDriverImplementationError as e:
+            LOG.exception(e)
+            return
+        except CsrValidationFailure as vf:
+            LOG.error(vf)
+            return
+
+        try:
+            self.steps = []
+            self.do_create_action('pre_shared_key', psk_info,
+                                  conn_id, 'Pre-Shared Key')
+            self.do_create_action('ike_policy', ike_policy_info,
+                                  ike_policy_id, 'IKE Policy')
+            self.do_create_action('ipsec_policy', ipsec_policy_info,
+                                  ipsec_policy_id, 'IPSec Policy')
             self.do_create_action('ipsec_connection', connection_info,
                                   site_conn_id, 'IPSec Connection')
 
-            # TODO(pcm): Configure MTU on tunnel, do DPD as separate REST API.
-
-            peer_cidrs = conn_info['site_conn'].get('peer_cidrs', [])
-            if not peer_cidrs:
-                LOG.error(_("No peer CIDRs specified for connection %s"),
-                          conn_id)
-                raise CsrResourceCreateFailure(resource='Static Routes',
-                                               which='None')
-            for peer_cidr in peer_cidrs:
-                route_info = self.create_route_info(peer_cidr, site_conn_id)
-                route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
+            # TODO(pcm): Do DPD and handle if >1 connection and different DPD
+            for route_info, route_id in routes_info:
                 self.do_create_action('static_route', route_info,
                                       route_id, 'Static Route')
         except CsrResourceCreateFailure:
