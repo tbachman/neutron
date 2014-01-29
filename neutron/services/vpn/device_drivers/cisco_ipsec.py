@@ -580,9 +580,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                     # auth_algorithm
                                     'sha1': u'esp-sha-hmac',
                                     # transform_protocol
-                                    'esp': u'?',  # TODO(pcm) fix
+                                    'esp': u'ah-sha-hmac',
                                     'ah': u'ah-sha-hmac',
-                                    'ah-esp': u'?',  # TODO(pcm) fix
+                                    'ah-esp': u'ah-sha-hmac',
                                     # encryption_algorithm
                                     '3des': u'esp-3des',
                                     'aes-128': u'esp-aes',
@@ -663,7 +663,15 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 u'lifetime': lifetime}
 
     def create_ipsec_policy_info(self, ipsec_policy_id, info):
-        """Collect/create attributes needed for IPSec policy."""
+        """Collect/create attributes needed for IPSec policy.
+
+        Note: OpenStack will provide a default encryption algorithm, if one is
+        not provided, so a authentication only configuration of (ah, sha1),
+        which maps to ah-sha-hmac transform protocol, cannot be selected.
+        As a result, we'll always configure the encryption algorithm, and
+        will select ah-sha-hmac for transform protocol.
+        """
+
         for_ipsec = 'ipsec_policy'
         policy_info = info[for_ipsec]
         transform_protocol = self.translate_dialect(for_ipsec,
@@ -688,8 +696,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 u'anti-replay-window-size': u'128'}
 
     def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
-        # TODO(pcm): Need interface of CSR's local subnet port, and IP of
-        # router's public port interface.
+        if not info['cisco']['router_public_ip']:
+            raise CsrValidationFailure(resource='Router', key='router-gateway',
+                                       value='undefined')
         conn_info = info['site_conn']
         return {
             u'vpn-interface-name': site_conn_id,
@@ -698,7 +707,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 # TODO(pcm): Get CSR port of interface with local subnet
                 u'ip-address': u'unnumbered GigabitEthernet3',
                 # TODO(pcm): Get IP address of router's public I/F
-                u'tunnel-ip-address': u'172.24.4.23'
+                u'tunnel-ip-address': u'%s' % info['cisco']['router_public_ip']
             },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']

@@ -136,7 +136,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def get_cisco_connection_info(self, vpn_service):
         # TODO(pcm): Do database lookup for mappings using the connection ID
-        # TODO(pcm): Do we generate/persist here or in device driver
+        # TODO(pcm): Do we generate/persist here or in device driver?
         gw_port = vpn_service.router.gw_port
         if gw_port and len(gw_port.fixed_ips) == 1:
             public_ip = gw_port.fixed_ips[0].ip_address
