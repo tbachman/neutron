@@ -16,7 +16,6 @@
 #    under the License.
 import httplib
 import mock
-from webob import exc as wexc
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -164,7 +163,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
 
     def test_create_verification_with_error(self):
         """Negative test of create check step had failed."""
-        self.driver.csr.status = wexc.HTTPNotFound.code
+        self.driver.csr.status = httplib.NOT_FOUND
         self.assertRaises(ipsec_driver.CsrResourceCreateFailure,
                           self.driver._check_create, 'name', 'id')
 

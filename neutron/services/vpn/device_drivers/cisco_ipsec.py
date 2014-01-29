@@ -21,10 +21,10 @@ import os
 import re
 import shutil
 
+import httplib
 import jinja2
 import netaddr
 from oslo.config import cfg
-from webob import exc as wexc
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -732,7 +732,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         return routes_info
 
     def _check_create(self, resource, which):
-        if self.csr.status == wexc.HTTPCreated.code:
+        if self.csr.status == httplib.CREATED:
             LOG.debug("PCM: %(resource)s %(which)s is configured",
                       {'resource': resource, 'which': which})
             return
@@ -756,7 +756,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.steps.append(RollbackStep(action_suffix, resource_id, title))
 
     def _verify_deleted(self, status, resource, which):
-        if status in (wexc.HTTPNoContent.code, wexc.HTTPNotFound.code):
+        if status in (httplib.NO_CONTENT, httplib.NOT_FOUND):
             LOG.debug("PCM: %(resource)s configuration %(which)s is removed",
                       {'resource': resource, 'which': which})
         else:
