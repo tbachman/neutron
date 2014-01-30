@@ -201,7 +201,7 @@ class UnixDomainWSGIServer(wsgi.Server):
         self._server = None
         super(UnixDomainWSGIServer, self).__init__(name)
 
-    def start(self, application, file_socket, workers, backlog=128):
+    def start(self, application, file_socket, workers, backlog):
         self._socket = eventlet.listen(file_socket,
                                        family=socket.AF_UNIX,
                                        backlog=backlog)
