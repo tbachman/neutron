@@ -97,14 +97,14 @@ class CsrResourceCreateFailure(exceptions.NeutronException):
     message = _("Cisco CSR failed to create %(resource)s (%(which)s)")
 
 
-class CsrValidationFailure(exceptions.NeutronException):
-    message = _("Cisco CSR does not support %(resource)s attribute %(key)s "
-                "with value '%(value)s'")
+class CsrDriverMismatchError(exceptions.NeutronException):
+    message = _("Required %(resource)s attribute %(attr)s mapping for Cisco "
+                "CSR is missing in device driver")
 
 
-class CsrDriverImplementationError(exceptions.NeutronException):
-    message = _("Required %(resource)s attribute %(attr)s for Cisco CSR "
-                "is missing")
+class CsrUnknownMappingError(exceptions.NeutronException):
+    message = _("Device driver does not have a mapping of '%(value)s for "
+                "attribute %(attr)s of %(resource)s")
 
 
 class BaseSwanProcess():
@@ -562,7 +562,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     top=True)
         self.agent.iptables_apply(router_id)
 
-    # Mapping...
+    # Bew stuff starts here...
     DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
                                   'v1': u'v1',
                                   # auth_algorithm
@@ -593,42 +593,16 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                     'group5': u'group5',
                                     'group14': u'group14'}}
 
-    LIFETIME_MAP = {'ike_policy': {'min': 60, 'max': 86400},
-                    'ipsec_policy': {'min': 120, 'max': 2592000}}
-    MIN_MTU = 1500
-    MAX_MTU = 9192
-
     def translate_dialect(self, resource, attribute, info):
         """Map VPNaaS attributes values to CSR values for a resource."""
         name = self.DIALECT_MAP[resource]['name']
         if attribute not in info:
-            raise CsrDriverImplementationError(resource=name, attr=attribute)
+            raise CsrDriverMismatchError(resource=name, attr=attribute)
         value = info[attribute].lower()
         if value in self.DIALECT_MAP[resource]:
             return self.DIALECT_MAP[resource][value]
-        raise CsrValidationFailure(resource=name, key=attribute, value=value)
-
-    def validate_lifetime(self, resource, policy_info):
-        """Verify the lifetime is within supported range, based on policy."""
-        name = self.DIALECT_MAP[resource]['name']
-        if 'lifetime' not in policy_info:
-            raise CsrDriverImplementationError(resource=name, attr='lifetime')
-        lifetime_info = policy_info['lifetime']
-        if 'units' not in lifetime_info:
-            raise CsrDriverImplementationError(resource=name,
-                                               attr='lifetime:units')
-        if lifetime_info['units'] != 'seconds':
-            raise CsrValidationFailure(resource=name, key='lifetime:units',
-                                       value=lifetime_info['units'])
-        if 'value' not in lifetime_info:
-            raise CsrDriverImplementationError(resource=name,
-                                               attr='lifetime:value')
-        lifetime = lifetime_info['value']
-        if (self.LIFETIME_MAP[resource]['min'] <= lifetime <=
-            self.LIFETIME_MAP[resource]['max']):
-            return lifetime
-        raise CsrValidationFailure(resource=name, key='lifetime:value',
-                                   value=lifetime)
+        raise CsrUnknownMappingError(resource=name, attr=attribute,
+                                     value=value)
 
     def create_psk_info(self, psk_id, info):
         """Collect/create attributes needed for pre-shared key."""
@@ -655,7 +629,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         group = self.translate_dialect(for_ike,
                                        'pfs',
                                        policy_info)
-        lifetime = self.validate_lifetime(for_ike, policy_info)
+        lifetime = policy_info['lifetime']['value']
         return {u'version': version,
                 u'priority-id': ike_policy_id,
                 u'encryption': encrypt_algorithm,
@@ -686,7 +660,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                                    'encryption_algorithm',
                                                    policy_info)
         group = self.translate_dialect(for_ipsec, 'pfs', policy_info)
-        lifetime = self.validate_lifetime(for_ipsec, policy_info)
+        lifetime = policy_info['lifetime']['value']
         return {u'policy-id': ipsec_policy_id,
                 u'protection-suite': {
                     u'esp-encryption': encrypt_algorithm,
@@ -698,14 +672,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 u'anti-replay-window-size': u'128'}
 
     def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
-        if not info['cisco']['router_public_ip']:
-            raise CsrValidationFailure(resource='Router', key='router-gateway',
-                                       value='undefined')
+        # gw_ip = info['cisco']['router_public_ip']:
         conn_info = info['site_conn']
         mtu = conn_info['mtu']
-        if mtu > self.MAX_MTU or mtu < self.MIN_MTU:
-            raise CsrValidationFailure(resource='IPSec Site Connection',
-                                       key='mtu', value=mtu)
         return {
             u'vpn-interface-name': site_conn_id,
             u'ipsec-policy-id': ipsec_policy_id,
@@ -715,8 +684,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 # TODO(pcm): Get IP address of router's public I/F, once CSR is
                 # used as embedded router.
                 u'tunnel-ip-address': u'172.24.4.23'
-                # u'tunnel-ip-address': u'%s' %
-                #    info['cisco']['router_public_ip']
+                # u'tunnel-ip-address': u'%s' % gw_ip
             },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
@@ -725,13 +693,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         }
 
     def create_routes_info(self, site_conn_id, info):
-        peer_cidrs = info['site_conn'].get('peer_cidrs', [])
-        if not peer_cidrs:
-            raise CsrValidationFailure(resource='IPSec Site Connection',
-                                       key='peer-cidrs',
-                                       value='undefined')
         routes_info = []
-        for peer_cidr in peer_cidrs:
+        for peer_cidr in info['site_conn'].get('peer_cidrs', []):
             route = {u'destination-network': peer_cidr,
                      u'outgoing-interface': site_conn_id}
             route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
@@ -819,11 +782,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                                                ipsec_policy_id,
                                                                conn_info)
             routes_info = self.create_routes_info(site_conn_id, conn_info)
-        except CsrDriverImplementationError as e:
+        except (CsrUnknownMappingError, CsrDriverMismatchError) as e:
             LOG.exception(e)
-            return
-        except CsrValidationFailure as vf:
-            LOG.error(vf)
             return
 
         try:

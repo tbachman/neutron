@@ -232,83 +232,16 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
 
     def test_invalid_attribute(self):
         """Negative test of unknown attribute - programming error."""
-        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
+        self.assertRaises(ipsec_driver.CsrDriverMismatchError,
                           self.driver.translate_dialect,
-                          'ike_policy', 'bogus', self.conn_info)
+                          'ike_policy', 'unknown_attr', self.conn_info)
 
-    def test_policy_missing_lifetime(self):
-        """Negative test of missing lifetime attribute.
-
-        Applies to IKE and IPSec policies.
-        """
-        del self.conn_info['ike_policy']['lifetime']
-        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-
-    def test_policy_missing_lifetime_units(self):
-        """Negative test of missing lifetime attribute.
-
-        Applies to IKE and IPSec policies.
-        """
-        del self.conn_info['ike_policy']['lifetime']['units']
-        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-
-    def test_policy_missing_lifetime_value(self):
-        """Negative test of missing lifetime attribute.
-
-        Applies to IKE and IPSec policies.
-        """
-        del self.conn_info['ike_policy']['lifetime']['value']
-        self.assertRaises(ipsec_driver.CsrDriverImplementationError,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-
-    def test_unsupported_lifetime_units(self):
-        """negative test of non-seconds units for lifetime.
-
-        Applies to IKE and IPSec policies.
-        """
-        self.conn_info['ike_policy']['lifetime']['units'] = 'kilobytes'
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-
-    def test_valid_lifetime_seconds_values(self):
-        """Negative test of unsupported lifetime values for IKE/IPSec."""
-        policy_info = {'lifetime': {'units': 'seconds', 'value': 60}}
-        actual = self.driver.validate_lifetime('ike_policy', policy_info)
-        self.assertEqual(60, actual)
-        policy_info = {'lifetime': {'units': 'seconds', 'value': 86400}}
-        actual = self.driver.validate_lifetime('ike_policy', policy_info)
-        self.assertEqual(86400, actual)
-        policy_info = {'lifetime': {'units': 'seconds', 'value': 120}}
-        actual = self.driver.validate_lifetime('ipsec_policy', policy_info)
-        self.assertEqual(120, actual)
-        policy_info = {'lifetime': {'units': 'seconds', 'value': 2592000}}
-        actual = self.driver.validate_lifetime('ipsec_policy', policy_info)
-        self.assertEqual(2592000, actual)
-
-    def test_unsuported_lifetime_seconds_values(self):
-        """Negative test of unsupported lifetime values for IKE/IPSec."""
-        self.conn_info['ike_policy']['lifetime']['value'] = 59
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-        self.conn_info['ike_policy']['lifetime']['value'] = 86401
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.validate_lifetime,
-                          'ike_policy', self.conn_info['ike_policy'])
-        self.conn_info['ipsec_policy']['lifetime']['value'] = 119
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.validate_lifetime,
-                          'ipsec_policy', self.conn_info['ipsec_policy'])
-        self.conn_info['ipsec_policy']['lifetime']['value'] = 2592001
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.validate_lifetime,
-                          'ipsec_policy', self.conn_info['ipsec_policy'])
+    def test_driver_unknown_mapping(self):
+        """Negative test of service driver providing unknown value to map."""
+        self.conn_info['ike_policy']['pfs'] = "unknown_value"
+        self.assertRaises(ipsec_driver.CsrUnknownMappingError,
+                          self.driver.translate_dialect,
+                          'ike_policy', 'pfs', self.conn_info['ike_policy'])
 
     def test_psk_create_info(self):
         """Ensure that pre-shared key info is created correctly."""
@@ -354,14 +287,6 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         policy_info = self.driver.create_ike_policy_info(policy_id,
                                                          self.conn_info)
         self.assertEqual(expected, policy_info)
-
-    def test_failed_create_ike_policy_info_unsupported_version(self):
-        """Negative test of unsupported version for IKE policy."""
-        self.conn_info['ike_policy']['ike_version'] = 'v2'
-        policy_id = self.conn_info['cisco']['ike_policy_id']
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_ike_policy_info,
-                          policy_id, self.conn_info)
 
     def test_ipsec_policy_info(self):
         """Ensure that IPSec policy info is mapped/created correctly."""
@@ -420,54 +345,6 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                             self.conn_info)
         self.assertEqual(expected, conn_info)
 
-    def test_site_connection_info_with_max_mtu(self):
-        """Create site-to-site conn info with maximum MTU for CSR."""
-        self.conn_info['site_conn']['mtu'] = 9192
-        expected = {u'vpn-interface-name': 'Tunnel0',
-                    u'ipsec-policy-id': 333,
-                    u'local-device': {
-                        u'ip-address': u'GigabitEthernet3',
-                        u'tunnel-ip-address': u'172.24.4.23'
-                    },
-                    u'remote-device': {
-                        u'tunnel-ip-address': '192.168.1.2'
-                    },
-                    u'mtu': 9192}
-        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
-        site_conn_id = self.conn_info['cisco']['site_conn_id']
-        conn_info = self.driver.create_site_connection_info(site_conn_id,
-                                                            ipsec_policy_id,
-                                                            self.conn_info)
-        self.assertEqual(expected, conn_info)
-
-    def test_site_connection_info_with_invalid_mtu(self):
-        """Negative test of site-to-site connection info with invalid MTUs."""
-        self.conn_info['site_conn']['mtu'] = 9193
-        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
-        site_conn_id = self.conn_info['cisco']['site_conn_id']
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_site_connection_info,
-                          site_conn_id, ipsec_policy_id, self.conn_info)
-
-        self.conn_info['site_conn']['mtu'] = 1499
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_site_connection_info,
-                          site_conn_id, ipsec_policy_id, self.conn_info)
-
-    def test_site_connection_info_with_missing_gw_ip(self):
-        """Negative test of site-to-site conn info with missing gateway IP.
-
-        This simulates the user creating an IPSec site-to-site connection
-        using a router, which does not have a gateway IP address (no public
-        interface).
-        """
-        self.conn_info['cisco']['router_public_ip'] = None
-        ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
-        site_conn_id = self.conn_info['cisco']['site_conn_id']
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_site_connection_info,
-                          site_conn_id, ipsec_policy_id, self.conn_info)
-
     def test_static_route_info(self):
         """Create static route info for peer CIDRs."""
         expected = [('10.1.0.0_24_Tunnel0',
@@ -483,16 +360,6 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                                      self.conn_info)
         self.assertEquals(2, len(routes_info))
         self.assertEqual(expected, routes_info)
-
-    def test_no_peer_cidrs_for_static_routes(self):
-        """Failure test of missing peer CIDRs prohibiting route creation."""
-        # Note: The VPN plugin would require that peer CIDRs are specified
-        # so this should not occur
-        del self.conn_info['site_conn']['peer_cidrs']
-        site_conn_id = self.conn_info['cisco']['site_conn_id']
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.create_routes_info,
-                          site_conn_id, self.conn_info)
 
 
 #     def test_vpnservice_updated(self):

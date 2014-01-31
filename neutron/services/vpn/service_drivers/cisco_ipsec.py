@@ -16,6 +16,7 @@
 #    under the License.
 import netaddr
 
+from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
 from neutron import manager
 from neutron.openstack.common import log as logging
@@ -30,6 +31,15 @@ LOG = logging.getLogger(__name__)
 
 IPSEC = 'ipsec'
 BASE_IPSEC_VERSION = '1.0'
+LIFETIME_LIMITS = {'IKE Policy': {'min': 60, 'max': 86400},
+                   'IPSec Policy': {'min': 120, 'max': 2592000}}
+MIN_MTU = 1500
+MAX_MTU = 9192
+
+
+class CsrValidationFailure(exceptions.NeutronException):
+    message = _("Cisco CSR does not support %(resource)s attribute %(key)s "
+                "with value '%(value)s'")
 
 
 class CiscoCsrIPsecVpnDriverCallBack(object):
@@ -102,14 +112,14 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
     # TODO(pcm): Refactor these methods into one with an action and resource?
     def create_ipsec_site_connection(self, context, router_id, conn_info):
         """Send device driver create IPSec site-to-site connection request."""
-        LOG.debug("PCM: IPSec connection create with %(router)s %(conn)s",
+        LOG.debug('PCM: IPSec connection create with %(router)s %(conn)s',
                   {'router': router_id, 'conn': conn_info})
         self._agent_notification(context, 'create_ipsec_site_connection',
                                  router_id, conn_info=conn_info)
 
     def delete_ipsec_site_connection(self, context, router_id, conn_info):
         """Send device driver delete IPSec site-to-site connection request."""
-        LOG.debug("PCM: IPSec connection delete with %(router)s %(conn)s",
+        LOG.debug('PCM: IPSec connection delete with %(router)s %(conn)s',
                   {'router': router_id, 'conn': conn_info})
         self._agent_notification(context, 'delete_ipsec_site_connection',
                                  router_id, conn_info=conn_info)
@@ -134,14 +144,48 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def service_type(self):
         return IPSEC
 
-    def get_cisco_connection_info(self, vpn_service):
-        # TODO(pcm): Do database lookup for mappings using the connection ID
-        # TODO(pcm): Do we generate/persist here or in device driver?
+    def get_lifetime(self, for_policy, policy_info):
+        units = policy_info['lifetime']['units']
+        if units != 'seconds':
+            raise CsrValidationFailure(resource=for_policy,
+                                       key='lifetime:units',
+                                       value=units)
+        value = policy_info['lifetime']['value']
+        if (value < LIFETIME_LIMITS[for_policy]['min'] or
+            value > LIFETIME_LIMITS[for_policy]['max']):
+            raise CsrValidationFailure(resource=for_policy,
+                                       key='lifetime:value',
+                                       value=value)
+        return value
+
+    def get_ike_version(self, policy_info):
+        version = policy_info['ike_version']
+        if version != 'v1':
+            raise CsrValidationFailure(resource='IKE Policy',
+                                       key='ike_version',
+                                       value=version)
+        return version
+
+    def get_mtu(self, conn_info):
+        mtu = conn_info['mtu']
+        if mtu < MIN_MTU or mtu > MAX_MTU:
+            raise CsrValidationFailure(resource='IPSec Connection',
+                                       key='mtu',
+                                       value=mtu)
+        return mtu
+
+    def get_router_public_ip(self, vpn_service):
         gw_port = vpn_service.router.gw_port
         if gw_port and len(gw_port.fixed_ips) == 1:
-            public_ip = gw_port.fixed_ips[0].ip_address
+            return gw_port.fixed_ips[0].ip_address
         else:
-            public_ip = None
+            raise CsrValidationFailure(resource='IPSec Connection',
+                                       key='router:gw_port:ip_address',
+                                       value='missing')
+
+    def get_cisco_connection_info(self, vpn_service):
+        # TODO(pcm): Do database lookup for mappings using the connection ID
+        public_ip = self.get_router_public_ip(vpn_service)
         return {'site_conn_id': u'Tunnel0',
                 'ike_policy_id': u'2',
                 'ipsec_policy_id': u'8',

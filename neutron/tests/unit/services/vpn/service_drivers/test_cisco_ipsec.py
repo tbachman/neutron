@@ -39,6 +39,119 @@ FAKE_VPN_SERVICE = {
 FAKE_HOST = 'fake_host'
 
 
+class TestCiscoIPsecDriverValidation(base.BaseTestCase):
+
+    def setUp(self):
+        super(TestCiscoIPsecDriverValidation, self).setUp()
+        self.addCleanup(mock.patch.stopall)
+        mock.patch('neutron.openstack.common.rpc.create_connection').start()
+        self.service_plugin = mock.Mock()
+        self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
+
+    def test_ike_version_unsupported(self):
+        """Failure test that Cisco CSR REST API does not support IKE v2."""
+        policy_info = {'ike_version': 'v2',
+                       'lifetime': {'units': 'seconds', 'value': 60}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_ike_version, policy_info)
+
+    def test_ike_lifetime_not_in_seconds(self):
+        """Failure test of unsupported lifetime units for IKE policy."""
+        policy_info = {'lifetime': {'units': 'kilobytes', 'value': 1000}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          "IKE Policy", policy_info)
+
+    def test_ipsec_lifetime_not_in_seconds(self):
+        """Failure test of unsupported lifetime units for IPSec policy."""
+        policy_info = {'lifetime': {'units': 'kilobytes', 'value': 1000}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          "IPSec Policy", policy_info)
+
+    def test_ike_lifetime_seconds_values_at_limits(self):
+        """Test valid lifetime values for IKE policy."""
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 60}}
+        self.assertEqual(60, self.driver.get_lifetime('IKE Policy',
+                                                      policy_info))
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 86400}}
+        self.assertEqual(86400, self.driver.get_lifetime('IKE Policy',
+                                                         policy_info))
+
+    def test_ipsec_lifetime_seconds_values_at_limits(self):
+        """Test valid lifetime values for IPSec policy."""
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 120}}
+        self.assertEqual(120, self.driver.get_lifetime('IPSec Policy',
+                                                       policy_info))
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 2592000}}
+        self.assertEqual(2592000, self.driver.get_lifetime('IPSec Policy',
+                                                           policy_info))
+
+    def test_ike_lifetime_values_invalid(self):
+        """Failure test of unsupported lifetime values for IKE policy."""
+        which = "IKE Policy"
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 59}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          which, policy_info)
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 86401}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          which, policy_info)
+
+    def test_ipsec_lifetime_values_invalid(self):
+        """Failure test of unsupported lifetime values for IPSec policy."""
+        which = "IPSec Policy"
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 119}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          which, policy_info)
+        policy_info = {'lifetime': {'units': 'seconds', 'value': 2592001}}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_lifetime,
+                          which, policy_info)
+
+    def test_ipsec_connection_with_mtu_at_limits(self):
+        """Test IPSec site-to-site connection with MTU at limits."""
+        conn_info = {'mtu': 1500}
+        self.assertEqual(1500, self.driver.get_mtu(conn_info))
+        conn_info = {'mtu': 9192}
+        self.assertEqual(9192, self.driver.get_mtu(conn_info))
+
+    def test_ipsec_connection_with_invalid_mtu(self):
+        """Failure test of IPSec site connection with unsupported MTUs."""
+        conn_info = {'mtu': 1499}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_mtu, conn_info)
+        conn_info = {'mtu': 9193}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_mtu, conn_info)
+
+    def test_ipsec_connection_with_gateway_ip(self):
+        """Test of IPSec connection with gateway IP."""
+        # self.service_plugin.router.gw_port.
+        def have_one(self):
+            return 1
+        self.service_plugin.router.gw_port.fixed_ips.__len__ = have_one
+        ip_addr_mock = mock.Mock()
+        ip_addr_mock.ip_address = "192.168.200.1"
+        self.service_plugin.router.gw_port.fixed_ips = [ip_addr_mock]
+        expected = {'site_conn_id': u'Tunnel0',
+                    'ike_policy_id': u'2',
+                    'ipsec_policy_id': u'8',
+                    'router_public_ip': '192.168.200.1'}
+        self.assertEqual(
+            expected,
+            self.driver.get_cisco_connection_info(self.service_plugin))
+
+    def test_ipsec_connection_with_missing_gateway_ip(self):
+        """Failure test of IPSec connection with missing gateway IP."""
+        self.service_plugin.router.gw_port = None
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.get_cisco_connection_info,
+                          self.service_plugin)
+
+
 class TestCiscoIPsecDriver(base.BaseTestCase):
     def setUp(self):
         super(TestCiscoIPsecDriver, self).setUp()
