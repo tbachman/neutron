@@ -127,29 +127,54 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_mtu, conn_info)
 
-    def test_ipsec_connection_with_gateway_ip(self):
-        """Test of IPSec connection with gateway IP."""
-        # self.service_plugin.router.gw_port.
+    def simulate_gw_ip_available(self):
+        """Helper function indicating that tunnel has a gateway IP."""
         def have_one(self):
             return 1
         self.service_plugin.router.gw_port.fixed_ips.__len__ = have_one
         ip_addr_mock = mock.Mock()
         ip_addr_mock.ip_address = "192.168.200.1"
         self.service_plugin.router.gw_port.fixed_ips = [ip_addr_mock]
+
+    def test_ipsec_connection_with_gateway_ip(self):
+        """Test of IPSec connection with gateway IP."""
+        self.simulate_gw_ip_available()
+        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'}
         expected = {'site_conn_id': u'Tunnel0',
                     'ike_policy_id': u'2',
-                    'ipsec_policy_id': u'8',
+                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
                     'router_public_ip': '192.168.200.1'}
         self.assertEqual(
             expected,
-            self.driver.get_cisco_connection_info(self.service_plugin))
+            self.driver.get_cisco_connection_info(self.service_plugin,
+                                                  conn_info))
+
+    def test_tunnel_id_for_multiple_ipsec_connections(self):
+        """Create several IPSec connections to verify tunnel ID is correct.
+
+        On a fresh startup, tunnel ID reservations start at zero.
+        """
+        self.simulate_gw_ip_available()
+        for i in xrange(5):
+            conn_info = {
+                'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'
+            }
+            expected = {'site_conn_id': u'Tunnel%d' % i,
+                        'ike_policy_id': u'2',
+                        'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
+                        'router_public_ip': '192.168.200.1'}
+            self.assertEqual(
+                expected,
+                self.driver.get_cisco_connection_info(self.service_plugin,
+                                                      conn_info))
 
     def test_ipsec_connection_with_missing_gateway_ip(self):
         """Failure test of IPSec connection with missing gateway IP."""
         self.service_plugin.router.gw_port = None
+        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_cisco_connection_info,
-                          self.service_plugin)
+                          self.service_plugin, conn_info)
 
 
 class TestCiscoIPsecDriver(base.BaseTestCase):

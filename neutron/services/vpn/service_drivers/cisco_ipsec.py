@@ -25,6 +25,7 @@ from neutron.openstack.common.rpc import proxy
 from neutron.plugins.common import constants
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import service_drivers
+from neutron.services.vpn.service_drivers import bit_array
 
 
 LOG = logging.getLogger(__name__)
@@ -33,8 +34,12 @@ IPSEC = 'ipsec'
 BASE_IPSEC_VERSION = '1.0'
 LIFETIME_LIMITS = {'IKE Policy': {'min': 60, 'max': 86400},
                    'IPSec Policy': {'min': 120, 'max': 2592000}}
-MIN_MTU = 1500
-MAX_MTU = 9192
+MIN_CSR_MTU = 1500
+MAX_CSR_MTU = 9192
+# Note: Artifically limit these to reduce mapping table size and performance
+# Tunnel can be 0..7FFFFFFF, IKE policy can be 1..10000
+MAX_CSR_TUNNELS = 2048
+MAX_CSR_IKE_POLICIES = 256
 
 
 class CsrValidationFailure(exceptions.NeutronException):
@@ -43,6 +48,7 @@ class CsrValidationFailure(exceptions.NeutronException):
 
 
 class CiscoCsrIPsecVpnDriverCallBack(object):
+
     """Handler for agent to plugin RPC messaging."""
 
     # history
@@ -71,6 +77,7 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
 
 
 class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
+
     """API and handler for plugin to agent RPC messaging."""
 
     RPC_API_VERSION = BASE_IPSEC_VERSION
@@ -125,10 +132,44 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
                                  router_id, conn_info=conn_info)
 
 
+class CsrIdentityManager(bit_array.BitArray):
+
+    """Management of identifiers for resources used by the Cisco CSR.
+
+    Since the range and type of identifiers allowed for some resources
+    is restricted on the Cisco CSR, the identifiers used by VPN must be
+    mapped to a compatible (integer) set. This class will handle the
+    tracking of identifiers used, by reserving an identifier from a pool
+    when needed, and releasing it, when done.
+    """
+
+    def __init__(self, size):
+        """Defines a range of integer identifiers that can be reserved."""
+        super(CsrIdentityManager, self).__init__(size)
+
+    def reserve(self):
+        """Find the next available slot, mark it as used, and return it."""
+        for i in xrange(self.size):
+            if not self.__getitem__(i):
+                self.__setitem__(i, 1)
+                return i
+        else:
+            raise IndexError("No available slots from 0..%d" % (self.size - 1))
+
+    def release(self, index):
+        """Mark the slot as available."""
+        self.__setitem__(index, 0)
+
+
 class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
+
     """Cisco CSR VPN Service Driver class for IPsec."""
 
     def __init__(self, service_plugin):
+        self.ike_policy_ids = CsrIdentityManager(MAX_CSR_IKE_POLICIES)
+        self.ike_policy_ids[0] = 1
+        self.tunnel_ids = CsrIdentityManager(MAX_CSR_TUNNELS)
+        # TODO(pcm) Check database and load up existing reservations
         self.callbacks = CiscoCsrIPsecVpnDriverCallBack(self)
         self.service_plugin = service_plugin
         self.conn = rpc.create_connection(new=True)
@@ -168,7 +209,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def get_mtu(self, conn_info):
         mtu = conn_info['mtu']
-        if mtu < MIN_MTU or mtu > MAX_MTU:
+        if mtu < MIN_CSR_MTU or mtu > MAX_CSR_MTU:
             raise CsrValidationFailure(resource='IPSec Connection',
                                        key='mtu',
                                        value=mtu)
@@ -183,12 +224,22 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                        key='router:gw_port:ip_address',
                                        value='missing')
 
-    def get_cisco_connection_info(self, vpn_service):
-        # TODO(pcm): Do database lookup for mappings using the connection ID
+    def get_cisco_connection_info(self, vpn_service, site_conn):
+        # TODO(pcm): Persist the IDs
         public_ip = self.get_router_public_ip(vpn_service)
-        return {'site_conn_id': u'Tunnel0',
-                'ike_policy_id': u'2',
-                'ipsec_policy_id': u'8',
+        real_ipsec_policy_id = site_conn['ikepolicy_id']
+        ipsec_policy_id = real_ipsec_policy_id.replace('-', '')[:31]
+        try:
+            tunnel_id = self.tunnel_ids.reserve()
+        except IndexError:
+            # TODO(pcm): Mark connection state as ERROR
+            LOG.error(_("Unable to create IPSec connection for Cisco CSR - "
+                        "exhausted available IDs %d"), MAX_CSR_TUNNELS)
+        ike_policy_id = 2  # self.ike_policy_ids.reserve()
+        # TODO(pcm) persist the mapping of tunnel and IKE policy
+        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
+                'ike_policy_id': u'%d' % ike_policy_id,
+                'ipsec_policy_id': u'%s' % ipsec_policy_id,
                 'router_public_ip': public_ip}
 
     def _build_ipsec_site_conn_create_info(self, context, site_conn,
@@ -197,14 +248,14 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                                      site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(
             context, site_conn['ipsecpolicy_id'])
-        cisco_info = self.get_cisco_connection_info(vpn_service)
+        cisco_info = self.get_cisco_connection_info(vpn_service, site_conn)
         return {'site_conn': site_conn,
                 'ike_policy': ike_info,
                 'ipsec_policy': ipsec_info,
                 'cisco': cisco_info}
 
     def _build_ipsec_site_conn_delete_info(self, site_conn, vpn_service):
-        cisco_info = self.get_cisco_connection_info(vpn_service)
+        cisco_info = self.get_cisco_connection_info(vpn_service, site_conn)
         return {'site_conn': site_conn,
                 'cisco': cisco_info}
 
