@@ -483,6 +483,15 @@ def post_bad_mtu(url, request):
     return {'status_code': httplib.BAD_REQUEST}
 
 
+@filter(['post'], 'vpn-svc/ipsec/policies')
+@urlmatch(netloc=r'localhost')
+def post_bad_lifetime(url, request):
+    LOG.debug("DEBUG: POST bad lifetime mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': httplib.BAD_REQUEST}
+
+
 @urlmatch(netloc=r'localhost')
 def put(url, request):
     if request.method != 'PUT':

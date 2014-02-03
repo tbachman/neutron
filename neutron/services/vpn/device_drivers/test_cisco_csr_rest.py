@@ -647,6 +647,23 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 
+    def test_invalid_ipsec_policy_lifetime(self):
+        """Failure test of IPSec policy with unsupported lifetime."""
+        with HTTMock(csr_request.token, csr_request.post_bad_lifetime):
+            policy_id = '123'
+            policy_info = {
+                u'policy-id': u'%s' % policy_id,
+                u'protection-suite': {
+                    u'esp-encryption': u'esp-aes',
+                    u'esp-authentication': u'esp-sha-hmac',
+                    u'ah': u'ah-sha-hmac',
+                },
+                u'lifetime-sec': 119,
+                u'pfs': u'group5',
+                u'anti-replay-window-size': u'128'
+            }
+            location = self.csr.create_ipsec_policy(policy_info)
+            self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
 
 class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
 
