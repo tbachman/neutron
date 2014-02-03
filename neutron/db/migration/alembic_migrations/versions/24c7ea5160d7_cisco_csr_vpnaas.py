@@ -36,7 +36,6 @@ migration_for_plugins = [
 from alembic import op
 import sqlalchemy as sa
 
-
 from neutron.db import migration
 
 
@@ -44,7 +43,7 @@ def upgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
-    op.create.table(
+    op.create_table(
         'csr_identifier_map',
         sa.Column('ipsec_site_conn_id', sa.String(length=64), primary_key=True),
         sa.Column('ipsec_tunnel_id', sa.Integer(), nullable=False),
@@ -54,4 +53,4 @@ def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
-    os.drop_table('csr_identifier_map')
+    op.drop_table('csr_identifier_map')
