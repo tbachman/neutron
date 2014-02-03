@@ -19,6 +19,7 @@ import mock
 
 
 # from neutron import context
+from neutron import context
 from neutron.openstack.common import uuidutils
 from neutron.services.vpn.service_drivers import cisco_ipsec as ipsec_driver
 from neutron.tests import base
@@ -47,6 +48,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
         self.service_plugin = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
+        self.admin_context = context.get_admin_context()
 
     def test_ike_version_unsupported(self):
         """Failure test that Cisco CSR REST API does not support IKE v2."""
@@ -146,7 +148,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                     'router_public_ip': '192.168.200.1'}
         self.assertEqual(
             expected,
-            self.driver.get_cisco_connection_info(self.service_plugin,
+            self.driver.get_cisco_connection_info(self.admin_context,
+                                                  self.service_plugin,
                                                   conn_info))
 
     def test_tunnel_id_for_multiple_ipsec_connections(self):
@@ -165,7 +168,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                         'router_public_ip': '192.168.200.1'}
             self.assertEqual(
                 expected,
-                self.driver.get_cisco_connection_info(self.service_plugin,
+                self.driver.get_cisco_connection_info(self.admin_context,
+                                                      self.service_plugin,
                                                       conn_info))
 
     def test_ipsec_connection_with_missing_gateway_ip(self):
@@ -174,7 +178,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_cisco_connection_info,
-                          self.service_plugin, conn_info)
+                          self.admin_context, self.service_plugin, conn_info)
 
 
 class TestCiscoIPsecDriver(base.BaseTestCase):
