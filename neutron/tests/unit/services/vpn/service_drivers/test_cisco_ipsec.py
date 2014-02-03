@@ -48,7 +48,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
         self.service_plugin = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
-        self.admin_context = context.get_admin_context()
+        self.admin_context = context.get_admin_context()   # mock.Mock()
 
     def test_ike_version_unsupported(self):
         """Failure test that Cisco CSR REST API does not support IKE v2."""
@@ -140,8 +140,10 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
     def test_ipsec_connection_with_gateway_ip(self):
         """Test of IPSec connection with gateway IP."""
+        # self.admin_context.session.query.side_effect = []
         self.simulate_gw_ip_available()
-        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'}
+        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'}
         expected = {'site_conn_id': u'Tunnel0',
                     'ike_policy_id': u'2',
                     'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
@@ -160,7 +162,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.simulate_gw_ip_available()
         for i in xrange(5):
             conn_info = {
-                'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'
+                'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'
             }
             expected = {'site_conn_id': u'Tunnel%d' % i,
                         'ike_policy_id': u'2',
@@ -175,7 +178,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
     def test_ipsec_connection_with_missing_gateway_ip(self):
         """Failure test of IPSec connection with missing gateway IP."""
         self.service_plugin.router.gw_port = None
-        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963'}
+        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_cisco_connection_info,
                           self.admin_context, self.service_plugin, conn_info)
