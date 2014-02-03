@@ -45,9 +45,11 @@ def upgrade(active_plugins=None, options=None):
 
     op.create_table(
         'csr_identifier_map',
-        sa.Column('ipsec_site_conn_id', sa.String(length=64), primary_key=True),
+        sa.Column('ipsec_site_conn_id', sa.String(length=64),
+                  primary_key=True),
         sa.Column('ipsec_tunnel_id', sa.Integer(), nullable=False),
         sa.Column('ike_policy_id', sa.Integer(), nullable=False))
+
 
 def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):

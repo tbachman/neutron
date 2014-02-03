@@ -662,8 +662,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                 u'pfs': u'group5',
                 u'anti-replay-window-size': u'128'
             }
-            location = self.csr.create_ipsec_policy(policy_info)
+            self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
+
 
 class TestCsrRestPreSharedKeyCreate(unittest.TestCase):
 

@@ -52,15 +52,17 @@ def get_next_available_tunnel_id(context):
         raise IndexError(msg)
     return available_ids.pop()
 
+
 def get_or_create_csr_ike_policy_id(context):
     """Find ID used by other tunnels or create next avail one from 0..10K."""
     return 2
+
 
 def create_tunnel_mapping(context, conn_info):
     """Create Cisco CSR IDs, using mapping table and OpenStack UUIDs."""
     conn_id = conn_info['id']
     with context.session.begin(subtransactions=True):
-        conns = context.session.query(vpn.IPsecSiteConnection).all()
+        # conns = context.session.query(vpn.IPsecSiteConnection).all()
         tunnel_id = get_next_available_tunnel_id(context)
         ike_policy_id = get_or_create_csr_ike_policy_id(context)
         map_entry = IdentifierMap(ipsec_site_conn_id=conn_id,
@@ -72,6 +74,7 @@ def create_tunnel_mapping(context, conn_info):
                                               'tunnel_id': tunnel_id,
                                               'ike_id': ike_policy_id})
     return tunnel_id, ike_policy_id
+
 
 def delete_tunnel_mapping(context, conn_info):
     with context.session.begin(subtransactions=True):
