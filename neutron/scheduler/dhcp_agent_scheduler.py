@@ -34,6 +34,38 @@ class ChanceScheduler(object):
     can be introduced later.
     """
 
+    def __init__(self):
+        self.agents = []
+
+    def _choose_agent(self, plugin, context, active_agents):
+        """Choose agent using a round-robin scheme."""
+        rebuild_agt_list = False
+        # Check if the list of active agents has changed
+        if len(self.agents) == len(active_agents):
+            for agt in active_agents:
+                if agt['id'] not in self.agents:
+                    rebuild_agt_list = True
+                    break;
+        else:
+            rebuild_agt_list = True
+        # Rebuild the agent list if needed
+        if rebuild_agt_list:
+            self.agents = []
+            for agt in active_agents:
+                self.agents.append(agt['id'])
+            LOG.debug(_('Agent list %s'), self.agents)
+        # Choose the first agent id and
+        # move it to the end of the list
+        chosen_agt_id = self.agents[0]
+        new_list = self.agents[1:]
+        new_list.append(chosen_agt_id)
+        self.agents = new_list
+        # Return the agent instance corr to the chosen id
+        chosen_agent = [agt for agt in active_agents
+                        if agt['id'] == chosen_agt_id][0]
+        LOG.debug(_('Chose agt on node %s'), chosen_agent['host'])
+        return chosen_agent
+
     def _schedule_bind_network(self, context, agent, network_id):
         binding = agentschedulers_db.NetworkDhcpAgentBinding()
         binding.dhcp_agent = agent
@@ -78,7 +110,11 @@ class ChanceScheduler(object):
                 LOG.warn(_('No more DHCP agents'))
                 return
             n_agents = min(len(active_dhcp_agents), n_agents)
-            chosen_agents = random.sample(active_dhcp_agents, n_agents)
+            chosen_agents = []
+            for count in range(n_agents):
+                agent = self._choose_agent(plugin, context, active_dhcp_agents)
+                chosen_agents.append(agent)
+            LOG.debug(_('Selected agents: %s'), chosen_agents)
             for agent in chosen_agents:
                 self._schedule_bind_network(context, agent, network['id'])
         return chosen_agents
