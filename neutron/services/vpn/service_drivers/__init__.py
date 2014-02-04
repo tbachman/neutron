@@ -16,8 +16,47 @@
 #    under the License.
 
 import abc
-
 import six
+
+from neutron.common import rpc as n_rpc
+from neutron.extensions import vpnaas
+from neutron.openstack.common import log as logging
+from neutron.openstack.common import rpc
+from neutron.openstack.common.rpc import proxy
+from neutron.plugins.common import utils
+
+LOG = logging.getLogger(__name__)
+
+
+class GenericVPNRpcCallback(object):
+    """Callback for GenricVPNDriver rpc."""
+    RPC_API_VERSION = '1.0'
+
+    def __init__(self, driver):
+        self.driver = driver
+
+    def create_rpc_dispatcher(self):
+        return n_rpc.PluginRpcDispatcher([self])
+
+    def get_vpnservices(self, context, filter=None):
+        plugin = self.driver.plugin
+        return plugin.get_vpnservices(context, filter=filter)
+
+    def update_status(self, context, status):
+        """Update status of vpnservices."""
+        plugin = self.driver.plugin
+        with context.session.begin(subtransactions=True):
+            for vpnservice in status:
+                try:
+                    vpnservice_db = plugin._get_vpn_service(
+                        context, vpnservice['id'])
+                except vpnaas.VPNServiceNotFound:
+                    LOG.warn(_('vpnservice is already deleted: %s'),
+                             vpnservice['id'])
+                    continue
+                if (not utils.in_pending_status(vpnservice_db.status)
+                    or vpnservice['updated_pending_status']):
+                    vpnservice_db.status = vpnservice['status']
 
 
 @six.add_metaclass(abc.ABCMeta)
