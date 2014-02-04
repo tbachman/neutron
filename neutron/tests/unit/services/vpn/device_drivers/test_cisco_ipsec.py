@@ -358,7 +358,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         site_conn_id = self.conn_info['cisco']['site_conn_id']
         routes_info = self.driver.create_routes_info(site_conn_id,
                                                      self.conn_info)
-        self.assertEquals(2, len(routes_info))
+        self.assertEqual(2, len(routes_info))
         self.assertEqual(expected, routes_info)
 
 

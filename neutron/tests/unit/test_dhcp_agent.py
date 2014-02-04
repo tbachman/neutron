@@ -241,19 +241,6 @@ class TestDhcpAgent(base.BaseTestCase):
             trace_level='warning',
             expected_sync=False)
 
-    def test_call_driver_failure(self):
-        self._test_call_driver_failure()
-
-    def test_call_driver_remote_error_net_not_found(self):
-        self._test_call_driver_failure(
-            exc=common.RemoteError(exc_type='NetworkNotFound'),
-            trace_level='warning')
-
-    def test_call_driver_network_not_found(self):
-        self._test_call_driver_failure(
-            exc=exceptions.NetworkNotFound(net_id='1'),
-            trace_level='warning')
-
     def _test_sync_state_helper(self, known_networks, active_networks):
         with mock.patch(DHCP_PLUGIN) as plug:
             mock_plugin = mock.Mock()
