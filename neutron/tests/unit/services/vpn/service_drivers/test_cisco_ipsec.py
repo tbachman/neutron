@@ -20,7 +20,9 @@ import mock
 
 # from neutron import context
 from neutron import context
+from neutron.db import api as dbapi
 from neutron.openstack.common import uuidutils
+from neutron.services.vpn.service_drivers import cisco_csr_db as csr_db
 from neutron.services.vpn.service_drivers import cisco_ipsec as ipsec_driver
 from neutron.tests import base
 
@@ -45,10 +47,13 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
     def setUp(self):
         super(TestCiscoIPsecDriverValidation, self).setUp()
         self.addCleanup(mock.patch.stopall)
+        dbapi.configure_db()
+        self.addCleanup(dbapi.clear_db)
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
         self.service_plugin = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
-        self.admin_context = context.get_admin_context()   # mock.Mock()
+        self.context = context.Context('some_user', 'some_tenant')
+        self.vpn_service = mock.Mock()
 
     def test_ike_version_unsupported(self):
         """Failure test that Cisco CSR REST API does not support IKE v2."""
@@ -133,26 +138,27 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         """Helper function indicating that tunnel has a gateway IP."""
         def have_one(self):
             return 1
-        self.service_plugin.router.gw_port.fixed_ips.__len__ = have_one
+        self.vpn_service.router.gw_port.fixed_ips.__len__ = have_one
         ip_addr_mock = mock.Mock()
         ip_addr_mock.ip_address = "192.168.200.1"
-        self.service_plugin.router.gw_port.fixed_ips = [ip_addr_mock]
+        self.vpn_service.router.gw_port.fixed_ips = [ip_addr_mock]
 
     def test_ipsec_connection_with_gateway_ip(self):
         """Test of IPSec connection with gateway IP."""
-        # self.admin_context.session.query.side_effect = []
+        # self.context.session.query.side_effect = []
         self.simulate_gw_ip_available()
         conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'}
+                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
+                     'tenant_id': '12345'}
         expected = {'site_conn_id': u'Tunnel0',
                     'ike_policy_id': u'2',
                     'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
                     'router_public_ip': '192.168.200.1'}
         self.assertEqual(
             expected,
-            self.driver.get_cisco_connection_info(self.admin_context,
-                                                  self.service_plugin,
-                                                  conn_info))
+            self.driver.get_cisco_connection_info(self.context,
+                                                  conn_info,
+                                                  self.vpn_service))
 
     def test_tunnel_id_for_multiple_ipsec_connections(self):
         """Create several IPSec connections to verify tunnel ID is correct.
@@ -163,7 +169,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         for i in xrange(5):
             conn_info = {
                 'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'
+                'id': i * 100,
+                'tenant_id': '12345'
             }
             expected = {'site_conn_id': u'Tunnel%d' % i,
                         'ike_policy_id': u'2',
@@ -171,26 +178,63 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                         'router_public_ip': '192.168.200.1'}
             self.assertEqual(
                 expected,
-                self.driver.get_cisco_connection_info(self.admin_context,
-                                                      self.service_plugin,
-                                                      conn_info))
+                self.driver.get_cisco_connection_info(self.context,
+                                                      conn_info,
+                                                      self.vpn_service),
+                "Matching expected cisco info for entry %d" % i)
 
     def test_ipsec_connection_with_missing_gateway_ip(self):
         """Failure test of IPSec connection with missing gateway IP."""
-        self.service_plugin.router.gw_port = None
+        self.vpn_service.router.gw_port = None
         conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47'}
+                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
+                     'tenant_id': '12345'}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_cisco_connection_info,
-                          self.admin_context, self.service_plugin, conn_info)
+                          self.context, conn_info, self.vpn_service)
 
+    def test_create_tunnel_mapping(self):
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '100',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(0, tunnel_id)
+        self.assertEqual(2, ike_id)
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '101',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(1, tunnel_id)
+        self.assertEqual(2, ike_id)
+
+    def test_identifying_next_tunnel_id(self):
+        with self.context.session.begin():
+            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
+            self.assertEqual(0, tunnel)
+            map_entry = csr_db.IdentifierMap(tenant_id='1',
+                                             ipsec_site_conn_id='10',
+                                             ipsec_tunnel_id=tunnel,
+                                             ike_policy_id=100)
+            self.context.session.add(map_entry)
+            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
+            self.assertEqual(1, tunnel)
+            map_entry = csr_db.IdentifierMap(tenant_id='1',
+                                             ipsec_site_conn_id='20',
+                                             ipsec_tunnel_id=tunnel,
+                                             ike_policy_id=100)
+            self.context.session.add(map_entry)
+            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
+            self.assertEqual(2, tunnel)
 
 class TestCiscoIPsecDriver(base.BaseTestCase):
     def setUp(self):
         super(TestCiscoIPsecDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
+        dbapi.configure_db()
+        self.addCleanup(dbapi.clear_db)
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
-
         l3_agent = mock.Mock()
         l3_agent.host = FAKE_HOST
         plugin = mock.Mock()

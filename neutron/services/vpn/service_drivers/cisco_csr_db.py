@@ -19,7 +19,6 @@ import sqlalchemy as sa
 
 from neutron.db import model_base
 from neutron.db import models_v2
-from neutron.db.vpn import vpn_db as vpn  # TEMP
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -41,17 +40,21 @@ class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
     ike_policy_id = sa.Column(sa.Integer, nullable=False)
 
 
-def get_next_available_tunnel_id(context):
+def get_next_available_tunnel_id(session):
     """Find first unused int from 0..2^32-1 for tunnel ID."""
-    used_ids = context.session.query(IdentifierMap.ipsec_tunnel_id).all()
+    rows = session.query(IdentifierMap.ipsec_tunnel_id)
+    used_ids = set([row[0] for row in rows])
     all_ids = set(range(MAX_CSR_TUNNELS))
-    available_ids = all_ids - set(used_ids)
+    available_ids = all_ids - used_ids
     if not available_ids:
         msg = _("No available IDs from 0..%d") % (MAX_CSR_TUNNELS - 1)
         LOG.error(msg)
         raise IndexError(msg)
     return available_ids.pop()
 
+# TODO(pcm): Remove
+def get_tunnels(session):
+    return session.query(IdentifierMap).all()
 
 def get_or_create_csr_ike_policy_id(context):
     """Find ID used by other tunnels or create next avail one from 0..10K."""
@@ -61,11 +64,13 @@ def get_or_create_csr_ike_policy_id(context):
 def create_tunnel_mapping(context, conn_info):
     """Create Cisco CSR IDs, using mapping table and OpenStack UUIDs."""
     conn_id = conn_info['id']
+    # TOTO(pcm) Do we need to do ~_get_tenant_id_for_create()?
+    tenant_id = conn_info['tenant_id']
     with context.session.begin(subtransactions=True):
-        # conns = context.session.query(vpn.IPsecSiteConnection).all()
-        tunnel_id = get_next_available_tunnel_id(context)
+        tunnel_id = get_next_available_tunnel_id(context.session)
         ike_policy_id = get_or_create_csr_ike_policy_id(context)
-        map_entry = IdentifierMap(ipsec_site_conn_id=conn_id,
+        map_entry = IdentifierMap(tenant_id=tenant_id,
+                                  ipsec_site_conn_id=conn_id,
                                   ipsec_tunnel_id=tunnel_id,
                                   ike_policy_id=ike_policy_id)
         context.session.add(map_entry)

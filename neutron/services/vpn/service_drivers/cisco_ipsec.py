@@ -187,7 +187,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                        key='router:gw_port:ip_address',
                                        value='missing')
 
-    def get_cisco_connection_info(self, context, vpn_service, site_conn):
+    def get_cisco_connection_info(self, context, site_conn, vpn_service):
         public_ip = self.get_router_public_ip(vpn_service)
         real_ipsec_policy_id = site_conn['ikepolicy_id']
         ipsec_policy_id = real_ipsec_policy_id.replace('-', '')[:31]
@@ -204,8 +204,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                                      site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(
             context, site_conn['ipsecpolicy_id'])
-        cisco_info = self.get_cisco_connection_info(context, vpn_service,
-                                                    site_conn)
+        cisco_info = self.get_cisco_connection_info(context, site_conn,
+                                                    vpn_service)
         return {'site_conn': site_conn,
                 'ike_policy': ike_info,
                 'ipsec_policy': ipsec_info,
@@ -213,8 +213,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def _build_ipsec_site_conn_delete_info(self, context, site_conn,
                                            vpn_service):
-        cisco_info = self.get_cisco_connection_info(context, vpn_service,
-                                                    site_conn)
+        cisco_info = self.get_cisco_connection_info(context, site_conn,
+                                                    vpn_service)
         return {'site_conn': site_conn,
                 'cisco': cisco_info}
 
