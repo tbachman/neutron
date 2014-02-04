@@ -21,7 +21,6 @@ import webob.exc
 
 from neutron.api.v2 import attributes as attr
 from neutron.common import constants as const
-from neutron.common.test_lib import test_config
 from neutron import context
 from neutron.db import db_base_plugin_v2
 from neutron.db import securitygroups_db
@@ -239,15 +238,11 @@ class SecurityGroupTestPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
 
 class SecurityGroupDBTestCase(SecurityGroupsTestCase):
-    def setUp(self, plugin=None):
-        test_config['plugin_name_v2'] = DB_PLUGIN_KLASS
-        ext_mgr = SecurityGroupTestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
-        super(SecurityGroupDBTestCase, self).setUp(plugin)
-
-    def tearDown(self):
-        del test_config['plugin_name_v2']
-        super(SecurityGroupDBTestCase, self).tearDown()
+    def setUp(self, plugin=None, ext_mgr=None):
+        plugin = plugin or DB_PLUGIN_KLASS
+        ext_mgr = ext_mgr or SecurityGroupTestExtensionManager()
+        super(SecurityGroupDBTestCase,
+              self).setUp(plugin=plugin, ext_mgr=ext_mgr)
 
 
 class TestSecurityGroups(SecurityGroupDBTestCase):
@@ -743,9 +738,11 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                      'port_range_max': '22',
                      'tenant_id': "bad_tenant"}}
 
-        res = self._create_security_group_rule(self.fmt, rule)
-        self.deserialize(self.fmt, res)
-        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+            res = self._create_security_group_rule(self.fmt, rule,
+                                                   tenant_id='bad_tenant',
+                                                   set_context=True)
+            self.deserialize(self.fmt, res)
+            self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
     def test_create_security_group_rule_bad_tenant_remote_group_id(self):
         with self.security_group() as sg:
@@ -1073,7 +1070,7 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                 with self.security_group() as sg:
                     res = self._create_port(self.fmt, n['network']['id'],
                                             security_groups=(
-                                            [sg['security_group']['id']]))
+                                                [sg['security_group']['id']]))
                     port = self.deserialize(self.fmt, res)
 
                     data = {'port': {'fixed_ips': port['port']['fixed_ips'],
@@ -1094,7 +1091,7 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                 with self.security_group() as sg:
                     res = self._create_port(self.fmt, n['network']['id'],
                                             security_groups=(
-                                            [sg['security_group']['id']]))
+                                                [sg['security_group']['id']]))
                     port = self.deserialize(self.fmt, res)
 
                     data = {'port': {'fixed_ips': port['port']['fixed_ips'],
@@ -1124,7 +1121,7 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                 with self.security_group() as sg:
                     res = self._create_port(self.fmt, n['network']['id'],
                                             security_groups=(
-                                            [sg['security_group']['id']]))
+                                                [sg['security_group']['id']]))
                     port = self.deserialize(self.fmt, res)
                     self.assertEqual(port['port'][ext_sg.SECURITYGROUPS][0],
                                      sg['security_group']['id'])
@@ -1283,7 +1280,7 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
                 self.deserialize(self.fmt, res)
                 self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
 
-    def test_create_security_group_rule_differnt_security_group_ids(self):
+    def test_create_security_group_rule_different_security_group_ids(self):
         if self._skip_native_bulk:
             self.skipTest("Plugin does not support native bulk "
                           "security_group_rule create")

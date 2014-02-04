@@ -96,10 +96,10 @@ class NVPApiHelper(client_eventlet.NvpApiClientEventlet):
         Assumes same password is used for all controllers.
 
         :param user: NVP controller user (usually admin). Provided for
-                backwards compatability. In the  normal mode of operation
+                backwards compatibility. In the  normal mode of operation
                 this should be None.
         :param password: NVP controller password. Provided for backwards
-                compatability. In the normal mode of operation this should
+                compatibility. In the normal mode of operation this should
                 be None.
 
         :returns: Does not return a value.
@@ -195,6 +195,7 @@ class NVPApiHelper(client_eventlet.NvpApiClientEventlet):
     # TODO(del): ensure error_codes are handled/raised appropriately
     # in api_client.
     error_codes = {404: fourZeroFour,
+                   405: zero,
                    409: fourZeroNine,
                    503: fiveZeroThree,
                    403: fourZeroThree,

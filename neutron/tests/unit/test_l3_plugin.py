@@ -31,7 +31,6 @@ from neutron.api.v2 import attributes
 from neutron.common import config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as q_exc
-from neutron.common.test_lib import test_config
 from neutron import context
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
@@ -946,7 +945,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                     s['subnet']['network_id'])
                 body = self._show('routers', r['router']['id'])
                 gw_info = body['router']['external_gateway_info']
-                self.assertEqual(gw_info, None)
+                self.assertIsNone(gw_info)
 
     def test_router_add_gateway_tenant_ctx(self):
         with self.router(tenant_id='noadmin',
@@ -966,7 +965,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                     s['subnet']['network_id'])
                 body = self._show('routers', r['router']['id'])
                 gw_info = body['router']['external_gateway_info']
-                self.assertEqual(gw_info, None)
+                self.assertIsNone(gw_info)
 
     def test_router_add_gateway_invalid_network_returns_404(self):
         with self.router() as r:
@@ -1245,8 +1244,8 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                                       p['port']['fixed_ips'][0]['subnet_id']}}
             with self.floatingip_no_assoc(private_sub) as fip:
                 body = self._show('floatingips', fip['floatingip']['id'])
-                self.assertEqual(body['floatingip']['port_id'], None)
-                self.assertEqual(body['floatingip']['fixed_ip_address'], None)
+                self.assertIsNone(body['floatingip']['port_id'])
+                self.assertIsNone(body['floatingip']['fixed_ip_address'])
 
                 port_id = p['port']['id']
                 ip_address = p['port']['fixed_ips'][0]['ip_address']
@@ -1281,10 +1280,9 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                         def assert_no_assoc(fip):
                             body = self._show('floatingips',
                                               fip['floatingip']['id'])
-                            self.assertEqual(body['floatingip']['port_id'],
-                                             None)
+                            self.assertIsNone(body['floatingip']['port_id'])
                             self.assertIsNone(
-                                body['floatingip']['fixed_ip_address'], None)
+                                body['floatingip']['fixed_ip_address'])
 
                         assert_no_assoc(fip1)
                         assert_no_assoc(fip2)
@@ -1341,9 +1339,9 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                 body = self._show('floatingips', fip['floatingip']['id'])
                 self.assertEqual(body['floatingip']['id'],
                                  fip['floatingip']['id'])
-                self.assertEqual(body['floatingip']['port_id'], None)
-                self.assertEqual(body['floatingip']['fixed_ip_address'], None)
-                self.assertEqual(body['floatingip']['router_id'], None)
+                self.assertIsNone(body['floatingip']['port_id'])
+                self.assertIsNone(body['floatingip']['fixed_ip_address'])
+                self.assertIsNone(body['floatingip']['router_id'])
 
     def test_two_fips_one_port_invalid_return_409(self):
         with self.floatingip_with_assoc() as fip1:
@@ -1729,12 +1727,11 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
 class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
     def setUp(self, plugin=None, ext_mgr=None, service_plugins=None):
-        test_config['plugin_name_v2'] = (
-            'neutron.tests.unit.test_l3_plugin.TestL3NatIntPlugin')
+        if not plugin:
+            plugin = 'neutron.tests.unit.test_l3_plugin.TestL3NatIntPlugin'
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
         ext_mgr = ext_mgr or L3TestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
         super(L3BaseForIntTests, self).setUp(plugin=plugin, ext_mgr=ext_mgr,
                                              service_plugins=service_plugins)
 
@@ -1744,16 +1741,15 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
     def tearDown(self):
         test_notifier.NOTIFICATIONS = []
-        del test_config['extension_manager']
         super(L3BaseForIntTests, self).tearDown()
 
 
 class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
-    def setUp(self):
+    def setUp(self, plugin=None, ext_mgr=None):
         # the plugin without L3 support
-        test_config['plugin_name_v2'] = (
-            'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin')
+        if not plugin:
+            plugin = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
         # the L3 service plugin
         l3_plugin = ('neutron.tests.unit.test_l3_plugin.'
                      'TestL3NatServicePlugin')
@@ -1761,9 +1757,10 @@ class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
-        ext_mgr = L3TestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
-        super(L3BaseForSepTests, self).setUp(service_plugins=service_plugins)
+        if not ext_mgr:
+            ext_mgr = L3TestExtensionManager()
+        super(L3BaseForSepTests, self).setUp(plugin=plugin, ext_mgr=ext_mgr,
+                                             service_plugins=service_plugins)
 
         # Set to None to reload the drivers
         notifier_api._drivers = None
@@ -1771,7 +1768,6 @@ class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
     def tearDown(self):
         test_notifier.NOTIFICATIONS = []
-        del test_config['extension_manager']
         super(L3BaseForSepTests, self).tearDown()
 
 

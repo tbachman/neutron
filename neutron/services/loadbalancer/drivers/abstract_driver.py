@@ -18,7 +18,10 @@
 
 import abc
 
+import six
 
+
+@six.add_metaclass(abc.ABCMeta)
 class LoadBalancerAbstractDriver(object):
     """Abstract lbaas driver that expose ~same API as lbaas plugin.
 
@@ -27,7 +30,6 @@ class LoadBalancerAbstractDriver(object):
     Get operations are not part of the API - it will be handled
     by the lbaas plugin.
     """
-    __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
     def create_vip(self, context, vip):
@@ -50,7 +52,7 @@ class LoadBalancerAbstractDriver(object):
     def delete_vip(self, context, vip):
         """A real driver would invoke a call to his backend
         and try to delete the Vip.
-        if the deletion was successfull, delete the record from the database.
+        if the deletion was successful, delete the record from the database.
         if the deletion has failed, set the Vip status to ERROR.
         """
         pass
@@ -105,10 +107,10 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
-    def update_health_monitor(self, context,
-                              old_health_monitor,
-                              health_monitor,
-                              pool_id):
+    def update_pool_health_monitor(self, context,
+                                   old_health_monitor,
+                                   health_monitor,
+                                   pool_id):
         pass
 
     @abc.abstractmethod

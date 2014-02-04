@@ -19,15 +19,13 @@
 
 import abc
 
-from oslo.config import cfg
+import six
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
-from neutron.api.v2 import base
+from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as qexception
-from neutron import manager
 from neutron.plugins.common import constants
-from neutron import quota
 from neutron.services.service_base import ServicePluginBase
 
 
@@ -69,8 +67,9 @@ class RouterInUseByVPNService(qexception.InUse):
     message = _("Router %(router_id)s is used by VPNService %(vpnservice_id)s")
 
 
-class VPNStateInvalid(qexception.BadRequest):
-    message = _("Invalid state %(state)s of vpnaas resource %(id)s")
+class VPNStateInvalidToUpdate(qexception.BadRequest):
+    message = _("Invalid state %(state)s of vpnaas resource %(id)s"
+                " for updating")
 
 
 class IPsecPolicyInUse(qexception.InUse):
@@ -360,38 +359,17 @@ class Vpnaas(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_resources(cls):
-        plural_mapping = {
-            'ikepolicies': 'ikepolicy',
-            'ipsecpolicies': 'ipsecpolicy'
-        }
-        my_plurals = []
-        for plural in RESOURCE_ATTRIBUTE_MAP:
-            singular = plural_mapping.get(plural, plural[:-1])
-            my_plurals.append((plural, singular))
-        my_plurals.append(('peer_cidrs', 'peer_cidr'))
-        attr.PLURALS.update(dict(my_plurals))
-        resources = []
-        plugin = manager.NeutronManager.get_service_plugins()[
-            constants.VPN]
-        for collection_name in RESOURCE_ATTRIBUTE_MAP:
-            resource_name = plural_mapping.get(
-                collection_name, collection_name[:-1])
-            params = RESOURCE_ATTRIBUTE_MAP[collection_name]
-            collection_name = collection_name.replace('_', '-')
-
-            quota.QUOTAS.register_resource_by_name(resource_name)
-            controller = base.create_resource(
-                collection_name, resource_name, plugin, params,
-                allow_pagination=cfg.CONF.allow_pagination,
-                allow_sorting=cfg.CONF.allow_sorting)
-
-            resource = extensions.ResourceExtension(
-                collection_name,
-                controller,
-                path_prefix=constants.COMMON_PREFIXES[constants.VPN],
-                attr_map=params)
-            resources.append(resource)
-        return resources
+        special_mappings = {'ikepolicies': 'ikepolicy',
+                            'ipsecpolicies': 'ipsecpolicy'}
+        plural_mappings = resource_helper.build_plural_mappings(
+            special_mappings, RESOURCE_ATTRIBUTE_MAP)
+        plural_mappings['peer_cidrs'] = 'peer_cidr'
+        attr.PLURALS.update(plural_mappings)
+        return resource_helper.build_resource_info(plural_mappings,
+                                                   RESOURCE_ATTRIBUTE_MAP,
+                                                   constants.VPN,
+                                                   register_quota=True,
+                                                   translate_name=True)
 
     @classmethod
     def get_plugin_interface(cls):
@@ -408,8 +386,8 @@ class Vpnaas(extensions.ExtensionDescriptor):
             return {}
 
 
+@six.add_metaclass(abc.ABCMeta)
 class VPNPluginBase(ServicePluginBase):
-    __metaclass__ = abc.ABCMeta
 
     def get_plugin_name(self):
         return constants.VPN

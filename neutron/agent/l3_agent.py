@@ -26,6 +26,7 @@ from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import iptables_manager
+from neutron.agent.linux import ovs_lib  # noqa
 from neutron.agent.linux import utils
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants as l3_constants
@@ -180,6 +181,8 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                           "by the agents.")),
         cfg.BoolOpt('enable_metadata_proxy', default=True,
                     help=_("Allow running metadata proxy.")),
+        cfg.BoolOpt('router_delete_namespaces', default=False,
+                    help=_("Delete namespace after removing a router.")),
         cfg.StrOpt('metadata_proxy_socket',
                    default='$state_path/metadata_proxy',
                    help=_('Location of Metadata Proxy UNIX domain '
@@ -243,13 +246,17 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
 
         If only_router_id is passed, only destroy single namespace, to allow
         for multiple l3 agents on the same host, without stepping on each
-        other's toes on init.  This only makes sense if router_id is set.
+        other's toes on init.  This only makes sense if only_router_id is set.
         """
         root_ip = ip_lib.IPWrapper(self.root_helper)
         for ns in root_ip.get_namespaces(self.root_helper):
             if ns.startswith(NS_PREFIX):
-                if only_router_id and not ns.endswith(only_router_id):
+                router_id = ns[len(NS_PREFIX):]
+                if only_router_id and not only_router_id == router_id:
                     continue
+
+                if self.conf.enable_metadata_proxy:
+                    self._destroy_metadata_proxy(router_id, ns)
 
                 try:
                     self._destroy_router_namespace(ns)
@@ -268,7 +275,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                                    bridge=self.conf.external_network_bridge,
                                    namespace=namespace,
                                    prefix=EXTERNAL_DEV_PREFIX)
-        #TODO(garyk) Address the failure for the deletion of the namespace
+
+        if self.conf.router_delete_namespaces:
+            try:
+                ns_ip.netns.delete(namespace)
+            except RuntimeError:
+                msg = _('Failed trying to delete namespace: %s')
+                LOG.exception(msg % namespace)
 
     def _create_router_namespace(self, ri):
             ip_wrapper_root = ip_lib.IPWrapper(self.root_helper)
@@ -279,6 +292,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         """Find UUID of single external network for this agent."""
         if self.conf.gateway_external_network_id:
             return self.conf.gateway_external_network_id
+
+        # L3 agent doesn't use external_network_bridge to handle external
+        # networks, so bridge_mappings with provider networks will be used
+        # and the L3 agent is able to handle any external networks.
+        if not self.conf.external_network_bridge:
+            return
+
         try:
             return self.plugin_rpc.get_external_network_id(self.context)
         except rpc_common.RemoteError as e:
@@ -304,7 +324,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         ri.iptables_manager.apply()
         super(L3NATAgent, self).process_router_add(ri)
         if self.conf.enable_metadata_proxy:
-            self._spawn_metadata_proxy(ri)
+            self._spawn_metadata_proxy(ri.router_id, ri.ns_name())
 
     def _router_removed(self, router_id):
         ri = self.router_info.get(router_id)
@@ -322,37 +342,37 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             ri.iptables_manager.ipv4['nat'].remove_rule(c, r)
         ri.iptables_manager.apply()
         if self.conf.enable_metadata_proxy:
-            self._destroy_metadata_proxy(ri)
+            self._destroy_metadata_proxy(ri.router_id, ri.ns_name())
         del self.router_info[router_id]
         self._destroy_router_namespace(ri.ns_name())
 
-    def _spawn_metadata_proxy(self, router_info):
+    def _spawn_metadata_proxy(self, router_id, ns_name):
         def callback(pid_file):
             metadata_proxy_socket = cfg.CONF.metadata_proxy_socket
             proxy_cmd = ['neutron-ns-metadata-proxy',
                          '--pid_file=%s' % pid_file,
                          '--metadata_proxy_socket=%s' % metadata_proxy_socket,
-                         '--router_id=%s' % router_info.router_id,
+                         '--router_id=%s' % router_id,
                          '--state_path=%s' % self.conf.state_path,
                          '--metadata_port=%s' % self.conf.metadata_port]
             proxy_cmd.extend(config.get_log_args(
                 cfg.CONF, 'neutron-ns-metadata-proxy-%s.log' %
-                router_info.router_id))
+                router_id))
             return proxy_cmd
 
         pm = external_process.ProcessManager(
             self.conf,
-            router_info.router_id,
+            router_id,
             self.root_helper,
-            router_info.ns_name())
+            ns_name)
         pm.enable(callback)
 
-    def _destroy_metadata_proxy(self, router_info):
+    def _destroy_metadata_proxy(self, router_id, ns_name):
         pm = external_process.ProcessManager(
             self.conf,
-            router_info.router_id,
+            router_id,
             self.root_helper,
-            router_info.ns_name())
+            ns_name)
         pm.disable()
 
     def _set_subnet_info(self, port):
@@ -379,13 +399,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                      p['id'] not in current_port_ids]
         for p in new_ports:
             self._set_subnet_info(p)
-            ri.internal_ports.append(p)
             self.internal_network_added(ri, p['network_id'], p['id'],
                                         p['ip_cidr'], p['mac_address'])
+            ri.internal_ports.append(p)
 
         for p in old_ports:
-            ri.internal_ports.remove(p)
             self.internal_network_removed(ri, p['id'], p['ip_cidr'])
+            ri.internal_ports.remove(p)
 
         internal_cidrs = [p['ip_cidr'] for p in ri.internal_ports]
         # TODO(salv-orlando): RouterInfo would be a better place for
@@ -484,22 +504,25 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
     def _get_ex_gw_port(self, ri):
         return ri.router.get('gw_port')
 
+    def _arping(self, ri, interface_name, ip_address):
+        arping_cmd = ['arping', '-A',
+                      '-I', interface_name,
+                      '-c', self.conf.send_arp_for_ha,
+                      ip_address]
+        try:
+            if self.conf.use_namespaces:
+                ip_wrapper = ip_lib.IPWrapper(self.root_helper,
+                                              namespace=ri.ns_name())
+                ip_wrapper.netns.execute(arping_cmd, check_exit_code=True)
+            else:
+                utils.execute(arping_cmd, check_exit_code=True,
+                              root_helper=self.root_helper)
+        except Exception as e:
+            LOG.error(_("Failed sending gratuitous ARP: %s"), str(e))
+
     def _send_gratuitous_arp_packet(self, ri, interface_name, ip_address):
         if self.conf.send_arp_for_ha > 0:
-            arping_cmd = ['arping', '-A', '-U',
-                          '-I', interface_name,
-                          '-c', self.conf.send_arp_for_ha,
-                          ip_address]
-            try:
-                if self.conf.use_namespaces:
-                    ip_wrapper = ip_lib.IPWrapper(self.root_helper,
-                                                  namespace=ri.ns_name())
-                    ip_wrapper.netns.execute(arping_cmd, check_exit_code=True)
-                else:
-                    utils.execute(arping_cmd, check_exit_code=True,
-                                  root_helper=self.root_helper)
-            except Exception as e:
-                LOG.error(_("Failed sending gratuitous ARP: %s"), str(e))
+            eventlet.spawn_n(self._arping, ri, interface_name, ip_address)
 
     def get_internal_device_name(self, port_id):
         return (INTERNAL_DEV_PREFIX + port_id)[:self.driver.DEV_NAME_LEN]
@@ -519,8 +542,17 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                              bridge=self.conf.external_network_bridge,
                              namespace=ri.ns_name(),
                              prefix=EXTERNAL_DEV_PREFIX)
+
+        # Compute a list of addresses this router is supposed to have.
+        # This avoids unnecessarily removing those addresses and
+        # causing a momentarily network outage.
+        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+        preserve_ips = [ip['floating_ip_address'] + FLOATING_IP_CIDR_SUFFIX
+                        for ip in floating_ips]
+
         self.driver.init_l3(interface_name, [ex_gw_port['ip_cidr']],
-                            namespace=ri.ns_name())
+                            namespace=ri.ns_name(),
+                            preserve_ips=preserve_ips)
         ip_address = ex_gw_port['ip_cidr'].split('/')[0]
         self._send_gratuitous_arp_packet(ri, interface_name, ip_address)
 
@@ -617,7 +649,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         """Deal with routers modification and creation RPC message."""
         LOG.debug(_('Got routers updated notification :%s'), routers)
         if routers:
-            # This is needed for backward compatiblity
+            # This is needed for backward compatibility
             if isinstance(routers[0], dict):
                 routers = [router['id'] for router in routers]
             self.updated_routers.update(routers)
@@ -662,7 +694,8 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
             if not ex_net_id and not self.conf.handle_internal_only_routers:
                 continue
-            if ex_net_id and ex_net_id != target_ex_net_id:
+            if (target_ex_net_id and ex_net_id and
+                ex_net_id != target_ex_net_id):
                 continue
             cur_router_ids.add(r['id'])
             if r['id'] not in self.router_info:

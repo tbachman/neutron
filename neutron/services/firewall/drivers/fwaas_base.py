@@ -19,7 +19,10 @@
 
 import abc
 
+import six
 
+
+@six.add_metaclass(abc.ABCMeta)
 class FwaasDriverBase(object):
     """Firewall as a Service Driver base class.
 
@@ -60,8 +63,6 @@ class FwaasDriverBase(object):
     application of rules.
     """
 
-    __metaclass__ = abc.ABCMeta
-
     @abc.abstractmethod
     def create_firewall(self, apply_list, firewall):
         """Create the Firewall with default (drop all) policy.
@@ -96,24 +97,4 @@ class FwaasDriverBase(object):
         Remove current policy and apply the default policy on all trusted
         interfaces.
         """
-        pass
-
-
-class NoopFwaasDriver(FwaasDriverBase):
-    """Noop Fwaas Driver.
-
-    Firewall driver which does nothing.
-    This driver is for disabling Fwaas functionality.
-    """
-
-    def create_firewall(self, apply_list, firewall):
-        pass
-
-    def delete_firewall(self, apply_list, firewall):
-        pass
-
-    def update_firewall(self, apply_list, firewall):
-        pass
-
-    def apply_default_policy(self, apply_list, firewall):
         pass

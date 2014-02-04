@@ -20,11 +20,24 @@
 
 import re
 
+from oslo.config import cfg
+
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants as p_const
+#  TODO(JLH) Should we remove the explicit include of the ovs plugin here
 from neutron.plugins.openvswitch.common import constants
+
+# Default timeout for ovs-vsctl command
+DEFAULT_OVS_VSCTL_TIMEOUT = 10
+OPTS = [
+    cfg.IntOpt('ovs_vsctl_timeout',
+               default=DEFAULT_OVS_VSCTL_TIMEOUT,
+               help=_('Timeout in seconds for ovs-vsctl commands')),
+]
+cfg.CONF.register_opts(OPTS)
 
 LOG = logging.getLogger(__name__)
 
@@ -40,14 +53,57 @@ class VifPort:
     def __str__(self):
         return ("iface-id=" + self.vif_id + ", vif_mac=" +
                 self.vif_mac + ", port_name=" + self.port_name +
-                ", ofport=" + str(self.ofport) + ", bridge_name =" +
+                ", ofport=" + str(self.ofport) + ", bridge_name=" +
                 self.switch.br_name)
 
 
-class OVSBridge:
-    def __init__(self, br_name, root_helper):
-        self.br_name = br_name
+class BaseOVS(object):
+
+    def __init__(self, root_helper):
         self.root_helper = root_helper
+        self.vsctl_timeout = cfg.CONF.ovs_vsctl_timeout
+
+    def run_vsctl(self, args, check_error=False):
+        full_args = ["ovs-vsctl", "--timeout=%d" % self.vsctl_timeout] + args
+        try:
+            return utils.execute(full_args, root_helper=self.root_helper)
+        except Exception as e:
+            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
+                      {'cmd': full_args, 'exception': e})
+            if check_error:
+                raise
+
+    def add_bridge(self, bridge_name):
+        self.run_vsctl(["--", "--may-exist", "add-br", bridge_name])
+        return OVSBridge(bridge_name, self.root_helper)
+
+    def delete_bridge(self, bridge_name):
+        self.run_vsctl(["--", "--if-exists", "del-br", bridge_name])
+
+    def bridge_exists(self, bridge_name):
+        try:
+            self.run_vsctl(['br-exists', bridge_name], check_error=True)
+        except RuntimeError as e:
+            if 'Exit code: 2\n' in str(e):
+                return False
+            raise
+        return True
+
+    def get_bridge_name_for_port_name(self, port_name):
+        try:
+            return self.run_vsctl(['port-to-br', port_name], check_error=True)
+        except RuntimeError as e:
+            if 'Exit code: 1\n' not in str(e):
+                raise
+
+    def port_exists(self, port_name):
+        return bool(self.get_bridge_name_for_port_name(port_name))
+
+
+class OVSBridge(BaseOVS):
+    def __init__(self, br_name, root_helper):
+        super(OVSBridge, self).__init__(root_helper)
+        self.br_name = br_name
         self.re_id = self.re_compile_id()
         self.defer_apply_flows = False
         self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
@@ -65,17 +121,15 @@ class OVSBridge:
                                                'port': port})
         return re.compile(_re, re.M | re.X)
 
-    def run_vsctl(self, args):
-        full_args = ["ovs-vsctl", "--timeout=2"] + args
-        try:
-            return utils.execute(full_args, root_helper=self.root_helper)
-        except Exception as e:
-            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
-                      {'cmd': full_args, 'exception': e})
+    def create(self):
+        self.add_bridge(self.br_name)
+
+    def destroy(self):
+        self.delete_bridge(self.br_name)
 
     def reset_bridge(self):
-        self.run_vsctl(["--", "--if-exists", "del-br", self.br_name])
-        self.run_vsctl(["add-br", self.br_name])
+        self.destroy()
+        self.create()
 
     def add_port(self, port_name):
         self.run_vsctl(["--", "--may-exist", "add-port", self.br_name,
@@ -205,38 +259,34 @@ class OVSBridge:
         self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
 
     def add_tunnel_port(self, port_name, remote_ip, local_ip,
-                        tunnel_type=constants.TYPE_GRE,
+                        tunnel_type=p_const.TYPE_GRE,
                         vxlan_udp_port=constants.VXLAN_UDP_PORT):
-        self.run_vsctl(["--", "--may-exist", "add-port", self.br_name,
-                       port_name])
-        self.set_db_attribute("Interface", port_name, "type", tunnel_type)
-        if tunnel_type == constants.TYPE_VXLAN:
+        vsctl_command = ["--", "--may-exist", "add-port", self.br_name,
+                         port_name]
+        vsctl_command.extend(["--", "set", "Interface", port_name,
+                              "type=%s" % tunnel_type])
+        if tunnel_type == p_const.TYPE_VXLAN:
             # Only set the VXLAN UDP port if it's not the default
             if vxlan_udp_port != constants.VXLAN_UDP_PORT:
-                self.set_db_attribute("Interface", port_name,
-                                      "options:dst_port",
-                                      vxlan_udp_port)
-        self.set_db_attribute("Interface", port_name, "options:remote_ip",
-                              remote_ip)
-        self.set_db_attribute("Interface", port_name, "options:local_ip",
-                              local_ip)
-        self.set_db_attribute("Interface", port_name, "options:in_key", "flow")
-        self.set_db_attribute("Interface", port_name, "options:out_key",
-                              "flow")
+                vsctl_command.append("options:dst_port=%s" % vxlan_udp_port)
+        vsctl_command.extend(["options:remote_ip=%s" % remote_ip,
+                              "options:local_ip=%s" % local_ip,
+                              "options:in_key=flow",
+                              "options:out_key=flow"])
+        self.run_vsctl(vsctl_command)
         return self.get_port_ofport(port_name)
 
     def add_patch_port(self, local_name, remote_name):
-        self.run_vsctl(["add-port", self.br_name, local_name])
-        self.set_db_attribute("Interface", local_name, "type", "patch")
-        self.set_db_attribute("Interface", local_name, "options:peer",
-                              remote_name)
+        self.run_vsctl(["add-port", self.br_name, local_name,
+                        "--", "set", "Interface", local_name,
+                        "type=patch", "options:peer=%s" % remote_name])
         return self.get_port_ofport(local_name)
 
     def db_get_map(self, table, record, column):
         output = self.run_vsctl(["get", table, record, column])
         if output:
-            str = output.rstrip("\n\r")
-            return self.db_str_to_map(str)
+            output_str = output.rstrip("\n\r")
+            return self.db_str_to_map(output_str)
         return {}
 
     def db_get_val(self, table, record, column):
@@ -355,7 +405,8 @@ class OVSBridge:
 
 
 def get_bridge_for_iface(root_helper, iface):
-    args = ["ovs-vsctl", "--timeout=2", "iface-to-br", iface]
+    args = ["ovs-vsctl", "--timeout=%d" % cfg.CONF.ovs_vsctl_timeout,
+            "iface-to-br", iface]
     try:
         return utils.execute(args, root_helper=root_helper).strip()
     except Exception:
@@ -364,7 +415,8 @@ def get_bridge_for_iface(root_helper, iface):
 
 
 def get_bridges(root_helper):
-    args = ["ovs-vsctl", "--timeout=2", "list-br"]
+    args = ["ovs-vsctl", "--timeout=%d" % cfg.CONF.ovs_vsctl_timeout,
+            "list-br"]
     try:
         return utils.execute(args, root_helper=root_helper).strip().split("\n")
     except Exception as e:

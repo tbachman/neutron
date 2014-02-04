@@ -26,7 +26,6 @@ PlugIn for Nexus OS driver
 
 import logging
 
-from neutron.common import exceptions as exc
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.plugins.cisco.common import cisco_constants as const
@@ -49,15 +48,6 @@ class NexusPlugin(L2DevicePluginBase):
         self._client = importutils.import_object(conf.CISCO.nexus_driver)
         LOG.debug(_("Loaded driver %s"), conf.CISCO.nexus_driver)
         self._nexus_switches = conf.get_device_dictionary()
-
-    def get_all_networks(self, tenant_id):
-        """Get all networks.
-
-        Returns a dictionary containing all <network_uuid, network_name> for
-        the specified tenant.
-        """
-        LOG.debug(_("NexusPlugin:get_all_networks() called"))
-        return self._networks.values()
 
     def create_network(self, network, attachment):
         """Create or update a network when an attachment is changed.
@@ -228,43 +218,38 @@ class NexusPlugin(L2DevicePluginBase):
                         switch_dict[switch_ip] += 1
                 # Search for the lowest value in the dict
                 if switch_dict:
-                    switch_ip = min(switch_dict.items(), key=switch_dict.get)
-                    return switch_ip[0]
+                    switch_ip = min(switch_dict, key=switch_dict.get)
+                    return switch_ip
             except cisco_exc.NexusPortBindingNotFound:
                 pass
 
         LOG.debug(_("No round robin or zero weights, using first switch"))
         # Return the first switch in the config
-        for switch_ip, attr in nexus_switches:
-            return switch_ip
+        return conf.first_device_ip
 
     def delete_network(self, tenant_id, net_id, **kwargs):
         """Delete network.
 
-        Deletes the VLAN in all switches, and removes the VLAN configuration
-        from the relevant interfaces.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:delete_network() called"))
+        LOG.debug(_("NexusPlugin:delete_network() called"))  # pragma no cover
 
     def update_network(self, tenant_id, net_id, **kwargs):
-        """Update the properties of a particular Virtual Network."""
-        LOG.debug(_("NexusPlugin:update_network() called"))
+        """Update the properties of a particular Virtual Network.
 
-    def get_all_ports(self, tenant_id, net_id, **kwargs):
-        """Get all ports.
-
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:get_all_ports() called"))
+        LOG.debug(_("NexusPlugin:update_network() called"))  # pragma no cover
 
     def create_port(self, tenant_id, net_id, port_state, port_id, **kwargs):
         """Create port.
 
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:create_port() called"))
+        LOG.debug(_("NexusPlugin:create_port() called"))  # pragma no cover
 
     def delete_port(self, device_id, vlan_id):
         """Delete port.
@@ -300,17 +285,28 @@ class NexusPlugin(L2DevicePluginBase):
             nxos_db.remove_nexusport_binding(row.port_id, row.vlan_id,
                                              row.switch_ip,
                                              row.instance_id)
-            # Check for any other bindings with the same vlan_id and switch_ip
+            # Check whether there are any remaining instances using this
+            # vlan on this Nexus port.
             try:
-                nxos_db.get_nexusvlan_binding(row.vlan_id, row.switch_ip)
+                nxos_db.get_port_vlan_switch_binding(row.port_id,
+                                                     row.vlan_id,
+                                                     row.switch_ip)
             except cisco_exc.NexusPortBindingNotFound:
                 try:
-                    # Delete this vlan from this switch
                     if nexus_port and auto_untrunk:
+                        # Untrunk the vlan from this Nexus interface
                         self._client.disable_vlan_on_trunk_int(
                             switch_ip, row.vlan_id, etype, nexus_port)
+
+                    # Check whether there are any remaining instances
+                    # using this vlan on the Nexus switch.
                     if auto_delete:
-                        self._client.delete_vlan(switch_ip, row.vlan_id)
+                        try:
+                            nxos_db.get_nexusvlan_binding(row.vlan_id,
+                                                          row.switch_ip)
+                        except cisco_exc.NexusPortBindingNotFound:
+                            # Delete this vlan from this switch
+                            self._client.delete_vlan(switch_ip, row.vlan_id)
                 except Exception:
                     # The delete vlan operation on the Nexus failed,
                     # so this delete_port request has failed. For
@@ -327,40 +323,25 @@ class NexusPlugin(L2DevicePluginBase):
     def update_port(self, tenant_id, net_id, port_id, port_state, **kwargs):
         """Update port.
 
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:update_port() called"))
-
-    def get_port_details(self, tenant_id, net_id, port_id, **kwargs):
-        """Get port details.
-
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
-        """
-        LOG.debug(_("NexusPlugin:get_port_details() called"))
+        LOG.debug(_("NexusPlugin:update_port() called"))  # pragma no cover
 
     def plug_interface(self, tenant_id, net_id, port_id, remote_interface_id,
                        **kwargs):
         """Plug interfaces.
 
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:plug_interface() called"))
+        LOG.debug(_("NexusPlugin:plug_interface() called"))  # pragma no cover
 
     def unplug_interface(self, tenant_id, net_id, port_id, **kwargs):
         """Unplug interface.
 
-        This is probably not applicable to the Nexus plugin.
-        Delete if not required.
+        Not applicable to Nexus plugin. Defined here to satisfy abstract
+        method requirements.
         """
-        LOG.debug(_("NexusPlugin:unplug_interface() called"))
-
-    def _get_network(self, tenant_id, network_id, context, base_plugin_ref):
-        """Get the Network ID."""
-        network = base_plugin_ref._get_network(context, network_id)
-        if not network:
-            raise exc.NetworkNotFound(net_id=network_id)
-        return {const.NET_ID: network_id, const.NET_NAME: network.name,
-                const.NET_PORTS: network.ports}
+        LOG.debug(_("NexusPlugin:unplug_interface() called")
+                  )  # pragma no cover

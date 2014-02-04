@@ -38,7 +38,7 @@ class RequestTestCase(base.BaseTestCase):
     def test_content_type_missing(self):
         request = wsgi.Request.blank('/tests/123', method='POST')
         request.body = "<body />"
-        self.assertEqual(None, request.get_content_type())
+        self.assertIsNone(request.get_content_type())
 
     def test_content_type_with_charset(self):
         request = wsgi.Request.blank('/tests/123')
@@ -113,13 +113,13 @@ class RequestTestCase(base.BaseTestCase):
         # the best match locale should be None
         request.headers['Accept-Language'] = 'unknown-language'
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
         request.headers['Accept-Language'] = ''
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
         request.headers.pop('Accept-Language')
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
 
 
 class ResourceTestCase(base.BaseTestCase):
@@ -168,7 +168,7 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
                          expected_res)
 
-    @mock.patch('neutron.openstack.common.gettextutils.get_localized_message')
+    @mock.patch('neutron.openstack.common.gettextutils.translate')
     def test_unmapped_neutron_error_localized(self, mock_translation):
         gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'
@@ -238,7 +238,7 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
                          expected_res)
 
-    @mock.patch('neutron.openstack.common.gettextutils.get_localized_message')
+    @mock.patch('neutron.openstack.common.gettextutils.translate')
     def test_mapped_neutron_error_localized(self, mock_translation):
         gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'

@@ -203,8 +203,8 @@ class TestDebugCommands(base.BaseTestCase):
                                       mock.call.delete_port('fake_port')])
         self.driver.assert_has_calls([mock.call.get_device_name(mock.ANY),
                                       mock.call.unplug('tap12345678-12',
-                                      namespace=namespace,
-                                      bridge=None)])
+                                                       namespace=namespace,
+                                                       bridge=None)])
 
     def test_delete_probe_external(self):
         fake_network = {'network': {'id': 'fake_net',
@@ -224,8 +224,8 @@ class TestDebugCommands(base.BaseTestCase):
                                       mock.call.delete_port('fake_port')])
         self.driver.assert_has_calls([mock.call.get_device_name(mock.ANY),
                                       mock.call.unplug('tap12345678-12',
-                                      namespace=namespace,
-                                      bridge='br-ex')])
+                                                       namespace=namespace,
+                                                       bridge='br-ex')])
 
     def test_delete_probe_without_namespace(self):
         cfg.CONF.set_override('use_namespaces', False)

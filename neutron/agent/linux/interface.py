@@ -19,6 +19,7 @@ import abc
 
 import netaddr
 from oslo.config import cfg
+import six
 
 from neutron.agent.common import config
 from neutron.agent.linux import ip_lib
@@ -59,8 +60,8 @@ OPTS = [
 ]
 
 
+@six.add_metaclass(abc.ABCMeta)
 class LinuxInterfaceDriver(object):
-    __metaclass__ = abc.ABCMeta
 
     # from linux IF_NAMESIZE
     DEV_NAME_LEN = 14
@@ -70,10 +71,12 @@ class LinuxInterfaceDriver(object):
         self.conf = conf
         self.root_helper = config.get_root_helper(conf)
 
-    def init_l3(self, device_name, ip_cidrs, namespace=None):
+    def init_l3(self, device_name, ip_cidrs, namespace=None,
+                preserve_ips=[]):
         """Set the L3 settings for the interface using data from the port.
 
         ip_cidrs: list of 'X.X.X.X/YY' strings
+        preserve_ips: list of ip cidrs that should not be removed from device
         """
         device = ip_lib.IPDevice(device_name,
                                  self.root_helper,
@@ -95,7 +98,8 @@ class LinuxInterfaceDriver(object):
 
         # clean up any old addresses
         for ip_cidr, ip_version in previous.items():
-            device.addr.delete(ip_version, ip_cidr)
+            if ip_cidr not in preserve_ips:
+                device.addr.delete(ip_version, ip_cidr)
 
     def check_bridge_exists(self, bridge):
         if not ip_lib.device_exists(bridge):
@@ -140,7 +144,7 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
 
     def _ovs_add_port(self, bridge, device_name, port_id, mac_address,
                       internal=True):
-        cmd = ['ovs-vsctl', '--', '--may-exist',
+        cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port', device_name, '--',
                'add-port', bridge, device_name]
         if internal:
             cmd += ['--', 'set', 'Interface', device_name, 'type=internal']
@@ -217,6 +221,50 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
         except RuntimeError:
             LOG.error(_("Failed unplugging interface '%s'"),
                       device_name)
+
+
+class MidonetInterfaceDriver(LinuxInterfaceDriver):
+
+    def plug(self, network_id, port_id, device_name, mac_address,
+             bridge=None, namespace=None, prefix=None):
+        """This method is called by the Dhcp agent or by the L3 agent
+        when a new network is created
+        """
+        if not ip_lib.device_exists(device_name,
+                                    self.root_helper,
+                                    namespace=namespace):
+            ip = ip_lib.IPWrapper(self.root_helper)
+            tap_name = device_name.replace(prefix or 'tap', 'tap')
+
+            # Create ns_dev in a namespace if one is configured.
+            root_dev, ns_dev = ip.add_veth(tap_name, device_name,
+                                           namespace2=namespace)
+
+            ns_dev.link.set_address(mac_address)
+
+            # Add an interface created by ovs to the namespace.
+            namespace_obj = ip.ensure_namespace(namespace)
+            namespace_obj.add_device_to_namespace(ns_dev)
+
+            ns_dev.link.set_up()
+            root_dev.link.set_up()
+
+            cmd = ['mm-ctl', '--bind-port', port_id, device_name]
+            utils.execute(cmd, self.root_helper)
+
+        else:
+            LOG.warn(_("Device %s already exists"), device_name)
+
+    def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
+        # the port will be deleted by the dhcp agent that will call the plugin
+        device = ip_lib.IPDevice(device_name,
+                                 self.root_helper,
+                                 namespace)
+        device.link.delete()
+        LOG.debug(_("Unplugged interface '%s'"), device_name)
+
+        ip_lib.IPWrapper(
+            self.root_helper, namespace).garbage_collect_namespace()
 
 
 class IVSInterfaceDriver(LinuxInterfaceDriver):
@@ -336,7 +384,7 @@ class MetaInterfaceDriver(LinuxInterfaceDriver):
             tenant_name=self.conf.admin_tenant_name,
             auth_url=self.conf.auth_url,
             auth_strategy=self.conf.auth_strategy,
-            auth_region=self.conf.auth_region
+            region_name=self.conf.auth_region
         )
         self.flavor_driver_map = {}
         for flavor, driver_name in [

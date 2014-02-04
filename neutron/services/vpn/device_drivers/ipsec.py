@@ -23,6 +23,7 @@ import shutil
 import jinja2
 import netaddr
 from oslo.config import cfg
+import six
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -85,13 +86,13 @@ def _get_template(template_file):
     return JINJA_ENV.get_template(template_file)
 
 
+@six.add_metaclass(abc.ABCMeta)
 class BaseSwanProcess():
     """Swan Family Process Manager
 
     This class manages start/restart/stop ipsec process.
     This class create/delete config template
     """
-    __metaclass__ = abc.ABCMeta
 
     binary = "ipsec"
     CONFIG_DIRS = [
@@ -465,6 +466,7 @@ class IPsecVpnDriverApi(proxy.RpcProxy):
                          topic=self.topic)
 
 
+@six.add_metaclass(abc.ABCMeta)
 class IPsecDriver(device_drivers.DeviceDriver):
     """VPN Device Driver for IPSec.
 
@@ -478,7 +480,6 @@ class IPsecDriver(device_drivers.DeviceDriver):
     #   1.0 Initial version
 
     RPC_API_VERSION = '1.0'
-    __metaclass__ = abc.ABCMeta
 
     def __init__(self, agent, host):
         self.agent = agent
@@ -543,7 +544,7 @@ class IPsecDriver(device_drivers.DeviceDriver):
     def ensure_process(self, process_id, vpnservice=None):
         """Ensuring process.
 
-        If the process dosen't exist, it will create process
+        If the process doesn't exist, it will create process
         and store it in self.processs
         """
         process = self.processes.get(process_id)

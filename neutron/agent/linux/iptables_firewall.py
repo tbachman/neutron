@@ -185,9 +185,6 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                 for rule in port.get('security_group_rules', [])
                 if rule['direction'] == direction]
 
-    def _arp_spoofing_rule(self, port):
-        return '-m mac ! --mac-source %s -j DROP' % port['mac_address']
-
     def _setup_spoof_filter_chain(self, port, table, mac_ip_pairs, rules):
         if mac_ip_pairs:
             chain_name = self._port_chain_name(port, SPOOF_FILTER)
@@ -243,6 +240,15 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         #Note(nati) Drop dhcp packet from VM
         return ['-p udp -m udp --sport 67 --dport 68 -j DROP']
 
+    def _accept_inbound_icmpv6(self):
+        # Allow router advertisements, multicast listener
+        # and neighbor advertisement into the instance
+        icmpv6_rules = []
+        for icmp6_type in constants.ICMPV6_ALLOWED_TYPES:
+            icmpv6_rules += ['-p icmpv6 --icmpv6-type %s -j RETURN' %
+                             icmp6_type]
+        return icmpv6_rules
+
     def _add_rule_by_security_group(self, port, direction):
         chain_name = self._port_chain_name(port, direction)
         # select rules for current direction
@@ -259,6 +265,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                 ipv4_iptables_rule,
                                 ipv6_iptables_rule)
             ipv4_iptables_rule += self._drop_dhcp_rule()
+        if direction == INGRESS_DIRECTION:
+            ipv6_iptables_rule += self._accept_inbound_icmpv6()
         ipv4_iptables_rule += self._convert_sgr_to_iptables_rules(
             ipv4_sg_rules)
         ipv6_iptables_rule += self._convert_sgr_to_iptables_rules(

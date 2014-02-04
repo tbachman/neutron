@@ -111,19 +111,19 @@ fake_network = dhcp.NetModel(True, dict(id='12345678-1234-5678-1234567890ab',
                              subnets=[fake_subnet1, fake_subnet2],
                              ports=[fake_port1]))
 
-fake_meta_network = dhcp.NetModel(True,
-                                  dict(id='12345678-1234-5678-1234567890ab',
-                                  tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                                  admin_state_up=True,
-                                  subnets=[fake_meta_subnet],
-                                  ports=[fake_meta_port]))
+fake_meta_network = dhcp.NetModel(
+    True, dict(id='12345678-1234-5678-1234567890ab',
+               tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+               admin_state_up=True,
+               subnets=[fake_meta_subnet],
+               ports=[fake_meta_port]))
 
-fake_down_network = dhcp.NetModel(True,
-                                  dict(id='12345678-dddd-dddd-1234567890ab',
-                                  tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                                  admin_state_up=False,
-                                  subnets=[],
-                                  ports=[]))
+fake_down_network = dhcp.NetModel(
+    True, dict(id='12345678-dddd-dddd-1234567890ab',
+               tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+               admin_state_up=False,
+               subnets=[],
+               ports=[]))
 
 
 class TestDhcpAgent(base.BaseTestCase):
@@ -140,12 +140,7 @@ class TestDhcpAgent(base.BaseTestCase):
         self.driver_cls.return_value = self.driver
         self.mock_makedirs_p = mock.patch("os.makedirs")
         self.mock_makedirs = self.mock_makedirs_p.start()
-
-    def tearDown(self):
-        self.driver_cls_p.stop()
-        self.mock_makedirs_p.stop()
-        cfg.CONF.reset()
-        super(TestDhcpAgent, self).tearDown()
+        self.addCleanup(mock.patch.stopall)
 
     def test_dhcp_agent_manager(self):
         state_rpc_str = 'neutron.agent.rpc.PluginReportStateAPI'
@@ -211,7 +206,8 @@ class TestDhcpAgent(base.BaseTestCase):
                                             mock.ANY,
                                             mock.ANY)
 
-    def _test_call_driver_failure(self, exc=None, trace_level='exception'):
+    def _test_call_driver_failure(self, exc=None,
+                                  trace_level='exception', expected_sync=True):
         network = mock.Mock()
         network.id = '1'
         self.driver.return_value.foo.side_effect = exc or Exception
@@ -224,7 +220,26 @@ class TestDhcpAgent(base.BaseTestCase):
                                                 mock.ANY,
                                                 mock.ANY)
             self.assertEqual(log.call_count, 1)
-            self.assertTrue(dhcp.needs_resync)
+            self.assertEqual(expected_sync, dhcp.needs_resync)
+
+    def test_call_driver_failure(self):
+        self._test_call_driver_failure()
+
+    def test_call_driver_remote_error_net_not_found(self):
+        self._test_call_driver_failure(
+            exc=common.RemoteError(exc_type='NetworkNotFound'),
+            trace_level='warning')
+
+    def test_call_driver_network_not_found(self):
+        self._test_call_driver_failure(
+            exc=exceptions.NetworkNotFound(net_id='1'),
+            trace_level='warning')
+
+    def test_call_driver_conflict(self):
+        self._test_call_driver_failure(
+            exc=exceptions.Conflict(),
+            trace_level='warning',
+            expected_sync=False)
 
     def test_call_driver_failure(self):
         self._test_call_driver_failure()
@@ -273,6 +288,22 @@ class TestDhcpAgent(base.BaseTestCase):
 
     def test_sync_state_disabled_net(self):
         self._test_sync_state_helper(['b'], ['a'])
+
+    def test_sync_state_waitall(self):
+        class mockNetwork():
+            id = '0'
+            admin_state_up = True
+            subnets = []
+
+            def __init__(self, id):
+                self.id = id
+        with mock.patch.object(dhcp_agent.eventlet.GreenPool, 'waitall') as w:
+            active_networks = [mockNetwork('1'), mockNetwork('2'),
+                               mockNetwork('3'), mockNetwork('4'),
+                               mockNetwork('5')]
+            known_networks = ['1', '2', '3', '4', '5']
+            self._test_sync_state_helper(known_networks, active_networks)
+            w.assert_called_once_with()
 
     def test_sync_state_plugin_error(self):
         with mock.patch(DHCP_PLUGIN) as plug:
@@ -332,6 +363,25 @@ class TestDhcpAgent(base.BaseTestCase):
         )
 
         self.assertEqual(set(networks), set(dhcp.cache.get_network_ids()))
+
+    def test_none_interface_driver(self):
+        cfg.CONF.set_override('interface_driver', None)
+        with mock.patch.object(dhcp, 'LOG') as log:
+            self.assertRaises(SystemExit, dhcp.DeviceManager,
+                              cfg.CONF, 'sudo', None)
+            msg = 'An interface driver must be specified'
+            log.error.assert_called_once_with(msg)
+
+    def test_nonexistent_interface_driver(self):
+        # Temporarily turn off mock, so could use the real import_class
+        # to import interface_driver.
+        self.driver_cls_p.stop()
+        self.addCleanup(self.driver_cls_p.start)
+        cfg.CONF.set_override('interface_driver', 'foo')
+        with mock.patch.object(dhcp, 'LOG') as log:
+            self.assertRaises(SystemExit, dhcp.DeviceManager,
+                              cfg.CONF, 'sudo', None)
+            log.error.assert_called_once()
 
 
 class TestLogArgs(base.BaseTestCase):
@@ -845,6 +895,10 @@ class TestDhcpPluginApiProxy(base.BaseTestCase):
                                               device_id='devid',
                                               host='foo')
 
+    def test_get_dhcp_port_none(self):
+        self.call.return_value = None
+        self.assertIsNone(self.proxy.get_dhcp_port('netid', 'devid'))
+
     def test_get_active_networks_info(self):
         self.proxy.get_active_networks_info()
         self.make_msg.assert_called_once_with('get_active_networks_info',
@@ -863,6 +917,24 @@ class TestDhcpPluginApiProxy(base.BaseTestCase):
         self.make_msg.assert_called_once_with('create_dhcp_port',
                                               port=port_body,
                                               host='foo')
+
+    def test_create_dhcp_port_none(self):
+        self.call.return_value = None
+        port_body = (
+            {'port':
+                {'name': '', 'admin_state_up': True,
+                 'network_id': fake_network.id,
+                 'tenant_id': fake_network.tenant_id,
+                 'fixed_ips': [{'subnet_id': fake_fixed_ip1.subnet_id}],
+                 'device_id': mock.ANY}})
+        self.assertIsNone(self.proxy.create_dhcp_port(port_body))
+
+    def test_update_dhcp_port_none(self):
+        self.call.return_value = None
+        port_body = {'port': {'fixed_ips':
+                              [{'subnet_id': fake_fixed_ip1.subnet_id}]}}
+        self.assertIsNone(self.proxy.update_dhcp_port(fake_port1.id,
+                                                      port_body))
 
     def test_update_dhcp_port(self):
         port_body = {'port': {'fixed_ips':
@@ -958,11 +1030,11 @@ class TestNetworkCache(base.BaseTestCase):
                          fake_network)
 
     def test_put_port(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                                 subnets=[fake_subnet1],
-                                 ports=[fake_port1]))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                       subnets=[fake_subnet1],
+                       ports=[fake_port1]))
         nc = dhcp_agent.NetworkCache()
         nc.put(fake_net)
         nc.put_port(fake_port2)
@@ -970,11 +1042,11 @@ class TestNetworkCache(base.BaseTestCase):
         self.assertIn(fake_port2, fake_net.ports)
 
     def test_put_port_existing(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                                 subnets=[fake_subnet1],
-                                 ports=[fake_port1, fake_port2]))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                       subnets=[fake_subnet1],
+                       ports=[fake_port1, fake_port2]))
         nc = dhcp_agent.NetworkCache()
         nc.put(fake_net)
         nc.put_port(fake_port2)
@@ -983,11 +1055,11 @@ class TestNetworkCache(base.BaseTestCase):
         self.assertIn(fake_port2, fake_net.ports)
 
     def test_remove_port_existing(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                                 subnets=[fake_subnet1],
-                                 ports=[fake_port1, fake_port2]))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                       subnets=[fake_subnet1],
+                       ports=[fake_port1, fake_port2]))
         nc = dhcp_agent.NetworkCache()
         nc.put(fake_net)
         nc.remove_port(fake_port2)
@@ -1129,6 +1201,14 @@ class TestDeviceManager(base.BaseTestCase):
     def test_setup_device_exists_reuse(self):
         self._test_setup_helper(True, True)
 
+    def test_create_dhcp_port_raise_conflict(self):
+        plugin = mock.Mock()
+        dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, plugin)
+        plugin.create_dhcp_port.return_value = None
+        self.assertRaises(exceptions.Conflict,
+                          dh.setup_dhcp_port,
+                          fake_network)
+
     def test_create_dhcp_port_create_new(self):
         plugin = mock.Mock()
         dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, plugin)
@@ -1160,6 +1240,17 @@ class TestDeviceManager(base.BaseTestCase):
             mock.call.update_dhcp_port(fake_network_copy.ports[0].id,
                                        port_body)])
 
+    def test_update_dhcp_port_raises_conflict(self):
+        plugin = mock.Mock()
+        dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, plugin)
+        fake_network_copy = copy.deepcopy(fake_network)
+        fake_network_copy.ports[0].device_id = dh.get_device_id(fake_network)
+        fake_network_copy.subnets[1].enable_dhcp = True
+        plugin.update_dhcp_port.return_value = None
+        self.assertRaises(exceptions.Conflict,
+                          dh.setup_dhcp_port,
+                          fake_network_copy)
+
     def test_create_dhcp_port_no_update_or_create(self):
         plugin = mock.Mock()
         dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, plugin)
@@ -1170,12 +1261,13 @@ class TestDeviceManager(base.BaseTestCase):
         self.assertFalse(plugin.update_dhcp_port.called)
 
     def test_destroy(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
 
-        fake_port = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
-                                   mac_address='aa:bb:cc:dd:ee:ff'))
+        fake_port = dhcp.DictModel(
+            dict(id='12345678-1234-aaaa-1234567890ab',
+                 mac_address='aa:bb:cc:dd:ee:ff'))
 
         with mock.patch('neutron.agent.linux.interface.NullDriver') as dvr_cls:
             mock_driver = mock.MagicMock()
@@ -1196,12 +1288,13 @@ class TestDeviceManager(base.BaseTestCase):
                 [mock.call.release_dhcp_port(fake_net.id, mock.ANY)])
 
     def test_get_interface_name(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
 
-        fake_port = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
-                                   mac_address='aa:bb:cc:dd:ee:ff'))
+        fake_port = dhcp.DictModel(
+            dict(id='12345678-1234-aaaa-1234567890ab',
+                 mac_address='aa:bb:cc:dd:ee:ff'))
 
         with mock.patch('neutron.agent.linux.interface.NullDriver') as dvr_cls:
             mock_driver = mock.MagicMock()
@@ -1221,9 +1314,9 @@ class TestDeviceManager(base.BaseTestCase):
             self.assertEqual(len(plugin.mock_calls), 0)
 
     def test_get_device_id(self):
-        fake_net = dhcp.NetModel(True,
-                                 dict(id='12345678-1234-5678-1234567890ab',
-                                 tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
+        fake_net = dhcp.NetModel(
+            True, dict(id='12345678-1234-5678-1234567890ab',
+                       tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa'))
         expected = ('dhcp1ae5f96c-c527-5079-82ea-371a01645457-12345678-1234-'
                     '5678-1234567890ab')
 

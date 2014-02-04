@@ -242,9 +242,8 @@ class Server(object):
 
     def _run(self, application, socket):
         """Start a WSGI server in a new green thread."""
-        logger = logging.getLogger('eventlet.wsgi.server')
         eventlet.wsgi.server(socket, application, custom_pool=self.pool,
-                             log=logging.WritableLogger(logger))
+                             log=logging.WritableLogger(LOG))
 
 
 class Middleware(object):
@@ -1021,7 +1020,7 @@ class Router(object):
         if not match:
             language = req.best_match_language()
             msg = _('The resource could not be found.')
-            msg = gettextutils.get_localized_message(msg, language)
+            msg = gettextutils.translate(msg, language)
             return webob.exc.HTTPNotFound(explanation=msg)
         app = match['controller']
         return app

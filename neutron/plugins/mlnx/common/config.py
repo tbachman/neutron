@@ -26,7 +26,7 @@ DEFAULT_INTERFACE_MAPPINGS = []
 vlan_opts = [
     cfg.StrOpt('tenant_network_type', default='vlan',
                help=_("Network type for tenant networks "
-               "(local, ib, vlan, or none)")),
+                      "(local, ib, vlan, or none)")),
     cfg.ListOpt('network_vlan_ranges',
                 default=DEFAULT_VLAN_RANGES,
                 help=_("List of <physical_network>:<vlan_min>:<vlan_max> "
@@ -48,6 +48,13 @@ eswitch_opts = [
     cfg.IntOpt('request_timeout', default=3000,
                help=_("The number of milliseconds the agent will wait for "
                       "response on request to daemon.")),
+    cfg.IntOpt('retries', default=3,
+               help=_("The number of retries the agent will send request "
+                      "to daemon before giving up")),
+    cfg.IntOpt('backoff_rate', default=2,
+               help=_("backoff rate multiplier for waiting period between "
+                      "retries for request to daemon, i.e. value of 2 will "
+                      " double the request timeout each retry")),
 ]
 
 agent_opts = [

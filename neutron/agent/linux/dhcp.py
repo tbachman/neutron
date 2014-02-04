@@ -26,9 +26,11 @@ import uuid
 
 import netaddr
 from oslo.config import cfg
+import six
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.common import constants
 from neutron.common import exceptions
 from neutron.openstack.common import importutils
 from neutron.openstack.common import jsonutils
@@ -50,6 +52,8 @@ OPTS = [
     cfg.StrOpt('dnsmasq_dns_server',
                help=_('Use another DNS server before any in '
                       '/etc/resolv.conf.')),
+    cfg.BoolOpt('dhcp_delete_namespaces', default=False,
+                help=_("Delete namespace after removing a dhcp server.")),
     cfg.IntOpt(
         'dnsmasq_lease_max',
         default=(2 ** 24),
@@ -100,8 +104,8 @@ class NetModel(DictModel):
         return self._ns_name
 
 
+@six.add_metaclass(abc.ABCMeta)
 class DhcpBase(object):
-    __metaclass__ = abc.ABCMeta
 
     def __init__(self, conf, network, root_helper='sudo',
                  version=None, plugin=None):
@@ -188,6 +192,16 @@ class DhcpLocalProcess(DhcpBase):
             LOG.debug(_('No DHCP started for %s'), self.network.id)
 
         self._remove_config_files()
+
+        if not retain_port:
+            if self.conf.dhcp_delete_namespaces and self.network.namespace:
+                ns_ip = ip_lib.IPWrapper(self.root_helper,
+                                         self.network.namespace)
+                try:
+                    ns_ip.netns.delete(self.network.namespace)
+                except RuntimeError:
+                    msg = _('Failed trying to delete namespace: %s')
+                    LOG.exception(msg, self.network.namespace)
 
     def _remove_config_files(self):
         confs_dir = os.path.abspath(os.path.normpath(self.conf.dhcp_confs))
@@ -445,12 +459,8 @@ class Dnsmasq(DhcpLocalProcess):
                     host_routes.append("%s,%s" % (hr.destination, hr.nexthop))
 
             # Add host routes for isolated network segments
-            enable_metadata = (
-                self.conf.enable_isolated_metadata
-                and not subnet.gateway_ip
-                and subnet.ip_version == 4)
 
-            if enable_metadata:
+            if self._enable_metadata(subnet):
                 subnet_dhcp_ip = subnet_to_interface_ip[subnet.id]
                 host_routes.append(
                     '%s/32,%s' % (METADATA_DEFAULT_IP, subnet_dhcp_ip)
@@ -519,6 +529,25 @@ class Dnsmasq(DhcpLocalProcess):
 
         return ','.join((set_tag + tag, '%s' % option) + args)
 
+    def _enable_metadata(self, subnet):
+        '''Determine if the metadata route will be pushed to hosts on subnet.
+
+        If subnet has a Neutron router attached, we want the hosts to get
+        metadata from the router's proxy via their default route instead.
+        '''
+        if self.conf.enable_isolated_metadata and subnet.ip_version == 4:
+            if subnet.gateway_ip is None:
+                return True
+            else:
+                for port in self.network.ports:
+                    if port.device_owner == constants.DEVICE_OWNER_ROUTER_INTF:
+                        for alloc in port.fixed_ips:
+                            if alloc.subnet_id == subnet.id:
+                                return False
+                return True
+        else:
+            return False
+
     @classmethod
     def lease_update(cls):
         network_id = os.environ.get(cls.NEUTRON_NETWORK_ID_KEY)
@@ -553,7 +582,9 @@ class DeviceManager(object):
         self.root_helper = root_helper
         self.plugin = plugin
         if not conf.interface_driver:
-            raise SystemExit(_('You must specify an interface driver'))
+            msg = _('An interface driver must be specified')
+            LOG.error(msg)
+            raise SystemExit(msg)
         try:
             self.driver = importutils.import_object(
                 conf.interface_driver, conf)
@@ -561,6 +592,7 @@ class DeviceManager(object):
             msg = (_("Error importing interface driver '%(driver)s': "
                    "%(inner)s") % {'driver': conf.interface_driver,
                                    'inner': e})
+            LOG.error(msg)
             raise SystemExit(msg)
 
     def get_interface_name(self, network, port):
@@ -653,6 +685,8 @@ class DeviceManager(object):
                         [dict(subnet_id=s) for s in dhcp_enabled_subnet_ids])
                     dhcp_port = self.plugin.update_dhcp_port(
                         port.id, {'port': {'fixed_ips': port_fixed_ips}})
+                    if not dhcp_port:
+                        raise exceptions.Conflict()
                 else:
                     dhcp_port = port
                 # break since we found port that matches device_id
@@ -671,6 +705,9 @@ class DeviceManager(object):
                 tenant_id=network.tenant_id,
                 fixed_ips=[dict(subnet_id=s) for s in dhcp_enabled_subnet_ids])
             dhcp_port = self.plugin.create_dhcp_port({'port': port_dict})
+
+        if not dhcp_port:
+            raise exceptions.Conflict()
 
         # Convert subnet_id to subnet dict
         fixed_ips = [dict(subnet_id=fixed_ip.subnet_id,

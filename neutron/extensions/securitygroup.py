@@ -19,6 +19,7 @@ from abc import ABCMeta
 from abc import abstractmethod
 
 from oslo.config import cfg
+import six
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
@@ -225,12 +226,12 @@ EXTENDED_ATTRIBUTES_2_0 = {
 security_group_quota_opts = [
     cfg.IntOpt('quota_security_group',
                default=10,
-               help=_('Number of security groups allowed per tenant,'
-                      '-1 for unlimited')),
+               help=_('Number of security groups allowed per tenant. '
+                      'A negative value means unlimited.')),
     cfg.IntOpt('quota_security_group_rule',
                default=100,
-               help=_('Number of security rules allowed per tenant, '
-                      '-1 for unlimited')),
+               help=_('Number of security rules allowed per tenant. '
+                      'A negative value means unlimited.')),
 ]
 cfg.CONF.register_opts(security_group_quota_opts, 'QUOTAS')
 
@@ -291,8 +292,8 @@ class Securitygroup(extensions.ExtensionDescriptor):
             return {}
 
 
+@six.add_metaclass(ABCMeta)
 class SecurityGroupPluginBase(object):
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def create_security_group(self, context, security_group):

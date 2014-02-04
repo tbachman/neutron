@@ -25,13 +25,13 @@ from neutron.api import extensions
 from neutron.api.extensions import PluginAwareExtensionManager
 from neutron.api.v2 import attributes
 from neutron.common import config
-from neutron.common.test_lib import test_config
 from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron import manager
 from neutron.plugins.nicira.dbexts import nicira_networkgw_db
 from neutron.plugins.nicira.extensions import nvp_networkgw as networkgw
+from neutron.plugins.nicira.NeutronPlugin import NVP_EXT_PATH
 from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
@@ -112,7 +112,7 @@ class NetworkGatewayExtensionTestCase(base.BaseTestCase):
         instance.create_network_gateway.assert_called_with(
             mock.ANY, network_gateway=data)
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
-        self.assertTrue(self._resource in res.json)
+        self.assertIn(self._resource, res.json)
         nw_gw = res.json[self._resource]
         self.assertEqual(nw_gw['id'], nw_gw_id)
 
@@ -152,7 +152,7 @@ class NetworkGatewayExtensionTestCase(base.BaseTestCase):
         instance.update_network_gateway.assert_called_with(
             mock.ANY, nw_gw_id, network_gateway=data)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
-        self.assertTrue(self._resource in res.json)
+        self.assertIn(self._resource, res.json)
         nw_gw = res.json[self._resource]
         self.assertEqual(nw_gw['id'], nw_gw_id)
         self.assertEqual(nw_gw['name'], nw_gw_name)
@@ -245,13 +245,14 @@ class NetworkGatewayExtensionTestCase(base.BaseTestCase):
 class NetworkGatewayDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
     """Unit tests for Network Gateway DB support."""
 
-    def setUp(self):
-        test_config['plugin_name_v2'] = '%s.%s' % (
-            __name__, TestNetworkGatewayPlugin.__name__)
-        ext_mgr = TestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
+    def setUp(self, plugin=None, ext_mgr=None):
+        if not plugin:
+            plugin = '%s.%s' % (__name__, TestNetworkGatewayPlugin.__name__)
+        if not ext_mgr:
+            ext_mgr = TestExtensionManager()
         self.resource = networkgw.RESOURCE_NAME.replace('-', '_')
-        super(NetworkGatewayDbTestCase, self).setUp()
+        super(NetworkGatewayDbTestCase, self).setUp(plugin=plugin,
+                                                    ext_mgr=ext_mgr)
 
     def _create_network_gateway(self, fmt, tenant_id, name=None,
                                 devices=None, arg_list=None, **kwargs):
@@ -310,11 +311,11 @@ class NetworkGatewayDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
                                             net['network']['id'],
                                             segmentation_type,
                                             segmentation_id)
-                self.assertTrue('connection_info' in body)
+                self.assertIn('connection_info', body)
                 connection_info = body['connection_info']
                 for attr in ('network_id', 'port_id',
                              'network_gateway_id'):
-                    self.assertTrue(attr in connection_info)
+                    self.assertIn(attr, connection_info)
                 # fetch port and confirm device_id
                 gw_port_id = connection_info['port_id']
                 port_body = self._show('ports', gw_port_id)
@@ -629,6 +630,10 @@ class TestNetworkGatewayPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     """Simple plugin class for testing db support for network gateway ext."""
 
     supported_extension_aliases = ["network-gateway"]
+
+    def __init__(self, **args):
+        super(TestNetworkGatewayPlugin, self).__init__(**args)
+        extensions.append_api_extensions_path([NVP_EXT_PATH])
 
     def delete_port(self, context, id, nw_gw_port_check=True):
         if nw_gw_port_check:

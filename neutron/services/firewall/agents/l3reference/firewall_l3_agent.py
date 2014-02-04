@@ -67,13 +67,15 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
         self.conf = conf
         fwaas_driver_class_path = cfg.CONF.fwaas.driver
         self.fwaas_enabled = cfg.CONF.fwaas.enabled
-        try:
-            self.fwaas_driver = importutils.import_object(
-                fwaas_driver_class_path)
-            LOG.debug(_("FWaaS Driver Loaded: '%s'"), fwaas_driver_class_path)
-        except ImportError:
-            msg = _('Error importing FWaaS device driver: %s')
-            raise ImportError(msg % fwaas_driver_class_path)
+        if self.fwaas_enabled:
+            try:
+                self.fwaas_driver = importutils.import_object(
+                    fwaas_driver_class_path)
+                LOG.debug(_("FWaaS Driver Loaded: '%s'"),
+                          fwaas_driver_class_path)
+            except ImportError:
+                msg = _('Error importing FWaaS device driver: %s')
+                raise ImportError(msg % fwaas_driver_class_path)
         self.services_sync = False
         self.root_helper = config.get_root_helper(conf)
         # setup RPC to msg fwaas plugin
@@ -89,7 +91,8 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
             router['id']
             for router in routers
             if router['tenant_id'] == tenant_id]
-        local_ns_list = root_ip.get_namespaces(self.root_helper)
+        local_ns_list = root_ip.get_namespaces(
+            self.root_helper) if self.conf.use_namespaces else []
 
         router_info_list = []
         # Pick up namespaces for Tenant Routers
@@ -219,6 +222,9 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
 
     def process_services_sync(self, ctx):
         """On RPC issues sync with plugin and apply the sync data."""
+        # avoid msg to plugin when fwaas is not configured
+        if not self.fwaas_enabled:
+            return
         try:
             # get all routers
             routers = self.plugin_rpc.get_routers(ctx)
@@ -245,7 +251,7 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
                             # install
                             LOG.debug(_("Apply fw on Router List: '%s'"),
                                       [ri.router['id']
-                                      for ri in router_info_list])
+                                          for ri in router_info_list])
                             # no need to apply sync data for ACTIVE fw
                             if fw['status'] != constants.ACTIVE:
                                 self._invoke_driver_for_sync_from_plugin(
