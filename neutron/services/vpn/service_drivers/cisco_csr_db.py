@@ -37,49 +37,43 @@ class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
     __tablename__ = 'csr_identifier_map'
 
     ipsec_site_conn_id = sa.Column(sa.String(64), primary_key=True)
-    ipsec_tunnel_id = sa.Column(sa.Integer, nullable=False)
-    ike_policy_id = sa.Column(sa.Integer, nullable=False)
+    csr_tunnel_id = sa.Column(sa.Integer, nullable=False)
+    csr_ike_policy_id = sa.Column(sa.Integer, nullable=False)
 
 
-def get_next_available_tunnel_id(session):
-    """Find first unused int from 0..2^32-1 for tunnel ID.
-
-    As entries are removed, find the first "hole" and return that as the
-    next available tunnel ID. To improve performance, artificially limit
-    the number of entries to MAX_CSR_TUNNELS. Currently, these are globally
-    unique. Could enhance in the future to be unique per router (CSR).
-    """
-    rows = session.query(IdentifierMap.ipsec_tunnel_id)
-    used_ids = set([row[0] for row in rows])
-    all_ids = set(range(MAX_CSR_TUNNELS))
-    available_ids = all_ids - used_ids
-    if not available_ids:
-        msg = _("No available Cisco CSR tunnel IDs from "
-                "0..%d") % (MAX_CSR_TUNNELS - 1)
-        LOG.error(msg)
-        raise IndexError(msg)
-    return available_ids.pop()
-
-
-def get_next_available_ike_policy_id(session):
-    """Find first unused int from 1..10K for IKE policy ID.
+def get_next_available_id(session, table_field, id_type, min_value, max_value):
+    """Find first unused id for the specified field in IdentifierMap table.
 
     As entries are removed, find the first "hole" and return that as the
-    next available IKE policy ID. To improve performance, artificially limit
-    the number of entries to MAX_CSR_IKE_POLICIES. Currently, these are
+    next available ID. To improve performance, artificially limit
+    the number of entries to a smaller range. Currently, these IDs are
     globally unique. Could enhance in the future to be unique per router
     (CSR).
     """
-    rows = session.query(IdentifierMap.ike_policy_id)
+    rows = session.query(table_field)
     used_ids = set([row[0] for row in rows])
-    all_ids = set(range(1, MAX_CSR_IKE_POLICIES + 1))
+    all_ids = set(range(min_value, max_value))
     available_ids = all_ids - used_ids
     if not available_ids:
-        msg = _("No available Cisco CSR IKE policy IDs from "
-                "1..%d") % MAX_CSR_IKE_POLICIES
+        msg = _("No available Cisco CSR %(type)s IDs from "
+                "%(min)d..%(max)d") % {'type': id_type,
+                                       'min': min_value,
+                                       'max': max_value-1}
         LOG.error(msg)
         raise IndexError(msg)
     return available_ids.pop()
+
+
+def get_next_available_tunnel_id(session):
+    """Find first available tunnel ID from 0..MAX_CSR_TUNNELS-1."""
+    return get_next_available_id(session, IdentifierMap.csr_tunnel_id,
+                                 'Tunnel', 0, MAX_CSR_TUNNELS)
+
+
+def get_next_available_ike_policy_id(session):
+    """Find first available IKE Policy ID from 1..MAX_CSR_IKE_POLICIES."""
+    return get_next_available_id(session, IdentifierMap.csr_ike_policy_id,
+                                 'IKE Policy', 1, MAX_CSR_IKE_POLICIES + 1)
 
 
 def find_connection_using_ike_policy(ike_policy_id, session):
@@ -90,7 +84,7 @@ def find_connection_using_ike_policy(ike_policy_id, session):
 
 def lookup_ike_policy_id_for(conn_id, session):
     """Obtain existing Cisco CSR IKE policy ID from another connection."""
-    query = session.query(IdentifierMap.ike_policy_id)
+    query = session.query(IdentifierMap.csr_ike_policy_id)
     return query.filter_by(ipsec_site_conn_id=conn_id).one()[0]
 
 
@@ -110,7 +104,7 @@ def create_tunnel_mapping(context, conn_info):
     """Create Cisco CSR IDs, using mapping table and OpenStack UUIDs."""
     conn_id = conn_info['id']
     ike_policy_id = conn_info['ikepolicy_id']
-    # TOTO(pcm) Do we need to do ~_get_tenant_id_for_create()?
+    # TOTO(pcm) Do we need to do ~_get_tenant_id_for_create() for tenant ID?
     tenant_id = conn_info['tenant_id']
     with context.session.begin(subtransactions=True):
         csr_tunnel_id = get_next_available_tunnel_id(context.session)
@@ -118,8 +112,8 @@ def create_tunnel_mapping(context, conn_info):
                                                  context.session)
         map_entry = IdentifierMap(tenant_id=tenant_id,
                                   ipsec_site_conn_id=conn_id,
-                                  ipsec_tunnel_id=csr_tunnel_id,
-                                  ike_policy_id=csr_ike_id)
+                                  csr_tunnel_id=csr_tunnel_id,
+                                  csr_ike_policy_id=csr_ike_id)
         context.session.add(map_entry)
         LOG.debug(_("Mapped %(conn_id)s to Tunnel%(tunnel_id)d using IKE "
                     "policy ID %(ike_id)d"), {'conn_id': conn_id,

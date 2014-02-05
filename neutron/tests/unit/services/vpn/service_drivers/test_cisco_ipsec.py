@@ -149,8 +149,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                 conn_id = i * 10
                 entry = csr_db.IdentifierMap(tenant_id='1',
                                              ipsec_site_conn_id='%d' % conn_id,
-                                             ipsec_tunnel_id=tunnel,
-                                             ike_policy_id=100)
+                                             csr_tunnel_id=tunnel,
+                                             csr_ike_policy_id=100)
                 self.session.add(entry)
             tunnel = csr_db.get_next_available_tunnel_id(self.session)
             self.assertEqual(5, tunnel)
@@ -183,8 +183,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                 conn_id = i * 10
                 entry = csr_db.IdentifierMap(tenant_id='1',
                                              ipsec_site_conn_id='%d' % conn_id,
-                                             ipsec_tunnel_id=i,
-                                             ike_policy_id=ike_id)
+                                             csr_tunnel_id=i,
+                                             csr_ike_policy_id=ike_id)
                 self.session.add(entry)
             ike_id = csr_db.get_next_available_ike_policy_id(self.session)
             self.assertEqual(6, ike_id)
@@ -214,8 +214,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
             conn_id = i * 10
             entry = csr_db.IdentifierMap(tenant_id='1',
                                          ipsec_site_conn_id='%d' % conn_id,
-                                         ipsec_tunnel_id=i,
-                                         ike_policy_id=i)
+                                         csr_tunnel_id=i,
+                                         csr_ike_policy_id=i)
             self.session.add(entry)
 
     def test_get_ike_policy_id_already_in_use(self):
