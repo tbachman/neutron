@@ -53,6 +53,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.service_plugin = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
         self.context = context.Context('some_user', 'some_tenant')
+        self.session = self.context.session
         self.vpn_service = mock.Mock()
 
     def test_ike_version_unsupported(self):
@@ -141,31 +142,45 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         available, afterwards. Finally, remove one in the middle and
         ensure that it is the next available ID.
         """
-        with self.context.session.begin():
+        with self.session.begin():
             for i in xrange(5):
-                tunnel = csr_db.get_next_available_tunnel_id(
-                    self.context.session)
+                tunnel = csr_db.get_next_available_tunnel_id(self.session)
                 self.assertEqual(i, tunnel)
                 conn_id = i * 10
                 entry = csr_db.IdentifierMap(tenant_id='1',
                                              ipsec_site_conn_id='%d' % conn_id,
                                              ipsec_tunnel_id=tunnel,
                                              ike_policy_id=100)
-                self.context.session.add(entry)
-            tunnel = csr_db.get_next_available_tunnel_id(
-                self.context.session)
+                self.session.add(entry)
+            tunnel = csr_db.get_next_available_tunnel_id(self.session)
             self.assertEqual(5, tunnel)
             # Remove the 3rd entry and verify that this is the next available
-            sess_qry = self.context.session.query(csr_db.IdentifierMap)
+            sess_qry = self.session.query(csr_db.IdentifierMap)
             sess_qry.filter_by(ipsec_site_conn_id='20').delete()
-            tunnel = csr_db.get_next_available_tunnel_id(
-                self.context.session)
+            tunnel = csr_db.get_next_available_tunnel_id(self.session)
             self.assertEqual(2, tunnel)
 
+    def test_no_more_tunnel_ids_available(self):
+        """Failure test of trying to create tunnel, when none available."""
+        pass
+
     def test_identifying_mapped_ike_policy_id(self):
-        with self.context.session.begin():
-            ike_id = csr_db.get_or_create_csr_ike_policy_id(self.context.session)
+        """Obtain new IKE policy IDs for several tunnels."""
+        with self.session.begin():
+            ike_id = csr_db.get_or_create_csr_ike_policy_id(self.session)
             self.assertEqual(1, ike_id)
+
+    def test_getting_ike_policy_id_already_in_use(self):
+        """Obtain same IKE policy ID as already existing mappings."""
+        pass
+
+    def test_getting_available_ike_policy_id_from_middle(self):
+        """Get next available IKE policy ID, after it is no longer in use."""
+        pass
+
+    def test_no_more_ike_policy_ids_available(self):
+        """Failure test of trying to get IKE policy ID, when none available."""
+        pass
 
     def simulate_gw_ip_available(self):
         """Helper function indicating that tunnel has a gateway IP."""
@@ -178,7 +193,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
     def test_ipsec_connection_with_gateway_ip(self):
         """Test of IPSec connection with gateway IP."""
-        # self.context.session.query.side_effect = []
+        # self.session.query.side_effect = []
         self.simulate_gw_ip_available()
         conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
                      'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',

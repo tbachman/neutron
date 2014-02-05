@@ -61,8 +61,15 @@ def get_next_available_tunnel_id(session):
 def get_tunnels(session):
     return session.query(IdentifierMap).all()
 
-def get_or_create_csr_ike_policy_id(context):
-    """Find ID used by other tunnels or create next avail one from 0..10K."""
+def get_or_create_csr_ike_policy_id(session):
+    """Find ID used by other tunnels or create next avail one from 0..10K.
+    
+    If no other tunnels are using the same IKE policy, then return the
+    next available ID. As entries are removed, IDs may become available,
+    if no other tunnels are using the same IKE policy. In that case,
+    return the first available ID. To improve performance, artificially
+    limit the number of entries to MAX_CSR_IKE_POLICIES.
+    """
     return 2
 
 
