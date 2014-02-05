@@ -162,6 +162,11 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                 self.context.session)
             self.assertEqual(2, tunnel)
 
+    def test_identifying_mapped_ike_policy_id(self):
+        with self.context.session.begin():
+            ike_id = csr_db.get_or_create_csr_ike_policy_id(self.context.session)
+            self.assertEqual(1, ike_id)
+
     def simulate_gw_ip_available(self):
         """Helper function indicating that tunnel has a gateway IP."""
         def have_one(self):
