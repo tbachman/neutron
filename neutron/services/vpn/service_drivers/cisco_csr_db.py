@@ -19,14 +19,15 @@ import sqlalchemy as sa
 
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.db.vpn import vpn_db
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
 # Note: Artificially limit these to reduce mapping table size and performance
 # Tunnel can be 0..7FFFFFFF, IKE policy can be 1..10000
-MAX_CSR_TUNNELS = 2048
-MAX_CSR_IKE_POLICIES = 256
+MAX_CSR_TUNNELS = 10000
+MAX_CSR_IKE_POLICIES = 2000
 
 
 class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
@@ -45,14 +46,16 @@ def get_next_available_tunnel_id(session):
     
     As entries are removed, find the first "hole" and return that as the
     next available tunnel ID. To improve performance, artificially limit
-    the number of entries to MAX_CSR_TUNNELS.
+    the number of entries to MAX_CSR_TUNNELS. Currently, these are globally
+    unique. Could enhance in the future to be unique per router (CSR).
     """
     rows = session.query(IdentifierMap.ipsec_tunnel_id)
     used_ids = set([row[0] for row in rows])
     all_ids = set(range(MAX_CSR_TUNNELS))
     available_ids = all_ids - used_ids
     if not available_ids:
-        msg = _("No available IDs from 0..%d") % (MAX_CSR_TUNNELS - 1)
+        msg = _("No available Cisco CSR tunnel IDs from "
+                "0..%d") % (MAX_CSR_TUNNELS - 1)
         LOG.error(msg)
         raise IndexError(msg)
     return available_ids.pop()
@@ -61,17 +64,49 @@ def get_next_available_tunnel_id(session):
 def get_tunnels(session):
     return session.query(IdentifierMap).all()
 
-def get_or_create_csr_ike_policy_id(session):
-    """Find ID used by other tunnels or create next avail one from 0..10K.
+def get_next_available_ike_policy_id(session):
+    """Find first unused int from 1..10K for IKE policy ID.
     
-    If no other tunnels are using the same IKE policy, then return the
-    next available ID. As entries are removed, IDs may become available,
-    if no other tunnels are using the same IKE policy. In that case,
-    return the first available ID. To improve performance, artificially
-    limit the number of entries to MAX_CSR_IKE_POLICIES.
+    As entries are removed, find the first "hole" and return that as the
+    next available IKE policy ID. To improve performance, artificially limit
+    the number of entries to MAX_CSR_IKE_POLICIES. Currently, these are
+    globally unique. Could enhance in the future to be unique per router
+    (CSR).
     """
-    return 2
+    rows = session.query(IdentifierMap.ike_policy_id)
+    used_ids = set([row[0] for row in rows])
+    all_ids = set(range(1, MAX_CSR_IKE_POLICIES + 1))
+    available_ids = all_ids - used_ids
+    if not available_ids:
+        msg = _("No available Cisco CSR IKE policy IDs from "
+                "1..%d") % MAX_CSR_IKE_POLICIES
+        LOG.error(msg)
+        raise IndexError(msg)
+    return available_ids.pop()
 
+def find_connection_using_ike_policy(ike_policy_id, session):
+    """Return another connection that uses same IKE policy ID."""
+    query = session.query(vpn_db.IPsecSiteConnection.ikepolicy_id)
+    return query.filter_by(ikepolicy_id=ike_policy_id).first()
+
+def lookup_ike_policy_id_for(conn_id, session):
+    """Obtain existing Cisco CSR IKE policy ID from another connection."""
+    query = session.query(IdentifierMap.ike_policy_id)
+    return query.filter_by(ipsec_site_conn_id=conn_id).one()[0]
+    
+def determine_csr_ike_policy_id(ike_policy_id, session):
+    """Use existing, or reserve a new IKE policy ID for Cisco CSR."""
+     
+    conn_using_same_ike_id = find_connection_using_ike_policy(ike_policy_id,
+                                                              session)
+    if conn_using_same_ike_id:
+        ike_id = lookup_ike_policy_id_for(conn_using_same_ike_id, session)
+    else:
+        ike_id = get_next_available_ike_policy_id(session)
+    return ike_id
+
+def get_or_create_csr_ike_policy_id(session):
+    return 1  # TODO(pcm) Temp, pull
 
 def create_tunnel_mapping(context, conn_info):
     """Create Cisco CSR IDs, using mapping table and OpenStack UUIDs."""
