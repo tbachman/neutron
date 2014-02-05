@@ -134,6 +134,34 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.get_mtu, conn_info)
 
+    def test_identifying_next_tunnel_id(self):
+        """Make sure available tunnel IDs can be obtained.
+        
+        Check before adding five entries, and then check for the next
+        available, afterwards. Finally, remove one in the middle and
+        ensure that it is the next available ID.
+        """
+        with self.context.session.begin():
+            for i in xrange(5):
+                tunnel = csr_db.get_next_available_tunnel_id(
+                    self.context.session)
+                self.assertEqual(i, tunnel)
+                conn_id = i * 10
+                entry = csr_db.IdentifierMap(tenant_id='1',
+                                             ipsec_site_conn_id='%d' % conn_id,
+                                             ipsec_tunnel_id=tunnel,
+                                             ike_policy_id=100)
+                self.context.session.add(entry)
+            tunnel = csr_db.get_next_available_tunnel_id(
+                self.context.session)
+            self.assertEqual(5, tunnel)
+            # Remove the 3rd entry and verify that this is the next available
+            sess_qry = self.context.session.query(csr_db.IdentifierMap)
+            sess_qry.filter_by(ipsec_site_conn_id='20').delete()
+            tunnel = csr_db.get_next_available_tunnel_id(
+                self.context.session)
+            self.assertEqual(2, tunnel)
+
     def simulate_gw_ip_available(self):
         """Helper function indicating that tunnel has a gateway IP."""
         def have_one(self):
@@ -209,24 +237,6 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.assertEqual(1, tunnel_id)
         self.assertEqual(2, ike_id)
 
-    def test_identifying_next_tunnel_id(self):
-        with self.context.session.begin():
-            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
-            self.assertEqual(0, tunnel)
-            map_entry = csr_db.IdentifierMap(tenant_id='1',
-                                             ipsec_site_conn_id='10',
-                                             ipsec_tunnel_id=tunnel,
-                                             ike_policy_id=100)
-            self.context.session.add(map_entry)
-            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
-            self.assertEqual(1, tunnel)
-            map_entry = csr_db.IdentifierMap(tenant_id='1',
-                                             ipsec_site_conn_id='20',
-                                             ipsec_tunnel_id=tunnel,
-                                             ike_policy_id=100)
-            self.context.session.add(map_entry)
-            tunnel = csr_db.get_next_available_tunnel_id(self.context.session)
-            self.assertEqual(2, tunnel)
 
 class TestCiscoIPsecDriver(base.BaseTestCase):
     def setUp(self):

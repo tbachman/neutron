@@ -41,7 +41,12 @@ class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
 
 
 def get_next_available_tunnel_id(session):
-    """Find first unused int from 0..2^32-1 for tunnel ID."""
+    """Find first unused int from 0..2^32-1 for tunnel ID.
+    
+    As entries are removed, find the first "hole" and return that as the
+    next available tunnel ID. To improve performance, artificially limit
+    the number of entries to MAX_CSR_TUNNELS.
+    """
     rows = session.query(IdentifierMap.ipsec_tunnel_id)
     used_ids = set([row[0] for row in rows])
     all_ids = set(range(MAX_CSR_TUNNELS))
