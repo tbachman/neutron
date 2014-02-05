@@ -137,7 +137,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
     def test_identifying_next_tunnel_id(self):
         """Make sure available tunnel IDs can be reserved.
-        
+
         Check before adding five entries, and then check for the next
         available, afterwards. Finally, remove one in the middle and
         ensure that it is the next available ID.
@@ -170,14 +170,14 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
     def test_identifying_next_ike_policy_id(self):
         """Make sure available Cisco CSR IKE policy IDs can be reserved.
-        
+
         Check before adding five entries, and then check for the next
         available, afterwards. Finally, remove one in the middle and
         ensure that it is the next available ID. Note: the IKE policy IDs
         are one based.
         """
         with self.session.begin():
-            for i in xrange(1,6):
+            for i in xrange(1, 6):
                 ike_id = csr_db.get_next_available_ike_policy_id(self.session)
                 self.assertEqual(i, ike_id)
                 conn_id = i * 10
@@ -203,10 +203,9 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                           csr_db.get_next_available_ike_policy_id,
                           fake_session)
 
-
     def simulate_existing_mappings(self, session):
         """Helper - create three mapping table entries.
-        
+
         Each entry will have the same tenant ID. The IPSec site connection
         will be 10, 20, 30. The mapped tunnel ID will be 1, 2, 3. The
         mapped IKE policy ID will be 1, 2, 3.
@@ -215,55 +214,87 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
             conn_id = i * 10
             entry = csr_db.IdentifierMap(tenant_id='1',
                                          ipsec_site_conn_id='%d' % conn_id,
-                                         ipsec_tunnel_id=i, 
+                                         ipsec_tunnel_id=i,
                                          ike_policy_id=i)
             self.session.add(entry)
 
     def test_get_ike_policy_id_already_in_use(self):
         """Obtain Cisco CSR IKE policy ID from existing mappings.
-         
+
         Find the Cisco CSR IKE policy ID for another connection that uses
         the same IKE policy. Mocking out find_connection_using_ike_policy()
         as it is just a database lookup.
         """
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = '20'
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
-            csr_db.find_connection_using_ike_policy = mock.Mock()
-            csr_db.find_connection_using_ike_policy.return_value = '20'
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
                                                         self.session)
             self.assertEqual(2, ike_id)
 
     def test_getting_new_ike_policy_id(self):
         """Reserve new Cisco CSR IKE policy ID from mapping table.
-        
+
         Simulate that an existing connection is not using the IKE policy,
         by mocking out find_connection_using_ike_policy() database lookup,
         and ensure that a new policy ID is chosen.
         """
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = None
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
-            csr_db.find_connection_using_ike_policy = mock.Mock()
-            csr_db.find_connection_using_ike_policy.return_value = None
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
                                                         self.session)
             self.assertEqual(4, ike_id)
 
-#     def test_create_tunnel_mapping(self):
-#          conn_info = {'ikepolicy_id': '10',
-#                       'id': '100',
-#                       'tenant_id': '1000'}
-#          tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
-#                                                           conn_info)
-#          self.assertEqual(0, tunnel_id)
-#          self.assertEqual(1, ike_id)
-#          conn_info = {'ikepolicy_id': '10',
-#                       'id': '101',
-#                       'tenant_id': '1000'}
-#          tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
-#                                                           conn_info)
-#          self.assertEqual(1, tunnel_id)
-#          self.assertEqual(2, ike_id)
+    def test_create_tunnel_mapping(self):
+        """Ensure new mappings are created, and mapping table updated.
+
+        Simulate that an existing connection is not using the IKE policy,
+        by mocking out find_connection_using_ike_policy() database lookup,
+        and ensure that a new policy ID is chosen.
+        """
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = None
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '100',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(0, tunnel_id)
+        self.assertEqual(1, ike_id)
+        conn_info = {'ikepolicy_id': '20',
+                     'id': '101',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(1, tunnel_id)
+        self.assertEqual(2, ike_id)
+
+    def test_create_tunnel_mapping_with_existing_ike_policy(self):
+        """Ensure IDs are created/reused, and mapping table updated."""
+        # Simulate no existing use of IKE policy, so new one will be reserved
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = None
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '100',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(0, tunnel_id)
+        self.assertEqual(1, ike_id)
+
+        # Simulate that this IKE policy (10) is in use by first connection
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = '100'
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '101',
+                     'tenant_id': '1000'}
+        tunnel_id, ike_id = csr_db.create_tunnel_mapping(self.context,
+                                                         conn_info)
+        self.assertEqual(1, tunnel_id)
+        self.assertEqual(1, ike_id)
 
     def simulate_gw_ip_available(self):
         """Helper function indicating that tunnel has a gateway IP."""
@@ -271,16 +302,25 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
             return 1
         self.vpn_service.router.gw_port.fixed_ips.__len__ = have_one
         ip_addr_mock = mock.Mock()
-        ip_addr_mock.ip_address = "192.168.200.1"
         self.vpn_service.router.gw_port.fixed_ips = [ip_addr_mock]
+        return ip_addr_mock
 
-    def test_ipsec_connection_with_gateway_ip(self):
-        """Test of IPSec connection with gateway IP."""
-        # self.session.query.side_effect = []
-        self.simulate_gw_ip_available()
-        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+    def test_ipsec_connection_info_with_gateway_ip(self):
+        """Test of IPSec connection with gateway IP.
+
+        Higher level check of creating all CSR info needed for the
+        connection, including doing the needed reservations and mapping.
+        Will simulate that database lookup for IKE policy to indicate
+        that it is not in use.
+        """
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = None
+        ip_addr_mock = self.simulate_gw_ip_available()
+        ip_addr_mock.ip_address = '192.168.200.1'
+        conn_info = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
                      'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
-                     'tenant_id': '12345'}
+                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
         expected = {'site_conn_id': u'Tunnel0',
                     'ike_policy_id': u'1',
                     'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
@@ -291,28 +331,44 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                                                   conn_info,
                                                   self.vpn_service))
 
-#     def test_tunnel_id_for_multiple_ipsec_connections(self):
-#         """Create several IPSec connections to verify tunnel ID is correct.
-# 
-#         On a fresh startup, tunnel ID reservations start at zero.
-#         """
-#         self.simulate_gw_ip_available()
-#         for i in xrange(5):
-#             conn_info = {
-#                 'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-#                 'id': i * 100,
-#                 'tenant_id': '12345'
-#             }
-#             expected = {'site_conn_id': u'Tunnel%d' % i,
-#                         'ike_policy_id': u'%d' % (i+1),
-#                         'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
-#                         'router_public_ip': '192.168.200.1'}
-#             self.assertEqual(
-#                 expected,
-#                 self.driver.get_cisco_connection_info(self.context,
-#                                                       conn_info,
-#                                                       self.vpn_service),
-#                 "Matching expected cisco info for entry %d" % i)
+    def test_connection_info_with_ike_policy_reuse(self):
+        """Create two IPSec connections with same IKE policy."""
+        # Simulate that the first connection's IKE policy is not in use
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = None
+        ip_addr_mock = self.simulate_gw_ip_available()
+        ip_addr_mock.ip_address = "192.168.200.1"
+        conn_info = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
+                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
+                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
+        expected = {'site_conn_id': u'Tunnel0',
+                    'ike_policy_id': u'1',
+                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
+                    'router_public_ip': '192.168.200.1'}
+        self.assertEqual(
+            expected,
+            self.driver.get_cisco_connection_info(self.context,
+                                                  conn_info,
+                                                  self.vpn_service))
+
+        ip_addr_mock.ip_address = "10.10.10.1"
+        # Simulate that the IKE policy is in use by the first connection
+        csr_db.find_connection_using_ike_policy.return_value = (
+            'c7bea7a0-772e-41fd-9b63-2ac0d19adc47')
+        conn_info = {'ipsecpolicy_id': '3248fa86-3d12-4991-8535-d07ecf8f3311',
+                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
+                     'id': 'fbc7ec25-c406-446d-8d71-9fd1eb86e904',
+                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
+        expected = {'site_conn_id': u'Tunnel1',
+                    'ike_policy_id': u'1',
+                    'ipsec_policy_id': u'3248fa863d1249918535d07ecf8f331',
+                    'router_public_ip': '10.10.10.1'}
+        self.assertEqual(
+            expected,
+            self.driver.get_cisco_connection_info(self.context,
+                                                  conn_info,
+                                                  self.vpn_service))
 
     def test_ipsec_connection_with_missing_gateway_ip(self):
         """Failure test of IPSec connection with missing gateway IP."""
