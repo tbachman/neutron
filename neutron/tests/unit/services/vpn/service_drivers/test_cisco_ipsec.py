@@ -203,6 +203,22 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                           csr_db.get_next_available_ike_policy_id,
                           fake_session)
 
+
+    def simulate_existing_mappings(self, session):
+        """Helper - create three mapping table entries.
+        
+        Each entry will have the same tenant ID. The IPSec site connection
+        will be 10, 20, 30. The mapped tunnel ID will be 1, 2, 3. The
+        mapped IKE policy ID will be 1, 2, 3.
+        """
+        for i in xrange(1, 3):
+            conn_id = i * 10
+            entry = csr_db.IdentifierMap(tenant_id='1',
+                                         ipsec_site_conn_id='%d' % conn_id,
+                                         ipsec_tunnel_id=i, 
+                                         ike_policy_id=i)
+            self.session.add(entry)
+
     def test_get_ike_policy_id_already_in_use(self):
         """Obtain Cisco CSR IKE policy ID from existing mappings.
          
@@ -210,15 +226,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         the same IKE policy. Mocking out find_connection_using_ike_policy()
         as it is just a database lookup.
         """
-        # Make some dummy mapping table entries
         with self.session.begin():
-            for i in xrange(1,3):
-                conn_id = i * 10
-                entry = csr_db.IdentifierMap(tenant_id='1',
-                                             ipsec_site_conn_id='%d' % conn_id,
-                                             ipsec_tunnel_id=i,
-                                             ike_policy_id=i)
-                self.session.add(entry)
+            self.simulate_existing_mappings(self.session)
             csr_db.find_connection_using_ike_policy = mock.Mock()
             csr_db.find_connection_using_ike_policy.return_value='20'
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
