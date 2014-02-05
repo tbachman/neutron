@@ -211,7 +211,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         will be 10, 20, 30. The mapped tunnel ID will be 1, 2, 3. The
         mapped IKE policy ID will be 1, 2, 3.
         """
-        for i in xrange(1, 3):
+        for i in xrange(1, 4):
             conn_id = i * 10
             entry = csr_db.IdentifierMap(tenant_id='1',
                                          ipsec_site_conn_id='%d' % conn_id,
@@ -229,23 +229,25 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
             csr_db.find_connection_using_ike_policy = mock.Mock()
-            csr_db.find_connection_using_ike_policy.return_value='20'
+            csr_db.find_connection_using_ike_policy.return_value = '20'
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
                                                         self.session)
             self.assertEqual(2, ike_id)
-        
+
     def test_getting_new_ike_policy_id(self):
         """Reserve new Cisco CSR IKE policy ID from mapping table.
         
         Simulate that an existing connection is not using the IKE policy,
         by mocking out find_connection_using_ike_policy() database lookup,
-        and ensure that a new policy ID is choosen.
+        and ensure that a new policy ID is chosen.
         """
-        pass
-
-    def test_getting_available_ike_policy_id_from_middle(self):
-        """Get next available IKE policy ID, after it is no longer in use."""
-        pass
+        with self.session.begin():
+            self.simulate_existing_mappings(self.session)
+            csr_db.find_connection_using_ike_policy = mock.Mock()
+            csr_db.find_connection_using_ike_policy.return_value = None
+            ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
+                                                        self.session)
+            self.assertEqual(4, ike_id)
 
 #     def test_create_tunnel_mapping(self):
 #          conn_info = {'ikepolicy_id': '10',
