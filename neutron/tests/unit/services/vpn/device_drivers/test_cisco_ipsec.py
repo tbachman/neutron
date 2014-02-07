@@ -306,7 +306,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
 
     def test_ipsec_policy_info_non_defaults(self):
         """Create/map IPSec policy info with different values."""
-        self.conn_info['ipsec_policy'] = {'transform_protocol': 'ah-esp',
+        self.conn_info['ipsec_policy'] = {'transform_protocol': 'esp',
                                           'encryption_algorithm': '3des',
                                           'auth_algorithm': 'sha1',
                                           'pfs': 'group14',
@@ -315,8 +315,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         expected = {u'policy-id': 333,
                     u'protection-suite': {
                         u'esp-encryption': u'esp-3des',
-                        u'esp-authentication': u'esp-sha-hmac',
-                        u'ah': u'ah-sha-hmac'
+                        u'esp-authentication': u'esp-sha-hmac'
                     },
                     u'lifetime-sec': 120,
                     u'pfs': u'group14',

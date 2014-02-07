@@ -565,30 +565,30 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     # Bew stuff starts here...
     DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
                                   'v1': u'v1',
-                                  # auth_algorithm
+                                  # auth_algorithm -> hash
                                   'sha1': u'sha',
-                                  # encryption_algorithm
+                                  # encryption_algorithm -> encryption
                                   '3des': u'3des',
                                   'aes-128': u'aes',
                                   'aes-192': u'aes',  # TODO(pcm): fix
                                   'aes-256': u'aes',  # TODO(pcm): fix
-                                  # pfs
+                                  # pfs -> dhGroup
                                   'group2': 2,
                                   'group5': 5,
                                   'group14': 14},
                    'ipsec_policy': {'name': 'IPSec Policy',
-                                    # auth_algorithm
+                                    # auth_algorithm -> esp-authentication
                                     'sha1': u'esp-sha-hmac',
-                                    # transform_protocol
-                                    'esp': u'ah-sha-hmac',
+                                    # transform_protocol -> ah
+                                    'esp': None,
                                     'ah': u'ah-sha-hmac',
                                     'ah-esp': u'ah-sha-hmac',
-                                    # encryption_algorithm
+                                    # encryption_algorithm -> esp-encryption
                                     '3des': u'esp-3des',
                                     'aes-128': u'esp-aes',
                                     'aes-192': u'esp-aes',  # TODO(pcm) fix
                                     'aes-256': u'esp-aes',  # TODO(pcm) fix
-                                    # pfs
+                                    # pfs -> pfs
                                     'group2': u'group2',
                                     'group5': u'group5',
                                     'group14': u'group14'}}
@@ -661,15 +661,17 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                                    policy_info)
         group = self.translate_dialect(for_ipsec, 'pfs', policy_info)
         lifetime = policy_info['lifetime']['value']
-        return {u'policy-id': ipsec_policy_id,
-                u'protection-suite': {
-                    u'esp-encryption': encrypt_algorithm,
-                    u'esp-authentication': auth_algorithm,
-                    u'ah': transform_protocol},
-                u'lifetime-sec': lifetime,
-                u'pfs': group,
-                # TODO(pcm): Remove when CSR fixes 'Disable'
-                u'anti-replay-window-size': u'128'}
+        settings = {u'policy-id': ipsec_policy_id,
+                    u'protection-suite': {
+                        u'esp-encryption': encrypt_algorithm,
+                        u'esp-authentication': auth_algorithm},
+                    u'lifetime-sec': lifetime,
+                    u'pfs': group,
+                    # TODO(pcm): Remove when CSR fixes 'Disable'
+                    u'anti-replay-window-size': u'128'}
+        if transform_protocol:
+            settings[u'protection-suite'][u'ah'] = transform_protocol
+        return settings
 
     def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
         # gw_ip = info['cisco']['router_public_ip']:
