@@ -109,8 +109,15 @@ def determine_csr_ike_policy_id(ike_policy_id, conn_id, session):
                                                               session)
     if conn_using_same_ike_id:
         csr_ike_id = lookup_ike_policy_id_for(conn_using_same_ike_id, session)
+        LOG.debug(_("Found existing IPSec connection %(conn)s with IKE policy "
+                    "ID %(ike_id)s mapped to CSR IKE ID %(csr_ike)d"),
+                  {'conn': conn_using_same_ike_id, 'ike_id': ike_policy_id,
+                   'csr_ike': csr_ike_id})
     else:
         csr_ike_id = get_next_available_ike_policy_id(session)
+        LOG.debug(_("Reserved new CSR IKE ID %(csr_ike)d for IKE policy "
+                    "ID %(ike_id)s"), {'csr_ike': csr_ike_id,
+                                       'ike_id': ike_policy_id})
     return csr_ike_id
 
 
@@ -118,6 +125,10 @@ def get_tunnel_mapping_for(conn_id, session):
     try:
         entry = session.query(IdentifierMap).filter_by(
             ipsec_site_conn_id=conn_id).one()
+        LOG.debug(_("Mappings for IPSec connection %(conn)s - "
+                    "tunnel=%(tunnel)s ike_policy=%(csr_ike)d"),
+                  {'conn': conn_id, 'tunnel': entry.csr_tunnel_id,
+                   'csr_ike': entry.csr_ike_policy_id})
         return entry.csr_tunnel_id, entry.csr_ike_policy_id
     except sql_exc.NoResultFound:
         msg = _("Existing entry for IPSec connection %s not found in Cisco "
@@ -146,13 +157,15 @@ def create_tunnel_mapping(context, conn_info):
             msg = _("Attempt to create duplicate entry in Cisco CSR "
                     "mapping table for connection %s") % conn_id
             raise CsrInternalError(reason=msg)
-        LOG.debug(_("Mapped %(conn_id)s to Tunnel%(tunnel_id)d using IKE "
-                    "policy ID %(ike_id)d"), {'conn_id': conn_id,
-                                              'tunnel_id': csr_tunnel_id,
-                                              'ike_id': csr_ike_id})
+        LOG.info(_("Mapped %(conn_id)s to Tunnel%(tunnel_id)d using IKE "
+                   "policy ID %(ike_id)d"), {'conn_id': conn_id,
+                                             'tunnel_id': csr_tunnel_id,
+                                             'ike_id': csr_ike_id})
 
 
 def delete_tunnel_mapping(context, conn_info):
+    conn_id = conn_info['id']
     with context.session.begin(subtransactions=True):
         sess_qry = context.session.query(IdentifierMap)
-        sess_qry.filter_by(ipsec_site_conn_id=conn_info['id']).delete()
+        sess_qry.filter_by(ipsec_site_conn_id=conn_id).delete()
+    LOG.info(_("Removed mapping for connection %s"), conn_id)
