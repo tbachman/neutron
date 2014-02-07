@@ -230,6 +230,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
+                                                        '123',
                                                         self.session)
             self.assertEqual(2, ike_id)
 
@@ -245,6 +246,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
+                                                        '123',
                                                         self.session)
             self.assertEqual(4, ike_id)
 
@@ -295,6 +297,28 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                                                          conn_info)
         self.assertEqual(1, tunnel_id)
         self.assertEqual(1, ike_id)
+
+    def test_database_inconsistency_with_ike_policy(self):
+        """Failure test of IKE policy in use, but not found.
+
+        Should never occur (unless a programming error), as once an existing
+        connection is found with the same IKE policy, it should be able to
+        be looked up in the mapping table. Did see this in code during develop-
+        ment, when database query was not accounting for the match to the just
+        created connection. But, since the UT doesn't do the database query
+        (as it is a lot work to create all the tables needed), we don't see
+        that problem. Doing a simple test here.
+        """
+        # Simulate that this IKE policy (10) is in use by another connection,
+        # even though it is not in the mapping table.
+        csr_db.find_connection_using_ike_policy = mock.Mock()
+        csr_db.find_connection_using_ike_policy.return_value = '100'
+        conn_info = {'ikepolicy_id': '10',
+                     'id': '101',
+                     'tenant_id': '1000'}
+        self.assertRaises(csr_db.CsrInternalError,
+                          csr_db.create_tunnel_mapping,
+                          self.context, conn_info)
 
     def simulate_gw_ip_available(self):
         """Helper function indicating that tunnel has a gateway IP."""

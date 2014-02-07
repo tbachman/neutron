@@ -16,7 +16,9 @@
 #    under the License.
 
 import sqlalchemy as sa
+from sqlalchemy.orm import exc as sql_exc
 
+from neutron.common import exceptions
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.db.vpn import vpn_db
@@ -28,6 +30,10 @@ LOG = logging.getLogger(__name__)
 # Tunnel can be 0..7FFFFFFF, IKE policy can be 1..10000
 MAX_CSR_TUNNELS = 10000
 MAX_CSR_IKE_POLICIES = 2000
+
+
+class CsrInternalError(exceptions.NeutronException):
+    message = _("Fatal - %(reason)s")
 
 
 class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
@@ -58,7 +64,7 @@ def get_next_available_id(session, table_field, id_type, min_value, max_value):
         msg = _("No available Cisco CSR %(type)s IDs from "
                 "%(min)d..%(max)d") % {'type': id_type,
                                        'min': min_value,
-                                       'max': max_value-1}
+                                       'max': max_value - 1}
         LOG.error(msg)
         raise IndexError(msg)
     return available_ids.pop()
@@ -76,22 +82,29 @@ def get_next_available_ike_policy_id(session):
                                  'IKE Policy', 1, MAX_CSR_IKE_POLICIES + 1)
 
 
-def find_connection_using_ike_policy(ike_policy_id, session):
+def find_connection_using_ike_policy(ike_policy_id, conn_id, session):
     """Return another connection that uses same IKE policy ID."""
-    query = session.query(vpn_db.IPsecSiteConnection.ikepolicy_id)
-    return query.filter_by(ikepolicy_id=ike_policy_id).first()
+    qry = session.query(vpn_db.IPsecSiteConnection.ikepolicy_id)
+    return qry.filter(vpn_db.IPsecSiteConnection.ikepolicy_id == ike_policy_id,
+                      vpn_db.IPsecSiteConnection.id != conn_id).first()
 
 
 def lookup_ike_policy_id_for(conn_id, session):
     """Obtain existing Cisco CSR IKE policy ID from another connection."""
-    query = session.query(IdentifierMap.csr_ike_policy_id)
-    return query.filter_by(ipsec_site_conn_id=conn_id).one()[0]
+    try:
+        query = session.query(IdentifierMap.csr_ike_policy_id)
+        return query.filter_by(ipsec_site_conn_id=conn_id).one()[0]
+    except sql_exc.NoResultFound:
+        msg = _("Database inconsistency between IPSec connection and "
+                "Cisco CSR mapping table")
+        raise CsrInternalError(reason=msg)
 
 
-def determine_csr_ike_policy_id(ike_policy_id, session):
+def determine_csr_ike_policy_id(ike_policy_id, conn_id, session):
     """Use existing, or reserve a new IKE policy ID for Cisco CSR."""
 
     conn_using_same_ike_id = find_connection_using_ike_policy(ike_policy_id,
+                                                              conn_id,
                                                               session)
     if conn_using_same_ike_id:
         csr_ike_id = lookup_ike_policy_id_for(conn_using_same_ike_id, session)
@@ -108,7 +121,7 @@ def create_tunnel_mapping(context, conn_info):
     tenant_id = conn_info['tenant_id']
     with context.session.begin(subtransactions=True):
         csr_tunnel_id = get_next_available_tunnel_id(context.session)
-        csr_ike_id = determine_csr_ike_policy_id(ike_policy_id,
+        csr_ike_id = determine_csr_ike_policy_id(ike_policy_id, conn_id,
                                                  context.session)
         map_entry = IdentifierMap(tenant_id=tenant_id,
                                   ipsec_site_conn_id=conn_id,

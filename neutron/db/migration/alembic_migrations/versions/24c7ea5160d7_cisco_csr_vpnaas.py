@@ -45,6 +45,7 @@ def upgrade(active_plugins=None, options=None):
 
     op.create_table(
         'csr_identifier_map',
+        sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('ipsec_site_conn_id', sa.String(length=64),
                   primary_key=True),
         sa.Column('csr_tunnel_id', sa.Integer(), nullable=False),
