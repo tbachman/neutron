@@ -22,6 +22,7 @@ from neutron.common import exceptions
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.db.vpn import vpn_db
+from neutron.openstack.common.db import exception as db_exc
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -113,6 +114,17 @@ def determine_csr_ike_policy_id(ike_policy_id, conn_id, session):
     return csr_ike_id
 
 
+def get_tunnel_mapping_for(conn_id, session):
+    try:
+        entry = session.query(IdentifierMap).filter_by(
+            ipsec_site_conn_id=conn_id).one()
+        return entry.csr_tunnel_id, entry.csr_ike_policy_id
+    except sql_exc.NoResultFound:
+        msg = _("Existing entry for IPSec connection %s not found in Cisco "
+                "CSR mapping table") % conn_id
+        raise CsrInternalError(reason=msg)
+
+
 def create_tunnel_mapping(context, conn_info):
     """Create Cisco CSR IDs, using mapping table and OpenStack UUIDs."""
     conn_id = conn_info['id']
@@ -127,12 +139,17 @@ def create_tunnel_mapping(context, conn_info):
                                   ipsec_site_conn_id=conn_id,
                                   csr_tunnel_id=csr_tunnel_id,
                                   csr_ike_policy_id=csr_ike_id)
-        context.session.add(map_entry)
+        try:
+            context.session.add(map_entry)
+            context.session.flush()
+        except db_exc.DBDuplicateEntry:
+            msg = _("Attempt to create duplicate entry in Cisco CSR "
+                    "mapping table for connection %s") % conn_id
+            raise CsrInternalError(reason=msg)
         LOG.debug(_("Mapped %(conn_id)s to Tunnel%(tunnel_id)d using IKE "
                     "policy ID %(ike_id)d"), {'conn_id': conn_id,
                                               'tunnel_id': csr_tunnel_id,
                                               'ike_id': csr_ike_id})
-    return csr_tunnel_id, csr_ike_id
 
 
 def delete_tunnel_mapping(context, conn_info):

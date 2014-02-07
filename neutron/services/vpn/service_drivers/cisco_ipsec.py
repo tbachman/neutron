@@ -191,10 +191,10 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         public_ip = self.get_router_public_ip(vpn_service)
         ipsec_policy_id = site_conn['ipsecpolicy_id']
         csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
-        csr_tunnel_id, csr_ike_id = csr_id_map.create_tunnel_mapping(context,
-                                                                     site_conn)
-        return {'site_conn_id': u'Tunnel%d' % csr_tunnel_id,
-                'ike_policy_id': u'%d' % csr_ike_id,
+        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
+                                                              context.session)
+        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
+                'ike_policy_id': u'%d' % ike_id,
                 'ipsec_policy_id': u'%s' % csr_ipsec_policy_id,
                 'router_public_ip': public_ip}
 
@@ -204,6 +204,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                                      site_conn['ikepolicy_id'])
         ipsec_info = self.service_plugin.get_ipsecpolicy(
             context, site_conn['ipsecpolicy_id'])
+        csr_id_map.create_tunnel_mapping(context, site_conn)
         cisco_info = self.get_cisco_connection_info(context, site_conn,
                                                     vpn_service)
         return {'site_conn': site_conn,
