@@ -298,7 +298,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                     },
                     u'lifetime-sec': 3600,
                     u'pfs': u'group5',
-                    u'anti-replay-window-size': u'128'}
+                    u'anti-replay-window-size': u'64'}
         ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
                                                            self.conn_info)
@@ -319,7 +319,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                     },
                     u'lifetime-sec': 120,
                     u'pfs': u'group14',
-                    u'anti-replay-window-size': u'128'}
+                    u'anti-replay-window-size': u'64'}
         ipsec_policy_id = self.conn_info['cisco']['ipsec_policy_id']
         policy_info = self.driver.create_ipsec_policy_info(ipsec_policy_id,
                                                            self.conn_info)

@@ -668,7 +668,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     u'lifetime-sec': lifetime,
                     u'pfs': group,
                     # TODO(pcm): Remove when CSR fixes 'Disable'
-                    u'anti-replay-window-size': u'128'}
+                    u'anti-replay-window-size': u'64'}
         if transform_protocol:
             settings[u'protection-suite'][u'ah'] = transform_protocol
         return settings
