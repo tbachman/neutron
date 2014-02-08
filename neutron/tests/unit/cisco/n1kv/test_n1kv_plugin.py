@@ -612,3 +612,13 @@ class TestN1kvL3Test(test_l3_plugin.L3NatExtensionTestCase):
 class TestN1kvL3SchedulersTest(test_l3_schedulers.L3SchedulerTestCase):
 
     pass
+
+
+class TestN1kvL3Test(test_l3_plugin.L3NatExtensionTestCase):
+
+    pass
+
+
+class TestN1kvL3SchedulersTest(test_l3_schedulers.L3SchedulerTestCase):
+
+    pass
