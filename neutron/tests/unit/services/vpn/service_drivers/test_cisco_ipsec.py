@@ -218,6 +218,15 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                                          csr_ike_policy_id=i)
             self.session.add(entry)
 
+    def test_lookup_existing_ike_policy_mapping(self):
+        """Ensure can find existing mappings for IKE policy."""
+        with self.session.begin():
+            self.simulate_existing_mappings(self.session)
+            for i in xrange(1, 4):
+                conn_id = str(i * 10)
+                ike_id = csr_db.lookup_ike_policy_id_for(conn_id, self.session)
+                self.assertEqual(i, ike_id)
+
     def test_get_ike_policy_id_already_in_use(self):
         """Obtain Cisco CSR IKE policy ID from existing mappings.
 

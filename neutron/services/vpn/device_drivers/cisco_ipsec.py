@@ -539,28 +539,28 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def create_rpc_dispatcher(self):
         return q_rpc.PluginRpcDispatcher([self])
 
-    def _update_nat(self, vpnservice, func):
-        """Setting up nat rule in iptables.
-
-        We need to setup nat rule for ipsec packet.
-        :param vpnservice: vpnservices
-        :param func: self.add_nat_rule or self.remove_nat_rule
-        """
-        LOG.debug("PCM: Commented out _update_nat()")
-        return
-
-        local_cidr = vpnservice['subnet']['cidr']
-        router_id = vpnservice['router_id']
-        for ipsec_site_connection in vpnservice['ipsec_site_connections']:
-            for peer_cidr in ipsec_site_connection['peer_cidrs']:
-                func(
-                    router_id,
-                    'POSTROUTING',
-                    '-s %s -d %s -m policy '
-                    '--dir out --pol ipsec '
-                    '-j ACCEPT ' % (local_cidr, peer_cidr),
-                    top=True)
-        self.agent.iptables_apply(router_id)
+#     def _update_nat(self, vpnservice, func):
+#         """Setting up nat rule in iptables.
+#
+#         We need to setup nat rule for ipsec packet.
+#         :param vpnservice: vpnservices
+#         :param func: self.add_nat_rule or self.remove_nat_rule
+#         """
+#         LOG.debug("PCM: Commented out _update_nat()")
+#         return
+#
+#         local_cidr = vpnservice['subnet']['cidr']
+#         router_id = vpnservice['router_id']
+#         for ipsec_site_connection in vpnservice['ipsec_site_connections']:
+#             for peer_cidr in ipsec_site_connection['peer_cidrs']:
+#                 func(
+#                     router_id,
+#                     'POSTROUTING',
+#                     '-s %s -d %s -m policy '
+#                     '--dir out --pol ipsec '
+#                     '-j ACCEPT ' % (local_cidr, peer_cidr),
+#                     top=True)
+#         self.agent.iptables_apply(router_id)
 
     # Bew stuff starts here...
     DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
@@ -872,7 +872,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             # In case of vpnservice is created
             # before router's namespace
             process = self.processes[process_id]
-            self._update_nat(process.vpnservice, self.agent.add_nat_rule)
+            # self._update_nat(process.vpnservice, self.agent.add_nat_rule)
             process.enable()
 
     def destroy_router(self, process_id):
@@ -887,8 +887,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             process = self.processes[process_id]
             process.disable()
             vpnservice = process.vpnservice
-            if vpnservice:
-                self._update_nat(vpnservice, self.agent.remove_nat_rule)
+#             if vpnservice:
+#                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
             del self.processes[process_id]
 
     def get_process_status_cache(self, process):
@@ -923,6 +923,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         }
 
     def report_status(self, context):
+        vpnservices = self.agent_rpc.get_vpn_services_on_host(
+            context, self.host)
+        LOG.debug("PCM: status %s", vpnservices)
         LOG.debug("PCM: Ignoring report_status call")
         return
 
@@ -959,17 +962,17 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         In order to handle, these failure cases,
         This driver takes simple sync strategies.
         """
-        LOG.debug("PCM: Ignoring sync call - should not see this")
-        return
-
         vpnservices = self.agent_rpc.get_vpn_services_on_host(
             context, self.host)
         router_ids = [vpnservice['router_id'] for vpnservice in vpnservices]
         # Ensure the ipsec process is enabled
+        LOG.debug("PCM: %s", vpnservices)
+        LOG.debug("PCM: Ignoring sync call - should not see this")
+        return
         for vpnservice in vpnservices:
             process = self.ensure_process(vpnservice['router_id'],
                                           vpnservice=vpnservice)
-            self._update_nat(vpnservice, self.agent.add_nat_rule)
+            # self._update_nat(vpnservice, self.agent.add_nat_rule)
             process.update()
 
         # Delete any IPSec processes that are

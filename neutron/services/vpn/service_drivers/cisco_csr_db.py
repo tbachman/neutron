@@ -84,17 +84,20 @@ def get_next_available_ike_policy_id(session):
 
 
 def find_connection_using_ike_policy(ike_policy_id, conn_id, session):
-    """Return another connection that uses same IKE policy ID."""
-    qry = session.query(vpn_db.IPsecSiteConnection.ikepolicy_id)
-    return qry.filter(vpn_db.IPsecSiteConnection.ikepolicy_id == ike_policy_id,
-                      vpn_db.IPsecSiteConnection.id != conn_id).first()
+    """Return ID of another connection that uses same IKE policy ID."""
+    qry = session.query(vpn_db.IPsecSiteConnection.id)
+    match = qry.filter(
+        vpn_db.IPsecSiteConnection.ikepolicy_id == ike_policy_id,
+        vpn_db.IPsecSiteConnection.id != conn_id).first()
+    if match:
+        return match[0]
 
 
 def lookup_ike_policy_id_for(conn_id, session):
     """Obtain existing Cisco CSR IKE policy ID from another connection."""
     try:
-        query = session.query(IdentifierMap.csr_ike_policy_id)
-        return query.filter_by(ipsec_site_conn_id=conn_id).one()[0]
+        return session.query(IdentifierMap.csr_ike_policy_id).filter_by(
+            ipsec_site_conn_id=conn_id).one()[0]
     except sql_exc.NoResultFound:
         msg = _("Database inconsistency between IPSec connection and "
                 "Cisco CSR mapping table")
@@ -142,7 +145,7 @@ def create_tunnel_mapping(context, conn_info):
     ike_policy_id = conn_info['ikepolicy_id']
     # TOTO(pcm) Do we need to do ~_get_tenant_id_for_create() for tenant ID?
     tenant_id = conn_info['tenant_id']
-    with context.session.begin(subtransactions=True):
+    with context.session.begin():
         csr_tunnel_id = get_next_available_tunnel_id(context.session)
         csr_ike_id = determine_csr_ike_policy_id(ike_policy_id, conn_id,
                                                  context.session)
@@ -157,15 +160,16 @@ def create_tunnel_mapping(context, conn_info):
             msg = _("Attempt to create duplicate entry in Cisco CSR "
                     "mapping table for connection %s") % conn_id
             raise CsrInternalError(reason=msg)
-        LOG.info(_("Mapped %(conn_id)s to Tunnel%(tunnel_id)d using IKE "
-                   "policy ID %(ike_id)d"), {'conn_id': conn_id,
-                                             'tunnel_id': csr_tunnel_id,
-                                             'ike_id': csr_ike_id})
+        LOG.info(_("Mapped connection %(conn_id)s to Tunnel%(tunnel_id)d "
+                   "using IKE policy ID %(ike_id)d"),
+                 {'conn_id': conn_id, 'tunnel_id': csr_tunnel_id,
+                  'ike_id': csr_ike_id})
 
 
 def delete_tunnel_mapping(context, conn_info):
     conn_id = conn_info['id']
-    with context.session.begin(subtransactions=True):
+    # TODO(pcm) Should we catch NoResultFound and ignore?
+    with context.session.begin():
         sess_qry = context.session.query(IdentifierMap)
         sess_qry.filter_by(ipsec_site_conn_id=conn_id).delete()
     LOG.info(_("Removed mapping for connection %s"), conn_id)

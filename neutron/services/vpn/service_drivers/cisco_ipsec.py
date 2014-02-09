@@ -112,7 +112,7 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
         method = 'vpnservice_updated'
         self._agent_notification(context, method, router_id)
 
-    # TODO(pcm): Refactor these methods into one with an action and resource?
+    # TODO(pcm) Remove, once converted over
     def create_ipsec_site_connection(self, context, router_id, conn_info):
         """Send device driver create IPSec site-to-site connection request."""
         LOG.debug('PCM: IPSec connection create with %(router)s %(conn)s',
@@ -216,9 +216,16 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                            vpn_service):
         cisco_info = self.get_cisco_connection_info(context, site_conn,
                                                     vpn_service)
-        return {'site_conn': site_conn,
-                'cisco': cisco_info}
+        return {'site_conn': site_conn, 'cisco': cisco_info}
 
+    def create_ipsec_site_connection_future(self, context,
+                                            ipsec_site_connection):
+        vpnservice = self.service_plugin._get_vpnservice(
+            context, ipsec_site_connection['vpnservice_id'])
+        LOG.debug(_("PCM: Cisco driver create_ipsec_site_connection"))
+        self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
+
+    # TODO(pcm) Remove these three functions, once switch...
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpn_service = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
