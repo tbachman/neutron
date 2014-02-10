@@ -59,50 +59,46 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         policy_info = {'ike_version': 'v2',
                        'lifetime': {'units': 'seconds', 'value': 60}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_ike_version, policy_info)
+                          self.driver.validate_ike_version, policy_info)
 
     def test_ike_lifetime_not_in_seconds(self):
         """Failure test of unsupported lifetime units for IKE policy."""
         policy_info = {'lifetime': {'units': 'kilobytes', 'value': 1000}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           "IKE Policy", policy_info)
 
     def test_ipsec_lifetime_not_in_seconds(self):
         """Failure test of unsupported lifetime units for IPSec policy."""
         policy_info = {'lifetime': {'units': 'kilobytes', 'value': 1000}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           "IPSec Policy", policy_info)
 
     def test_ike_lifetime_seconds_values_at_limits(self):
         """Test valid lifetime values for IKE policy."""
         policy_info = {'lifetime': {'units': 'seconds', 'value': 60}}
-        self.assertEqual(60, self.driver.get_lifetime('IKE Policy',
-                                                      policy_info))
+        self.driver.validate_lifetime('IKE Policy', policy_info)
         policy_info = {'lifetime': {'units': 'seconds', 'value': 86400}}
-        self.assertEqual(86400, self.driver.get_lifetime('IKE Policy',
-                                                         policy_info))
+        self.driver.validate_lifetime('IKE Policy', policy_info)
 
     def test_ipsec_lifetime_seconds_values_at_limits(self):
         """Test valid lifetime values for IPSec policy."""
         policy_info = {'lifetime': {'units': 'seconds', 'value': 120}}
-        self.assertEqual(120, self.driver.get_lifetime('IPSec Policy',
-                                                       policy_info))
+        self.driver.validate_lifetime('IPSec Policy', policy_info)
         policy_info = {'lifetime': {'units': 'seconds', 'value': 2592000}}
-        self.assertEqual(2592000, self.driver.get_lifetime('IPSec Policy',
-                                                           policy_info))
+        self.driver.validate_lifetime('IPSec Policy', policy_info)
 
     def test_ike_lifetime_values_invalid(self):
         """Failure test of unsupported lifetime values for IKE policy."""
         which = "IKE Policy"
         policy_info = {'lifetime': {'units': 'seconds', 'value': 59}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           which, policy_info)
         policy_info = {'lifetime': {'units': 'seconds', 'value': 86401}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           which, policy_info)
 
     def test_ipsec_lifetime_values_invalid(self):
@@ -110,28 +106,62 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         which = "IPSec Policy"
         policy_info = {'lifetime': {'units': 'seconds', 'value': 119}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           which, policy_info)
         policy_info = {'lifetime': {'units': 'seconds', 'value': 2592001}}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_lifetime,
+                          self.driver.validate_lifetime,
                           which, policy_info)
 
     def test_ipsec_connection_with_mtu_at_limits(self):
         """Test IPSec site-to-site connection with MTU at limits."""
         conn_info = {'mtu': 1500}
-        self.assertEqual(1500, self.driver.get_mtu(conn_info))
+        self.driver.validate_mtu(conn_info)
         conn_info = {'mtu': 9192}
-        self.assertEqual(9192, self.driver.get_mtu(conn_info))
+        self.driver.validate_mtu(conn_info)
 
     def test_ipsec_connection_with_invalid_mtu(self):
         """Failure test of IPSec site connection with unsupported MTUs."""
         conn_info = {'mtu': 1499}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_mtu, conn_info)
+                          self.driver.validate_mtu, conn_info)
         conn_info = {'mtu': 9193}
         self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_mtu, conn_info)
+                          self.driver.validate_mtu, conn_info)
+
+    def simulate_gw_ip_available(self):
+        """Helper function indicating that tunnel has a gateway IP."""
+        def have_one(self):
+            return 1
+        self.vpn_service.router.gw_port.fixed_ips.__len__ = have_one
+        ip_addr_mock = mock.Mock()
+        self.vpn_service.router.gw_port.fixed_ips = [ip_addr_mock]
+        return ip_addr_mock
+
+    def test_have_public_ip_for_router(self):
+        """Ensure that router for IPSec connection has gateway IP."""
+        self.simulate_gw_ip_available()
+        self.driver.validate_public_ip_present(self.vpn_service)
+
+    def test_router_with_missing_gateway_ip(self):
+        """Failure test of IPSec connection with missing gateway IP."""
+        self.simulate_gw_ip_available()
+        self.vpn_service.router.gw_port = None
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_public_ip_present,
+                          self.vpn_service)
+
+    def test_peer_id_is_an_ip_address(self):
+        """Ensure peer ID is an IP address for IPsec connection create."""
+        ipsec_conn = {'peer_id': '10.10.10.10'}
+        self.driver.validate_peer_id(ipsec_conn)
+
+    def test_peer_id_is_not_ip_address(self):
+        """Failure test of peer_id that is not an IP address."""
+        ipsec_conn = {'peer_id': 'some-site.com'}
+        self.assertRaises(ipsec_driver.CsrValidationFailure,
+                          self.driver.validate_peer_id, ipsec_conn)
+        pass
 
     def test_identifying_next_tunnel_id(self):
         """Make sure available tunnel IDs can be reserved.
@@ -230,7 +260,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
         Find the Cisco CSR IKE policy ID for another connection that uses
         the same IKE policy. Mocking out find_connection_using_ike_policy()
-        as it is just a database lookup.
+        so we don't have to mock whole connection.
         """
         csr_db.find_connection_using_ike_policy = mock.Mock()
         csr_db.find_connection_using_ike_policy.return_value = '20'
@@ -361,11 +391,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
         Should never occur (unless a programming error), as once an existing
         connection is found with the same IKE policy, it should be able to
-        be looked up in the mapping table. Did see this in code during develop-
-        ment, when database query was not accounting for the match to the just
-        created connection. But, since the UT doesn't do the database query
-        (as it is a lot work to create all the tables needed), we don't see
-        that problem. Doing a simple test here.
+        be looked up in the mapping table.
         """
         # Simulate that this IKE policy (10) is in use by another connection,
         # even though it is not in the mapping table.
@@ -378,16 +404,7 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                           csr_db.create_tunnel_mapping,
                           self.context, conn_info)
 
-    def simulate_gw_ip_available(self):
-        """Helper function indicating that tunnel has a gateway IP."""
-        def have_one(self):
-            return 1
-        self.vpn_service.router.gw_port.fixed_ips.__len__ = have_one
-        ip_addr_mock = mock.Mock()
-        self.vpn_service.router.gw_port.fixed_ips = [ip_addr_mock]
-        return ip_addr_mock
-
-    def test_get_cisco_ipsec_connectioninfo(self):
+    def test_get_cisco_ipsec_connection_info(self):
         """Ensure correct transform and mapping info is obtained."""
         self.simulate_existing_mappings(self.session)
         expected = {'site_conn_id': u'Tunnel2',
@@ -398,88 +415,6 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         actual = self.driver.get_cisco_connection_mappings(site_conn,
                                                            self.context)
         self.assertEqual(expected, actual)
-
-    def test_cisco_ipsec_connection_info_with_gateway_ip(self):
-        """Get Cisco info for IPSec connection info with gateway IP.
-
-        Ensure get all Cisco CSR related information. Requires that we first
-        create the mappings for IDs, and then get all the needed info. Will
-        simulate that database lookup for IKE policy to indicate that it is
-        not in use.
-        """
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
-        ip_addr_mock = self.simulate_gw_ip_available()
-        ip_addr_mock.ip_address = '192.168.200.1'
-
-        conn_info = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
-                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
-                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        expected = {'site_conn_id': u'Tunnel0',
-                    'ike_policy_id': u'1',
-                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
-                    'router_public_ip': '192.168.200.1'}
-        self.assertEqual(
-            expected,
-            self.driver.get_cisco_connection_info(self.context,
-                                                  conn_info,
-                                                  self.vpn_service))
-
-    def test_cisco_connection_info_with_ike_policy_reuse(self):
-        """Get Cisco info for two IPSec connections with same IKE policy."""
-        # Simulate that the first connection's IKE policy is not in use
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
-        ip_addr_mock = self.simulate_gw_ip_available()
-        ip_addr_mock.ip_address = "192.168.200.1"
-
-        conn_info = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
-                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
-                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        expected = {'site_conn_id': u'Tunnel0',
-                    'ike_policy_id': u'1',
-                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796',
-                    'router_public_ip': '192.168.200.1'}
-        self.assertEqual(
-            expected,
-            self.driver.get_cisco_connection_info(self.context,
-                                                  conn_info,
-                                                  self.vpn_service))
-
-        ip_addr_mock.ip_address = "10.10.10.1"
-        # Simulate that the IKE policy is in use by the first connection
-        csr_db.find_connection_using_ike_policy.return_value = (
-            'c7bea7a0-772e-41fd-9b63-2ac0d19adc47')
-
-        conn_info = {'ipsecpolicy_id': '3248fa86-3d12-4991-8535-d07ecf8f3311',
-                     'ikepolicy_id': '1ffad939-b52e-41cf-982e-423965d6d1bc',
-                     'id': 'fbc7ec25-c406-446d-8d71-9fd1eb86e904',
-                     'tenant_id': '163587d3-02ac-4983-8912-151d7e90abab'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        expected = {'site_conn_id': u'Tunnel1',
-                    'ike_policy_id': u'1',
-                    'ipsec_policy_id': u'3248fa863d1249918535d07ecf8f331',
-                    'router_public_ip': '10.10.10.1'}
-        self.assertEqual(
-            expected,
-            self.driver.get_cisco_connection_info(self.context,
-                                                  conn_info,
-                                                  self.vpn_service))
-
-    def test_cisco_ipsec_connection_with_missing_gateway_ip(self):
-        """Failure test of IPSec connection with missing gateway IP."""
-        self.vpn_service.router.gw_port = None
-        conn_info = {'ikepolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'id': 'c7bea7a0-772e-41fd-9b63-2ac0d19adc47',
-                     'tenant_id': '12345'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        self.assertRaises(ipsec_driver.CsrValidationFailure,
-                          self.driver.get_cisco_connection_info,
-                          self.context, conn_info, self.vpn_service)
 
 
 class TestCiscoIPsecDriver(base.BaseTestCase):

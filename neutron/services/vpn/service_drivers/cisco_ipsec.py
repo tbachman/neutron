@@ -12,7 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#import netaddr
+import netaddr
 
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
@@ -111,14 +111,6 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
         method = 'vpnservice_updated'
         self._agent_notification(context, method, router_id)
 
-    # TODO(pcm) Remove, once converted over
-    def create_ipsec_site_connection(self, context, router_id, conn_info):
-        """Send device driver create IPSec site-to-site connection request."""
-        LOG.debug('PCM: IPSec connection create with %(router)s %(conn)s',
-                  {'router': router_id, 'conn': conn_info})
-        self._agent_notification(context, 'create_ipsec_site_connection',
-                                 router_id, conn_info=conn_info)
-
     def delete_ipsec_site_connection(self, context, router_id, conn_info):
         """Send device driver delete IPSec site-to-site connection request."""
         LOG.debug('PCM: IPSec connection delete with %(router)s %(conn)s',
@@ -147,7 +139,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def service_type(self):
         return IPSEC
 
-    def get_lifetime(self, for_policy, policy_info):
+    def validate_lifetime(self, for_policy, policy_info):
+        """Ensure lifetime in secs and value is supported, based on policy."""
         units = policy_info['lifetime']['units']
         if units != 'seconds':
             raise CsrValidationFailure(resource=for_policy,
@@ -159,87 +152,88 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
             raise CsrValidationFailure(resource=for_policy,
                                        key='lifetime:value',
                                        value=value)
-        return value
 
-    def get_ike_version(self, policy_info):
+    def validate_ike_version(self, policy_info):
+        """Ensure IKE policy is v1 for current REST API."""
         version = policy_info['ike_version']
         if version != 'v1':
             raise CsrValidationFailure(resource='IKE Policy',
                                        key='ike_version',
                                        value=version)
-        return version
 
-    def get_mtu(self, conn_info):
+    def validate_mtu(self, conn_info):
+        """Ensure the MTU value is supported."""
         mtu = conn_info['mtu']
         if mtu < MIN_CSR_MTU or mtu > MAX_CSR_MTU:
             raise CsrValidationFailure(resource='IPSec Connection',
                                        key='mtu',
                                        value=mtu)
-        return mtu
 
-    def get_router_public_ip(self, vpn_service):
+    def validate_public_ip_present(self, vpn_service):
+        """Ensure there is one gateway IP specified for the router used."""
         gw_port = vpn_service.router.gw_port
-        if gw_port and len(gw_port.fixed_ips) == 1:
-            return gw_port.fixed_ips[0].ip_address
-        else:
+        if not gw_port or len(gw_port.fixed_ips) != 1:
             raise CsrValidationFailure(resource='IPSec Connection',
                                        key='router:gw_port:ip_address',
                                        value='missing')
 
-    def get_cisco_connection_info(self, context, site_conn, vpn_service):
-        public_ip = self.get_router_public_ip(vpn_service)
-        ipsec_policy_id = site_conn['ipsecpolicy_id']
-        csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
-        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
-                                                              context.session)
-        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
-                'ike_policy_id': u'%d' % ike_id,
-                'ipsec_policy_id': u'%s' % csr_ipsec_policy_id,
-                'router_public_ip': public_ip}
+    def validate_peer_id(self, ipsec_conn):
+        """Ensure that an IP address is specified for peer ID."""
+        # TODO(pcm) Should we check peer_address too?
+        peer_id = ipsec_conn['peer_id']
+        try:
+            netaddr.IPAddress(peer_id)
+        except netaddr.core.AddrFormatError:
+            raise CsrValidationFailure(resource='IPSec Connection',
+                                       key='peer_id', value=peer_id)
 
-    def _build_ipsec_site_conn_create_info(self, context, site_conn,
-                                           vpn_service):
-        ike_info = self.service_plugin.get_ikepolicy(context,
-                                                     site_conn['ikepolicy_id'])
-        ipsec_info = self.service_plugin.get_ipsecpolicy(
-            context, site_conn['ipsecpolicy_id'])
-        csr_id_map.create_tunnel_mapping(context, site_conn)
-        cisco_info = self.get_cisco_connection_info(context, site_conn,
-                                                    vpn_service)
-        return {'site_conn': site_conn,
-                'ike_policy': ike_info,
-                'ipsec_policy': ipsec_info,
-                'cisco': cisco_info}
-
-    def _build_ipsec_site_conn_delete_info(self, context, site_conn,
-                                           vpn_service):
-        cisco_info = self.get_cisco_connection_info(context, site_conn,
-                                                    vpn_service)
-        return {'site_conn': site_conn, 'cisco': cisco_info}
+    def validate_ipsec_connection(self, context, ipsec_conn, vpn_service):
+        """Validate attributes w.r.t. Cisco CSR capabilities."""
+        ike_policy = self.service_plugin.get_ikepolicy(
+            context, ipsec_conn['ikepolicy_id'])
+        ipsec_policy = self.service_plugin.get_ipsecpolicy(
+            context, ipsec_conn['ipsecpolicy_id'])
+        self.validate_lifetime('IKE Policy', ike_policy)
+        self.validate_lifetime('IPSec Policy', ipsec_policy)
+        self.validate_ike_version(ike_policy)
+        self.validate_mtu(ipsec_conn)
+        self.validate_public_ip_present(vpn_service)
+        self.validate_peer_id(ipsec_conn)
+        LOG.debug(_("PCM: IPSec connection %s validated for Cisco CSR"),
+                  ipsec_conn['id'])
 
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         LOG.debug(_("PCM: New Cisco driver create_ipsec_site_connection"))
         # TODO(pcm) Do validation, before notifying device driver
+        self.validate_ipsec_connection(context, ipsec_site_connection,
+                                       vpnservice)
         csr_id_map.create_tunnel_mapping(context, ipsec_site_connection)
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
-    # TODO(pcm) Remove these three functions, once switch...
-#     def create_ipsec_site_connection(self, context, ipsec_site_connection):
-#         vpn_service = self.service_plugin._get_vpnservice(
-#             context, ipsec_site_connection['vpnservice_id'])
-#         conn_info = self._build_ipsec_site_conn_create_info(
-#             context, ipsec_site_connection, vpn_service)
-#         self.agent_rpc.create_ipsec_site_connection(
-#             context, vpn_service['router_id'], conn_info=conn_info)
-
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
-        # TODO(pcm): Implement...
+        # TODO(pcm): Handle case of user changing the IKE and/or IPSec policy
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
+
+    # TODO(pcm) Remove these two, when have switched to update method
+    def _build_ipsec_site_conn_delete_info(self, context, site_conn,
+                                           vpn_service):
+        cisco_info = self.get_cisco_connection_info(context, site_conn,
+                                                    vpn_service)
+        return {'site_conn': site_conn, 'cisco': cisco_info}
+
+    def get_cisco_connection_info(self, context, site_conn, vpn_service):
+        ipsec_policy_id = site_conn['ipsecpolicy_id']
+        csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
+        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
+                                                              context.session)
+        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
+                'ike_policy_id': u'%d' % ike_id,
+                'ipsec_policy_id': u'%s' % csr_ipsec_policy_id}
 
     def delete_ipsec_site_connection(self, context, ipsec_site_connection):
         vpn_service = self.service_plugin._get_vpnservice(
@@ -298,12 +292,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
             'fixed_ips'][0]['ip_address']
         for ipsec_conn in vpnservice.ipsec_site_connections:
             ipsec_conn_dict = dict(ipsec_conn)
-# PART OF VALIDATION Move to create section
-#             try:
-#                 netaddr.IPAddress(ipsec_conn['peer_id'])
-#             except netaddr.core.AddrFormatError:
-#                 ipsec_conn['peer_id'] = (
-#                     '@' + ipsec_conn['peer_id'])
             ipsec_conn_dict['ike_policy'] = dict(ipsec_conn.ikepolicy)
             ipsec_conn_dict['ipsec_policy'] = dict(ipsec_conn.ipsecpolicy)
             ipsec_conn_dict['peer_cidrs'] = [
