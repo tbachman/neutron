@@ -64,14 +64,14 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
                            'ike_version': 'v1',
-                           'lifetime': {'units': 'seconds',
-                                        'value': 3600}},
+                           'lifetime_units': 'seconds',
+                           'lifetime_value': 3600},
             'ipsec_policy': {'transform_protocol': 'ah',
                              'encryption_algorithm': 'aes-128',
                              'auth_algorithm': 'sha1',
                              'pfs': 'group5',
-                             'lifetime': {'units': 'seconds',
-                                          'value': 3600}},
+                             'lifetime_units': 'seconds',
+                             'lifetime_value': 3600},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333,
@@ -120,7 +120,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.assertEqual(expected, client_calls)
         self.assertEqual(
             expected_rollback_steps,
-            self.driver.connections[self.conn_info['site_conn']['id']])
+            self.driver.connections[self.conn_info['id']])
 
     def test_create_ipsec_site_connection_with_rollback(self):
         """Failure test of IPSec site conn creation that fails and rolls back.
@@ -215,14 +215,14 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
                            'ike_version': 'v1',
-                           'lifetime': {'units': 'seconds',
-                                        'value': 3600}},
+                           'lifetime_units': 'seconds',
+                           'lifetime_value': 3600},
             'ipsec_policy': {'transform_protocol': 'ah',
                              'encryption_algorithm': 'aes-128',
                              'auth_algorithm': 'sha1',
                              'pfs': 'group5',
-                             'lifetime': {'units': 'seconds',
-                                          'value': 3600}},
+                             'lifetime_units': 'seconds',
+                             'lifetime_value': 3600},
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333,
@@ -250,7 +250,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                         {u'key': 'secret',
                          u'encrypted': False,
                          u'peer-address': '192.168.1.2'}]}
-        psk_id = self.conn_info['site_conn']['id']
+        psk_id = self.conn_info['id']
         psk_info = self.driver.create_psk_info(psk_id, self.conn_info)
         self.assertEqual(expected, psk_info)
 
@@ -274,8 +274,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
             'encryption_algorithm': 'aes-256',
             'pfs': 'Group14',
             'ike_version': 'v1',
-            'lifetime': {'units': 'seconds',
-                         'value': 60}
+            'lifetime_units': 'seconds',
+            'lifetime_value': 60
         }
         expected = {u'priority-id': 222,
                     u'encryption': u'aes',  # TODO(pcm): fix
@@ -310,8 +310,8 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
                                           'encryption_algorithm': '3des',
                                           'auth_algorithm': 'sha1',
                                           'pfs': 'group14',
-                                          'lifetime': {'units': 'seconds',
-                                                       'value': 120}}
+                                          'lifetime_units': 'seconds',
+                                          'lifetime_value': 120}
         expected = {u'policy-id': 333,
                     u'protection-suite': {
                         u'esp-encryption': u'esp-3des',

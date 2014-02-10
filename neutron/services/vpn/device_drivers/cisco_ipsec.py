@@ -464,7 +464,7 @@ class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
         """Get list of vpnservices.
 
         The vpnservices including related ipsec_site_connection,
-        ikepolicy and ipsecpolicy on this host
+        ikepolicy, ipsecpolicy, and Cisco info on this host
         """
         return self.call(context,
                          self.make_msg('get_vpn_services_on_host',
@@ -537,30 +537,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def create_rpc_dispatcher(self):
         return q_rpc.PluginRpcDispatcher([self])
 
-#     def _update_nat(self, vpnservice, func):
-#         """Setting up nat rule in iptables.
-#
-#         We need to setup nat rule for ipsec packet.
-#         :param vpnservice: vpnservices
-#         :param func: self.add_nat_rule or self.remove_nat_rule
-#         """
-#         LOG.debug("PCM: Commented out _update_nat()")
-#         return
-#
-#         local_cidr = vpnservice['subnet']['cidr']
-#         router_id = vpnservice['router_id']
-#         for ipsec_site_connection in vpnservice['ipsec_site_connections']:
-#             for peer_cidr in ipsec_site_connection['peer_cidrs']:
-#                 func(
-#                     router_id,
-#                     'POSTROUTING',
-#                     '-s %s -d %s -m policy '
-#                     '--dir out --pol ipsec '
-#                     '-j ACCEPT ' % (local_cidr, peer_cidr),
-#                     top=True)
-#         self.agent.iptables_apply(router_id)
-
-    # Bew stuff starts here...
     DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
                                   'v1': u'v1',
                                   # auth_algorithm -> hash
@@ -626,7 +602,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         group = self.translate_dialect(for_ike,
                                        'pfs',
                                        policy_info)
-        lifetime = policy_info['lifetime']['value']
+        lifetime = policy_info['lifetime_value']
         return {u'version': version,
                 u'priority-id': ike_policy_id,
                 u'encryption': encrypt_algorithm,
@@ -657,7 +633,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                                    'encryption_algorithm',
                                                    policy_info)
         group = self.translate_dialect(for_ipsec, 'pfs', policy_info)
-        lifetime = policy_info['lifetime']['value']
+        lifetime = policy_info['lifetime_value']
         settings = {u'policy-id': ipsec_policy_id,
                     u'protection-suite': {
                         u'esp-encryption': encrypt_algorithm,
@@ -829,14 +805,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                  conn_id)
 
     def vpnservice_updated(self, context, **kwargs):
-        """Vpnservice updated rpc handler
-
-        VPN Service Driver will call this method
-        when vpnservices updated.
-        Then this method start sync with server.
-        """
-        LOG.info("PCM: Ignoring vpnservice_updated message")
-        # self.sync(context, [])
+        """Handle VPNaaS service driver change notifications."""
+        self.sync(context, [])
 
     def create_process(self, process_id, vpnservice, namespace):
         pass

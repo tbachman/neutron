@@ -58,6 +58,7 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
 
     def get_vpn_services_on_host(self, context, host=None):
         """Retuns info on the vpnservices on the host."""
+        LOG.debug(_("PCM: get_vpn_services_on_host"))
         plugin = self.driver.service_plugin
         vpnservices = plugin._get_agent_hosting_vpn_services(
             context, host)
@@ -220,6 +221,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         LOG.debug(_("PCM: New Cisco driver create_ipsec_site_connection"))
+        # TODO(pcm) Do validation, before notifying device driver
+        csr_id_map.create_tunnel_mapping(context, ipsec_site_connection)
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     # TODO(pcm) Remove these three functions, once switch...
@@ -301,8 +304,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 #             except netaddr.core.AddrFormatError:
 #                 ipsec_conn['peer_id'] = (
 #                     '@' + ipsec_conn['peer_id'])
-            ipsec_conn_dict['ikepolicy'] = dict(ipsec_conn.ikepolicy)
-            ipsec_conn_dict['ipsecpolicy'] = dict(ipsec_conn.ipsecpolicy)
+            ipsec_conn_dict['ike_policy'] = dict(ipsec_conn.ikepolicy)
+            ipsec_conn_dict['ipsec_policy'] = dict(ipsec_conn.ipsecpolicy)
             ipsec_conn_dict['peer_cidrs'] = [
                 peer_cidr.cidr for peer_cidr in ipsec_conn.peer_cidrs]
             ipsec_conn_dict['cisco'] = self.get_cisco_connection_mappings(
