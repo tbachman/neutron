@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
@@ -388,6 +386,18 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         ip_addr_mock = mock.Mock()
         self.vpn_service.router.gw_port.fixed_ips = [ip_addr_mock]
         return ip_addr_mock
+
+    def test_get_cisco_ipsec_connectioninfo(self):
+        """Ensure correct transform and mapping info is obtained."""
+        self.simulate_existing_mappings(self.session)
+        expected = {'site_conn_id': u'Tunnel2',
+                    'ike_policy_id': u'2',
+                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796'}
+        site_conn = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
+                     'id': u'20'}
+        actual = self.driver.get_cisco_connection_mappings(site_conn,
+                                                           self.context)
+        self.assertEqual(expected, actual)
 
     def test_cisco_ipsec_connection_info_with_gateway_ip(self):
         """Get Cisco info for IPSec connection info with gateway IP.

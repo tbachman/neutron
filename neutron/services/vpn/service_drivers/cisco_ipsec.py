@@ -1,5 +1,3 @@
-# vim: tabstop=10 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Paul Michali, Cisco Systems, Inc.
 # All Rights Reserved.
 #
@@ -14,7 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import netaddr
+#import netaddr
 
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
@@ -59,11 +57,11 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
         return n_rpc.PluginRpcDispatcher([self])
 
     def get_vpn_services_on_host(self, context, host=None):
-        """Retuns the vpnservices on the host."""
+        """Retuns info on the vpnservices on the host."""
         plugin = self.driver.service_plugin
         vpnservices = plugin._get_agent_hosting_vpn_services(
             context, host)
-        return [self.driver._make_vpnservice_dict(vpnservice)
+        return [self.driver._make_vpnservice_dict(vpnservice, context)
                 for vpnservice in vpnservices]
 
     def update_status(self, context, status):
@@ -218,21 +216,20 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                                                     vpn_service)
         return {'site_conn': site_conn, 'cisco': cisco_info}
 
-    def create_ipsec_site_connection_future(self, context,
-                                            ipsec_site_connection):
+    def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
-        LOG.debug(_("PCM: Cisco driver create_ipsec_site_connection"))
+        LOG.debug(_("PCM: New Cisco driver create_ipsec_site_connection"))
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     # TODO(pcm) Remove these three functions, once switch...
-    def create_ipsec_site_connection(self, context, ipsec_site_connection):
-        vpn_service = self.service_plugin._get_vpnservice(
-            context, ipsec_site_connection['vpnservice_id'])
-        conn_info = self._build_ipsec_site_conn_create_info(
-            context, ipsec_site_connection, vpn_service)
-        self.agent_rpc.create_ipsec_site_connection(
-            context, vpn_service['router_id'], conn_info=conn_info)
+#     def create_ipsec_site_connection(self, context, ipsec_site_connection):
+#         vpn_service = self.service_plugin._get_vpnservice(
+#             context, ipsec_site_connection['vpnservice_id'])
+#         conn_info = self._build_ipsec_site_conn_create_info(
+#             context, ipsec_site_connection, vpn_service)
+#         self.agent_rpc.create_ipsec_site_connection(
+#             context, vpn_service['router_id'], conn_info=conn_info)
 
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
@@ -277,32 +274,38 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def delete_vpnservice(self, context, vpnservice):
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
-    def _make_vpnservice_dict(self, vpnservice):
-        """Convert vpnservice information for vpn agent.
+    def get_cisco_connection_mappings(self, site_conn, context):
+        """Perform transform and obtain persisted mappings for IDs."""
+        ipsec_policy_id = site_conn['ipsecpolicy_id']
+        csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
+        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
+                                                              context.session)
+        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
+                'ike_policy_id': u'%d' % ike_id,
+                'ipsec_policy_id': u'%s' % csr_ipsec_policy_id}
 
-        also converting parameter name for vpn agent driver
-        """
+    def _make_vpnservice_dict(self, vpnservice, context):
+        """Collect all info on service, including Cisco info per IPSec conn."""
+        # TODO(pcm) Future: trim to only needed fields?
         vpnservice_dict = dict(vpnservice)
-        vpnservice_dict['ipsec_site_connections'] = []
+        vpnservice_dict['ipsec_conns'] = []
         vpnservice_dict['subnet'] = dict(
             vpnservice.subnet)
         vpnservice_dict['external_ip'] = vpnservice.router.gw_port[
             'fixed_ips'][0]['ip_address']
-        for ipsec_site_connection in vpnservice.ipsec_site_connections:
-            ipsec_site_connection_dict = dict(ipsec_site_connection)
-            try:
-                netaddr.IPAddress(ipsec_site_connection['peer_id'])
-            except netaddr.core.AddrFormatError:
-                ipsec_site_connection['peer_id'] = (
-                    '@' + ipsec_site_connection['peer_id'])
-            ipsec_site_connection_dict['ikepolicy'] = dict(
-                ipsec_site_connection.ikepolicy)
-            ipsec_site_connection_dict['ipsecpolicy'] = dict(
-                ipsec_site_connection.ipsecpolicy)
-            vpnservice_dict['ipsec_site_connections'].append(
-                ipsec_site_connection_dict)
-            peer_cidrs = [
-                peer_cidr.cidr
-                for peer_cidr in ipsec_site_connection.peer_cidrs]
-            ipsec_site_connection_dict['peer_cidrs'] = peer_cidrs
+        for ipsec_conn in vpnservice.ipsec_site_connections:
+            ipsec_conn_dict = dict(ipsec_conn)
+# PART OF VALIDATION Move to create section
+#             try:
+#                 netaddr.IPAddress(ipsec_conn['peer_id'])
+#             except netaddr.core.AddrFormatError:
+#                 ipsec_conn['peer_id'] = (
+#                     '@' + ipsec_conn['peer_id'])
+            ipsec_conn_dict['ikepolicy'] = dict(ipsec_conn.ikepolicy)
+            ipsec_conn_dict['ipsecpolicy'] = dict(ipsec_conn.ipsecpolicy)
+            ipsec_conn_dict['peer_cidrs'] = [
+                peer_cidr.cidr for peer_cidr in ipsec_conn.peer_cidrs]
+            ipsec_conn_dict['cisco'] = self.get_cisco_connection_mappings(
+                ipsec_conn, context)
+            vpnservice_dict['ipsec_conns'].append(ipsec_conn_dict)
         return vpnservice_dict

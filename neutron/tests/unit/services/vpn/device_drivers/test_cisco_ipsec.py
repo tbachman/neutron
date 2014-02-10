@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
@@ -57,11 +55,11 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         self.driver.agent_rpc = mock.Mock()
         self.driver.csr.status = 201  # All calls succeed
         self.conn_info = {
-            'site_conn': {'id': '123',
-                          'psk': 'secret',
-                          'peer_address': '192.168.1.2',
-                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
-                          'mtu': 1500},
+            'id': '123',
+            'psk': 'secret',
+            'peer_address': '192.168.1.2',
+            'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
+            'mtu': 1500,
             'ike_policy': {'auth_algorithm': 'sha1',
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
@@ -77,6 +75,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333,
+                      # TODO(pcm) get from vpnservice['external_ip']
                       'router_public_ip': '172.24.4.23'}
         }
 
@@ -207,11 +206,11 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
         self.conn_info = {
-            'site_conn': {'id': '123',
-                          'psk': 'secret',
-                          'peer_address': '192.168.1.2',
-                          'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
-                          'mtu': 1500},
+            'id': '123',
+            'psk': 'secret',
+            'peer_address': '192.168.1.2',
+            'peer_cidrs': ['10.1.0.0/24', '10.2.0.0/24'],
+            'mtu': 1500,
             'ike_policy': {'auth_algorithm': 'sha1',
                            'encryption_algorithm': 'aes-128',
                            'pfs': 'Group5',
@@ -227,6 +226,7 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
             'cisco': {'site_conn_id': 'Tunnel0',
                       'ike_policy_id': 222,
                       'ipsec_policy_id': 333,
+                      # TODO(pcm) get from vpnservice['external_ip']
                       'router_public_ip': '172.24.4.23'}
         }
 

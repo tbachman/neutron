@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
@@ -604,9 +602,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         raise CsrUnknownMappingError(resource=name, attr=attribute,
                                      value=value)
 
-    def create_psk_info(self, psk_id, info):
+    def create_psk_info(self, psk_id, conn_info):
         """Collect/create attributes needed for pre-shared key."""
-        conn_info = info['site_conn']
         return {u'keyring-name': psk_id,
                 u'pre-shared-key-list': [
                     {u'key': conn_info['psk'],
@@ -673,9 +670,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             settings[u'protection-suite'][u'ah'] = transform_protocol
         return settings
 
-    def create_site_connection_info(self, site_conn_id, ipsec_policy_id, info):
-        # gw_ip = info['cisco']['router_public_ip']:
-        conn_info = info['site_conn']
+    def create_site_connection_info(self, site_conn_id, ipsec_policy_id,
+                                    conn_info):
+        # gw_ip = vpnservice['external_ip'] (need to pass in)
         mtu = conn_info['mtu']
         return {
             u'vpn-interface-name': site_conn_id,
@@ -694,9 +691,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             u'mtu': mtu
         }
 
-    def create_routes_info(self, site_conn_id, info):
+    def create_routes_info(self, site_conn_id, conn_info):
         routes_info = []
-        for peer_cidr in info['site_conn'].get('peer_cidrs', []):
+        for peer_cidr in conn_info.get('peer_cidrs', []):
             route = {u'destination-network': peer_cidr,
                      u'outgoing-interface': site_conn_id}
             route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
@@ -740,6 +737,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def do_rollback(self):
         for step in reversed(self.steps):
             delete_action = 'delete_%s' % step.action
+            LOG.debug(_("PCM: Performing rollback action %(action)s for "
+                        "resource %(resource)s"), {'action': delete_action,
+                                                   'resource': step.title})
             try:
                 getattr(self.csr, delete_action)(step.resource_id)
             except AttributeError:
@@ -762,16 +762,13 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         operation.
         """
         # Get all the IDs
-        conn_id = conn_info['site_conn']['id']
-        # TODO(pcm) Decide if map/persist IDs in service or device driver
-        # TODO(pcm) Decide if unique IKE/IPSec policy on CSR for each
-        # connection or share? Separate APIs if share?
+        conn_id = conn_info['id']
         psk_id = conn_id
-        site_conn_id = conn_info['cisco']['site_conn_id']  # Tunnel0
-        ike_policy_id = conn_info['cisco']['ike_policy_id']  # 2
-        ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']  # 8
+        site_conn_id = conn_info['cisco']['site_conn_id']
+        ike_policy_id = conn_info['cisco']['ike_policy_id']
+        ipsec_policy_id = conn_info['cisco']['ipsec_policy_id']
 
-        LOG.info(_('PCM: Device driver:create_ipsec_site_connecition %s'),
+        LOG.info(_('PCM: Device driver:create_ipsec_site_connection %s'),
                  conn_id)
 
         try:
@@ -886,7 +883,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         if process_id in self.processes:
             process = self.processes[process_id]
             process.disable()
-            vpnservice = process.vpnservice
+#            vpnservice = process.vpnservice
 #             if vpnservice:
 #                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
             del self.processes[process_id]
@@ -964,33 +961,32 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """
         vpnservices = self.agent_rpc.get_vpn_services_on_host(
             context, self.host)
-        router_ids = [vpnservice['router_id'] for vpnservice in vpnservices]
         # Ensure the ipsec process is enabled
-        LOG.debug("PCM: %s", vpnservices)
-        LOG.debug("PCM: Ignoring sync call - should not see this")
-        return
+        LOG.debug("PCM: sync start")
         for vpnservice in vpnservices:
-            process = self.ensure_process(vpnservice['router_id'],
-                                          vpnservice=vpnservice)
-            # self._update_nat(vpnservice, self.agent.add_nat_rule)
-            process.update()
+            LOG.debug(_("PCM: Processing service %s"), vpnservice)
+            for ipsec_conn in vpnservice['ipsec_conns']:
+                LOG.debug(_("PCM: Processing connection %s"), ipsec_conn)
+                self.create_ipsec_site_connection(context, ipsec_conn)
 
-        # Delete any IPSec processes that are
-        # associated with routers, but are not running the VPN service.
-        for router in routers:
-            #We are using router id as process_id
-            process_id = router['id']
-            if process_id not in router_ids:
-                process = self.ensure_process(process_id)
-                self.destroy_router(process_id)
-
-        # Delete any IPSec processes running
-        # VPN that do not have an associated router.
-        process_ids = [process_id
-                       for process_id in self.processes
-                       if process_id not in router_ids]
-        for process_id in process_ids:
-            self.destroy_router(process_id)
+        # TODO(pcm) determine if we need to handle these cases
+        # router_ids = [vpnservice['router_id'] for vpnservice in vpnservices]
+#         # Delete any IPSec processes that are
+#         # associated with routers, but are not running the VPN service.
+#         for router in routers:
+#             #We are using router id as process_id
+#             process_id = router['id']
+#             if process_id not in router_ids:
+#                 process = self.ensure_process(process_id)
+#                 self.destroy_router(process_id)
+#
+#         # Delete any IPSec processes running
+#         # VPN that do not have an associated router.
+#         process_ids = [process_id
+#                        for process_id in self.processes
+#                        if process_id not in router_ids]
+#         for process_id in process_ids:
+#             self.destroy_router(process_id)
         self.report_status(context)
 
 
