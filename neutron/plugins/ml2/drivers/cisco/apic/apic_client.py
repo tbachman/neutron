@@ -187,7 +187,9 @@ def requestdata(request_func):
             raise cexc.ApicSessionNotLoggedIn
         if time.time() > self.session_deadline:
             self.refresh()
+        # --------------------------------
         url, data, response = request_func(self, *args, **kwargs)
+        # --------------------------------
         if response is None:
             raise cexc.ApicHostNoResponse(url=url)
         self.session_deadline = time.time() + self.session_timeout
@@ -216,11 +218,6 @@ def requestdata(request_func):
 class ApicSession(object):
     """
     Manages a session with the APIC.
-
-    Attributes:
-        api_base        e.g. 'http://10.2.3.45:8000/api'
-        session         The session between client and controller
-        authentication  Login info. None if not logged in to controller.
     """
 
     def __init__(self, host, port, usr, pwd, ssl):
@@ -309,7 +306,7 @@ class ApicSession(object):
         return attributes
 
     def login(self, usr, pwd):
-        """Log in to server. Save user name and authentication."""
+        """Log in to controller. Save user name and authentication."""
         name_pwd = self._make_data('aaaUser', name=usr, pwd=pwd)
         url = self._api_url('aaaLogin')
         response = self.session.post(url, data=name_pwd)
@@ -329,17 +326,19 @@ class ApicSession(object):
         return self.authentication
 
     def refresh(self):
+        """Called when a session has timed out or almost timed out."""
         url = self._api_url('aaaRefresh')
         response = self.session.get(url, cookies=self.cookie)
         attributes = self._save_cookie('aaaRefresh', response)
         if response.status_code == wexc.HTTPOk.code:
+            # We refreshed before the session timed out.
             self.authentication = attributes
         else:
             err_code = attributes['code']
             err_text = attributes['text']
             if (err_code == '403' and
                     err_text.lower().startswith('token was invalid')):
-                # Usually means the token timed out, so log in again.
+                # This means the token timed out, so log in again.
                 LOG.debug(_("APIC session timed-out, logging in again."))
                 self.authentication = self.login(self.username, self.password)
             else:
@@ -351,7 +350,7 @@ class ApicSession(object):
                                              err_code=err_code)
 
     def logout(self):
-        """End session with server."""
+        """End session with controller."""
         if not self.username:
             self.authentication = None
         if self.authentication:
@@ -361,7 +360,9 @@ class ApicSession(object):
 
 
 class MoManager(object):
-    """CRUD operations on APIC Managed Objects."""
+    """
+    CRUD operations on APIC Managed Objects.
+    """
 
     def __init__(self, session, mo_class):
         self.session = session

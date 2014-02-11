@@ -187,7 +187,6 @@ class ConfigMixin(object):
         }
         for opt, val in ml2_opts.items():
                 ml2_config.cfg.CONF.set_override(opt, val, 'ml2')
-        self.addCleanup(ml2_config.cfg.CONF.reset)
 
         # Configure the Cisco APIC mechanism driver
         apic_test_config = {
@@ -205,7 +204,6 @@ class ConfigMixin(object):
         }
         for opt, val in apic_test_config.items():
             cfg.CONF.set_override(opt, val, 'ml2_apic')
-        self.addCleanup(cfg.CONF.reset)
 
         apic_switch_cfg = {
             'switch:east01': {'ubuntu1,ubuntu2': ['3/11']},
@@ -226,7 +224,7 @@ class DbModelMixin(object):
         self.mocked_session = None
 
     def set_up_mocks(self):
-        self.mocked_session = mock.MagicMock()
+        self.mocked_session = mock.Mock()
         get_session = mock.patch('neutron.db.api.get_session').start()
         get_session.return_value = self.mocked_session
 
