@@ -82,11 +82,13 @@ class ApicL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Get network for this subnet
         subnet = self.get_subnet(context, subnet_id)
         network_id = subnet['network_id']
+        network = self.get_network(context, network_id)
 
         contract = self.manager.create_tenant_contract(tenant_id)
 
         epg = self.manager.ensure_epg_created_for_network(tenant_id,
-                                                          network_id)
+                                                          network_id,
+                                                          network['name'])
         # Delete contract for this epg
         self.manager.delete_contract_for_epg(tenant_id, epg.epg_id,
                                              contract.contract_id,
