@@ -20,9 +20,9 @@ import uuid
 
 from oslo.config import cfg
 
-from neutron.plugins.ml2.drivers.apic import apic_client
-from neutron.plugins.ml2.drivers.apic import apic_model
-from neutron.plugins.ml2.drivers.apic import config
+from neutron.plugins.ml2.drivers.cisco.apic import apic_client
+from neutron.plugins.ml2.drivers.cisco.apic import apic_model
+from neutron.plugins.ml2.drivers.cisco.apic import config
 
 AP_NAME = 'openstack'
 VMM_DOMAIN = 'openstack'

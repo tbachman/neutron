@@ -23,7 +23,7 @@ from oslo.config import cfg
 
 from neutron.common import config as neutron_config
 from neutron.plugins.ml2 import config as ml2_config
-from neutron.plugins.ml2.drivers.apic import apic_client as apic
+from neutron.plugins.ml2.drivers.cisco.apic import apic_client as apic
 from neutron.tests.unit import test_api_v2
 
 

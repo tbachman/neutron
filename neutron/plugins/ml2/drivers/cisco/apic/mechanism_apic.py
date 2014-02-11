@@ -23,7 +23,7 @@ from neutron.extensions import portbindings
 from neutron.openstack.common import log
 from neutron.plugins.common import constants
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.ml2.drivers.apic.apic_manager import APICManager
+from neutron.plugins.ml2.drivers.cisco.apic.apic_manager import APICManager
 
 
 LOG = log.getLogger(__name__)

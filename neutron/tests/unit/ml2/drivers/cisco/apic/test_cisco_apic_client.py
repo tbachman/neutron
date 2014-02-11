@@ -20,10 +20,11 @@ import requests
 from webob import exc as wexc
 
 from neutron.common import log
-from neutron.plugins.ml2.drivers.apic import apic_client as apic
-from neutron.plugins.ml2.drivers.cisco import exceptions as cexc
+from neutron.plugins.ml2.drivers.cisco.apic import apic_client as apic
+from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 from neutron.tests import base
-from neutron.tests.unit.ml2.drivers import test_cisco_apic_common as mocked
+from neutron.tests.unit.ml2.drivers.cisco.apic import (
+    test_cisco_apic_common as mocked)
 
 
 LOG = log.logging.getLogger(__name__)

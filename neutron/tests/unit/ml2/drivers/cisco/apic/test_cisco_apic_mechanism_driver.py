@@ -19,10 +19,11 @@ import mock
 
 from oslo.config import cfg
 
-from neutron.plugins.ml2.drivers.apic import mechanism_apic as md
+from neutron.plugins.ml2.drivers.cisco.apic import mechanism_apic as md
 from neutron.plugins.ml2.drivers import type_vlan  # noqa
 from neutron.tests import base
-from neutron.tests.unit.ml2.drivers import test_cisco_apic_common as mocked
+from neutron.tests.unit.ml2.drivers.cisco.apic import (
+    test_cisco_apic_common as mocked)
 
 
 HOST_ID1 = 'ubuntu'
@@ -31,6 +32,9 @@ HOST_ID2 = 'rhel'
 SUBNET_GATEWAY = '10.3.2.1'
 SUBNET_CIDR = '24'
 SUBNET_ID = '[%s/%s]' % (SUBNET_GATEWAY, SUBNET_CIDR)
+
+TEST_VIF_TYPE = 'test-vif_type'
+TEST_CAP_PORT_FILTER = 'test-cap_port_filter'
 
 
 class TestCiscoApicMechDriver(base.BaseTestCase,
@@ -60,7 +64,7 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
                                    name=mocked.APIC_ATT_ENT_PROF)
         self.mock_response_for_get('infraAccPortGrp',
                                    name=mocked.APIC_ACC_PORT_GRP)
-        mock.patch('neutron.plugins.ml2.drivers.apic.apic_manager.'
+        mock.patch('neutron.plugins.ml2.drivers.cisco.apic.apic_manager.'
                    'APICManager.ensure_infra_created_on_apic').start()
         self.driver.initialize()
         self.assert_responses_drained(self.driver.apic_manager.apic.session)
@@ -123,8 +127,8 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
                                           'vm1', net_ctx)
-        vt = self.driver.vif_type = mock.Mock()
-        pf = self.driver.cap_port_filter = mock.Mock()
+        self.driver.vif_type = TEST_VIF_TYPE
+        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
         self.driver.bind_port(port_ctx)
 
     def _get_network_context(self, tenant_id, net_id, seg_id):

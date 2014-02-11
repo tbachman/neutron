@@ -35,7 +35,7 @@ import logging
 import requests
 from webob import exc as wexc
 
-from neutron.plugins.ml2.drivers.cisco import exceptions as cexc
+from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 
 
 LOG = logging.getLogger(__name__)
