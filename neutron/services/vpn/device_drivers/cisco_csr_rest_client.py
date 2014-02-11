@@ -32,9 +32,6 @@ LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
-# Temporary flags, until we get fixes sorted out.
-FIXED_CSCul53598 = True
-
 
 class CsrRestClient(object):
 
@@ -61,16 +58,9 @@ class CsrRestClient(object):
         it can be used in error processing ('error-code', 'error-message',
         and 'detail' fields).
         """
-        if FIXED_CSCul53598:
-            if (method in ('POST', 'GET') and self.status == httplib.OK):
-                LOG.debug(_('RESPONSE: %s'), response.json())
-                return response.json()
-        else:
-            if (('auth/token-services' in url and
-                 self.status == httplib.CREATED) or
-                (method == 'GET' and self.status == httplib.OK)):
-                LOG.debug(_('RESPONSE: %s'), response.json())
-                return response.json()
+        if (method in ('POST', 'GET') and self.status == httplib.OK):
+            LOG.debug(_('RESPONSE: %s'), response.json())
+            return response.json()
         if method == 'POST' and self.status == httplib.CREATED:
             return response.headers.get('location', '')
         if self.status >= httplib.BAD_REQUEST and response.content:

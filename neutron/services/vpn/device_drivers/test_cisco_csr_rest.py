@@ -39,24 +39,15 @@ else:
 # Note: Helper functions to test reuse of IDs.
 # TODO(pcm): Decide if should leave with re-used IDs or not.
 def generate_pre_shared_key_id():
-    if csr_request.FIXED_CSCum57533:
-        return 5
-    else:
-        return random.randint(100, 200)
+    return random.randint(100, 200)
 
 
 def generate_ike_policy_id():
-    if csr_request.FIXED_CSCum57533:
-        return 2
-    else:
-        return random.randint(200, 300)
+    return random.randint(200, 300)
 
 
 def generate_ipsec_policy_id():
-    if csr_request.FIXED_CSCum57533:
-        return 123
-    else:
-        return random.randint(300, 400)
+    return random.randint(300, 400)
 
 
 class TestCsrLoginRestApi(unittest.TestCase):
@@ -70,10 +61,7 @@ class TestCsrLoginRestApi(unittest.TestCase):
         """Obtain the token and its expiration time."""
         with HTTMock(csr_request.token):
             self.assertTrue(self.csr.authenticate())
-            if csr_request.FIXED_CSCul53598:
-                self.assertEqual(httplib.OK, self.csr.status)
-            else:
-                self.assertEqual(httplib.CREATED, self.csr.status)
+            self.assertEqual(httplib.OK, self.csr.status)
             self.assertIsNotNone(self.csr.token)
 
     def test_unauthorized_token_request(self):
@@ -243,10 +231,7 @@ class TestCsrPutRestApi(unittest.TestCase):
                 self.fail("Unable to save interface Ge1 description")
             self.original_if = details
             if details.get('description', ''):
-                if csr_request.FIXED_CSCul82306:
-                    self.original_if['description'] = ''
-                else:
-                    self.original_if['description'] = 'dummy'
+                self.original_if['description'] = ''
             self.csr.token = None
 
     def _restore_resources(self, user, password):
@@ -320,9 +305,8 @@ class TestCsrPutRestApi(unittest.TestCase):
             content = self.csr.get_request('interfaces/GigabitEthernet1')
             self.assertEqual(httplib.OK, self.csr.status)
             self.assertIn('description', content)
-            if csr_request.FIXED_CSCul82306:
-                self.assertEqual(u'Changed description',
-                                 content['description'])
+            self.assertEqual(u'Changed description',
+                             content['description'])
 
     def ignore_test_change_to_empty_interface_description(self):
         """Test that interface description can be changed to empty string.
@@ -346,8 +330,7 @@ class TestCsrPutRestApi(unittest.TestCase):
             content = self.csr.get_request('interfaces/GigabitEthernet1')
             self.assertEqual(httplib.OK, self.csr.status)
             self.assertIn('description', content)
-            if csr_request.FIXED_CSCul82306:
-                self.assertEqual('', content['description'])
+            self.assertEqual('', content['description'])
 
 
 class TestCsrDeleteRestApi(unittest.TestCase):
@@ -571,8 +554,6 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
             policy_info = {
                 u'policy-id': u'%s' % policy_id,
             }
-            if not csr_request.FIXED_CSCum03550:
-                policy_info[u'anti-replay-window-size'] = u'64'
             location = self.csr.create_ipsec_policy(policy_info)
             self.assertEqual(httplib.CREATED, self.csr.status)
             self.assertIn('vpn-svc/ipsec/policies/%s' % policy_id, location)
@@ -584,10 +565,9 @@ class TestCsrRestIPSecPolicyCreate(unittest.TestCase):
                                u'protection-suite': {},
                                u'lifetime-sec': None,
                                u'pfs': u'Disable',
+                               u'anti-replay-window-size': u'None',
                                u'lifetime-kb': None,
                                u'idle-time': None}
-            if csr_request.FIXED_CSCum03550:
-                expected_policy[u'anti-replay-window-size'] = u'None'
             expected_policy.update(policy_info)
             self.assertEqual(expected_policy, content)
 
@@ -861,10 +841,9 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(httplib.OK, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ike-profile-id': None,
+                                   u'mtu': 1500,
                                    u'ip-version': u'ipv4'}
-            if csr_request.FIXED_CSCum57533:
-                expected_connection.update({u'ike-profile-id': None,
-                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
         # Now delete and verify that site-to-site connection is gone
@@ -937,10 +916,9 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(httplib.OK, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ike-profile-id': None,
+                                   u'mtu': 1500,
                                    u'ip-version': u'ipv4'}
-            if csr_request.FIXED_CSCum57533:
-                expected_connection.update({u'ike-profile-id': None,
-                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
 
@@ -972,10 +950,9 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(httplib.OK, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ike-profile-id': None,
+                                   u'mtu': 1500,
                                    u'ip-version': u'ipv4'}
-            if csr_request.FIXED_CSCum57533:
-                expected_connection.update({u'ike-profile-id': None,
-                                            u'mtu': 1500})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
 
@@ -1011,11 +988,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
             }
             self.csr.create_ipsec_connection(connection_info)
-            if csr_request.FIXED_CSCum10044:
-                self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
-            else:
-                self.assertEqual(httplib.INTERNAL_SERVER_ERROR,
-                                 self.csr.status)
+            self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
 
     def test_create_ipsec_connection_with_max_mtu(self):
         """Create an IPSec connection with max MTU value."""
@@ -1024,12 +997,11 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             connection_info = {
                 u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
                 u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'mtu': 9192,
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
             }
-            if csr_request.FIXED_CSCum57533:
-                connection_info.update({u'mtu': 9192})
             location = self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(httplib.CREATED, self.csr.status)
             self.addCleanup(self._remove_resource_for_test,
@@ -1041,9 +1013,8 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(httplib.OK, self.csr.status)
             expected_connection = {u'kind': u'object#vpn-site-to-site',
+                                   u'ike-profile-id': None,
                                    u'ip-version': u'ipv4'}
-            if csr_request.FIXED_CSCum57533:
-                expected_connection.update({u'ike-profile-id': None})
             expected_connection.update(connection_info)
             self.assertEqual(expected_connection, content)
 
@@ -1054,12 +1025,11 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             connection_info = {
                 u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
                 u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'mtu': 9193,
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
                 u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
             }
-            if csr_request.FIXED_CSCum57533:
-                connection_info.update({u'mtu': 9193})
             self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
 
@@ -1074,9 +1044,10 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
         """Get status of one tunnel."""
         # Create the IPsec site-to-site connection first
         tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        tunnel_id = 123  # Must hard code to work with mock
         with HTTMock(csr_request.token, csr_request.post, csr_request.get):
             connection_info = {
-                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'vpn-interface-name': u'Tunnel123',
                 u'ipsec-policy-id': u'%d' % ipsec_policy_id,
                 u'local-device': {u'ip-address': u'10.3.0.1/24',
                                   u'tunnel-ip-address': u'10.10.10.10'},
@@ -1086,7 +1057,7 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.assertEqual(httplib.CREATED, self.csr.status)
             self.addCleanup(self._remove_resource_for_test,
                             self.csr.delete_ipsec_connection,
-                            'Tunnel%d' % tunnel_id)
+                            u'Tunnel123')
             self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id,
                           location)
         with HTTMock(csr_request.token, csr_request.get):

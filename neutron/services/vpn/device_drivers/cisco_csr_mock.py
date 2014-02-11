@@ -29,11 +29,6 @@ import requests
 from neutron.openstack.common import log as logging
 
 # Temporary flags, until we get fixes sorted out.
-FIXED_CSCul53598 = True
-FIXED_CSCum10044 = True
-FIXED_CSCum57533 = True
-FIXED_CSCum03550 = True
-FIXED_CSCul82306 = True
 FIXED_CSCum50512 = False
 FIXED_CSCum35484 = False
 FIXED_CSCul82396 = False
@@ -91,12 +86,8 @@ def filter(methods, resource):
 @urlmatch(netloc=r'localhost')
 def token(url, request):
     if 'auth/token-services' in url.path:
-        if FIXED_CSCul53598:
-            return {'status_code': httplib.OK,
-                    'content': {'token-id': 'dummy-token'}}
-        else:
-            return {'status_code': httplib.CREATED,
-                    'content': {'token-id': 'dummy-token'}}
+        return {'status_code': httplib.OK,
+                'content': {'token-id': 'dummy-token'}}
 
 
 @urlmatch(netloc=r'localhost')
@@ -224,6 +215,8 @@ def get(url, request):
                    u'ip-version': u'ipv4',
                    u'vpn-type': u'site-to-site',
                    u'ipsec-policy-id': u'%s' % ipsec_policy_id,
+                   u'ike-profile-id': None,
+                   u'mtu': 1500,
                    u'local-device': {
                        u'ip-address': '10.3.0.1/24',
                        u'tunnel-ip-address': '10.10.10.10'
@@ -231,9 +224,6 @@ def get(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
-        if FIXED_CSCum57533:
-            content.update({u'ike-profile-id': None,
-                            u'mtu': 1500})
         return response(httplib.OK, content=content)
     if 'vpn-svc/ike/keepalive' in url.path:
         content = {u'interval': 60,
@@ -318,12 +308,9 @@ def get_defaults(url, request):
                    u'protection-suite': {},
                    u'lifetime-sec': None,
                    u'pfs': u'Disable',
+                   u'anti-replay-window-size': u'None',
                    u'lifetime-kb': None,
                    u'idle-time': None}
-        if FIXED_CSCum03550:
-            content[u'anti-replay-window-size'] = u'None'
-        else:
-            content[u'anti-replay-window-size'] = u'64'
         return response(httplib.OK, content=content)
 
 
@@ -334,11 +321,14 @@ def get_unnumbered(url, request):
         return {'status_code': httplib.UNAUTHORIZED}
     if FIXED_CSCum50512:
         tunnel = url.path.split('/')[-1]
+        ipsec_policy_id = tunnel[6:]
         content = {u'kind': u'object#vpn-site-to-site',
                    u'vpn-interface-name': u'%s' % tunnel,
                    u'ip-version': u'ipv4',
                    u'vpn-type': u'site-to-site',
-                   u'ipsec-policy-id': u'123',
+                   u'ipsec-policy-id': u'%s' % ipsec_policy_id,
+                   u'ike-profile-id': None,
+                   u'mtu': 1500,
                    u'local-device': {
                        u'ip-address': u'unnumbered GigabitEthernet3',
                        u'tunnel-ip-address': u'10.10.10.10'
@@ -346,9 +336,6 @@ def get_unnumbered(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': u'10.10.10.20'
                    }}
-        if FIXED_CSCum57533:
-            content.update({u'ike-profile-id': None,
-                            u'mtu': 1500})
         return response(httplib.OK, content=content)
     else:
         return response(httplib.INTERNAL_SERVER_ERROR)
@@ -360,11 +347,14 @@ def get_mtu(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': httplib.UNAUTHORIZED}
     tunnel = url.path.split('/')[-1]
+    ipsec_policy_id = tunnel[6:]
     content = {u'kind': u'object#vpn-site-to-site',
                u'vpn-interface-name': u'%s' % tunnel,
                u'ip-version': u'ipv4',
                u'vpn-type': u'site-to-site',
-               u'ipsec-policy-id': u'123',
+               u'ipsec-policy-id': u'%s' % ipsec_policy_id,
+               u'ike-profile-id': None,
+               u'mtu': 9192,
                u'local-device': {
                    u'ip-address': u'10.3.0.1/24',
                    u'tunnel-ip-address': u'10.10.10.10'
@@ -372,9 +362,6 @@ def get_mtu(url, request):
                u'remote-device': {
                    u'tunnel-ip-address': u'10.10.10.20'
                }}
-    if FIXED_CSCum57533:
-        content.update({u'ike-profile-id': None,
-                        u'mtu': 9192})
     return response(httplib.OK, content=content)
 
 
@@ -484,10 +471,7 @@ def post_bad_ip(url, request):
     LOG.debug("DEBUG: POST bad IP mock for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': httplib.UNAUTHORIZED}
-    if FIXED_CSCum10044:
-        return {'status_code': httplib.BAD_REQUEST}
-    else:
-        return {'status_code': httplib.INTERNAL_SERVER_ERROR}
+    return {'status_code': httplib.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
