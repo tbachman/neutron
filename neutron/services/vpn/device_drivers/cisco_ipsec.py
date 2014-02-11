@@ -221,7 +221,12 @@ class BaseSwanProcess():
 
     @property
     def active(self):
-        """Check if the process is active or not."""
+        """Check if the process is active or not.
+
+        Process (AKA service) is active, if can obtain status from the
+        connections (whether they are up or down). Gets stored in
+        self.status
+        """
         if not self.namespace:
             return False
         try:
@@ -288,6 +293,7 @@ class BaseSwanProcess():
         """Stop process."""
 
     def _update_connection_status(self, status_output):
+        """Updates status for all connections."""
         for line in status_output.split('\n'):
             m = re.search('\d\d\d "([a-f0-9\-]+).* (unrouted|erouted);', line)
             if not m:
@@ -893,7 +899,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         vpnservices = self.agent_rpc.get_vpn_services_on_host(
             context, self.host)
         LOG.debug("PCM: status %s", vpnservices)
-        LOG.debug("PCM: Ignoring report_status call")
+        self.update_status(vpnservices, context)
+
+    def update_status(self, vpnservices, context):
+        LOG.debug("PCM: Ignoring status update")
         return
 
         status_changed_vpn_services = []
@@ -957,7 +966,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 #                        if process_id not in router_ids]
 #         for process_id in process_ids:
 #             self.destroy_router(process_id)
-        self.report_status(context)
+
+        # TODO(pcm) OK, or should we get the latest status from service driver?
+        self.update_status(vpnservices, context)
 
 
 class OpenSwanDriver(CiscoCsrIPsecDriver):
