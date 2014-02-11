@@ -181,5 +181,6 @@ class TestLiveCsrRestStaticRoute(test_csr.TestCsrRestStaticRoute):
         self.csr.token = None
         self.addCleanup(self.csr.delete_static_route, route_id)
 
+
 if __name__ == '__main__':
     unittest.main()

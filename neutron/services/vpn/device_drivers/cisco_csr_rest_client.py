@@ -255,6 +255,11 @@ class CsrRestClient(object):
     def delete_pre_shared_key(self, key_id):
         return self.delete_request('vpn-svc/ike/keyrings/%s' % key_id)
 
+    def read_tunnel_statuses(self):
+        results = self.get_request('vpn-svc/site-to-site/active/sessions')
+        tunnels = [(t[u'vpn-interface-name'], t[u'status'])
+                   for t in results['items']]
+        return tunnels
 
 if __name__ == '__main__':
     csr = CsrRestClient('192.168.200.20', 'stack', 'cisco')

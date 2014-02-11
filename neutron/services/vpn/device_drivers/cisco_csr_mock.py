@@ -247,6 +247,12 @@ def get(url, request):
                    u'outgoing-interface': u'GigabitEthernet1',
                    u'admin-distance': 1}
         return response(httplib.OK, content=content)
+    if 'vpn-svc/site-to-site/active/sessions':
+        # Only including needed fields for mock
+        content = {u'kind': u'collection#vpn-active-sessions',
+                   u'items': [{u'status': u'DOWN-NEGOTIATING',
+                               u'vpn-interface-name': u'Tunnel123'}, ]}
+        return response(httplib.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keyrings')
@@ -378,6 +384,16 @@ def get_not_configured(url, request):
     if not request.headers.get('X-auth-token', None):
         return {'status_code': httplib.UNAUTHORIZED}
     return {'status_code': httplib.NOT_FOUND}
+
+
+@filter(['get'], 'vpn-svc/site-to-site/active/sessions')
+@urlmatch(netloc=r'localhost')
+def get_none(url, request):
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': httplib.UNAUTHORIZED}
+    content = {u'kind': u'collection#vpn-active-sessions',
+               u'items': []}
+    return response(httplib.OK, content=content)
 
 
 @urlmatch(netloc=r'localhost')

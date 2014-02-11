@@ -1063,6 +1063,37 @@ class TestCsrRestIPSecConnectionCreate(unittest.TestCase):
             self.csr.create_ipsec_connection(connection_info)
             self.assertEqual(httplib.BAD_REQUEST, self.csr.status)
 
+    def test_status_when_no_tunnels_exist(self):
+        """Get status, when there are no tunnels."""
+        with HTTMock(csr_request.token, csr_request.get_none):
+            tunnels = self.csr.read_tunnel_statuses()
+            self.assertEqual(httplib.OK, self.csr.status)
+            self.assertEqual([], tunnels)
+
+    def test_status_for_one_tunnel(self):
+        """Get status of one tunnel."""
+        # Create the IPsec site-to-site connection first
+        tunnel_id, ipsec_policy_id = self._prepare_for_site_conn_create()
+        with HTTMock(csr_request.token, csr_request.post, csr_request.get):
+            connection_info = {
+                u'vpn-interface-name': u'Tunnel%d' % tunnel_id,
+                u'ipsec-policy-id': u'%d' % ipsec_policy_id,
+                u'local-device': {u'ip-address': u'10.3.0.1/24',
+                                  u'tunnel-ip-address': u'10.10.10.10'},
+                u'remote-device': {u'tunnel-ip-address': u'10.10.10.20'}
+            }
+            location = self.csr.create_ipsec_connection(connection_info)
+            self.assertEqual(httplib.CREATED, self.csr.status)
+            self.addCleanup(self._remove_resource_for_test,
+                            self.csr.delete_ipsec_connection,
+                            'Tunnel%d' % tunnel_id)
+            self.assertIn('vpn-svc/site-to-site/Tunnel%d' % tunnel_id,
+                          location)
+        with HTTMock(csr_request.token, csr_request.get):
+            tunnels = self.csr.read_tunnel_statuses()
+            self.assertEqual(httplib.OK, self.csr.status)
+            self.assertEqual([(u'Tunnel123', u'DOWN-NEGOTIATING'), ], tunnels)
+
 
 class TestCsrRestIkeKeepaliveCreate(unittest.TestCase):
 
@@ -1146,6 +1177,7 @@ class TestCsrRestStaticRoute(unittest.TestCase):
             self.assertEqual(httplib.NO_CONTENT, self.csr.status)
             content = self.csr.get_request(location, full_url=True)
             self.assertEqual(httplib.NOT_FOUND, self.csr.status)
+
 
 if __name__ == '__main__':
     unittest.main()
