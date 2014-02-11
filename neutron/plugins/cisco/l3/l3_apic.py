@@ -21,7 +21,7 @@ from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db import model_base
 from neutron.plugins.common import constants
-from neutron.plugins.ml2.drivers.apic import apic_manager
+from neutron.plugins.ml2.drivers.cisco.apic import apic_manager
 
 
 class ApicL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
