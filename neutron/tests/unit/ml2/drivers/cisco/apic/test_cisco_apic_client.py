@@ -180,7 +180,7 @@ class TestCiscoApicClient(base.BaseTestCase, mocked.ControllerMixin):
     def test_delete_mo_ok(self):
         self._mock_authenticate()
         self.mock_response_for_post('fvTenant')
-        self.assertFalse(self.apic.fvTenant.delete(mocked.APIC_TENANT))
+        self.assertTrue(self.apic.fvTenant.delete(mocked.APIC_TENANT))
 
     def test_create_mo_ok(self):
         self._mock_authenticate()

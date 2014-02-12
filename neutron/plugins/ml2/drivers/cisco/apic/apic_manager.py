@@ -23,6 +23,7 @@ from oslo.config import cfg
 from neutron.plugins.ml2.drivers.cisco.apic import apic_client
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
 from neutron.plugins.ml2.drivers.cisco.apic import config
+from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 
 AP_NAME = 'openstack'
 VMM_DOMAIN = 'openstack'
@@ -82,7 +83,7 @@ class APICManager(object):
                     # Add port profile to node profile
                     ppdn = pprofile['dn']
                     self.apic.infraRsAccPortP.create(switch, ppdn)
-                except:
+                except cexc.ApicResponseNotOk:
                     # Delete port profile
                     self.apic.infraAccPortP.delete(ppname)
                     raise
@@ -112,7 +113,7 @@ class APICManager(object):
                         self.apic.infraRsAccBaseGrp.create(ppname, hname,
                                                            'range', tDn=fpdn)
                         modules[module].sort()
-                    except:
+                    except cexc.ApicResponseNotOk:
                         self.apic.infraHPortS.delete(ppname, hname, 'range')
                         raise
                 else:
@@ -159,7 +160,7 @@ class APICManager(object):
                 # Attach vmm domain to entity profile
                 self.apic.infraRsDomP.create(name, vmm_dn)
                 self.entity_profile = self.apic.infraAttEntityP.get(name)
-            except:
+            except cexc.ApicResponseNotOk:
                 # Delete the created entity profile
                 self.apic.infraEntityP.delete(name)
 
@@ -172,7 +173,7 @@ class APICManager(object):
                 entp_dn = self.entity_profile['dn']
                 self.apic.infraRsAttEntP.create(name, tDn=entp_dn)
                 self.function_profile = self.apic.infraAccPortGrp.get(name)
-            except:
+            except cexc.ApicResponseNotOk:
                 # Delete the created function profile
                 self.apic.infraAccPortGrp.delete(name)
 
@@ -193,7 +194,7 @@ class APICManager(object):
                 self.node_profiles[switch_id] = {
                     'object': self.apic.infraNodeP.get(switch_id)
                 }
-            except:
+            except cexc.ApicResponseNotOk:
                 # Remove the node profile
                 self.apic.infraNodeP.delete(switch_id)
         else:
@@ -205,7 +206,7 @@ class APICManager(object):
         try:
             self.apic.infraAccPortP.create(name)
             return self.apic.infraAccPortP.get(name)
-        except:
+        except cexc.ApicResponseNotOk:
             self.apic.infraAccPortP.delete(name)
             return False
 
@@ -225,7 +226,7 @@ class APICManager(object):
                     # TODO(asomya): Add VXLAN bits bere
                     pass
                 self.vmm_domain = self.apic.vmmDomP.get(provider, vmm_name)
-            except:
+            except cexc.ApicResponseNotOk:
                 # Delete the VMM domain
                 self.apic.vmmDomP.delete(provider, vmm_name)
 
@@ -245,10 +246,11 @@ class APICManager(object):
                         'from': vlan_min,
                         'to': vlan_max
                     }
-                    self.apic.fvnsEncapBlk__vlan.create(*ns_blk_args, **ns_kw_args)
+                    self.apic.fvnsEncapBlk__vlan.create(*ns_blk_args,
+                                                        **ns_kw_args)
                 self.vlan_ns = self.apic.fvnsVlanInstP.get(*ns_args)
                 return self.vlan_ns
-            except:
+            except cexc.ApicResponseNotOk:
                 # Delete the vlan namespace
                 self.apic.fvnsVlanInstP.delete(*ns_args)
 
@@ -268,8 +270,9 @@ class APICManager(object):
                 self.apic_bridge_domains.append(bd_id)
                 # Add default context to the BD
                 self.ensure_context_enforced()
-                self.apic.fvRsCtx.create(tenant_id, bd_id, tnFvCtxName='default')
-            except:
+                self.apic.fvRsCtx.create(tenant_id, bd_id,
+                                         tnFvCtxName='default')
+            except cexc.ApicResponseNotOk:
                 # Delete the bridge domain
                 self.apic.fvBD.delete(tenant_id, bd_id)
                 raise
@@ -315,7 +318,7 @@ class APICManager(object):
             dom_cloud = self.apic.vmmDomP.get('VMware', 'openstack')
             vmm_dn = dom_cloud['dn']
             self.apic.fvRsDomAtt.create(tenant_id, AP_NAME, epg_uid, vmm_dn)
-        except:
+        except cexc.ApicResponseNotOk:
             # Delete the EPG
             self.apic.fvAEPg.delete(tenant_id, AP_NAME, epg_uid)
             raise
@@ -346,7 +349,7 @@ class APICManager(object):
             # Create a new entry
             euuid = uuid.uuid4()
             self.apic.vzEntry.create(tenant_id, fuuid, euuid)
-        except:
+        except cexc.ApicResponseNotOk:
             self.apic.vzFilter.delete(tenant_id, fuuid)
             raise
 
@@ -360,7 +363,7 @@ class APICManager(object):
                                           epg_id, contract_id)
                 self.db.set_provider_contract(epg_id)
                 self.make_tenant_contract_global(tenant_id)
-            except:
+            except cexc.ApicResponseNotOk:
                 self.make_tenant_contract_local(tenant_id)
                 self.apic.fvRsProv.delete(tenant_id, AP_NAME,
                                           epg_id, contract_id)
@@ -413,9 +416,9 @@ class APICManager(object):
                 contract = self.db.write_contract_for_tenant(tenant_id,
                                                              cuuid, tfilter)
                 return contract
-            except:
+            except cexc.ApicResponseNotOk:
                 # Delete tenant contract
-                sel.apic.vzBrCP.delete(tenant_id, cuuid)
+                self.apic.vzBrCP.delete(tenant_id, cuuid)
                 raise
         return contract
 

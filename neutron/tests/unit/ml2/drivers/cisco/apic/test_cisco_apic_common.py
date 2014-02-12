@@ -102,6 +102,7 @@ class ControllerMixin(object):
             requests.Session.get = responses
 
     def mock_response_for_post(self, mo, **attrs):
+        attrs['debug_mo'] = mo  # useful for debugging
         self._stage_mocked_response('post', OK, mo, **attrs)
 
     def mock_response_for_get(self, mo, **attrs):
@@ -138,14 +139,14 @@ class ControllerMixin(object):
                 if mo.container:
                     self._mock_container_responses_for_create(mo.container)
                 name = '-'.join([obj, 'name'])  # useful for debugging
-                self._stage_mocked_response('post', OK, obj, name=name)
+                self._stage_mocked_response('post', OK, obj, debug_name=name)
 
     def mock_apic_manager_login_responses(self):
         # APIC Manager tests are based on authenticated session
         self.mock_response_for_post('aaaLogin', userName=APIC_USR,
                                     token='ok', refreshTimeoutSeconds=300)
         # After login, the manager gets lists of objects ...
-        mos = ['fvTenant', 'fvBD', 'fvSubnet', 'fvAp', 'fvAEPg', 'vzFilter']
+        mos = ['fvBD', 'fvSubnet', 'fvAp', 'fvAEPg', 'vzFilter']
         for mo in mos:
             name1 = mo[2:].lower() + '1'
             name2 = name1[:-1] + '2'
