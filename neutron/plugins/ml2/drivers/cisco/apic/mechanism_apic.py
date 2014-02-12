@@ -103,14 +103,13 @@ class APICMechanismDriver(api.MechanismDriver):
     def create_subnet_precommit(self, context):
         tenant_id = context.current['tenant_id']
         network_id = context.current['network_id']
-        subnet_id = context.current['id']
         gateway_ip = context.current['gateway_ip']
         cidr = context.current['cidr']
         netmask = re.sub(r'^.+/', '', cidr)
         gateway_ip = gateway_ip + '/' + netmask
 
         self.apic_manager.ensure_subnet_created_on_apic(tenant_id, network_id,
-                                                        subnet_id, gateway_ip)
+                                                        gateway_ip)
 
     def bind_port(self, context):
         LOG.debug(_("Attempting to bind port %(port)s on "

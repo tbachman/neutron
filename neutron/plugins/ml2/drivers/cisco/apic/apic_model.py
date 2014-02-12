@@ -57,15 +57,22 @@ class TenantContract(model_base.BASEV2):
 
 
 class ApicDbModel(object):
+    """DB Model to manage all APIC DB interactions."""
     def __init__(self):
         self.session = db_api.get_session()
 
     def get_port_profile_for_node(self, node_id):
+        """Returns a port profile for a switch if found in the DB."""
         return self.session.query(PortProfile).filter_by(
             node_id=node_id).first()
 
     def get_profile_for_module_and_ports(self, node_id, profile_id,
                                          module, from_port, to_port):
+        """Returns profile for module and ports.
+
+        Grabs the profile row from the DB for the specified switch,
+        module (linecard) and from/to port combination.
+        """
         return self.session.query(PortProfile).filter_by(
             node_id=node_id,
             module=module,
@@ -74,6 +81,7 @@ class ApicDbModel(object):
             to_port=to_port).first()
 
     def get_profile_for_module(self, node_id, profile_id, module):
+        """Returns the first profile for a switch module from the DB."""
         return self.session.query(PortProfile).filter_by(
             node_id=node_id,
             profile_id=profile_id,
@@ -82,6 +90,7 @@ class ApicDbModel(object):
     def add_profile_for_module_and_ports(self, node_id, profile_id,
                                          hpselc_id, module,
                                          from_port, to_port):
+        """Adds a profile for switch, module and port range."""
         row = PortProfile(node_id=node_id, profile_id=profile_id,
                           hpselc_id=hpselc_id, module=module,
                           from_port=from_port, to_port=to_port)
@@ -89,46 +98,45 @@ class ApicDbModel(object):
         self.session.flush()
 
     def get_provider_contract(self):
-        epg = self.session.query(NetworkEPG).filter_by(
+        """Returns  provider EPG from the DB if found."""
+        return self.session.query(NetworkEPG).filter_by(
             provider=True).first()
-        if epg:
-            return True
-
-        return False
 
     def set_provider_contract(self, epg_id):
+        """Sets an EPG to be a contract provider."""
         epg = self.session.query(NetworkEPG).filter_by(
             epg_id=epg_id).first()
         if epg:
             epg.provider = True
             self.session.merge(epg)
             self.session.flush()
-            return epg
-
-        return False
 
     def unset_provider_contract(self, epg_id):
+        """Sets an EPG to be a contract consumer."""
         epg = self.session.query(NetworkEPG).filter_by(
             epg_id=epg_id).first()
         if epg:
             epg.provider = False
             self.session.merge(epg)
             self.session.flush()
-            return epg
-
-        return False
 
     def get_an_epg(self, exception):
-        epg = self.session.query(NetworkEPG).filter(
+        """Returns an EPG from the DB that does not match the id specified."""
+        return self.session.query(NetworkEPG).filter(
             NetworkEPG.epg_id != exception).first()
-        if epg:
-            return epg
 
     def get_epg_for_network(self, network_id):
+        """Returns an EPG for a give neutron network."""
         return self.session.query(NetworkEPG).filter_by(
             network_id=network_id).first()
 
     def write_epg_for_network(self, network_id, epg_uid, segmentation_id='1'):
+        """Stores EPG details for a network.
+
+        NOTE: Segmentation_id is just a placeholder currently, it will be
+              populated with a proper segment id once segmentation mgmt is
+              moved to the APIC.
+        """
         epg = NetworkEPG(network_id=network_id, epg_id=epg_uid,
                          segmentation_id=segmentation_id)
         self.session.add(epg)
@@ -136,14 +144,17 @@ class ApicDbModel(object):
         return epg
 
     def delete_epg(self, epg):
+        """Deletes an EPG from the DB."""
         self.session.delete(epg)
         self.session.flush()
 
     def get_contract_for_tenant(self, tenant_id):
+        """Returns the specified tenant's contract."""
         return self.session.query(TenantContract).filter_by(
             tenant_id=tenant_id).first()
 
     def write_contract_for_tenant(self, tenant_id, contract_id, filter_id):
+        """Stores a new contract for the given tenant."""
         contract = TenantContract(tenant_id=tenant_id,
                                   contract_id=contract_id,
                                   filter_id=filter_id)

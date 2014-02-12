@@ -26,9 +26,6 @@ from neutron.plugins.ml2.drivers.cisco.apic import config
 from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 
 AP_NAME = 'openstack'
-VMM_DOMAIN = 'openstack'
-PROVIDER_NAME = 'openstack_provider'
-CONSUMER_NAME = 'openstack_consumer'
 
 
 def group_by_ranges(i):
@@ -40,6 +37,12 @@ def group_by_ranges(i):
 
 
 class APICManager(object):
+    """Class to manage APIC translations and workflow.
+
+       This class manages translation from Neutron objects to APIC
+       managed objects and contains workflows to implement these
+       translations.
+    """
     def __init__(self):
         self.db = apic_model.ApicDbModel()
 
@@ -53,12 +56,6 @@ class APICManager(object):
         password = cfg.CONF.ml2_apic.apic_password
         self.apic = apic_client.RestClient(host, port, username, password)
 
-        # Update lists of managed objects from the APIC
-        self.apic_bridge_domains = self.apic.fvBD.list_names()
-        self.apic_subnets = self.apic.fvSubnet.list_names()
-        self.apic_app_profiles = self.apic.fvAp.list_names()
-        self.apic_epgs = self.apic.fvAEPg.list_names()
-        self.apic_filters = self.apic.vzFilter.list_names()
         self.port_profiles = {}
         self.vmm_domain = None
         self.vlan_ns = None
@@ -67,6 +64,11 @@ class APICManager(object):
         self.function_profile = None
 
     def ensure_infra_created_on_apic(self):
+        """Ensure the infrastructure is setup.
+
+        Loop over the switch dictionary from the config and
+        setup profiles for switches, modules and ports
+        """
         # Loop over switches
         for switch in self.switch_dict:
             # Create a node profile for this switch
@@ -83,7 +85,7 @@ class APICManager(object):
                     # Add port profile to node profile
                     ppdn = pprofile['dn']
                     self.apic.infraRsAccPortP.create(switch, ppdn)
-                except cexc.ApicResponseNotOk:
+                except (cexc.ApicResponseNotOk, KeyError):
                     # Delete port profile
                     self.apic.infraAccPortP.delete(ppname)
                     raise
@@ -113,7 +115,7 @@ class APICManager(object):
                         self.apic.infraRsAccBaseGrp.create(ppname, hname,
                                                            'range', tDn=fpdn)
                         modules[module].sort()
-                    except cexc.ApicResponseNotOk:
+                    except (cexc.ApicResponseNotOk, KeyError):
                         self.apic.infraHPortS.delete(ppname, hname, 'range')
                         raise
                 else:
@@ -138,6 +140,7 @@ class APICManager(object):
                             prange[0], prange[-1])
 
     def ensure_context_unenforced(self, tenant_id='common', name='default'):
+        """Set the specified tenant's context to unenforced."""
         ctx = self.apic.fvCtx.get(tenant_id, name)
         if not ctx:
             self.apic.fvCtx.create(tenant_id, name, pcEnfPref='2')
@@ -145,6 +148,7 @@ class APICManager(object):
             self.apic.fvCtx.update(tenant_id, name, pcEnfPref='2')
 
     def ensure_context_enforced(self, tenant_id='common', name='default'):
+        """Set the specified tenant's context to enforced."""
         ctx = self.apic.fvCtx.get(tenant_id, name)
         if not ctx:
             self.apic.fvCtx.create(tenant_id, name, pcEnfPref='1')
@@ -152,6 +156,7 @@ class APICManager(object):
             self.apic.fvCtx.update(tenant_id, name, pcEnfPref='1')
 
     def ensure_entity_profile_created_on_apic(self, name):
+        """Create the infrastructure entity profile."""
         self.entity_profile = self.apic.infraAttEntityP.get(name)
         if not self.entity_profile:
             try:
@@ -160,11 +165,13 @@ class APICManager(object):
                 # Attach vmm domain to entity profile
                 self.apic.infraRsDomP.create(name, vmm_dn)
                 self.entity_profile = self.apic.infraAttEntityP.get(name)
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the created entity profile
                 self.apic.infraEntityP.delete(name)
+                raise
 
     def ensure_function_profile_created_on_apic(self, name):
+        """Create the infrastructure function profile."""
         self.function_profile = self.apic.infraAccPortGrp.get(name)
         if not self.function_profile:
             try:
@@ -173,11 +180,17 @@ class APICManager(object):
                 entp_dn = self.entity_profile['dn']
                 self.apic.infraRsAttEntP.create(name, tDn=entp_dn)
                 self.function_profile = self.apic.infraAccPortGrp.get(name)
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the created function profile
                 self.apic.infraAccPortGrp.delete(name)
+                raise
 
     def ensure_node_profile_created_for_switch(self, switch_id):
+        """Creates a switch node profile.
+
+        Create a node profile for a switch and add a switch
+        to the leaf node selector
+        """
         sobj = self.apic.infraNodeP.get(switch_id)
         if not sobj:
             try:
@@ -194,24 +207,32 @@ class APICManager(object):
                 self.node_profiles[switch_id] = {
                     'object': self.apic.infraNodeP.get(switch_id)
                 }
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Remove the node profile
                 self.apic.infraNodeP.delete(switch_id)
+                raise
         else:
             self.node_profiles[switch_id] = {
                 'object': sobj
             }
 
     def ensure_port_profile_created_on_apic(self, name):
+        """Create a port profile."""
         try:
             self.apic.infraAccPortP.create(name)
             return self.apic.infraAccPortP.get(name)
-        except cexc.ApicResponseNotOk:
+        except (cexc.ApicResponseNotOk, KeyError):
             self.apic.infraAccPortP.delete(name)
-            return False
+            raise
 
     def ensure_vmm_domain_created_on_apic(self, vmm_name,
                                           vlan_ns=None, vxlan_ns=None):
+        """Create Virtual Machine Manager domain.
+
+        Creates the VMM domain on the APIC and adds a VLAN or VXLAN
+        namespace to that VMM domain.
+        NOTE: VXLAN is not currently supported.
+        """
         provider = cfg.CONF.ml2_apic.apic_vmm_provider
         self.vmm_domain = self.apic.vmmDomP.get(provider, vmm_name)
         if not self.vmm_domain:
@@ -226,11 +247,12 @@ class APICManager(object):
                     # TODO(asomya): Add VXLAN bits bere
                     pass
                 self.vmm_domain = self.apic.vmmDomP.get(provider, vmm_name)
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the VMM domain
                 self.apic.vmmDomP.delete(provider, vmm_name)
 
     def ensure_vlan_ns_created_on_apic(self, name, vlan_min, vlan_max):
+        """Creates a static VLAN namespace with the given vlan range."""
         ns_args = name, 'static'
         self.vlan_ns = self.apic.fvnsVlanInstP.get(*ns_args)
         if not self.vlan_ns:
@@ -250,52 +272,54 @@ class APICManager(object):
                                                         **ns_kw_args)
                 self.vlan_ns = self.apic.fvnsVlanInstP.get(*ns_args)
                 return self.vlan_ns
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the vlan namespace
                 self.apic.fvnsVlanInstP.delete(*ns_args)
 
     def ensure_tenant_created_on_apic(self, tenant_id):
-        """Make sure a tenant exists on the APIC.
-
-        Check the local tenant cache and create a new tenant
-        if not found
-        """
+        """Make sure a tenant exists on the APIC."""
         if not self.apic.fvTenant.get(tenant_id):
             self.apic.fvTenant.create(tenant_id)
 
     def ensure_bd_created_on_apic(self, tenant_id, bd_id):
-        if bd_id not in self.apic_bridge_domains:
+        """Creates a Bridge Domain on the APIC."""
+        if not self.apic.fvBD.get(tenant_id, bd_id):
             try:
                 self.apic.fvBD.create(tenant_id, bd_id)
-                self.apic_bridge_domains.append(bd_id)
                 # Add default context to the BD
                 self.ensure_context_enforced()
                 self.apic.fvRsCtx.create(tenant_id, bd_id,
                                          tnFvCtxName='default')
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the bridge domain
                 self.apic.fvBD.delete(tenant_id, bd_id)
                 raise
 
     def delete_bd_on_apic(self, tenant_id, bd_id):
+        """Deletes a Bridge Domain from the APIC."""
         self.apic.fvBD.delete(tenant_id, bd_id)
 
-    def ensure_subnet_created_on_apic(self, tenant_id, bd_id,
-                                      subnet_id, gw_ip):
-        if subnet_id not in self.apic_subnets:
+    def ensure_subnet_created_on_apic(self, tenant_id, bd_id, gw_ip):
+        """Creates a subnet on the APIC
+
+        The gateway ip (gw_ip) should be specified as a CIDR
+        e.g. 10.0.0.1/24
+        """
+        if not self.apic.fvSubnet.get(tenant_id, bd_id, gw_ip):
             self.apic.fvSubnet.create(tenant_id, bd_id, gw_ip)
-            self.apic_subnets.append(subnet_id)
 
     def ensure_filter_created_on_apic(self, tenant_id, filter_id):
-        if filter_id not in self.apic_filters:
+        """Create a filter on the APIC."""
+        if not self.apic.vzFilter.get(tenant_id, filter_id):
             self.apic.vzFilter.create(tenant_id, filter_id)
-            self.apic_filters.append(filter_id)
-
-    def get_epg_list_from_apic(self):
-        """Get a list of all EPG's from the APIC."""
-        self.apic_epgs = self.apic.fvAEPg.list_names()
 
     def ensure_epg_created_for_network(self, tenant_id, network_id, net_name):
+        """Creates an End Point Group on the APIC.
+
+        Create a new EPG on the APIC for the network spcified. This information
+        is also tracked in the local DB and associate the bridge domain for the
+        network with the EPG created.
+        """
         # Check if an EPG is already present for this network
         epg = self.db.get_epg_for_network(network_id)
         if epg:
@@ -318,19 +342,18 @@ class APICManager(object):
             dom_cloud = self.apic.vmmDomP.get('VMware', 'openstack')
             vmm_dn = dom_cloud['dn']
             self.apic.fvRsDomAtt.create(tenant_id, AP_NAME, epg_uid, vmm_dn)
-        except cexc.ApicResponseNotOk:
+        except (cexc.ApicResponseNotOk, KeyError):
             # Delete the EPG
             self.apic.fvAEPg.delete(tenant_id, AP_NAME, epg_uid)
             raise
 
         # Stick it in the DB
-        # TODO(asomya): use the real segmentation id when segmentation
-        # management is moved to the APIC
-        epg = self.db.write_epg_for_network(network_id, epg_uid,
-                                            segmentation_id='1')
+        epg = self.db.write_epg_for_network(network_id, epg_uid)
+
         return epg
 
     def delete_epg_for_network(self, tenant_id, network_id):
+        """Deletes the EPG from the APIC and removes it from the DB."""
         # Check if an EPG is already present for this network
         epg = self.db.get_epg_for_network(network_id)
         if not epg:
@@ -342,6 +365,7 @@ class APICManager(object):
         self.db.delete_epg(epg)
 
     def create_tenant_filter(self, tenant_id):
+        """Creates a tenant filter and a generic entry under it."""
         fuuid = uuid.uuid4()
         try:
             # Create a new tenant filter
@@ -349,21 +373,25 @@ class APICManager(object):
             # Create a new entry
             euuid = uuid.uuid4()
             self.apic.vzEntry.create(tenant_id, fuuid, euuid)
-        except cexc.ApicResponseNotOk:
+            return fuuid
+        except (cexc.ApicResponseNotOk, KeyError):
             self.apic.vzFilter.delete(tenant_id, fuuid)
             raise
 
-        return fuuid
-
     def set_contract_for_epg(self, tenant_id, epg_id,
                              contract_id, provider=False):
+        """Set the contract for an EPG.
+
+        By default EPGs are consumers to a contract. Set provider flag
+        for a single EPG to act as a contract provider.
+        """
         if provider:
             try:
                 self.apic.fvRsProv.create(tenant_id, AP_NAME,
                                           epg_id, contract_id)
                 self.db.set_provider_contract(epg_id)
                 self.make_tenant_contract_global(tenant_id)
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 self.make_tenant_contract_local(tenant_id)
                 self.apic.fvRsProv.delete(tenant_id, AP_NAME,
                                           epg_id, contract_id)
@@ -373,6 +401,11 @@ class APICManager(object):
 
     def delete_contract_for_epg(self, tenant_id, epg_id,
                                 contract_id, provider=False):
+        """Delete the contract for an End Point Group.
+
+        Check if the EPG was a provider and attempt to grab another contract
+        consumer from the DB and set that as the new contract provider.
+        """
         if provider:
             self.apic.fvRsProv.delete(tenant_id, AP_NAME, epg_id, contract_id)
             self.db.unset_provider_contract(epg_id)
@@ -385,10 +418,17 @@ class APICManager(object):
 
     def update_contract_for_epg(self, tenant_id, epg_id,
                                 contract_id, provider=False):
+        """Updates the contract for an End Point Group."""
         self.apic.fvRsCons.delete(tenant_id, AP_NAME, epg_id, contract_id)
         self.set_contract_for_epg(tenant_id, epg_id, contract_id, provider)
 
     def create_tenant_contract(self, tenant_id):
+        """Creates a tenant contract.
+
+        Create a tenant contract if one doesn't exist. Also create a
+        subject, filter and entry and set the filters to allow all
+        protocol traffic on all ports
+        """
         contract = self.db.get_contract_for_tenant(tenant_id)
         if not contract:
             cuuid = uuid.uuid4()
@@ -415,25 +455,28 @@ class APICManager(object):
                 # Store contract in DB
                 contract = self.db.write_contract_for_tenant(tenant_id,
                                                              cuuid, tfilter)
-                return contract
-            except cexc.ApicResponseNotOk:
+            except (cexc.ApicResponseNotOk, KeyError):
                 # Delete tenant contract
                 self.apic.vzBrCP.delete(tenant_id, cuuid)
                 raise
+
         return contract
 
     def make_tenant_contract_global(self, tenant_id):
+        """Mark the tenant contract's scope to global."""
         contract = self.db.get_contract_for_tenant(tenant_id)
         self.apic.vzBrCP.update(tenant_id, contract.contract_id,
                                 scope='global')
 
     def make_tenant_contract_local(self, tenant_id):
+        """Mark the tenant contract's scope to tenant."""
         contract = self.db.get_contract_for_tenant(tenant_id)
         self.apic.vzBrCP.update(tenant_id, contract.contract_id,
                                 scope='tenant')
 
     def ensure_path_created_for_port(self, tenant_id, network_id,
                                      host_id, encap, net_name):
+        """Create path attribute for an End Point Group."""
         encap = 'vlan-' + str(encap)
         epg = self.ensure_epg_created_for_network(tenant_id, network_id,
                                                   net_name)
