@@ -31,7 +31,9 @@ HOST_ID2 = 'rhel'
 
 SUBNET_GATEWAY = '10.3.2.1'
 SUBNET_CIDR = '24'
-SUBNET_ID = '[%s/%s]' % (SUBNET_GATEWAY, SUBNET_CIDR)
+
+TEST_SEGMENT1 = 'test-segment1'
+TEST_SEGMENT2 = 'test-segment2'
 
 TEST_VIF_TYPE = 'test-vif_type'
 TEST_CAP_PORT_FILTER = 'test-cap_port_filter'
@@ -72,22 +74,34 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
     def test_create_port_precommit(self):
         net_ctx = self._get_network_context(mocked.APIC_TENANT,
                                             mocked.APIC_NETWORK,
-                                            mocked.APIC_VLANID_FROM)
+                                            TEST_SEGMENT1)
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
-                                          'vm1', net_ctx)
+                                          'vm1', net_ctx, HOST_ID1)
         mgr = self.driver.apic_manager = mock.Mock()
         self.driver.create_port_precommit(port_ctx)
         mgr.ensure_tenant_created_on_apic.assert_called_once_with(
             mocked.APIC_TENANT)
         mgr.ensure_path_created_for_port.assert_called_once_with(
             mocked.APIC_TENANT, mocked.APIC_NETWORK, HOST_ID1,
-            mocked.APIC_VLANID_FROM, mocked.APIC_NETWORK + '-name')
+            TEST_SEGMENT1, mocked.APIC_NETWORK + '-name')
+
+    def test_create_port_precommit_no_host(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK,
+                                            TEST_SEGMENT1)
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, host=None)
+        mgr = self.driver.apic_manager = mock.Mock()
+        self.driver.create_port_precommit(port_ctx)
+        self.assertFalse(mgr.ensure_tenant_created_on_apic.called)
+        self.assertFalse(mgr.ensure_path_created_for_port.called)
 
     def test_create_network_precommit(self):
         ctx = self._get_network_context(mocked.APIC_TENANT,
                                         mocked.APIC_NETWORK,
-                                        mocked.APIC_VLANID_FROM)
+                                        TEST_SEGMENT1)
         mgr = self.driver.apic_manager = mock.Mock()
         self.driver.create_network_precommit(ctx)
         mgr.ensure_bd_created_on_apic.assert_called_once_with(
@@ -99,7 +113,7 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
     def test_delete_network_precommit(self):
         ctx = self._get_network_context(mocked.APIC_TENANT,
                                         mocked.APIC_NETWORK,
-                                        mocked.APIC_VLANID_FROM)
+                                        TEST_SEGMENT1)
         mgr = self.driver.apic_manager = mock.Mock()
         self.driver.delete_network_precommit(ctx)
         mgr.delete_bd_on_apic.assert_called_once_with(
@@ -110,7 +124,7 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
     def test_create_subnet_precommit(self):
         net_ctx = self._get_network_context(mocked.APIC_TENANT,
                                             mocked.APIC_NETWORK,
-                                            mocked.APIC_VLANID_FROM)
+                                            TEST_SEGMENT1)
         subnet_ctx = self._get_subnet_context(SUBNET_GATEWAY,
                                               SUBNET_CIDR,
                                               net_ctx)
@@ -118,26 +132,60 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         self.driver.create_subnet_precommit(subnet_ctx)
         mgr.ensure_subnet_created_on_apic.assert_called_once_with(
             mocked.APIC_TENANT, mocked.APIC_NETWORK,
-            SUBNET_ID, '%s/%s' % (SUBNET_GATEWAY, SUBNET_CIDR))
+            '%s/%s' % (SUBNET_GATEWAY, SUBNET_CIDR))
 
     def test_bind_port(self):
         net_ctx = self._get_network_context(mocked.APIC_TENANT,
                                             mocked.APIC_NETWORK,
-                                            mocked.APIC_VLANID_FROM)
+                                            TEST_SEGMENT1)
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
-                                          'vm1', net_ctx)
+                                          'vm1', net_ctx, HOST_ID1)
         self.driver.vif_type = TEST_VIF_TYPE
         self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
-        self.driver.bind_port(port_ctx)
+        with mock.patch.object(md, 'LOG') as log:
+            self.driver.bind_port(port_ctx)
+            self.assertFalse(log.error.called)
 
-    def _get_network_context(self, tenant_id, net_id, seg_id):
+    def test_bind_port_bad_type(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK,
+                                            TEST_SEGMENT1,
+                                            seg_type='unsupported')
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, HOST_ID1)
+        self.driver.vif_type = TEST_VIF_TYPE
+        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
+        with mock.patch.object(md, 'LOG') as log:
+            self.driver.bind_port(port_ctx)
+            self.assertTrue(log.error.called)
+
+    def test_bind_port_no_segments(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK)
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, HOST_ID1)
+        self.driver.vif_type = TEST_VIF_TYPE
+        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
+        with mock.patch.object(md, 'LOG') as log:
+            self.driver.bind_port(port_ctx)
+            self.assertFalse(log.error.called)
+
+    def _get_network_context(self, tenant_id, net_id, seg_id=None,
+                             seg_type='vlan'):
         network = {'id': net_id,
                    'name': net_id + '-name',
                    'tenant_id': tenant_id,
                    'provider:segmentation_id': seg_id}
-        network_segments = [{'id': seg_id,
-                             'network_type': 'vlan'}]
+        if seg_id:
+            network_segments = [{'id': seg_id,
+                                 'segmentation_id': '101',
+                                 'network_type': seg_type,
+                                 'physical_network': 'physnet1'}]
+        else:
+            network_segments = []
         return FakeNetworkContext(network, network_segments, network)
 
     def _get_subnet_context(self, gateway_ip, cidr, network):
@@ -148,10 +196,10 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
                   'cidr': cidr}
         return FakeSubnetContext(subnet, network)
 
-    def _get_port_context(self, tenant_id, net_id, vm_id, network):
+    def _get_port_context(self, tenant_id, net_id, vm_id, network, host):
         port = {'device_id': vm_id,
                 'device_owner': 'compute',
-                'binding:host_id': HOST_ID1,
+                'binding:host_id': host,
                 'tenant_id': tenant_id,
                 'id': mocked.APIC_PORT,
                 'name': mocked.APIC_PORT,

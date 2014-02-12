@@ -63,7 +63,6 @@ class APICMechanismDriver(api.MechanismDriver):
     def create_port_precommit(self, context):
         # Get tenant details from port context
         tenant_id = context.current['tenant_id']
-        self.apic_manager.ensure_tenant_created_on_apic(tenant_id)
 
         # Get network
         network = context.network.current['id']
@@ -80,6 +79,7 @@ class APICMechanismDriver(api.MechanismDriver):
             return
 
         # Create a static path attachment for this host/epg/switchport combo
+        self.apic_manager.ensure_tenant_created_on_apic(tenant_id)
         self.apic_manager.ensure_path_created_for_port(tenant_id, network,
                                                        host, seg, net_name)
 

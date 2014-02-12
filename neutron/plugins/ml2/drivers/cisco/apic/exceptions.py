@@ -44,3 +44,8 @@ class ApicResponseNotOk(exceptions.NeutronException):
 class ApicSessionNotLoggedIn(exceptions.NotAuthorized):
     """Attempted APIC operation while not logged in to APIC."""
     message = _("Authorized APIC session not established")
+
+
+class ApicHostNotConfigured(exceptions.NotAuthorized):
+    """The switch and port for the specified host are not configured."""
+    message = _("The switch and port for host '%(host)s' are not configured")

@@ -483,7 +483,10 @@ class APICManager(object):
         eid = epg.epg_id
 
         # Get attached switch and port for this host
-        switch, port = config.get_switch_and_port_for_host(host_id)
+        host_config = config.get_switch_and_port_for_host(host_id)
+        if not host_config:
+            raise cexc.ApicHostNotConfigured(host=host_id)
+        switch, port = host_config
         pdn = 'topology/pod-1/paths-%s/pathep-[eth%s]' % (switch, port)
 
         # Check if exists

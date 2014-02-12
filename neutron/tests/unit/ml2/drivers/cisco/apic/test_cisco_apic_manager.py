@@ -21,6 +21,7 @@ from neutron.openstack.common import uuidutils
 
 from neutron.common import log
 from neutron.plugins.ml2.drivers.cisco.apic import apic_manager
+from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 from neutron.tests import base
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
     test_cisco_apic_common as mocked)
@@ -140,7 +141,7 @@ class TestCiscoApicManager(base.BaseTestCase,
 
     def test_ensure_vmm_domain_created_new_with_vxlan_ns(self):
         dom = mocked.APIC_DOMAIN
-        # TODO(Henry): mock seg_type creation when vxlan is ready
+        # TODO(Henry): mock seg_type vxlan when vxlan is ready
         self._mock_new_dom_responses(dom, seg_type=None)
         ns = {'dn': 'test_vxlan_ns'}
         self.mgr.ensure_vmm_domain_created_on_apic(dom, vxlan_ns=ns)
@@ -308,80 +309,63 @@ class TestCiscoApicManager(base.BaseTestCase,
 
     def test_ensure_tenant_created_on_apic(self):
         self.mock_response_for_get('fvTenant', name='any')
-        self.mgr.apic_tenants = ['one', 'two', 'three']
         self.mgr.ensure_tenant_created_on_apic('two')
         self.mock_response_for_get('fvTenant')
         self.mock_responses_for_create('fvTenant')
         self.mgr.ensure_tenant_created_on_apic('four')
         self.assert_responses_drained(self.mgr.apic.session)
-        # TODO(Henry): why is apic_tenants not updated?
-        #self.assertEqual(self.mgr.apic_tenants,
-        #                 ['one', 'two', 'three', 'four'])
+
+    def test_ensure_bd_created_existing_bd(self):
+        self.mock_response_for_get('fvBD', name='BD')
+        self.mgr.ensure_bd_created_on_apic('t1', 'two')
+        self.assert_responses_drained(self.mgr.apic.session)
 
     def test_ensure_bd_created_not_ctx(self):
-        self.mgr.apic_bridge_domains = ['one', 'two']
-        self.mgr.ensure_bd_created_on_apic('t1', 'two')
+        self.mock_response_for_get('fvBD')
         self.mock_responses_for_create('fvBD')
         self.mock_response_for_get('fvCtx')
         self.mock_responses_for_create('fvCtx')
         self.mock_responses_for_create('fvRsCtx')
         self.mgr.ensure_bd_created_on_apic('t2', 'three')
         self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_bridge_domains,
-                         ['one', 'two', 'three'])
 
     def test_ensure_bd_created_ctx_pref1(self):
-        self.mgr.apic_bridge_domains = ['one', 'two', 'three']
+        self.mock_response_for_get('fvBD')
         self.mock_responses_for_create('fvBD')
         self.mock_response_for_get('fvCtx', pcEnfPref='1')
         self.mock_responses_for_create('fvRsCtx')
         self.mgr.ensure_bd_created_on_apic('t3', 'four')
         self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_bridge_domains,
-                         ['one', 'two', 'three', 'four'])
 
     def test_ensure_bd_created_ctx_pref2(self):
-        self.mgr.apic_bridge_domains = ['one', 'two', 'three']
+        self.mock_response_for_get('fvBD')
         self.mock_responses_for_create('fvBD')
         self.mock_response_for_get('fvCtx', pcEnfPref='2')
         self.mock_response_for_post('fvCtx')
         self.mock_responses_for_create('fvRsCtx')
         self.mgr.ensure_bd_created_on_apic('t3', 'four')
         self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_bridge_domains,
-                         ['one', 'two', 'three', 'four'])
 
     def test_delete_bd(self):
         self.mock_response_for_post('fvBD')
         self.mgr.delete_bd_on_apic('t1', 'bd')
         self.assert_responses_drained(self.mgr.apic.session)
-        # Just coverage, nothing to verify.
-        # TODO(Henry): should mgr.apic_bridge_domains be updated?
 
     def test_ensure_subnet_created(self):
-        self.mgr.apic_subnets = ['one', 'two', 'three']
-        self.mgr.ensure_subnet_created_on_apic('t0', 'bd1', 'two', '2.2.2.2')
+        self.mock_response_for_get('fvSubnet', name='sn1')
+        self.mgr.ensure_subnet_created_on_apic('t0', 'bd1', '2.2.2.2/8')
+        self.mock_response_for_get('fvSubnet')
         self.mock_responses_for_create('fvSubnet')
-        self.mgr.ensure_subnet_created_on_apic('t2', 'bd3', 'four', '4.4.4.4')
+        self.mgr.ensure_subnet_created_on_apic('t2', 'bd3', '4.4.4.4/16')
         self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_subnets,
-                         ['one', 'two', 'three', 'four'])
 
     def test_ensure_filter_created(self):
-        self.mgr.apic_filters = ['one', 'two', 'three']
+        self.mock_response_for_get('vzFilter', name='f1')
         self.mgr.ensure_filter_created_on_apic('t1', 'two')
+        self.mock_response_for_get('vzFilter')
         self.mock_responses_for_create('vzFilter')
         self.mgr.ensure_filter_created_on_apic('t2', 'four')
         self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_filters,
-                         ['one', 'two', 'three', 'four'])
-
-    def test_get_epg_list(self):
-        self.mock_response_for_get('fvAEPg', name='one')
-        self.mock_append_to_response('fvAEPg', name='two')
-        self.mgr.get_epg_list_from_apic()
-        self.assert_responses_drained(self.mgr.apic.session)
-        self.assertEqual(self.mgr.apic_epgs, ['one', 'two'])
 
     def test_ensure_epg_created_for_network_old(self):
         self.mock_db_query_filterby_first_return('faked')
@@ -409,8 +393,6 @@ class TestCiscoApicManager(base.BaseTestCase,
     def test_delete_epg_for_network_no_epg(self):
         self.mock_db_query_filterby_first_return(None)
         self.mgr.delete_epg_for_network('tenant', 'network')
-        # Just coverage, nothing to verify
-        # TODO(Henry): should mgr.apic_epgs be not updated?
 
     def test_delete_epg_for_network(self):
         epg = mock.Mock()
@@ -427,22 +409,30 @@ class TestCiscoApicManager(base.BaseTestCase,
         eepg = mock.Mock(return_value=epg)
         apic_manager.APICManager.ensure_epg_created_for_network = eepg
         self.mock_response_for_get('fvRsPathAtt', tDn='foo')
-        self.mgr.ensure_path_created_for_port('tenant', 'network', 'ubuntu2',
+        self.mgr.ensure_path_created_for_port('tenant', 'network', 'rhel01',
                                               'static', 'netname')
-        # TODO(Henry): the above breaks for an unknown host
         self.assert_responses_drained(self.mgr.apic.session)
 
     def test_ensure_path_created_for_port_no_path_att(self):
         epg = mock.Mock()
-        epg.epg_id = 'epg01'
+        epg.epg_id = 'epg2'
         eepg = mock.Mock(return_value=epg)
         self.mgr.ensure_epg_created_for_network = eepg
         self.mock_response_for_get('fvRsPathAtt')
         self.mock_responses_for_create('fvRsPathAtt')
         self.mgr.ensure_path_created_for_port('tenant', 'network', 'ubuntu2',
                                               'static', 'netname')
-        # TODO(Henry): the above breaks for an unknown host
         self.assert_responses_drained(self.mgr.apic.session)
+
+    def test_ensure_path_created_for_port_unknown_host(self):
+        epg = mock.Mock()
+        epg.epg_id = 'epg3'
+        eepg = mock.Mock(return_value=epg)
+        apic_manager.APICManager.ensure_epg_created_for_network = eepg
+        self.mock_response_for_get('fvRsPathAtt', tDn='foo')
+        self.assertRaises(cexc.ApicHostNotConfigured,
+                          self.mgr.ensure_path_created_for_port,
+                          'tenant', 'network', 'cirros3', 'static', 'netname')
 
     def test_create_tenant_filter(self):
         tenant = mocked.APIC_TENANT
@@ -475,7 +465,6 @@ class TestCiscoApicManager(base.BaseTestCase,
         self.assertTrue(self.mocked_session.merge.called)
         self.assertTrue(self.mocked_session.flush.called)
         self.assertTrue(epg_obj.provider)
-        # TODO(Henry): db.set_provider_contract can return False
 
     def test_delete_contract_for_epg_consumer(self):
         tenant = mocked.APIC_TENANT
@@ -502,7 +491,6 @@ class TestCiscoApicManager(base.BaseTestCase,
         self.assertTrue(self.mocked_session.merge.called)
         self.assertTrue(self.mocked_session.flush.called)
         self.assertTrue(epg_obj.provider)
-        # TODO(Henry): db.unset_provider_contract can return False
 
     def test_create_tenant_contract_existing(self):
         tenant = mocked.APIC_TENANT

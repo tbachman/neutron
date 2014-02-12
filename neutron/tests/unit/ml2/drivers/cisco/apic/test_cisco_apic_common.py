@@ -145,13 +145,6 @@ class ControllerMixin(object):
         # APIC Manager tests are based on authenticated session
         self.mock_response_for_post('aaaLogin', userName=APIC_USR,
                                     token='ok', refreshTimeoutSeconds=300)
-        # After login, the manager gets lists of objects ...
-        mos = ['fvBD', 'fvSubnet', 'fvAp', 'fvAEPg', 'vzFilter']
-        for mo in mos:
-            name1 = mo[2:].lower() + '1'
-            name2 = name1[:-1] + '2'
-            self.mock_response_for_get(mo, name=name1)
-            self.mock_append_to_response(mo, name=name2)
 
     def assert_responses_drained(self, session, req=None):
         """Fail if all the expected responses have not been consumed."""
@@ -204,11 +197,11 @@ class ConfigMixin(object):
             'apic_function_profile': APIC_FUNC_PROF,
         }
         for opt, val in apic_test_config.items():
-            cfg.CONF.set_override(opt, val, 'ml2_apic')
+            cfg.CONF.set_override(opt, val, 'ml2_cisco_apic')
 
         apic_switch_cfg = {
-            'switch:east01': {'ubuntu1,ubuntu2': ['3/11']},
-            'switch:east02': {'rhel01,rhel02': ['4/21']},
+            'apic_switch:east01': {'ubuntu1,ubuntu2': ['3/11']},
+            'apic_switch:east02': {'rhel01,rhel02': ['4/21']},
         }
         self.mocked_parser = mock.patch.object(cfg,
                                                'MultiConfigParser').start()
