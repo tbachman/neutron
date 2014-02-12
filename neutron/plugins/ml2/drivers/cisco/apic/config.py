@@ -44,7 +44,7 @@ apic_opts = [
 ]
 
 
-cfg.CONF.register_opts(apic_opts, "ml2_apic")
+cfg.CONF.register_opts(apic_opts, "ml2_cisco_apic")
 
 
 def get_switch_and_port_for_host(host_id):
@@ -70,9 +70,9 @@ class ML2MechApicConfig(object):
 
         for parsed_file in multi_parser.parsed:
             for parsed_item in parsed_file.keys():
-                if parsed_item.startswith('switch'):
+                if parsed_item.startswith('apic_switch'):
                     switch, switch_id = parsed_item.split(':')
-                    if switch.lower() == 'switch':
+                    if switch.lower() == 'apic_switch':
                         self.switch_dict[switch_id] = {}
                         port_cfg = parsed_file[parsed_item].items()
                         for host_list, port in port_cfg:

@@ -37,7 +37,7 @@ class APICMechanismDriver(api.MechanismDriver):
 
         # Create a VMM domain and VLAN namespace
         # Get vlan ns name
-        ns_name = cfg.CONF.ml2_apic.apic_vlan_ns_name
+        ns_name = cfg.CONF.ml2_cisco_apic.apic_vlan_ns_name
         # Grab vlan ranges
         vlan_ranges = cfg.CONF.ml2_type_vlan.network_vlan_ranges[0]
         (vlan_min, vlan_max) = vlan_ranges.split(':')[-2:]
@@ -45,16 +45,16 @@ class APICMechanismDriver(api.MechanismDriver):
         vlan_ns = self.apic_manager.ensure_vlan_ns_created_on_apic(ns_name,
                                                                    vlan_min,
                                                                    vlan_max)
-        vmm_name = cfg.CONF.ml2_apic.apic_vmm_domain
+        vmm_name = cfg.CONF.ml2_cisco_apic.apic_vmm_domain
         # Create VMM domain
         self.apic_manager.ensure_vmm_domain_created_on_apic(vmm_name, vlan_ns)
 
         # Create entity profile
-        ent_name = cfg.CONF.ml2_apic.apic_entity_profile
+        ent_name = cfg.CONF.ml2_cisco_apic.apic_entity_profile
         self.apic_manager.ensure_entity_profile_created_on_apic(ent_name)
 
         # Create function profile
-        func_name = cfg.CONF.ml2_apic.apic_function_profile
+        func_name = cfg.CONF.ml2_cisco_apic.apic_function_profile
         self.apic_manager.ensure_function_profile_created_on_apic(func_name)
 
         # Create infrastructure on apic
