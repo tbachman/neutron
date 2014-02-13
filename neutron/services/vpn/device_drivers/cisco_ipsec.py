@@ -435,7 +435,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 #                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
 #             del self.processes[process_id]
 
-    def get_ipsec_connections_status(self, vpn_service):
+    def get_ipsec_connections_status(self):
         # TODO(pcm) select CSR based on service
         tunnels = self.csr.read_tunnel_statuses()
         for tunnel in tunnels:
@@ -446,44 +446,49 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def report_status(self, context):
         LOG.debug("PCM: Ignoring status update")
         service_report = {}
-        for vpn_service_state in self.service_state.values():
+        for vpn_service_id, vpn_service_state in self.service_state.items():
             any_connections = False
             conn_report = {}
-            tunnels = self.get_ipsec_connections_status(vpn_service_state)
-            for conn_id, conn in vpn_service_state.conn_state.items():
-                tunnel_id = conn['tunnel']
-                conn['status'] = self.STATUS_MAP[
-                    tunnels.get(tunnel_id, constants.ERROR)]
-                if conn['status'] != constants.ERROR:
+            tunnels = self.get_ipsec_connections_status()
+            for conn_id, conn_state in vpn_service_state.conn_state.items():
+                tunnel_id = conn_state.tunnel
+                if tunnel_id in tunnels:
+                    conn_status = self.STATUS_MAP[tunnels[tunnel_id]]
                     any_connections = True
-                if vpn_service_state.connection_state_changed(conn_id):
-                    conn_report[conn_id] = conn
-                    vpn_service_state.prev_conn_state[conn_id] = conn
-                    conn['updated_pending_status'] = False
-            vpn_service_state.status = (
+                elif conn_state.last_status != constants.PENDING_DELETE:
+                    conn_status = constants.ERROR
+                else:
+                    # TODO(pcm) right status for deleted connection?
+                    conn_status = constants.INACTIVE
+                if conn_status != conn_state.last_status:
+                    request_processed = plugin_utils.in_pending_status(
+                        conn_state.last_status)
+                    conn_report[conn_id] = {
+                        'status': conn_status,
+                        'updated_pending_status': request_processed
+                    }
+            service_status = (
                 constants.ACTIVE if any_connections else constants.DOWN)
             
-            if conn_report or vpn_service_state.state_changed():
-                service_id = vpn_service_state.service_id
-                service_report[service_id] = {
-                    'id': service_id,
-                    'status': vpn_service_state.status,
-                    'updated_pending_status':
-                        vpn_service_state.updated_pending_status,
+            if conn_report or service_status != vpn_service_state.last_status:
+                request_processed = plugin_utils.in_pending_status(
+                    vpn_service_state.last_status)
+                service_report[vpn_service_id] = {
+                    'id': vpn_service_id,
+                    'status': service_status,
+                    'updated_pending_status': request_processed,
                     'ipsec_site_connections': conn_report
                 }
-                vpn_service_state.prev_status = vpn_service_state.status
-                vpn_service_state.updated_pending_status = False
         LOG.debug(_("PCM: Changes %s"), service_report)
-        return
-#         if status_changed_vpn_services:
-#             self.agent_rpc.update_status(
-#                 context,
-#                 status_changed_vpn_services)
+        if service_report:
+            self.agent_rpc.update_status(context, service_report)
 
-    def get_service_state(self, vpn_service):
-        return self.service_state.setdefault(
-            vpn_service['id'], CiscoCsrVpnServiceState(vpn_service))
+    def snapshot_service_state(self, vpn_service):
+        """Create/get VPN service state and save current status."""
+        service_state = self.service_state.setdefault(
+            vpn_service['id'], CiscoCsrVpnServiceState())
+        service_state.last_status = vpn_service['status']
+        return service_state
 
     def vpnservice_updated(self, context, **kwargs):
         """Handle VPNaaS service driver change notifications."""
@@ -499,15 +504,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         LOG.debug("PCM: sync start for %d VPN services", len(vpn_services))
         for vpn_service in vpn_services:
             LOG.debug(_("PCM: Processing service %s"), vpn_service['id'])
-            service_state = self.get_service_state(vpn_service)
-            if plugin_utils.in_pending_status(vpn_service['status']):
-                service_state.updated_pending_status = True
+            service_state = self.snapshot_service_state(vpn_service)
             for ipsec_conn in vpn_service['ipsec_conns']:
                 conn_id = ipsec_conn['id']
-                conn_state = service_state.get_conn_state(ipsec_conn)
-                if not plugin_utils.in_pending_status(ipsec_conn['status']):
+                conn_state = service_state.snapshot_conn_state(ipsec_conn)
+                if not plugin_utils.in_pending_status(conn_state.last_status):
                     continue
-                conn_state['updated_pending_status'] = True
                 if ipsec_conn['status'] == 'PENDING_CREATE':
                     LOG.debug(_("PCM: Processing create of connection %s"),
                               conn_id)
@@ -547,31 +549,24 @@ class CiscoCsrVpnServiceState(object):
 
     """Maintains state/status information for a service and its connections."""
 
-    def __init__(self, vpn_service):
-        self.service_id = vpn_service['id']
-        self.status = vpn_service['status']
-        self.prev_status = None
-        self.updated_pending_status = False
+    def __init__(self):
+        self.last_status = None
         self.conn_state = {}
-        self.prev_conn_state = {}
-        # TODO(pcm) Handle sharing of policies
-#         self.ike_policy_in_use = []
-#         self.ipsec_policy_in_use = []
+        # TODO(pcm) Future handle sharing of policies
 
-    def state_changed(self):
-        return self.updated_pending_status or (self.status != self.prev_status)
+    def snapshot_conn_state(self, ipsec_conn):
+        """Create/obtain connection state and save current status."""
+        conn_state = self.conn_state.setdefault(
+            ipsec_conn['id'], CiscoCsrIPSecConnState(ipsec_conn))
+        conn_state.last_status = ipsec_conn['status']
+        return conn_state
 
-    def get_conn_state(self, ipsec_conn):
-        return self.conn_state.setdefault(
-            ipsec_conn['id'], {'status': None,
-                               'updated_pending_status': False,
-                               'tunnel': ipsec_conn['cisco']['site_conn_id']})
 
-    def connection_state_changed(self, conn_id):
-        if self.conn_state[conn_id]['updated_pending_status']:
-            return True
-        current_status = self.conn_state[conn_id]['status']
-        prev_status = self.prev_conn_state[conn_id]['status']
-        return current_status != prev_status
+class CiscoCsrIPSecConnState(object):
 
-        
+    """Maintains state of an IPSec site-to-site connection."""
+
+    # TODO(pcm): Combine with service state?
+    def __init__(self, ipsec_conn):
+        self.last_status = None
+        self.tunnel = ipsec_conn['cisco']['site_conn_id']

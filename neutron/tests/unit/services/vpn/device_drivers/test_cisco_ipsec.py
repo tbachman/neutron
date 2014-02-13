@@ -391,23 +391,32 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             'ipsec_conns' : [conn1, ]
         }]
         self.driver.perform_pending_operations(self.context)
+        self.assertEqual(1,
+                         self.driver.create_ipsec_site_connection.call_count)
         service_state = self.driver.service_state.get('123')
         self.assertIsNotNone(service_state)
-        self.assertTrue(service_state.updated_pending_status)
-        self.assertEqual(constants.PENDING_CREATE, service_state.status)
-        conn_state = service_state.get_conn_state(conn1)
+        self.assertEqual(constants.PENDING_CREATE, service_state.last_status)
+        conn_state = service_state.conn_state.get('1')
         self.assertIsNotNone(conn_state)
-        self.assertIsNone(conn_state['status'])
-        self.assertTrue(conn_state['updated_pending_status'])
+        self.assertEqual(constants.PENDING_CREATE, conn_state.last_status)
         # Ensure correct state is reported 
         self.driver.csr.read_tunnel_statuses.return_value = [
             (u'Tunnel0', u'UP-ACTIVE'), ]
-        self.driver.report_status(context)
-        self.assertEqual(constants.ACTIVE, service_state.status)
-        self.assertFalse(service_state.updated_pending_status)
-        self.assertEqual(constants.ACTIVE, conn_state['status'])
-        self.assertFalse(conn_state['updated_pending_status'])
-
+        self.driver.report_status(self.context)
+        expected_report = {
+            '123': {
+                'id': '123',
+                'updated_pending_status': True,
+                'status': constants.ACTIVE,
+                'ipsec_site_connections': {
+                    '1': {'status': constants.ACTIVE,
+                          'updated_pending_status': True}
+                }
+            }
+        }
+        self.driver.agent_rpc.update_status.assert_called_once_with(
+            self.context, expected_report)
+        # TODO(pcm) check report values...
 
     def test_second_sync_failed_connection_create(self):
         """Failure test of second sync's connection create failed."""
