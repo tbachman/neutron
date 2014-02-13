@@ -97,7 +97,7 @@ class ManagedObjectClass(object):
         'infraRsAttEntP': ManagedObjectName('infraAccPortGrp', 'rsattEntP'),
         'infraAttEntityP': ManagedObjectName('infra', 'attentp-%s'),
         'infraRsDomP': ManagedObjectName('infraAttEntityP', 'rsdomP-[%s]'),
-        'infraRsVlanNs': ManagedObjectName('vmmDomP', 'rsvlanNs'),
+        'infraRsVlanNs': ManagedObjectName('physDomP', 'rsvlanNs'),
 
         'fvnsVlanInstP': ManagedObjectName('infra', 'vlanns-%s-%s'),
         'fvnsEncapBlk__vlan': ManagedObjectName('fvnsVlanInstP',

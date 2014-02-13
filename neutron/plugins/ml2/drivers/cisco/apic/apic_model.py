@@ -172,5 +172,6 @@ class ApicDbModel(object):
         """Deletes the port profile for a node."""
         profile = self.session.query(PortProfile).filter_by(
             node_id=node_id).first()
-        self.session.delete(profile)
+        if profile:
+            self.session.delete(profile)
         self.session.flush()
