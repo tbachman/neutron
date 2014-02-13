@@ -15,6 +15,7 @@
 import httplib
 import mock
 
+from neutron import context
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 from neutron.services.vpn.device_drivers import cisco_ipsec as ipsec_driver
@@ -360,6 +361,71 @@ class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
         self.assertEqual(2, len(routes_info))
         self.assertEqual(expected, routes_info)
 
+
+class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
+
+    """Test status/state of services and connections, after sync."""
+
+    def setUp(self):
+        super(TestCsrIPsecDeviceDriverSyncStatuses, self).setUp()
+        self.addCleanup(mock.patch.stopall)
+        for klass in ['neutron.openstack.common.rpc.create_connection',
+                      'neutron.context.get_admin_context_without_session',
+                      'neutron.openstack.common.'
+                      'loopingcall.FixedIntervalLoopingCall']:
+            mock.patch(klass).start()
+        mock.patch(CSR_REST_CLIENT, autospec=True).start()
+        self.context = context.Context('some_user', 'some_tenant')
+        self.agent = mock.Mock()
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.driver.create_ipsec_site_connection = mock.Mock()
+
+    def test_sync_for_first_connection_create(self):
+        """Sync creating first IPSec connection for a VPN service."""
+        conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
+            'id': '123',
+            'status': constants.PENDING_CREATE,
+            'ipsec_conns' : [conn1, ]
+        }]
+        self.driver.perform_pending_operations(self.context)
+        service_state = self.driver.service_state.get('123')
+        self.assertIsNotNone(service_state)
+        self.assertTrue(service_state.updated_pending_status)
+        self.assertEqual(constants.PENDING_CREATE, service_state.status)
+        conn_state = service_state.get_conn_state(conn1)
+        self.assertIsNotNone(conn_state)
+        self.assertIsNone(conn_state['status'])
+        self.assertTrue(conn_state['updated_pending_status'])
+        # Ensure correct state is reported 
+        self.driver.csr.read_tunnel_statuses.return_value = [
+            (u'Tunnel0', u'UP-ACTIVE'), ]
+        self.driver.report_status(context)
+        self.assertEqual(constants.ACTIVE, service_state.status)
+        self.assertFalse(service_state.updated_pending_status)
+        self.assertEqual(constants.ACTIVE, conn_state['status'])
+        self.assertFalse(conn_state['updated_pending_status'])
+
+
+    def test_second_sync_failed_connection_create(self):
+        """Failure test of second sync's connection create failed."""
+        pass
+
+    def test_sync_failed_on_first_connection_of_two(self):
+        """Failure test of first sync's connection create failed, second OK."""
+        pass
+
+    def test_sync_with_no_connection_changes(self):
+        """Sync request, with no change to any connections."""
+        pass
+
+    def test_sync_when_remove_last_connection_from_service(self):
+        """Sync request, for a service with no more connections."""
+
+
+    # TODO(pcm): Delete and update test cases for sync
 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:
