@@ -359,7 +359,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             routes_info = self.create_routes_info(site_conn_id, conn_info)
         except (CsrUnknownMappingError, CsrDriverMismatchError) as e:
             LOG.exception(e)
-            self.service_state[vpn_service_id].conn_state['status'] = 'FAILED'
             return
 
         try:
@@ -442,7 +441,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             LOG.debug("PCM: Have %(tunnel)s status '%(status)'",
                       {'tunnel': tunnel[0], 'status': tunnel[1]})
         return dict(tunnels)
-        
+
     def report_status(self, context):
         LOG.debug("PCM: Ignoring status update")
         service_report = {}
@@ -472,7 +471,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     print "PCM", conn_report
             service_status = (
                 constants.ACTIVE if any_connections else constants.DOWN)
-            
+
             if conn_report or service_status != vpn_service_state.last_status:
                 request_processed = plugin_utils.in_pending_status(
                     vpn_service_state.last_status)
@@ -519,24 +518,25 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     self.create_ipsec_site_connection(context, ipsec_conn)
                 elif ipsec_conn['status'] == 'PENDING_DELETE':
                     LOG.debug(_("PCM: Processing delete of connection %s"),
-                                conn_id)
-                    # TODO(pcm) Need to set status in service driver?
+                              conn_id)
+                    # TODO(pcm) Make sure we are passing in the right info
+                    self.delete_ipsec_site_connection(context, ipsec_conn)
                 else:
                     LOG.debug(_("PCM: Processing update of connection %s"),
-                                conn_id)
-
+                              conn_id)
+                    # TODO(pcm) FUTURE - Implement support
 
     @lockutils.synchronized('vpn-agent', 'neutron-')
     def sync(self, context, routers):
         """Perform any pending operations and report urrent status.
-        
+
         Based on the status of the services and their connections, perform
         create, delete, and/or update operations. Update the status/state
         of the connections, and report any changes to the service driver
         (plugin). Will be called whenever a change is made to a service or
         connection (vpnservice_updated message), or router change
         (_process_routers).
-        
+
         TODO(pcm) Handle the following conditions:
             1) Agent class restarted
             2) Failure on process creation
@@ -567,7 +567,7 @@ class CiscoCsrVpnServiceState(object):
 
 class CiscoCsrIPSecConnState(object):
 
-    """Maintains state of an IPSec site-to-site connection."""
+    """Holds state of an IPSec site-to-site connection."""
 
     # TODO(pcm): Combine with service state?
     def __init__(self, ipsec_conn):

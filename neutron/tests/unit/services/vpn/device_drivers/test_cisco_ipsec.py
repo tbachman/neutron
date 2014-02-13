@@ -115,8 +115,7 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                                       title='Static Route')]
         self.driver.csr.make_route_id.side_effect = ['10.1.0.0_24_Tunnel0',
                                                      '10.2.0.0_24_Tunnel0']
-        context = mock.Mock()
-        self.driver.create_ipsec_site_connection(context, self.conn_info)
+        self.driver.create_ipsec_site_connection(mock.Mock(), self.conn_info)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
         self.assertEqual(
@@ -155,8 +154,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                         'delete_ipsec_policy',
                         'delete_ike_policy',
                         'delete_pre_shared_key']
-            context = mock.Mock()
-            self.driver.create_ipsec_site_connection(context, self.conn_info)
+            self.driver.create_ipsec_site_connection(mock.Mock(),
+                                                     self.conn_info)
             client_calls = [c[0] for c in self.driver.csr.method_calls]
             self.assertEqual(expected, client_calls)
             self.assertNotIn('123', self.driver.connections)
@@ -380,6 +379,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
         self.driver.agent_rpc = mock.Mock()
         self.driver.create_ipsec_site_connection = mock.Mock()
+        self.driver.delete_ipsec_site_connection = mock.Mock()
 
     def test_sync_for_first_connection_create(self):
         """Sync creating first IPSec connection for a VPN service."""
@@ -388,7 +388,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
             'status': constants.PENDING_CREATE,
-            'ipsec_conns' : [conn1, ]
+            'ipsec_conns': [conn1, ]
         }]
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
@@ -405,8 +405,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         # Simulate connection is requesting create on new service
         conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
                  'cisco': {'site_conn_id': u'Tunnel0'}}
-        service = {'id': '123',
-                    'status': constants.PENDING_CREATE}
+        service = {'id': '123', 'status': constants.PENDING_CREATE}
         self.driver.snapshot_service_state(service)
         self.driver.service_state['123'].snapshot_conn_state(conn1)
         # Simulate CSR status of new connection active
@@ -433,8 +432,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         # Simulate connection is requesting create on new service
         conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
                  'cisco': {'site_conn_id': u'Tunnel0'}}
-        service = {'id': '123',
-                    'status': constants.PENDING_CREATE}
+        service = {'id': '123', 'status': constants.PENDING_CREATE}
         self.driver.snapshot_service_state(service)
         self.driver.service_state['123'].snapshot_conn_state(conn1)
         # Simulate CSR status showing no connections
@@ -464,7 +462,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
             'status': constants.ACTIVE,
-            'ipsec_conns' : [conn1, conn2]
+            'ipsec_conns': [conn1, conn2]
         }]
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
@@ -481,7 +479,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
 
     def test_report_second_connection_create(self):
         """Report generation for second connection create on service.
-        
+
         On an existing VPN service, a second connection is created and has
         become active. The first connection, has gone from active to down,
         showing a state change too.
@@ -491,8 +489,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
                  'cisco': {'site_conn_id': u'Tunnel0'}}
         conn2 = {'id': '2', 'status': constants.PENDING_CREATE,
                  'cisco': {'site_conn_id': u'Tunnel1'}}
-        service = {'id': '123',
-                   'status': constants.ACTIVE}
+        service = {'id': '123', 'status': constants.ACTIVE}
         self.driver.snapshot_service_state(service)
         self.driver.service_state['123'].snapshot_conn_state(conn1)
         self.driver.service_state['123'].snapshot_conn_state(conn2)
@@ -516,10 +513,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         }
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
-        
+
     def test_sync_second_failed_connection_create(self):
         """Failure test of second sync's connection create failed.
-        
+
         First connection on service was previously created. Second create
         failed.
         """
@@ -530,7 +527,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
             'status': constants.ACTIVE,
-            'ipsec_conns' : [conn1, conn2]
+            'ipsec_conns': [conn1, conn2]
         }]
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
@@ -552,8 +549,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
                  'cisco': {'site_conn_id': u'Tunnel0'}}
         conn2 = {'id': '2', 'status': constants.PENDING_CREATE,
                  'cisco': {'site_conn_id': u'Tunnel1'}}
-        service = {'id': '123',
-                    'status': constants.ACTIVE}
+        service = {'id': '123', 'status': constants.ACTIVE}
         self.driver.snapshot_service_state(service)
         self.driver.service_state['123'].snapshot_conn_state(conn1)
         self.driver.service_state['123'].snapshot_conn_state(conn2)
@@ -575,20 +571,106 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         }
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
-        
-    def test_sync_failed_on_first_connection_of_two(self):
-        """Failure test of first sync's connection create failed, second OK."""
-        pass
 
-    def test_sync_with_no_connection_changes(self):
-        """Sync request, with no change to any connections."""
-        pass
+    def test_report_one_of_two_connect_creates_failed(self):
+        """Failure test of reporting when one of two connection creates."""
+        # Simulate first connection active, second requesting create
+        conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        conn2 = {'id': '2', 'status': constants.PENDING_CREATE,
+                 'cisco': {'site_conn_id': u'Tunnel1'}}
+        service = {'id': '123', 'status': constants.PENDING_CREATE}
+        self.driver.snapshot_service_state(service)
+        self.driver.service_state['123'].snapshot_conn_state(conn1)
+        self.driver.service_state['123'].snapshot_conn_state(conn2)
+        # Simulate CSR status shows conn1 went up and conn2 errored
+        self.driver.csr.read_tunnel_statuses.return_value = [
+            (u'Tunnel0', u'UP-ACTIVE')]
+
+        self.driver.report_status(self.context)
+        expected_report = {
+            '123': {
+                'id': '123',
+                'updated_pending_status': True,
+                'status': constants.ACTIVE,
+                'ipsec_site_connections': {
+                    '1': {'status': constants.ACTIVE,
+                          'updated_pending_status': True},
+                    '2': {'status': constants.ERROR,
+                          'updated_pending_status': True}
+                }
+            }
+        }
+        self.driver.agent_rpc.update_status.assert_called_once_with(
+            self.context, expected_report)
+
+    def test_report_with_no_connection_changes(self):
+        """Report with no change to any connections."""
+        # Simulate first connection active, second requesting create
+        conn1 = {'id': '1', 'status': constants.ACTIVE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        conn2 = {'id': '2', 'status': constants.DOWN,
+                 'cisco': {'site_conn_id': u'Tunnel1'}}
+        service = {'id': '123', 'status': constants.ACTIVE}
+        self.driver.snapshot_service_state(service)
+        self.driver.service_state['123'].snapshot_conn_state(conn1)
+        self.driver.service_state['123'].snapshot_conn_state(conn2)
+        # Simulate CSR status shows same status for connections
+        self.driver.csr.read_tunnel_statuses.return_value = [
+            (u'Tunnel0', u'UP-NO-IKE'), (u'Tunnel1', u'DOWN-NEGOTIATING')]
+
+        self.driver.report_status(self.context)
+        self.assertEqual(0, self.driver.agent_rpc.update_status.call_count)
 
     def test_sync_when_remove_last_connection_from_service(self):
         """Sync request, for a service with no more connections."""
 
+    def test_sync_for_connection_delete(self):
+        """Sync for delete of connection."""
+        conn1 = {'id': '1', 'status': constants.PENDING_DELETE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
+            'id': '123',
+            'status': constants.ACTIVE,
+            'ipsec_conns': [conn1, ]
+        }]
+        self.driver.perform_pending_operations(self.context)
+        self.assertEqual(1,
+                         self.driver.delete_ipsec_site_connection.call_count)
+        service_state = self.driver.service_state.get('123')
+        self.assertIsNotNone(service_state)
+        self.assertEqual(constants.ACTIVE, service_state.last_status)
+        conn_state = service_state.conn_state.get('1')
+        self.assertIsNotNone(conn_state)
+        self.assertEqual(constants.PENDING_DELETE, conn_state.last_status)
 
-    # TODO(pcm): Delete and update test cases for sync
+    def test_report_connection_delete(self):
+        """Report for delete of connection on service."""
+        # Simulate requesting delete of connection
+        conn1 = {'id': '1', 'status': constants.PENDING_DELETE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        service = {'id': '123', 'status': constants.ACTIVE}
+        self.driver.snapshot_service_state(service)
+        self.driver.service_state['123'].snapshot_conn_state(conn1)
+        # Simulate CSR status of no connections present
+        self.driver.csr.read_tunnel_statuses.return_value = []
+
+        self.driver.report_status(self.context)
+        expected_report = {
+            '123': {
+                'id': '123',
+                'updated_pending_status': False,
+                'status': constants.DOWN,
+                'ipsec_site_connections': {
+                    '1': {'status': constants.INACTIVE,
+                          'updated_pending_status': True}
+                }
+            }
+        }
+        self.driver.agent_rpc.update_status.assert_called_once_with(
+            self.context, expected_report)
+
+    # TODO(pcm) FUTURE - UTs for update action, when supported.
 
 #     def test_vpnservice_updated(self):
 #         with mock.patch.object(self.driver, 'sync') as sync:
