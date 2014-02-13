@@ -24,19 +24,19 @@ from neutron.db import model_base
 class NetworkEPG(model_base.BASEV2):
     """EPG's created on the apic per network."""
 
-    __tablename__ = 'ml2_apic_epgs'
+    __tablename__ = 'cisco_ml2_apic_epgs'
 
     network_id = sa.Column(sa.String(64), nullable=False,
                            primary_key=True)
     epg_id = sa.Column(sa.String(64), nullable=False)
     segmentation_id = sa.Column(sa.String(64), nullable=False)
-    provider = sa.Column(sa.Boolean, default=False)
+    provider = sa.Column(sa.Boolean, default=False, nullable=False)
 
 
 class PortProfile(model_base.BASEV2):
     """Port profiles created on the APIC."""
 
-    __tablename__ = 'ml2_apic_port_profiles'
+    __tablename__ = 'cisco_ml2_apic_port_profiles'
 
     node_id = sa.Column(sa.String(64), nullable=False, primary_key=True)
     profile_id = sa.Column(sa.String(64), nullable=False)
@@ -49,7 +49,7 @@ class PortProfile(model_base.BASEV2):
 class TenantContract(model_base.BASEV2):
     """Contracts (and Filters) created on the APIC."""
 
-    __tablename__ = 'ml2_apic_contracts'
+    __tablename__ = 'cisco_ml2_apic_contracts'
 
     tenant_id = sa.Column(sa.String(64), nullable=False, primary_key=True)
     contract_id = sa.Column(sa.String(64), nullable=False)
