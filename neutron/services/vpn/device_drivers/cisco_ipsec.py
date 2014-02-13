@@ -450,7 +450,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             any_connections = False
             conn_report = {}
             tunnels = self.get_ipsec_connections_status()
+            print "tuns", tunnels
             for conn_id, conn_state in vpn_service_state.conn_state.items():
+                print "checking", conn_id, conn_state.tunnel
                 tunnel_id = conn_state.tunnel
                 if tunnel_id in tunnels:
                     conn_status = self.STATUS_MAP[tunnels[tunnel_id]]
@@ -467,6 +469,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                         'status': conn_status,
                         'updated_pending_status': request_processed
                     }
+                    print "PCM", conn_report
             service_status = (
                 constants.ACTIVE if any_connections else constants.DOWN)
             
