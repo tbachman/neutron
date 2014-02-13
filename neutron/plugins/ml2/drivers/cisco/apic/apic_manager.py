@@ -233,11 +233,10 @@ class APICManager(object):
         namespace to that VMM domain.
         NOTE: VXLAN is not currently supported.
         """
-        provider = cfg.CONF.ml2_cisco_apic.apic_vmm_provider
+        provider = 'VMware'
         self.vmm_domain = self.apic.vmmDomP.get(provider, vmm_name)
         if not self.vmm_domain:
             try:
-                provider = cfg.CONF.ml2_cisco_apic.apic_vmm_provider
                 self.apic.vmmDomP.create(provider, vmm_name)
                 if vlan_ns:
                     vlan_ns_dn = vlan_ns['dn']
