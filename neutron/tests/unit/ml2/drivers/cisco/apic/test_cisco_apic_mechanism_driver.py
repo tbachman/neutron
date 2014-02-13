@@ -35,9 +35,6 @@ SUBNET_CIDR = '24'
 TEST_SEGMENT1 = 'test-segment1'
 TEST_SEGMENT2 = 'test-segment2'
 
-TEST_VIF_TYPE = 'test-vif_type'
-TEST_CAP_PORT_FILTER = 'test-cap_port_filter'
-
 
 class TestCiscoApicMechDriver(base.BaseTestCase,
                               mocked.ControllerMixin,
@@ -52,6 +49,8 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
 
         self.mock_apic_manager_login_responses()
         self.driver = md.APICMechanismDriver()
+        self.driver.vif_type = 'test-vif_type'
+        self.driver.cap_port_filter = 'test-cap_port_filter'
 
         self.addCleanup(mock.patch.stopall)
 
@@ -69,7 +68,8 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         mock.patch('neutron.plugins.ml2.drivers.cisco.apic.apic_manager.'
                    'APICManager.ensure_infra_created_on_apic').start()
         self.driver.initialize()
-        self.assert_responses_drained(self.driver.apic_manager.apic.session)
+        self.session = self.driver.apic_manager.apic.session
+        self.assert_responses_drained()
 
     def test_create_port_precommit(self):
         net_ctx = self._get_network_context(mocked.APIC_TENANT,
@@ -141,8 +141,6 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
                                           'vm1', net_ctx, HOST_ID1)
-        self.driver.vif_type = TEST_VIF_TYPE
-        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
         with mock.patch.object(md, 'LOG') as log:
             self.driver.bind_port(port_ctx)
             self.assertFalse(log.error.called)
@@ -155,8 +153,6 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
                                           'vm1', net_ctx, HOST_ID1)
-        self.driver.vif_type = TEST_VIF_TYPE
-        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
         with mock.patch.object(md, 'LOG') as log:
             self.driver.bind_port(port_ctx)
             self.assertTrue(log.error.called)
@@ -167,11 +163,43 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
         port_ctx = self._get_port_context(mocked.APIC_TENANT,
                                           mocked.APIC_NETWORK,
                                           'vm1', net_ctx, HOST_ID1)
-        self.driver.vif_type = TEST_VIF_TYPE
-        self.driver.cap_port_filter = TEST_CAP_PORT_FILTER
         with mock.patch.object(md, 'LOG') as log:
             self.driver.bind_port(port_ctx)
             self.assertFalse(log.error.called)
+
+    def test_validate_port_binding_valid(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK,
+                                            TEST_SEGMENT1)
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, HOST_ID1)
+        with mock.patch.object(md, 'LOG') as log:
+            self.assertTrue(self.driver.validate_port_binding(port_ctx))
+            self.assertFalse(log.warning.called)
+
+    def test_validate_port_binding_invalid(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK,
+                                            TEST_SEGMENT2,
+                                            seg_type='unsupported')
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, HOST_ID1)
+        with mock.patch.object(md, 'LOG') as log:
+            self.assertFalse(self.driver.validate_port_binding(port_ctx))
+            self.assertTrue(log.warning.called)
+
+    def test_unbind_port(self):
+        net_ctx = self._get_network_context(mocked.APIC_TENANT,
+                                            mocked.APIC_NETWORK,
+                                            TEST_SEGMENT1)
+        port_ctx = self._get_port_context(mocked.APIC_TENANT,
+                                          mocked.APIC_NETWORK,
+                                          'vm1', net_ctx, HOST_ID1)
+        with mock.patch.object(md, 'LOG') as log:
+            self.assertFalse(self.driver.unbind_port(port_ctx))
+            self.assertTrue(log.debug.called)
 
     def _get_network_context(self, tenant_id, net_id, seg_id=None,
                              seg_type='vlan'):
@@ -186,7 +214,7 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
                                  'physical_network': 'physnet1'}]
         else:
             network_segments = []
-        return FakeNetworkContext(network, network_segments, network)
+        return FakeNetworkContext(network, network_segments)
 
     def _get_subnet_context(self, gateway_ip, cidr, network):
         subnet = {'tenant_id': network.current['tenant_id'],
@@ -210,7 +238,7 @@ class TestCiscoApicMechDriver(base.BaseTestCase,
 class FakeNetworkContext(object):
     """To generate network context for testing purposes only."""
 
-    def __init__(self, network, segments=None, original_network=None):
+    def __init__(self, network, segments):
         self._network = network
         self._segments = segments
 
@@ -245,6 +273,10 @@ class FakePortContext(object):
     def __init__(self, port, network):
         self._port = port
         self._network = network
+        if network.network_segments:
+            self._bound_segment = network.network_segments[0]
+        else:
+            self._bound_segment = None
 
     @property
     def current(self):
@@ -254,6 +286,9 @@ class FakePortContext(object):
     def network(self):
         return self._network
 
+    @property
+    def bound_segment(self):
+        return self._bound_segment
+
     def set_binding(self, segment_id, vif_type, cap_port_filter):
-        # TODO(Henry): do some asserts here
         pass

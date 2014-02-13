@@ -146,9 +146,9 @@ class ControllerMixin(object):
         self.mock_response_for_post('aaaLogin', userName=APIC_USR,
                                     token='ok', refreshTimeoutSeconds=300)
 
-    def assert_responses_drained(self, session, req=None):
+    def assert_responses_drained(self, req=None):
         """Fail if all the expected responses have not been consumed."""
-        request = {'post': session.post, 'get': session.get}
+        request = {'post': self.session.post, 'get': self.session.get}
         reqs = req and [req] or ['post', 'get']  # Both if none specified.
         for req in reqs:
             try:
@@ -201,7 +201,8 @@ class ConfigMixin(object):
 
         apic_switch_cfg = {
             'apic_switch:east01': {'ubuntu1,ubuntu2': ['3/11']},
-            'apic_switch:east02': {'rhel01,rhel02': ['4/21']},
+            'apic_switch:east02': {'rhel01,rhel02': ['4/21'],
+                                   'rhel03': ['4/22']},
         }
         self.mocked_parser = mock.patch.object(cfg,
                                                'MultiConfigParser').start()

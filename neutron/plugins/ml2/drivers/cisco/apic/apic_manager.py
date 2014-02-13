@@ -167,7 +167,7 @@ class APICManager(object):
                 self.entity_profile = self.apic.infraAttEntityP.get(name)
             except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the created entity profile
-                self.apic.infraEntityP.delete(name)
+                self.apic.infraAttEntityP.delete(name)
                 raise
 
     def ensure_function_profile_created_on_apic(self, name):
@@ -250,6 +250,7 @@ class APICManager(object):
             except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the VMM domain
                 self.apic.vmmDomP.delete(provider, vmm_name)
+                raise
 
     def ensure_vlan_ns_created_on_apic(self, name, vlan_min, vlan_max):
         """Creates a static VLAN namespace with the given vlan range."""
@@ -275,6 +276,7 @@ class APICManager(object):
             except (cexc.ApicResponseNotOk, KeyError):
                 # Delete the vlan namespace
                 self.apic.fvnsVlanInstP.delete(*ns_args)
+                raise
 
     def ensure_tenant_created_on_apic(self, tenant_id):
         """Make sure a tenant exists on the APIC."""
