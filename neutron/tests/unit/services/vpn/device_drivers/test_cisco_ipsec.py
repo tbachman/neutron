@@ -381,6 +381,13 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.create_ipsec_site_connection = mock.Mock()
         self.driver.delete_ipsec_site_connection = mock.Mock()
 
+    def _get_service_status(self, service_id):
+        return self.driver.service_state[service_id].last_status
+
+    def _get_conn_status(self, service_id, conn_id):
+        service_state = self.driver.service_state[service_id]
+        return service_state.conn_state[conn_id]['last_status']
+
     def test_sync_for_first_connection_create(self):
         """Sync creating first IPSec connection for a VPN service."""
         conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
@@ -393,12 +400,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
                          self.driver.create_ipsec_site_connection.call_count)
-        service_state = self.driver.service_state.get('123')
-        self.assertIsNotNone(service_state)
-        self.assertEqual(constants.PENDING_CREATE, service_state.last_status)
-        conn_state = service_state.conn_state.get('1')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
+        self.assertEqual(constants.PENDING_CREATE,
+                         self._get_service_status('123'))
+        self.assertEqual(constants.PENDING_CREATE,
+                         self._get_conn_status('123', '1'))
 
     def test_report_first_connection_create(self):
         """Report generation for first connection create on service."""
@@ -413,10 +418,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE'), ]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.ACTIVE,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -441,10 +444,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.csr.read_tunnel_statuses.return_value = []
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.ERROR,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.DOWN,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.ERROR, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.DOWN, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -471,15 +472,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
                          self.driver.create_ipsec_site_connection.call_count)
-        service_state = self.driver.service_state.get('123')
-        self.assertIsNotNone(service_state)
-        self.assertEqual(constants.ACTIVE, service_state.last_status)
-        conn_state = service_state.conn_state.get('1')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.ACTIVE, conn_state['last_status'])
-        conn_state = service_state.conn_state.get('2')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.PENDING_CREATE,
+                         self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
 
     def test_report_second_connection_create(self):
         """Report generation for second connection create on service.
@@ -502,12 +498,9 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'DOWN'), (u'Tunnel1', u'UP-IDLE')]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.DOWN,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-            self.driver.service_state['123'].conn_state['2']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.DOWN, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -540,15 +533,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
                          self.driver.create_ipsec_site_connection.call_count)
-        service_state = self.driver.service_state.get('123')
-        self.assertIsNotNone(service_state)
-        self.assertEqual(constants.ACTIVE, service_state.last_status)
-        conn_state = service_state.conn_state.get('1')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.ACTIVE, conn_state['last_status'])
-        conn_state = service_state.conn_state.get('2')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.PENDING_CREATE,
+                         self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
 
     def test_report_second_connection_create_failed(self):
         """Failure test report of second create failed on existing service."""
@@ -566,12 +554,9 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-NO-IKE'), ]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.ACTIVE,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.ERROR,
-            self.driver.service_state['123'].conn_state['2']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.ERROR, self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -600,12 +585,9 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE')]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.ACTIVE,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.ERROR,
-            self.driver.service_state['123'].conn_state['2']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.ERROR, self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -636,13 +618,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-NO-IKE'), (u'Tunnel1', u'DOWN-NEGOTIATING')]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.ACTIVE,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.DOWN,
-            self.driver.service_state['123'].conn_state['2']['last_status'])
+        self.assertEqual(constants.ACTIVE, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.DOWN, self._get_conn_status('123', '2'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
         self.assertEqual(0, self.driver.agent_rpc.update_status.call_count)
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
 
     def test_sync_when_remove_last_connection_from_service(self):
         """Sync request, for a service with no more connections."""
@@ -659,12 +638,9 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.perform_pending_operations(self.context)
         self.assertEqual(1,
                          self.driver.delete_ipsec_site_connection.call_count)
-        service_state = self.driver.service_state.get('123')
-        self.assertIsNotNone(service_state)
-        self.assertEqual(constants.ACTIVE, service_state.last_status)
-        conn_state = service_state.conn_state.get('1')
-        self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_DELETE, conn_state['last_status'])
+        self.assertEqual(constants.PENDING_DELETE,
+                         self._get_conn_status('123', '1'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
 
     def test_report_connection_delete(self):
         """Report for delete of connection on service."""
@@ -679,8 +655,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
 
         self.driver.report_status(self.context)
         self.assertIsNone(self.driver.service_state['123'].conn_state.get('1'))
-        self.assertEqual(constants.DOWN,
-                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.DOWN, self._get_service_status('123'))
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -735,14 +710,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'DOWN'), ]
 
         self.driver.report_status(self.context)
-        self.assertEqual(constants.DOWN,
-            self.driver.service_state['123'].conn_state['1']['last_status'])
-        self.assertEqual(constants.DOWN,
-            self.driver.service_state['456'].conn_state['1']['last_status'])
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['123'].last_status)
-        self.assertEqual(constants.ACTIVE,
-                         self.driver.service_state['456'].last_status)
+        self.assertEqual(constants.DOWN, self._get_conn_status('123', '1'))
+        self.assertEqual(constants.DOWN, self._get_conn_status('456', '1'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
+        self.assertEqual(constants.ACTIVE, self._get_service_status('456'))
         self.assertEqual(2, self.driver.csr.read_tunnel_statuses.call_count)
         expected_report = [
             {

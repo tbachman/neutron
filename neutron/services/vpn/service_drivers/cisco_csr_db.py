@@ -34,6 +34,14 @@ MAX_CSR_TUNNELS = 10000
 MAX_CSR_IKE_POLICIES = 2000
 MAX_CSR_IPSEC_POLICIES = 2000
 
+TUNNEL = 'Tunnel'
+IKE_POLICY = 'IKE Policy'
+IPSEC_POLICY = 'IPSec Policy'
+
+MAPPING_LIMITS = {TUNNEL: (0, MAX_CSR_TUNNELS),
+                  IKE_POLICY: (1, MAX_CSR_IKE_POLICIES),
+                  IPSEC_POLICY: (1, MAX_CSR_IPSEC_POLICIES)}
+
 
 class CsrInternalError(exceptions.NeutronException):
     message = _("Fatal - %(reason)s")
@@ -51,7 +59,7 @@ class IdentifierMap(model_base.BASEV2, models_v2.HasTenant):
     csr_ipsec_policy_id = sa.Column(sa.Integer, nullable=False)
 
 
-def get_next_available_id(session, table_field, id_type, min_value, max_value):
+def get_next_available_id(session, table_field, id_type):
     """Find first unused id for the specified field in IdentifierMap table.
 
     As entries are removed, find the first "hole" and return that as the
@@ -60,15 +68,17 @@ def get_next_available_id(session, table_field, id_type, min_value, max_value):
     globally unique. Could enhance in the future to be unique per router
     (CSR).
     """
+    min_value = MAPPING_LIMITS[id_type][0]
+    max_value = MAPPING_LIMITS[id_type][1]
     rows = session.query(table_field)
     used_ids = set([row[0] for row in rows])
-    all_ids = set(range(min_value, max_value))
+    all_ids = set(range(min_value, max_value + min_value))
     available_ids = all_ids - used_ids
     if not available_ids:
         msg = _("No available Cisco CSR %(type)s IDs from "
                 "%(min)d..%(max)d") % {'type': id_type,
                                        'min': min_value,
-                                       'max': max_value - 1}
+                                       'max': max_value}
         LOG.error(msg)
         raise IndexError(msg)
     return available_ids.pop()
@@ -77,103 +87,105 @@ def get_next_available_id(session, table_field, id_type, min_value, max_value):
 def get_next_available_tunnel_id(session):
     """Find first available tunnel ID from 0..MAX_CSR_TUNNELS-1."""
     return get_next_available_id(session, IdentifierMap.csr_tunnel_id,
-                                 'Tunnel', 0, MAX_CSR_TUNNELS)
+                                 TUNNEL)
 
 
 def get_next_available_ike_policy_id(session):
     """Find first available IKE Policy ID from 1..MAX_CSR_IKE_POLICIES."""
     return get_next_available_id(session, IdentifierMap.csr_ike_policy_id,
-                                 'IKE Policy', 1, MAX_CSR_IKE_POLICIES + 1)
+                                 IKE_POLICY)
 
 
 def get_next_available_ipsec_policy_id(session):
     """Find first available IPSec Policy ID from 1..MAX_CSR_IKE_POLICIES."""
     return get_next_available_id(session, IdentifierMap.csr_ipsec_policy_id,
-                                 'IPSec Policy', 1, MAX_CSR_IPSEC_POLICIES + 1)
+                                 IPSEC_POLICY)
+
+
+def find_conn_with_policy(policy_field, policy_id, conn_id, session):
+    """Return ID of another conneciton (if any) that uses same policy ID."""
+    qry = session.query(vpn_db.IPsecSiteConnection.id)
+    match = qry.filter(policy_field == policy_id,
+                       vpn_db.IPsecSiteConnection.id != conn_id).first()
+    if match:
+        return match[0]
 
 
 def find_connection_using_ike_policy(ike_policy_id, conn_id, session):
     """Return ID of another connection that uses same IKE policy ID."""
-    qry = session.query(vpn_db.IPsecSiteConnection.id)
-    match = qry.filter(
-        vpn_db.IPsecSiteConnection.ikepolicy_id == ike_policy_id,
-        vpn_db.IPsecSiteConnection.id != conn_id).first()
-    if match:
-        return match[0]
+    return find_conn_with_policy(vpn_db.IPsecSiteConnection.ikepolicy_id,
+                                 ike_policy_id, conn_id, session)
 
 
 def find_connection_using_ipsec_policy(ipsec_policy_id, conn_id, session):
     """Return ID of another connection that uses same IPSec policy ID."""
-    qry = session.query(vpn_db.IPsecSiteConnection.id)
-    match = qry.filter(
-        vpn_db.IPsecSiteConnection.ipsecpolicy_id == ipsec_policy_id,
-        vpn_db.IPsecSiteConnection.id != conn_id).first()
-    if match:
-        return match[0]
+    return find_conn_with_policy(vpn_db.IPsecSiteConnection.ipsecpolicy_id,
+                                 ipsec_policy_id, conn_id, session)
+
+
+def lookup_policy(policy_type, policy_field, conn_id, session):
+    """Obtain specified policy's mapping from other connection."""
+    try:
+        return session.query(policy_field).filter_by(
+            ipsec_site_conn_id=conn_id).one()[0]
+    except sql_exc.NoResultFound:
+        msg = _("Database inconsistency between IPSec connection and "
+                "Cisco CSR mapping table (%s)") % policy_type
+        raise CsrInternalError(reason=msg)
 
 
 def lookup_ike_policy_id_for(conn_id, session):
     """Obtain existing Cisco CSR IKE policy ID from another connection."""
-    try:
-        return session.query(IdentifierMap.csr_ike_policy_id).filter_by(
-            ipsec_site_conn_id=conn_id).one()[0]
-    except sql_exc.NoResultFound:
-        msg = _("Database inconsistency between IPSec connection and "
-                "Cisco CSR mapping table (IKE Policy)")
-        raise CsrInternalError(reason=msg)
-
-
-def determine_csr_ike_policy_id(ike_policy_id, conn_id, session):
-    """Use existing, or reserve a new IKE policy ID for Cisco CSR."""
-
-    conn_using_same_ike_id = find_connection_using_ike_policy(ike_policy_id,
-                                                              conn_id,
-                                                              session)
-    if conn_using_same_ike_id:
-        csr_ike_id = lookup_ike_policy_id_for(conn_using_same_ike_id, session)
-        LOG.debug(_("Found existing IPSec connection %(conn)s with IKE policy "
-                    "ID %(ike_id)s mapped to CSR IKE ID %(csr_ike)d"),
-                  {'conn': conn_using_same_ike_id, 'ike_id': ike_policy_id,
-                   'csr_ike': csr_ike_id})
-    else:
-        csr_ike_id = get_next_available_ike_policy_id(session)
-        LOG.debug(_("Reserved new CSR IKE ID %(csr_ike)d for IKE policy "
-                    "ID %(ike_id)s"), {'csr_ike': csr_ike_id,
-                                       'ike_id': ike_policy_id})
-    return csr_ike_id
+    return lookup_policy(IKE_POLICY, IdentifierMap.csr_ike_policy_id,
+                         conn_id, session)
 
 
 def lookup_ipsec_policy_id_for(conn_id, session):
     """Obtain existing Cisco CSR IPSec policy ID from another connection."""
-    try:
-        return session.query(IdentifierMap.csr_ipsec_policy_id).filter_by(
-            ipsec_site_conn_id=conn_id).one()[0]
-    except sql_exc.NoResultFound:
-        msg = _("Database inconsistency between IPSec connection and "
-                "Cisco CSR mapping table (IPSec policy)")
-        raise CsrInternalError(reason=msg)
+    return lookup_policy(IPSEC_POLICY, IdentifierMap.csr_ipsec_policy_id,
+                         conn_id, session)
+
+
+def determine_csr_policy_id(policy_type, conn_policy_field, map_policy_field,
+                            policy_id, conn_id, session):
+    """Use existing or reserve a new policy ID for Cisco CSR use.
+
+    TODO(pcm) Enable the logic to look-up existing mapped ID, once have
+    implemented code to reference count usage in device driver to prevent
+    attempting to re-create an existing policy.
+    """
+    conn_using_id = find_conn_with_policy(conn_policy_field, policy_id,
+                                          conn_id, session)
+    if False:  # TODO(pcm) conn_using_id:
+        csr_id = lookup_policy(policy_type, map_policy_field,
+                               conn_using_id, session)
+        LOG.debug(_("Found existing IPSec connection %(conn)s with %(policy)s "
+                    "ID %(policy_id)s mapped to CSR ID %(csr_id)d"),
+                  {'conn': conn_using_id, 'policy': policy_type,
+                   'policy_id': policy_id, 'csr_id': csr_id})
+    else:
+        csr_id = get_next_available_id(session, map_policy_field, policy_type)
+        LOG.debug(_("Reserved new CSR ID %(csr_id)d for %(policy)s "
+                    "ID %(policy_id)s"), {'csr_id': csr_id,
+                                          'policy': policy_type,
+                                          'policy_id': policy_id})
+    return csr_id
+
+
+def determine_csr_ike_policy_id(ike_policy_id, conn_id, session):
+    """Use existing, or reserve a new IKE policy ID for Cisco CSR."""
+    return determine_csr_policy_id(IKE_POLICY,
+                                   vpn_db.IPsecSiteConnection.ikepolicy_id,
+                                   IdentifierMap.csr_ike_policy_id,
+                                   ike_policy_id, conn_id, session)
 
 
 def determine_csr_ipsec_policy_id(ipsec_policy_id, conn_id, session):
     """Use existing, or reserve a new IPSec policy ID for Cisco CSR."""
-
-    conn_using_same_ipsec_id = find_connection_using_ipsec_policy(
-        ipsec_policy_id, conn_id, session)
-    if conn_using_same_ipsec_id:
-        csr_ipsec_id = lookup_ipsec_policy_id_for(conn_using_same_ipsec_id,
-                                                  session)
-        LOG.debug(_("Found existing IPSec connection %(conn)s with IPSEC "
-                    "policy ID %(ipsec_id)s mapped to CSR IPSEC ID "
-                    "%(csr_ipsec)d"),
-                  {'conn': conn_using_same_ipsec_id,
-                   'ipsec_id': ipsec_policy_id,
-                   'csr_ipsec': csr_ipsec_id})
-    else:
-        csr_ipsec_id = get_next_available_ipsec_policy_id(session)
-        LOG.debug(_("Reserved new CSR IPSec ID %(csr_ipsec)d for IPSec policy "
-                    "ID %(ipsec_id)s"), {'csr_ipsec': csr_ipsec_id,
-                                         'ipsec_id': ipsec_policy_id})
-    return csr_ipsec_id
+    return determine_csr_policy_id(IPSEC_POLICY,
+                                   vpn_db.IPsecSiteConnection.ipsecpolicy_id,
+                                   IdentifierMap.csr_ipsec_policy_id,
+                                   ipsec_policy_id, conn_id, session)
 
 
 def get_tunnel_mapping_for(conn_id, session):

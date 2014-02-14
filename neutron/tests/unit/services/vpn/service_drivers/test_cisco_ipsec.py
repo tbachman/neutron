@@ -170,9 +170,7 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
         self.addCleanup(dbapi.clear_db)
         self.context = context.Context('some_user', 'some_tenant')
         self.session = self.context.session
-        csr_db.find_connection_using_ike_policy = mock.Mock(return_value=None)
-        csr_db.find_connection_using_ipsec_policy = (
-            mock.Mock(return_value=None))
+        csr_db.find_conn_with_policy = mock.Mock(return_value=None)
 
     def test_identifying_next_tunnel_id(self):
         """Make sure available tunnel IDs can be reserved.
@@ -270,27 +268,28 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
                 ike_id = csr_db.lookup_ike_policy_id_for(conn_id, self.session)
                 self.assertEqual(i, ike_id)
 
-    def test_get_ike_policy_id_already_in_use(self):
-        """Obtain Cisco CSR IKE policy ID from existing mappings.
-
-        Find the Cisco CSR IKE policy ID for another connection that uses
-        the same IKE policy. Mocking out find_connection_using_ike_policy()
-        so we don't have to mock whole connection.
-        """
-        csr_db.find_connection_using_ike_policy.return_value = '20'
-        with self.session.begin():
-            self.simulate_existing_mappings(self.session)
-            ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
-                                                        '123',
-                                                        self.session)
-            self.assertEqual(2, ike_id)
+# TODO(pcm) Uncomment, once ID reuse is supported in device driver
+#     def test_get_ike_policy_id_already_in_use(self):
+#         """Obtain Cisco CSR IKE policy ID from existing mappings.
+#
+#         Find the Cisco CSR IKE policy ID for another connection that uses
+#         the same IKE policy. Mocking out database look-up so we don't have
+#         to mock whole connection.
+#         """
+#         csr_db.find_conn_with_policy.return_value = '20'
+#         with self.session.begin():
+#             self.simulate_existing_mappings(self.session)
+#             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
+#                                                         '123',
+#                                                         self.session)
+#             self.assertEqual(2, ike_id)
 
     def test_getting_new_ike_policy_id(self):
         """Reserve new Cisco CSR IKE policy ID from mapping table.
 
         Simulate that an existing connection is not using the IKE policy,
-        by mocking out find_connection_using_ike_policy() database lookup,
-        and ensure that a new policy ID is chosen.
+        by mocking out database look-up, and ensure that a new policy ID
+        is chosen.
         """
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
@@ -347,27 +346,28 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
                                                              self.session)
                 self.assertEqual(i, ipsec_id)
 
-    def test_get_ipsec_policy_id_already_in_use(self):
-        """Obtain Cisco CSR IPSec policy ID from existing mappings.
-
-        Find the Cisco CSR IPSec policy ID for another connection that uses
-        the same IPSec policy. Mocked out find_connection_using_ipsec_policy()
-        so we don't have to mock whole connection.
-        """
-        csr_db.find_connection_using_ipsec_policy.return_value = '20'
-        with self.session.begin():
-            self.simulate_existing_mappings(self.session)
-            ipsec_id = csr_db.determine_csr_ipsec_policy_id('ike-uuid',
-                                                            '123',
-                                                            self.session)
-            self.assertEqual(2, ipsec_id)
+# TODO(pcm) Uncomment, once ID reuse is supported in device driver
+#     def test_get_ipsec_policy_id_already_in_use(self):
+#         """Obtain Cisco CSR IPSec policy ID from existing mappings.
+#
+#         Find the Cisco CSR IPSec policy ID for another connection that uses
+#         the same IPSec policy. Mocked out database look-up so we don't have
+#         to mock whole connection.
+#         """
+#         csr_db.find_conn_with_policy.return_value = '20'
+#         with self.session.begin():
+#             self.simulate_existing_mappings(self.session)
+#             ipsec_id = csr_db.determine_csr_ipsec_policy_id('ike-uuid',
+#                                                             '123',
+#                                                             self.session)
+#             self.assertEqual(2, ipsec_id)
 
     def test_getting_new_ipsec_policy_id(self):
         """Reserve new Cisco CSR IPSec policy ID from mapping table.
 
         Simulate that an existing connection is not using the IPSec policy,
-        by mocking out find_connection_using_ipsec_policy() database lookup,
-        and ensure that a new policy ID is chosen.
+        by mocking out database look-up, and ensure that a new policy ID
+        is chosen.
         """
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
@@ -380,8 +380,8 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
         """Ensure new mappings are created, and mapping table updated.
 
         Simulate that an existing connection is not using the IKE and IPSec
-        policies, by mocking out find_connection_using_*_policy() database
-        lookups, and ensure that new policy IDs are chosen.
+        policies, by mocking out database look-ups, and ensure that new
+        policy IDs are chosen.
         """
         conn_info = {'ikepolicy_id': '10',
                      'ipsecpolicy_id': '50',
@@ -404,33 +404,33 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
         self.assertEqual(2, ike_id)
         self.assertEqual(2, ipsec_id)
 
-    def test_create_tunnel_mapping_with_existing_policies(self):
-        """Ensure IDs are created/reused, and mapping table updated."""
-        # For first mapping, there are no connections to match policies
-        conn_info = {'ikepolicy_id': '10',
-                     'ipsecpolicy_id': '50',
-                     'id': '100',
-                     'tenant_id': '1000'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
-            '100', self.session)
-        self.assertEqual(0, tunnel_id)
-        self.assertEqual(1, ike_id)
-        self.assertEqual(1, ipsec_id)
-
-        # Simulate that this IKE (10) and IPSec (50) policy are in use
-        csr_db.find_connection_using_ike_policy.return_value = '100'
-        csr_db.find_connection_using_ipsec_policy.return_value = '100'
-        conn_info = {'ikepolicy_id': '10',
-                     'ipsecpolicy_id': '50',
-                     'id': '101',
-                     'tenant_id': '1000'}
-        csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
-            '101', self.session)
-        self.assertEqual(1, tunnel_id)
-        self.assertEqual(1, ike_id)
-        self.assertEqual(1, ipsec_id)
+# TODO(pcm) Uncomment, once ID reuse is supported in device driver
+#     def test_create_tunnel_mapping_with_existing_policies(self):
+#         """Ensure IDs are created/reused, and mapping table updated."""
+#         # For first mapping, there are no connections to match policies
+#         conn_info = {'ikepolicy_id': '10',
+#                      'ipsecpolicy_id': '50',
+#                      'id': '100',
+#                      'tenant_id': '1000'}
+#         csr_db.create_tunnel_mapping(self.context, conn_info)
+#         tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+#             '100', self.session)
+#         self.assertEqual(0, tunnel_id)
+#         self.assertEqual(1, ike_id)
+#         self.assertEqual(1, ipsec_id)
+#
+#         # Simulate that this IKE (10) and IPSec (50) policy are in use
+#         csr_db.find_conn_with_policy.return_value = '100'
+#         conn_info = {'ikepolicy_id': '10',
+#                      'ipsecpolicy_id': '50',
+#                      'id': '101',
+#                      'tenant_id': '1000'}
+#         csr_db.create_tunnel_mapping(self.context, conn_info)
+#         tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+#             '101', self.session)
+#         self.assertEqual(1, tunnel_id)
+#         self.assertEqual(1, ike_id)
+#         self.assertEqual(1, ipsec_id)
 
     def test_create_duplicate_mapping(self):
         """Failure test of adding the same mapping twice."""
@@ -481,41 +481,42 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
                           csr_db.get_tunnel_mapping_for,
                           str(300), self.session)
 
-    def test_database_inconsistency_with_ike_policy(self):
-        """Failure test of IKE policy in use, but not found.
-
-        Should never occur (unless a programming error), as once an existing
-        connection is found with the same IKE policy, it should be able to
-        be looked up in the mapping table.
-        """
-        # Simulate that this IKE policy (10) is in use by another connection,
-        # even though it is not in the mapping table.
-        csr_db.find_connection_using_ike_policy.return_value = '100'
-        conn_info = {'ikepolicy_id': '10',
-                     'ipsecpolicy_id': '20',
-                     'id': '101',
-                     'tenant_id': '1000'}
-        self.assertRaises(csr_db.CsrInternalError,
-                          csr_db.create_tunnel_mapping,
-                          self.context, conn_info)
-
-    def test_database_inconsistency_with_ipsec_policy(self):
-        """Failure test of IPSec policy in use, but not found.
-
-        Should never occur (unless a programming error), as once an existing
-        connection is found with the same IPSec policy, it should be able to
-        be looked up in the mapping table.
-        """
-        # Simulate that this IPSec policy (20) is in use by another connection,
-        # even though it is not in the mapping table.
-        csr_db.find_connection_using_ipsec_policy.return_value = '100'
-        conn_info = {'ikepolicy_id': '10',
-                     'ipsecpolicy_id': '20',
-                     'id': '101',
-                     'tenant_id': '1000'}
-        self.assertRaises(csr_db.CsrInternalError,
-                          csr_db.create_tunnel_mapping,
-                          self.context, conn_info)
+# TODO(pcm) Uncomment, once ID reuse is supported in device driver
+#     def test_database_inconsistency_with_ike_policy(self):
+#         """Failure test of IKE policy in use, but not found.
+#
+#         Should never occur (unless a programming error), as once an existing
+#         connection is found with the same IKE policy, it should be able to
+#         be looked up in the mapping table.
+#         """
+#         # Simulate that this IKE policy (10) is in use by another connection,
+#         # even though it is not in the mapping table.
+#         csr_db.find_conn_with_policy.return_value = '100'
+#         conn_info = {'ikepolicy_id': '10',
+#                      'ipsecpolicy_id': '20',
+#                      'id': '101',
+#                      'tenant_id': '1000'}
+#         self.assertRaises(csr_db.CsrInternalError,
+#                           csr_db.create_tunnel_mapping,
+#                           self.context, conn_info)
+#
+#     def test_database_inconsistency_with_ipsec_policy(self):
+#         """Failure test of IPSec policy in use, but not found.
+#
+#         Should never occur (unless a programming error), as once an existing
+#         connection is found with the same IPSec policy, it should be able to
+#         be looked up in the mapping table.
+#         """
+#         # Simulate that this IPSec policy (20) is in use by another connection,
+#         # even though it is not in the mapping table.
+#         csr_db.find_conn_with_policy.return_value = '100'
+#         conn_info = {'ikepolicy_id': '10',
+#                      'ipsecpolicy_id': '20',
+#                      'id': '101',
+#                      'tenant_id': '1000'}
+#         self.assertRaises(csr_db.CsrInternalError,
+#                           csr_db.create_tunnel_mapping,
+#                           self.context, conn_info)
 
     def test_get_cisco_ipsec_connection_info(self):
         """Ensure correct transform and mapping info is obtained."""
