@@ -398,7 +398,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.assertEqual(constants.PENDING_CREATE, service_state.last_status)
         conn_state = service_state.conn_state.get('1')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state.last_status)
+        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
 
     def test_report_first_connection_create(self):
         """Report generation for first connection create on service."""
@@ -413,17 +413,15 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE'), ]
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': True,
-                'status': constants.ACTIVE,
-                'ipsec_site_connections': {
-                    '1': {'status': constants.ACTIVE,
-                          'updated_pending_status': True}
-                }
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': True,
+            'status': constants.ACTIVE,
+            'ipsec_site_connections': {
+                '1': {'status': constants.ACTIVE,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
 
@@ -439,17 +437,15 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.csr.read_tunnel_statuses.return_value = []
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': True,
-                'status': constants.DOWN,
-                'ipsec_site_connections': {
-                    '1': {'status': constants.ERROR,
-                          'updated_pending_status': True}
-                }
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': True,
+            'status': constants.DOWN,
+            'ipsec_site_connections': {
+                '1': {'status': constants.ERROR,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
 
@@ -472,10 +468,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.assertEqual(constants.ACTIVE, service_state.last_status)
         conn_state = service_state.conn_state.get('1')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.ACTIVE, conn_state.last_status)
+        self.assertEqual(constants.ACTIVE, conn_state['last_status'])
         conn_state = service_state.conn_state.get('2')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state.last_status)
+        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
 
     def test_report_second_connection_create(self):
         """Report generation for second connection create on service.
@@ -498,19 +494,17 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'DOWN'), (u'Tunnel1', u'UP-IDLE')]
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': False,
-                'status': constants.ACTIVE,
-                'ipsec_site_connections': {
-                    '1': {'status': constants.DOWN,
-                          'updated_pending_status': False},
-                    '2': {'status': constants.ACTIVE,
-                          'updated_pending_status': True}
-                }
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': False,
+            'status': constants.ACTIVE,
+            'ipsec_site_connections': {
+                '1': {'status': constants.DOWN,
+                      'updated_pending_status': False},
+                '2': {'status': constants.ACTIVE,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
 
@@ -537,10 +531,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.assertEqual(constants.ACTIVE, service_state.last_status)
         conn_state = service_state.conn_state.get('1')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.ACTIVE, conn_state.last_status)
+        self.assertEqual(constants.ACTIVE, conn_state['last_status'])
         conn_state = service_state.conn_state.get('2')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_CREATE, conn_state.last_status)
+        self.assertEqual(constants.PENDING_CREATE, conn_state['last_status'])
 
     def test_report_second_connection_create_failed(self):
         """Failure test report of second create failed on existing service."""
@@ -558,17 +552,15 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-NO-IKE'), ]
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': False,
-                'status': constants.ACTIVE,
-                'ipsec_site_connections': {
-                    '2': {'status': constants.ERROR,
-                          'updated_pending_status': True}
-                }
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': False,
+            'status': constants.ACTIVE,
+            'ipsec_site_connections': {
+                '2': {'status': constants.ERROR,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
 
@@ -588,19 +580,17 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE')]
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': True,
-                'status': constants.ACTIVE,
-                'ipsec_site_connections': {
-                    '1': {'status': constants.ACTIVE,
-                          'updated_pending_status': True},
-                    '2': {'status': constants.ERROR,
-                          'updated_pending_status': True}
-                }
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': True,
+            'status': constants.ACTIVE,
+            'ipsec_site_connections': {
+                '1': {'status': constants.ACTIVE,
+                      'updated_pending_status': True},
+                '2': {'status': constants.ERROR,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
 
@@ -642,7 +632,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.assertEqual(constants.ACTIVE, service_state.last_status)
         conn_state = service_state.conn_state.get('1')
         self.assertIsNotNone(conn_state)
-        self.assertEqual(constants.PENDING_DELETE, conn_state.last_status)
+        self.assertEqual(constants.PENDING_DELETE, conn_state['last_status'])
 
     def test_report_connection_delete(self):
         """Report for delete of connection on service."""
@@ -656,19 +646,85 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.csr.read_tunnel_statuses.return_value = []
 
         self.driver.report_status(self.context)
-        expected_report = {
-            '123': {
-                'id': '123',
-                'updated_pending_status': False,
-                'status': constants.DOWN,
-                'ipsec_site_connections': {
-                    '1': {'status': constants.INACTIVE,
-                          'updated_pending_status': True}
-                }
+        self.assertIsNone(self.driver.service_state['123'].conn_state.get('1'))
+        expected_report = [{
+            'id': '123',
+            'updated_pending_status': False,
+            'status': constants.DOWN,
+            'ipsec_site_connections': {
+                '1': {'status': None,
+                      'updated_pending_status': True}
             }
-        }
+        }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
+
+    def test_sync_delete_of_service(self):
+        """Delete of service that has no connections.
+
+        The service driver ensures that there are no services in-use, when
+        a delete is attempted.
+        """
+        self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
+            'id': '123',
+            'status': constants.PENDING_DELETE,
+            'ipsec_conns': []
+        }]
+        self.driver.perform_pending_operations(self.context)
+        # TODO(pcm) FUTURE - Implement tests to verify action completed
+
+    def test_report_service_deletion(self):
+        """Report for the deletion of a VPN service."""
+        # Simulate requesting delete of VPN service
+        service = {'id': '123', 'status': constants.PENDING_DELETE}
+        self.driver.snapshot_service_state(service)
+
+        self.driver.report_status(self.context)
+        # TODO(pcm) FUTURE - Implement tests to verify reporting
+
+    def test_report_two_sevices(self):
+        """Report generation of two services with changes."""
+        # Simulate two services, each with connections that are up
+        conn1a = {'id': '1', 'status': constants.ACTIVE,
+                  'cisco': {'site_conn_id': u'Tunnel0'}}
+        conn1b = {'id': '1', 'status': constants.ACTIVE,
+                  'cisco': {'site_conn_id': u'Tunnel0'}}
+        service_a = {'id': '123', 'status': constants.ACTIVE}
+        self.driver.snapshot_service_state(service_a)
+        service_b = {'id': '456', 'status': constants.ACTIVE}
+        self.driver.snapshot_service_state(service_b)
+        self.driver.service_state['123'].snapshot_conn_state(conn1a)
+        self.driver.service_state['456'].snapshot_conn_state(conn1b)
+        # Simulate status from each CSR reports that the associated
+        # connection is now down.
+        self.driver.csr.read_tunnel_statuses.return_value = [
+            (u'Tunnel0', u'DOWN'), ]
+
+        self.driver.report_status(self.context)
+        self.assertEqual(2, self.driver.csr.read_tunnel_statuses.call_count)
+        expected_report = [
+            {
+                'id': '123',
+                'updated_pending_status': False,
+                'status': constants.ACTIVE,
+                'ipsec_site_connections': {
+                    '1': {'status': constants.DOWN,
+                          'updated_pending_status': False},
+                }
+            },
+            {
+                'id': '456',
+                'updated_pending_status': False,
+                'status': constants.ACTIVE,
+                'ipsec_site_connections': {
+                    '1': {'status': constants.DOWN,
+                          'updated_pending_status': False},
+                }
+            }
+        ]
+        self.driver.agent_rpc.update_status.assert_called_once_with(
+            self.context, expected_report)
+
 
     # TODO(pcm) FUTURE - UTs for update action, when supported.
 

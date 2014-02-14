@@ -111,6 +111,7 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
         method = 'vpnservice_updated'
         self._agent_notification(context, method, router_id)
 
+    # TODO(pcm) Delete when switch method
     def delete_ipsec_site_connection(self, context, router_id, conn_info):
         """Send device driver delete IPSec site-to-site connection request."""
         LOG.debug('PCM: IPSec connection delete with %(router)s %(conn)s',
@@ -206,7 +207,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         LOG.debug(_("PCM: New Cisco driver create_ipsec_site_connection"))
-        # TODO(pcm) Do validation, before notifying device driver
         self.validate_ipsec_connection(context, ipsec_site_connection,
                                        vpnservice)
         csr_id_map.create_tunnel_mapping(context, ipsec_site_connection)
@@ -214,7 +214,8 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
-        # TODO(pcm): Handle case of user changing the IKE and/or IPSec policy
+        # TODO(pcm): FUTURE - Implement
+        # TODO(pcm): Reject the command for now
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
@@ -236,6 +237,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                 'ipsec_policy_id': u'%s' % csr_ipsec_policy_id}
 
     def delete_ipsec_site_connection(self, context, ipsec_site_connection):
+        # TODO(pcm): Convert this to old method
         vpn_service = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         conn_info = self._build_ipsec_site_conn_delete_info(
