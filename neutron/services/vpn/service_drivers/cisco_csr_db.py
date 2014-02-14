@@ -182,11 +182,11 @@ def get_tunnel_mapping_for(conn_id, session):
             ipsec_site_conn_id=conn_id).one()
         LOG.debug(_("Mappings for IPSec connection %(conn)s - "
                     "tunnel=%(tunnel)s ike_policy=%(csr_ike)d "
-                    "ipsec_policy=%csr_ipsec)d"),
+                    "ipsec_policy=%(csr_ipsec)d"),
                   {'conn': conn_id, 'tunnel': entry.csr_tunnel_id,
                    'csr_ike': entry.csr_ike_policy_id,
                    'csr_ipsec': entry.csr_ipsec_policy_id})
-        return (entry.csr_tunnel_id, entry.csr_ike_policy_id, 
+        return (entry.csr_tunnel_id, entry.csr_ike_policy_id,
                 entry.csr_ipsec_policy_id)
     except sql_exc.NoResultFound:
         msg = _("Existing entry for IPSec connection %s not found in Cisco "

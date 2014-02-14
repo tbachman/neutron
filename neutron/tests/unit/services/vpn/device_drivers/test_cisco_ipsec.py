@@ -413,6 +413,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE'), ]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.ACTIVE,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -437,6 +439,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.csr.read_tunnel_statuses.return_value = []
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.ERROR,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -494,6 +498,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'DOWN'), (u'Tunnel1', u'UP-IDLE')]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.DOWN,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+            self.driver.service_state['123'].conn_state['2']['last_status'])
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -552,6 +560,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-NO-IKE'), ]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.ACTIVE,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.ERROR,
+            self.driver.service_state['123'].conn_state['2']['last_status'])
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -580,6 +592,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-ACTIVE')]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.ACTIVE,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.ERROR,
+            self.driver.service_state['123'].conn_state['2']['last_status'])
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -610,6 +626,10 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'UP-NO-IKE'), (u'Tunnel1', u'DOWN-NEGOTIATING')]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.ACTIVE,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.DOWN,
+            self.driver.service_state['123'].conn_state['2']['last_status'])
         self.assertEqual(0, self.driver.agent_rpc.update_status.call_count)
 
     def test_sync_when_remove_last_connection_from_service(self):

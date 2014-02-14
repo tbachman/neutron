@@ -117,6 +117,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.process_status_cache_check.start(
             interval=self.conf.ipsec.ipsec_status_check_interval)
 
+        # TODO(pcm) Read from INI file. Later get based on subnet of router
         # PCM: TEMP Stuff...Will only communicate with a hard coded CSR.
         # Later, will want to do a lazy connect on first use and get the
         # connection info for the desired router.
@@ -438,6 +439,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """Obtain current status of all tunnels on a Cisco CSR."""
         # TODO(pcm) select CSR based on service
         tunnels = self.csr.read_tunnel_statuses()
+        LOG.debug(_("PCM CSR RAW DATA %s"), tunnels)
         for tunnel in tunnels:
             LOG.debug("CSR Reports %(tunnel)s status '%(status)s'",
                       {'tunnel': tunnel[0], 'status': tunnel[1]})
@@ -476,6 +478,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     }
                     if conn_status == None:
                         del vpn_service_state.conn_state[conn_id]
+                    else:
+                        conn_state['last_status'] = conn_status
             service_status = (
                 constants.ACTIVE if any_connections else constants.DOWN)
             # Report any status changes
