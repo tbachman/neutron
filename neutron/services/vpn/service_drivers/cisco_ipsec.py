@@ -273,15 +273,14 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def delete_vpnservice(self, context, vpnservice):
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
-    def get_cisco_connection_mappings(self, site_conn, context):
-        """Perform transform and obtain persisted mappings for IDs."""
-        ipsec_policy_id = site_conn['ipsecpolicy_id']
-        csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
-        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
-                                                              context.session)
+    def get_cisco_connection_mappings(self, conn_id, context):
+        """Obtain persisted mappings for IDs related to connection."""
+        # TODO(pcm) Change IPSEc mapping...
+        tunnel_id, ike_id, ipsec_id = csr_id_map.get_tunnel_mapping_for(
+            conn_id, context.session)
         return {'site_conn_id': u'Tunnel%d' % tunnel_id,
                 'ike_policy_id': u'%d' % ike_id,
-                'ipsec_policy_id': u'%s' % csr_ipsec_policy_id}
+                'ipsec_policy_id': u'%s' % ipsec_id}
 
     def _make_vpnservice_dict(self, vpnservice, context):
         """Collect all info on service, including Cisco info per IPSec conn."""
@@ -299,6 +298,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
             ipsec_conn_dict['peer_cidrs'] = [
                 peer_cidr.cidr for peer_cidr in ipsec_conn.peer_cidrs]
             ipsec_conn_dict['cisco'] = self.get_cisco_connection_mappings(
-                ipsec_conn, context)
+                ipsec_conn['id'], context)
             vpnservice_dict['ipsec_conns'].append(ipsec_conn_dict)
         return vpnservice_dict

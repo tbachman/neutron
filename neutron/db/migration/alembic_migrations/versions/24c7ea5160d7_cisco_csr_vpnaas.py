@@ -49,7 +49,8 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('ipsec_site_conn_id', sa.String(length=64),
                   primary_key=True),
         sa.Column('csr_tunnel_id', sa.Integer(), nullable=False),
-        sa.Column('csr_ike_policy_id', sa.Integer(), nullable=False))
+        sa.Column('csr_ike_policy_id', sa.Integer(), nullable=False),
+        sa.Column('csr_ipsec_policy_id', sa.Integer(), nullable=False))
 
 
 def downgrade(active_plugins=None, options=None):

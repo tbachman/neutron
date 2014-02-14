@@ -45,13 +45,10 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
     def setUp(self):
         super(TestCiscoIPsecDriverValidation, self).setUp()
         self.addCleanup(mock.patch.stopall)
-        dbapi.configure_db()
-        self.addCleanup(dbapi.clear_db)
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
         self.service_plugin = mock.Mock()
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
         self.context = context.Context('some_user', 'some_tenant')
-        self.session = self.context.session
         self.vpn_service = mock.Mock()
 
     def test_ike_version_unsupported(self):
@@ -163,6 +160,20 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                           self.driver.validate_peer_id, ipsec_conn)
         pass
 
+
+class TestCiscoIPsecDriverMapping(base.BaseTestCase):
+
+    def setUp(self):
+        super(TestCiscoIPsecDriverMapping, self).setUp()
+        self.addCleanup(mock.patch.stopall)
+        dbapi.configure_db()
+        self.addCleanup(dbapi.clear_db)
+        self.context = context.Context('some_user', 'some_tenant')
+        self.session = self.context.session
+        csr_db.find_connection_using_ike_policy = mock.Mock(return_value=None)
+        csr_db.find_connection_using_ipsec_policy = (
+            mock.Mock(return_value=None))
+
     def test_identifying_next_tunnel_id(self):
         """Make sure available tunnel IDs can be reserved.
 
@@ -178,7 +189,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                 entry = csr_db.IdentifierMap(tenant_id='1',
                                              ipsec_site_conn_id='%d' % conn_id,
                                              csr_tunnel_id=tunnel,
-                                             csr_ike_policy_id=100)
+                                             csr_ike_policy_id=100,
+                                             csr_ipsec_policy_id=200)
                 self.session.add(entry)
             tunnel = csr_db.get_next_available_tunnel_id(self.session)
             self.assertEqual(5, tunnel)
@@ -212,7 +224,8 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
                 entry = csr_db.IdentifierMap(tenant_id='1',
                                              ipsec_site_conn_id='%d' % conn_id,
                                              csr_tunnel_id=i,
-                                             csr_ike_policy_id=ike_id)
+                                             csr_ike_policy_id=ike_id,
+                                             csr_ipsec_policy_id=200)
                 self.session.add(entry)
             ike_id = csr_db.get_next_available_ike_policy_id(self.session)
             self.assertEqual(6, ike_id)
@@ -235,15 +248,17 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         """Helper - create three mapping table entries.
 
         Each entry will have the same tenant ID. The IPSec site connection
-        will be 10, 20, 30. The mapped tunnel ID will be 1, 2, 3. The
-        mapped IKE policy ID will be 1, 2, 3.
+        will be 10, 20, and 30. The mapped tunnel ID will be 1, 2, and 3.
+        The mapped IKE policy ID will be 1, 2, and 3. The mapped IPSec policy
+        ID will be 100, 200, and 300.
         """
         for i in xrange(1, 4):
             conn_id = i * 10
             entry = csr_db.IdentifierMap(tenant_id='1',
                                          ipsec_site_conn_id='%d' % conn_id,
                                          csr_tunnel_id=i,
-                                         csr_ike_policy_id=i)
+                                         csr_ike_policy_id=i,
+                                         csr_ipsec_policy_id=i*100)
             self.session.add(entry)
 
     def test_lookup_existing_ike_policy_mapping(self):
@@ -262,7 +277,6 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         the same IKE policy. Mocking out find_connection_using_ike_policy()
         so we don't have to mock whole connection.
         """
-        csr_db.find_connection_using_ike_policy = mock.Mock()
         csr_db.find_connection_using_ike_policy.return_value = '20'
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
@@ -278,8 +292,6 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         by mocking out find_connection_using_ike_policy() database lookup,
         and ensure that a new policy ID is chosen.
         """
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
         with self.session.begin():
             self.simulate_existing_mappings(self.session)
             ike_id = csr_db.determine_csr_ike_policy_id('ike-uuid',
@@ -290,98 +302,104 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
     def test_create_tunnel_mapping(self):
         """Ensure new mappings are created, and mapping table updated.
 
-        Simulate that an existing connection is not using the IKE policy,
-        by mocking out find_connection_using_ike_policy() database lookup,
-        and ensure that a new policy ID is chosen.
+        Simulate that an existing connection is not using the IKE and IPSec
+        policies, by mocking out find_connection_using_*_policy() database
+        lookups, and ensure that new policy IDs are chosen.
         """
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
         conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '50',
                      'id': '100',
                      'tenant_id': '1000'}
         csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id = csr_db.get_tunnel_mapping_for('100',
-                                                          self.session)
+        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+            '100', self.session)
         self.assertEqual(0, tunnel_id)
         self.assertEqual(1, ike_id)
+        self.assertEqual(1, ipsec_id)
         conn_info = {'ikepolicy_id': '20',
+                     'ipsecpolicy_id': '60',
                      'id': '101',
                      'tenant_id': '1000'}
         csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id = csr_db.get_tunnel_mapping_for('101',
-                                                          self.session)
+        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+            '101', self.session)
         self.assertEqual(1, tunnel_id)
         self.assertEqual(2, ike_id)
+        self.assertEqual(2, ipsec_id)
 
-    def test_create_tunnel_mapping_with_existing_ike_policy(self):
+    def test_create_tunnel_mapping_with_existing_policies(self):
         """Ensure IDs are created/reused, and mapping table updated."""
-        # Simulate no existing use of IKE policy, so new one will be reserved
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
+        # For first mapping, there are no connections to match policies
         conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '50',
                      'id': '100',
                      'tenant_id': '1000'}
         csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id = csr_db.get_tunnel_mapping_for('100',
-                                                          self.session)
+        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+            '100', self.session)
         self.assertEqual(0, tunnel_id)
         self.assertEqual(1, ike_id)
+        self.assertEqual(1, ipsec_id)
 
-        # Simulate that this IKE policy (10) is in use by first connection
-        csr_db.find_connection_using_ike_policy = mock.Mock()
+        # Simulate that this IKE (10) and IPSec (50) policy are in use
         csr_db.find_connection_using_ike_policy.return_value = '100'
+        csr_db.find_connection_using_ipsec_policy.return_value = '100'
         conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '50',
                      'id': '101',
                      'tenant_id': '1000'}
         csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id = csr_db.get_tunnel_mapping_for('101',
-                                                          self.session)
+        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+            '101', self.session)
         self.assertEqual(1, tunnel_id)
         self.assertEqual(1, ike_id)
+        self.assertEqual(1, ipsec_id)
 
     def test_create_duplicate_mapping(self):
         """Failure test of adding the same mapping twice."""
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
         conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '50',
                      'id': '100',
                      'tenant_id': '1000'}
         csr_db.create_tunnel_mapping(self.context, conn_info)
-        tunnel_id, ike_id = csr_db.get_tunnel_mapping_for('100',
-                                                          self.session)
+        tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+            '100', self.session)
         self.assertEqual(0, tunnel_id)
         self.assertEqual(1, ike_id)
+        self.assertEqual(1, ipsec_id)
         self.assertRaises(csr_db.CsrInternalError,
                           csr_db.create_tunnel_mapping,
                           self.context, conn_info)
 
     def test_delete_tunnel_mapping(self):
         """Ensure new mappings table updated, when delete mappings."""
-        # Create mappings, using new new IKE policy for each
-        csr_db.find_connection_using_ike_policy = mock.Mock()
-        csr_db.find_connection_using_ike_policy.return_value = None
+        # Create mappings, using new new policies for each
         tenant_id = '1000'
         for i in range(1, 6):
             conn_id = str(100 * i)
             conn_info = {'ikepolicy_id': '%d' % (10 * i),
+                         'ipsecpolicy_id': '%d' % (20 * i),
                          'id': conn_id,
                          'tenant_id': tenant_id}
             csr_db.create_tunnel_mapping(self.context, conn_info)
-            tunnel_id, ike_id = csr_db.get_tunnel_mapping_for(conn_id,
-                                                              self.session)
+            tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+                conn_id, self.session)
             self.assertEqual(i - 1, tunnel_id)
             self.assertEqual(i, ike_id)
+            self.assertEqual(i, ipsec_id)
         # Remove the third mapping and then check the list
         conn_info = {'ikepolicy_id': '%d' % 30,
+                     'ipsecpolicy_id': '%d' % 60,
                      'id': '%d' % 300,
                      'tenant_id': tenant_id}
         csr_db.delete_tunnel_mapping(self.context, conn_info)
         for i in [1, 2, 4, 5]:
             conn_id = str(100 * i)
-            tunnel_id, ike_id = csr_db.get_tunnel_mapping_for(conn_id,
-                                                              self.session)
+            tunnel_id, ike_id, ipsec_id = csr_db.get_tunnel_mapping_for(
+                conn_id, self.session)
             self.assertEqual(i - 1, tunnel_id)
             self.assertEqual(i, ike_id)
+            self.assertEqual(i, ipsec_id)
         self.assertRaises(csr_db.CsrInternalError,
                           csr_db.get_tunnel_mapping_for,
                           str(300), self.session)
@@ -395,9 +413,27 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         """
         # Simulate that this IKE policy (10) is in use by another connection,
         # even though it is not in the mapping table.
-        csr_db.find_connection_using_ike_policy = mock.Mock()
         csr_db.find_connection_using_ike_policy.return_value = '100'
         conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '20',
+                     'id': '101',
+                     'tenant_id': '1000'}
+        self.assertRaises(csr_db.CsrInternalError,
+                          csr_db.create_tunnel_mapping,
+                          self.context, conn_info)
+
+    def test_database_inconsistency_with_ipsec_policy(self):
+        """Failure test of IPSec policy in use, but not found.
+
+        Should never occur (unless a programming error), as once an existing
+        connection is found with the same IPSec policy, it should be able to
+        be looked up in the mapping table.
+        """
+        # Simulate that this IPSec policy (20) is in use by another connection,
+        # even though it is not in the mapping table.
+        csr_db.find_connection_using_ipsec_policy.return_value = '100'
+        conn_info = {'ikepolicy_id': '10',
+                     'ipsecpolicy_id': '20',
                      'id': '101',
                      'tenant_id': '1000'}
         self.assertRaises(csr_db.CsrInternalError,
@@ -406,14 +442,13 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
 
     def test_get_cisco_ipsec_connection_info(self):
         """Ensure correct transform and mapping info is obtained."""
+        mock.patch('neutron.openstack.common.rpc.create_connection').start()
+        self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(mock.Mock())
         self.simulate_existing_mappings(self.session)
         expected = {'site_conn_id': u'Tunnel2',
                     'ike_policy_id': u'2',
-                    'ipsec_policy_id': u'9cdb3452fb6e473697453dc8a40e796'}
-        site_conn = {'ipsecpolicy_id': '9cdb3452-fb6e-4736-9745-3dc8a40e7963',
-                     'id': u'20'}
-        actual = self.driver.get_cisco_connection_mappings(site_conn,
-                                                           self.context)
+                    'ipsec_policy_id': u'200'}
+        actual = self.driver.get_cisco_connection_mappings('20', self.context)
         self.assertEqual(expected, actual)
 
 
