@@ -258,7 +258,7 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
                                          ipsec_site_conn_id='%d' % conn_id,
                                          csr_tunnel_id=i,
                                          csr_ike_policy_id=i,
-                                         csr_ipsec_policy_id=i*100)
+                                         csr_ipsec_policy_id=i)
             self.session.add(entry)
 
     def test_lookup_existing_ike_policy_mapping(self):
@@ -298,6 +298,83 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
                                                         '123',
                                                         self.session)
             self.assertEqual(4, ike_id)
+
+    def test_identifying_next_ipsec_policy_id(self):
+        """Make sure available Cisco CSR IPSec policy IDs can be reserved.
+
+        Check before adding five entries, and then check for the next
+        available, afterwards. Finally, remove one in the middle and
+        ensure that it is the next available ID. Note: the IPSec policy IDs
+        are one based.
+        """
+        with self.session.begin():
+            for i in xrange(1, 6):
+                ipsec_id = csr_db.get_next_available_ipsec_policy_id(
+                    self.session)
+                self.assertEqual(i, ipsec_id)
+                conn_id = i * 10
+                entry = csr_db.IdentifierMap(tenant_id='1',
+                                             ipsec_site_conn_id='%d' % conn_id,
+                                             csr_tunnel_id=i,
+                                             csr_ike_policy_id=100,
+                                             csr_ipsec_policy_id=ipsec_id)
+                self.session.add(entry)
+            ipsec_id = csr_db.get_next_available_ipsec_policy_id(self.session)
+            self.assertEqual(6, ipsec_id)
+            # Remove the 3rd entry and verify that this is the next available
+            sess_qry = self.session.query(csr_db.IdentifierMap)
+            sess_qry.filter_by(ipsec_site_conn_id='30').delete()
+            ipsec_id = csr_db.get_next_available_ipsec_policy_id(self.session)
+            self.assertEqual(3, ipsec_id)
+
+    def test_no_more_ipsec_policy_ids_available(self):
+        """Failure test trying to reserve IPSec policy ID, when none avail."""
+        fake_session = mock.Mock()
+        all_in_use = [(i,)
+                      for i in range(1, csr_db.MAX_CSR_IPSEC_POLICIES + 1)]
+        fake_session.query.return_value = all_in_use
+        self.assertRaises(IndexError,
+                          csr_db.get_next_available_ipsec_policy_id,
+                          fake_session)
+
+    def test_lookup_existing_ipsec_policy_mapping(self):
+        """Ensure can find existing mappings for IPSec policy."""
+        with self.session.begin():
+            self.simulate_existing_mappings(self.session)
+            for i in xrange(1, 4):
+                conn_id = str(i * 10)
+                ipsec_id = csr_db.lookup_ipsec_policy_id_for(conn_id,
+                                                             self.session)
+                self.assertEqual(i, ipsec_id)
+
+    def test_get_ipsec_policy_id_already_in_use(self):
+        """Obtain Cisco CSR IPSec policy ID from existing mappings.
+
+        Find the Cisco CSR IPSec policy ID for another connection that uses
+        the same IPSec policy. Mocked out find_connection_using_ipsec_policy()
+        so we don't have to mock whole connection.
+        """
+        csr_db.find_connection_using_ipsec_policy.return_value = '20'
+        with self.session.begin():
+            self.simulate_existing_mappings(self.session)
+            ipsec_id = csr_db.determine_csr_ipsec_policy_id('ike-uuid',
+                                                            '123',
+                                                            self.session)
+            self.assertEqual(2, ipsec_id)
+
+    def test_getting_new_ipsec_policy_id(self):
+        """Reserve new Cisco CSR IPSec policy ID from mapping table.
+
+        Simulate that an existing connection is not using the IPSec policy,
+        by mocking out find_connection_using_ipsec_policy() database lookup,
+        and ensure that a new policy ID is chosen.
+        """
+        with self.session.begin():
+            self.simulate_existing_mappings(self.session)
+            ipsec_id = csr_db.determine_csr_ipsec_policy_id('ipsec-uuid',
+                                                            '123',
+                                                            self.session)
+            self.assertEqual(4, ipsec_id)
 
     def test_create_tunnel_mapping(self):
         """Ensure new mappings are created, and mapping table updated.
@@ -447,7 +524,7 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
         self.simulate_existing_mappings(self.session)
         expected = {'site_conn_id': u'Tunnel2',
                     'ike_policy_id': u'2',
-                    'ipsec_policy_id': u'200'}
+                    'ipsec_policy_id': u'2'}
         actual = self.driver.get_cisco_connection_mappings('20', self.context)
         self.assertEqual(expected, actual)
 
