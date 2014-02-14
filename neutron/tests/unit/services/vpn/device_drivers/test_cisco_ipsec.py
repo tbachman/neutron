@@ -415,6 +415,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.report_status(self.context)
         self.assertEqual(constants.ACTIVE,
             self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -441,6 +443,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.report_status(self.context)
         self.assertEqual(constants.ERROR,
             self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.DOWN,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -502,6 +506,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             self.driver.service_state['123'].conn_state['1']['last_status'])
         self.assertEqual(constants.ACTIVE,
             self.driver.service_state['123'].conn_state['2']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -564,6 +570,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             self.driver.service_state['123'].conn_state['1']['last_status'])
         self.assertEqual(constants.ERROR,
             self.driver.service_state['123'].conn_state['2']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -596,6 +604,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             self.driver.service_state['123'].conn_state['1']['last_status'])
         self.assertEqual(constants.ERROR,
             self.driver.service_state['123'].conn_state['2']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': True,
@@ -631,6 +641,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.assertEqual(constants.DOWN,
             self.driver.service_state['123'].conn_state['2']['last_status'])
         self.assertEqual(0, self.driver.agent_rpc.update_status.call_count)
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
 
     def test_sync_when_remove_last_connection_from_service(self):
         """Sync request, for a service with no more connections."""
@@ -667,6 +679,8 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
 
         self.driver.report_status(self.context)
         self.assertIsNone(self.driver.service_state['123'].conn_state.get('1'))
+        self.assertEqual(constants.DOWN,
+                         self.driver.service_state['123'].last_status)
         expected_report = [{
             'id': '123',
             'updated_pending_status': False,
@@ -721,6 +735,14 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
             (u'Tunnel0', u'DOWN'), ]
 
         self.driver.report_status(self.context)
+        self.assertEqual(constants.DOWN,
+            self.driver.service_state['123'].conn_state['1']['last_status'])
+        self.assertEqual(constants.DOWN,
+            self.driver.service_state['456'].conn_state['1']['last_status'])
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['123'].last_status)
+        self.assertEqual(constants.ACTIVE,
+                         self.driver.service_state['456'].last_status)
         self.assertEqual(2, self.driver.csr.read_tunnel_statuses.call_count)
         expected_report = [
             {

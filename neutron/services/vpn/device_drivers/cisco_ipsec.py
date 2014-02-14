@@ -448,6 +448,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def report_status(self, context):
         """Get current status and report any changes to plugin."""
         # TODO(pcm) Handle VPN service deletion reporting
+        # TODO(pcm) Refactor as this is long and messy
         LOG.debug(_("report_status for %d services"), len(self.service_state))
         service_report = []
         for vpn_service_id, vpn_service_state in self.service_state.items():
@@ -499,6 +500,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     'updated_pending_status': request_processed,
                     'ipsec_site_connections': conn_report
                 })
+            if service_changed:
+                vpn_service_state.last_status = service_status
         LOG.debug(_("PCM: Changes %s"), service_report)
         if service_report:
             self.agent_rpc.update_status(context, service_report)
