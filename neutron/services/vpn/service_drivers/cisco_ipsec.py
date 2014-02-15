@@ -219,6 +219,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def delete_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
+        csr_id_map.delete_tunnel_mapping(context, ipsec_site_connection)
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
 
     def create_ikepolicy(self, context, ikepolicy):

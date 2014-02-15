@@ -575,6 +575,7 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(service_plugin)
         self.driver.validate_ipsec_connection = mock.Mock()
         csr_db.create_tunnel_mapping = mock.Mock()
+        csr_db.delete_tunnel_mapping = mock.Mock()
 
     def _test_update(self, func, args, method_name=''):
         ctxt = context.Context('', 'somebody')
@@ -594,6 +595,8 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         self._test_update(self.driver.create_ipsec_site_connection,
                           [FAKE_VPN_CONNECTION],
                           method_name='create_ipsec_site_connection')
+        self.assertEqual(1, self.driver.validate_ipsec_connection.call_count)
+        self.assertEqual(1, csr_db.create_tunnel_mapping.call_count)
 
     def test_update_ipsec_site_connection(self):
         # TODO(pcm) Uncomment, when this is supported by device driver
@@ -606,6 +609,7 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         self._test_update(self.driver.delete_ipsec_site_connection,
                           [FAKE_VPN_CONNECTION],
                           method_name='delete_ipsec_site_connection')
+        self.assertEqual(1, csr_db.delete_tunnel_mapping.call_count)
 
     def test_update_vpnservice(self):
         self._test_update(self.driver.update_vpnservice,
