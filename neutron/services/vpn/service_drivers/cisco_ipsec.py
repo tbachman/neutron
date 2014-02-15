@@ -195,7 +195,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         self.validate_mtu(ipsec_conn)
         self.validate_public_ip_present(vpn_service)
         self.validate_peer_id(ipsec_conn)
-        LOG.debug(_("PCM: IPSec connection %s validated for Cisco CSR"),
+        LOG.debug(_("IPSec connection %s validated for Cisco CSR"),
                   ipsec_conn['id'])
 
     def create_ipsec_site_connection(self, context, ipsec_site_connection):

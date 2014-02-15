@@ -188,6 +188,10 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
         else:
             self.fail('Expected exception with invalid delete step')
 
+    def test_delete_ipsec_connection(self):
+        # TODO(pcm) implement
+        pass
+
 
 class TestCsrIPsecDeviceDriverCreateTransforms(base.BaseTestCase):
 
@@ -626,22 +630,6 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
     def test_sync_when_remove_last_connection_from_service(self):
         """Sync request, for a service with no more connections."""
 
-    def test_sync_for_connection_delete(self):
-        """Sync for delete of connection."""
-        conn1 = {'id': '1', 'status': constants.PENDING_DELETE,
-                 'cisco': {'site_conn_id': u'Tunnel0'}}
-        self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
-            'id': '123',
-            'status': constants.ACTIVE,
-            'ipsec_conns': [conn1, ]
-        }]
-        self.driver.perform_pending_operations(self.context)
-        self.assertEqual(1,
-                         self.driver.delete_ipsec_site_connection.call_count)
-        self.assertEqual(constants.PENDING_DELETE,
-                         self._get_conn_status('123', '1'))
-        self.assertEqual(constants.ACTIVE, self._get_service_status('123'))
-
     def test_report_connection_delete(self):
         """Report for delete of connection on service."""
         # Simulate requesting delete of connection
@@ -737,6 +725,11 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         ]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
+
+    def test_mark_and_sweep(self):
+        # TODO(pcm) implement
+        pass
+
 
 
     # TODO(pcm) FUTURE - UTs for update action, when supported.

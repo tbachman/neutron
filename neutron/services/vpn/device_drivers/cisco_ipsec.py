@@ -385,13 +385,12 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
                      conn_id)
 
-    def delete_ipsec_site_connection(self, context, conn_info):
-        """Delete site-to-site IPSec connection.
+    def delete_ipsec_site_connection(self, context, conn_id):
+        """Delete the site-to-site IPSec connection.
 
         This will be best effort and will continue, if there are any
         failures.
         """
-        conn_id = conn_info['site_conn']['id']
         LOG.debug(_('delete_ipsec_site_connection for %s'), conn_id)
         self.steps = self.connections.get(conn_id, [])
         if not self.steps:
@@ -519,27 +518,42 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.sync(context, [])
 
     def perform_pending_operations(self, context):
-        """Apply and create/delete/update requests on services/connections."""
-        # TODO(pcm) Handle VPN service deletion
+        """Get info on all services/conns and process any pending requests."""
         vpn_services = self.agent_rpc.get_vpn_services_on_host(context,
                                                                self.host)
         LOG.debug("Sync start for %d VPN services", len(vpn_services))
         for vpn_service in vpn_services:
             LOG.debug(_("Processing service %s"), vpn_service['id'])
+            # TODO(pcm) Handle VPN service deletion?
+            # TODO(pcm) mark/sweep services too?
             service_state = self.snapshot_service_state(vpn_service)
             for ipsec_conn in vpn_service['ipsec_conns']:
                 service_state.snapshot_conn_state(ipsec_conn)
                 if not plugin_utils.in_pending_status(ipsec_conn['status']):
                     continue
-                if ipsec_conn['status'] == 'PENDING_CREATE':
+                if ipsec_conn['status'] == constants.PENDING_CREATE:
                     self.create_ipsec_site_connection(context, ipsec_conn)
-                elif ipsec_conn['status'] == 'PENDING_DELETE':
-                    # TODO(pcm) Make sure we are passing in the right info
-                    self.delete_ipsec_site_connection(context, ipsec_conn)
-                else:
+                elif ipsec_conn['status'] == constants.PENDING_UPDATE:
                     # TODO(pcm): FUTURE - Implement
                     LOG.debug(_("NOT IMPLEMENTED YET update of connection %s"),
                               ipsec_conn['id'])
+                else:
+                    LOG.warning(_("PCM: Unexpected connection in "
+                                  "PENDING_DELETE state with data - ignored"))
+                    # TODO(pcm) Is this possible? Do we just try to delete?
+
+    def mark_existing_connections_as_dirty(self):
+        """Mark all existing connections as "dirty" for sync."""
+        for vpn_service_state in self.service_state:
+            # TODO(pcm) Mark services too?
+            for conn_id in vpn_service_state.conn_state:
+                vpn_service_state.conn_state[conn_id]['is_dirty'] = True
+
+    def remove_unknown_connections(self,context):
+        """Remove connections that are not known by service driver."""
+        for vpn_service_state in self.service_state:
+            for conn_id in vpn_service_state.conn_state:
+                self.delete_ipsec_site_connection(context, conn_id)
 
     @lockutils.synchronized('vpn-agent', 'neutron-')
     def sync(self, context, routers):
@@ -559,7 +573,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             4) RPC failure
             5) Cisco CSR restart
         """
+        self.mark_existing_connections_as_dirty()
         self.perform_pending_operations(context)
+        self.remove_unknown_connections(context)
         self.report_status(context)
 
 
@@ -572,6 +588,9 @@ class CiscoCsrVpnServiceState(object):
         self.conn_state = {}
         # TODO(pcm) FUTURE - handle sharing of policies
 
+    def get_connection(self, conn_id):
+        return self.conn_state.get(conn_id)
+
     def snapshot_conn_state(self, ipsec_conn):
         """Create/obtain connection state and save current status."""
         conn_state = self.conn_state.setdefault(
@@ -579,4 +598,5 @@ class CiscoCsrVpnServiceState(object):
             {'last_status': None,
              'tunnel': ipsec_conn['cisco']['site_conn_id']})
         conn_state['last_status'] = ipsec_conn['status']
+        conn_state['is_dirty'] = False
         return conn_state
