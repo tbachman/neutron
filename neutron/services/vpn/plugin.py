@@ -19,8 +19,9 @@
 # @author: Swaminathan Vasudevan, Hewlett-Packard
 
 from neutron.db.vpn import vpn_db
+from neutron.plugins.common import constants
 from neutron.services import service_base
-from neutron.services.vpn.service_drivers import ipsec as ipsec_driver
+
 
 class VPNPlugin(vpn_db.VPNPluginDb):
 
