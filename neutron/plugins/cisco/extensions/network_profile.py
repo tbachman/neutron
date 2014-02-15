@@ -47,9 +47,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                              'is_visible': True, 'default': ''},
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'is_visible': False, 'default': ''},
-        'add_tenant': {'allow_post': True, 'allow_put': True,
-                       'is_visible': True, 'default': None},
-        'remove_tenant': {'allow_post': True, 'allow_put': True,
+        'add_tenants': {'allow_post': True, 'allow_put': True,
+                        'is_visible': True, 'default': None},
+        'remove_tenants': {'allow_post': True, 'allow_put': True,
                           'is_visible': True, 'default': None},
     },
     'network_profile_bindings': {
