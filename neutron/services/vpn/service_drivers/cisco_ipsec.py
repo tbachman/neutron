@@ -41,6 +41,10 @@ class CsrValidationFailure(exceptions.NeutronException):
                 "with value '%(value)s'")
 
 
+class CsrUnsupportedError(exceptions.NeutronException):
+    message = _("Cisco CSR does not currently support %(capability)s")
+
+
 class CiscoCsrIPsecVpnDriverCallBack(object):
 
     """Handler for agent to plugin RPC messaging."""
@@ -58,7 +62,6 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
 
     def get_vpn_services_on_host(self, context, host=None):
         """Retuns info on the vpnservices on the host."""
-        LOG.debug(_("PCM: get_vpn_services_on_host"))
         plugin = self.driver.service_plugin
         vpnservices = plugin._get_agent_hosting_vpn_services(
             context, host)
@@ -66,7 +69,7 @@ class CiscoCsrIPsecVpnDriverCallBack(object):
                 for vpnservice in vpnservices]
 
     def update_status(self, context, status):
-        """Update status of vpnservices."""
+        """Update status of all vpnservices."""
         plugin = self.driver.service_plugin
         plugin.update_status_by_agent(context, status)
 
@@ -110,14 +113,6 @@ class CiscoCsrIPsecVpnAgentApi(proxy.RpcProxy):
         """Send update event of vpnservices."""
         method = 'vpnservice_updated'
         self._agent_notification(context, method, router_id)
-
-    # TODO(pcm) Delete when switch method
-    def delete_ipsec_site_connection(self, context, router_id, conn_info):
-        """Send device driver delete IPSec site-to-site connection request."""
-        LOG.debug('PCM: IPSec connection delete with %(router)s %(conn)s',
-                  {'router': router_id, 'conn': conn_info})
-        self._agent_notification(context, 'delete_ipsec_site_connection',
-                                 router_id, conn_info=conn_info)
 
 
 class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
@@ -206,7 +201,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
     def create_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
-        LOG.debug(_("PCM: New Cisco driver create_ipsec_site_connection"))
         self.validate_ipsec_connection(context, ipsec_site_connection,
                                        vpnservice)
         csr_id_map.create_tunnel_mapping(context, ipsec_site_connection)
@@ -214,37 +208,18 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def update_ipsec_site_connection(
         self, context, old_ipsec_site_connection, ipsec_site_connection):
-        # TODO(pcm): FUTURE - Implement
-        # TODO(pcm): Reject the command for now
+        capability = _("update of IPSec connections. You can delete and "
+                       "re-add, as a workaround.")
+        raise CsrUnsupportedError(capability=capability)
+        # TODO(pcm): FUTURE - Uncomment, once device driver supports
+#         vpnservice = self.service_plugin._get_vpnservice(
+#             context, ipsec_site_connection['vpnservice_id'])
+#         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
+
+    def delete_ipsec_site_connection(self, context, ipsec_site_connection):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'])
-
-    # TODO(pcm) Remove these two, when have switched to update method
-    def _build_ipsec_site_conn_delete_info(self, context, site_conn,
-                                           vpn_service):
-        cisco_info = self.get_cisco_connection_info(context, site_conn,
-                                                    vpn_service)
-        return {'site_conn': site_conn, 'cisco': cisco_info}
-
-    def get_cisco_connection_info(self, context, site_conn, vpn_service):
-        ipsec_policy_id = site_conn['ipsecpolicy_id']
-        csr_ipsec_policy_id = ipsec_policy_id.replace('-', '')[:31]
-        tunnel_id, ike_id = csr_id_map.get_tunnel_mapping_for(site_conn['id'],
-                                                              context.session)
-        return {'site_conn_id': u'Tunnel%d' % tunnel_id,
-                'ike_policy_id': u'%d' % ike_id,
-                'ipsec_policy_id': u'%s' % csr_ipsec_policy_id}
-
-    def delete_ipsec_site_connection(self, context, ipsec_site_connection):
-        # TODO(pcm): Convert this to old method
-        vpn_service = self.service_plugin._get_vpnservice(
-            context, ipsec_site_connection['vpnservice_id'])
-        conn_info = self._build_ipsec_site_conn_delete_info(
-            context, ipsec_site_connection, vpn_service)
-        self.agent_rpc.delete_ipsec_site_connection(
-            context, vpn_service['router_id'], conn_info=conn_info)
-        csr_id_map.delete_tunnel_mapping(context, ipsec_site_connection)
 
     def create_ikepolicy(self, context, ikepolicy):
         pass
@@ -275,7 +250,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def get_cisco_connection_mappings(self, conn_id, context):
         """Obtain persisted mappings for IDs related to connection."""
-        # TODO(pcm) Change IPSEc mapping...
         tunnel_id, ike_id, ipsec_id = csr_id_map.get_tunnel_mapping_for(
             conn_id, context.session)
         return {'site_conn_id': u'Tunnel%d' % tunnel_id,
@@ -284,7 +258,6 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def _make_vpnservice_dict(self, vpnservice, context):
         """Collect all info on service, including Cisco info per IPSec conn."""
-        # TODO(pcm) Future: trim to only needed fields?
         vpnservice_dict = dict(vpnservice)
         vpnservice_dict['ipsec_conns'] = []
         vpnservice_dict['subnet'] = dict(

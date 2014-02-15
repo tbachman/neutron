@@ -1,5 +1,3 @@
-# vim: tabstop=10 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014, Paul Michali, Cisco Systems, Inc.
 # All Rights Reserved.
 #

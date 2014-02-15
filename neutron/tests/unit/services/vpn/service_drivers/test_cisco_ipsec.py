@@ -20,6 +20,7 @@ import mock
 from neutron import context
 from neutron.db import api as dbapi
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants
 from neutron.services.vpn.service_drivers import cisco_csr_db as csr_db
 from neutron.services.vpn.service_drivers import cisco_ipsec as ipsec_driver
 from neutron.tests import base
@@ -159,6 +160,23 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         self.assertRaises(ipsec_driver.CsrValidationFailure,
                           self.driver.validate_peer_id, ipsec_conn)
         pass
+
+    def test_validation_for_create_ipsec_connection(self):
+        """Ensure all validation passes for IPSec site connection create."""
+        self.simulate_gw_ip_available()
+        # Provide the minimum needed items to validate
+        ipsec_conn = {'id': '1',
+                      'ikepolicy_id': '123',
+                      'ipsecpolicy_id': '2',
+                      'mtu': 1500,
+                      'peer_id': '10.10.10.10'}
+        self.service_plugin.get_ikepolicy = mock.Mock(
+            return_value={'ike_version': 'v1',
+                          'lifetime': {'units': 'seconds', 'value': 60}})
+        self.service_plugin.get_ipsecpolicy = mock.Mock(
+            return_value={'lifetime': {'units': 'seconds', 'value': 120}})
+        self.driver.validate_ipsec_connection(self.context, ipsec_conn,
+                                              self.vpn_service)
 
 
 class TestCiscoIPsecDriverMapping(base.BaseTestCase):
@@ -507,7 +525,7 @@ class TestCiscoIPsecDriverMapping(base.BaseTestCase):
 #         connection is found with the same IPSec policy, it should be able to
 #         be looked up in the mapping table.
 #         """
-#         # Simulate that this IPSec policy (20) is in use by another connection,
+#         # Simulate that this IPSec policy (20) in use by another connection,
 #         # even though it is not in the mapping table.
 #         csr_db.find_conn_with_policy.return_value = '100'
 #         conn_info = {'ikepolicy_id': '10',
@@ -534,9 +552,8 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
     def setUp(self):
         super(TestCiscoIPsecDriver, self).setUp()
         self.addCleanup(mock.patch.stopall)
-        dbapi.configure_db()
-        self.addCleanup(dbapi.clear_db)
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
+
         l3_agent = mock.Mock()
         l3_agent.host = FAKE_HOST
         plugin = mock.Mock()
@@ -544,37 +561,58 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
         get_plugin = plugin_p.start()
         get_plugin.return_value = plugin
+        service_plugin_p = mock.patch(
+            'neutron.manager.NeutronManager.get_service_plugins')
+        get_service_plugin = service_plugin_p.start()
+        get_service_plugin.return_value = {constants.L3_ROUTER_NAT: plugin}
 
-        self.service_plugin = mock.Mock()
-        self.service_plugin.get_l3_agents_hosting_routers.return_value = (
-            [l3_agent])
-        self.service_plugin._get_vpnservice.return_value = {
-            'router_id': FAKE_ROUTER_ID,
+        service_plugin = mock.Mock()
+        service_plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
+        service_plugin._get_vpnservice.return_value = {
+            'router_id': _uuid(),
             'provider': 'fake_provider'
         }
-        self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
+        self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(service_plugin)
+        self.driver.validate_ipsec_connection = mock.Mock()
+        csr_db.create_tunnel_mapping = mock.Mock()
 
-#     def test_create_ipsec_site_connection(self):
-#         self._test_update(self.driver.create_ipsec_site_connection,
-#                           [FAKE_VPN_CONNECTION],
-#                           method_name='create_ipsec_site_connection')
-#
-#     def test_update_ipsec_site_connection(self):
+    def _test_update(self, func, args, method_name=''):
+        ctxt = context.Context('', 'somebody')
+        with mock.patch.object(self.driver.agent_rpc, 'cast') as cast:
+            func(ctxt, *args)
+            cast.assert_called_once_with(
+                ctxt,
+                {'args': {},
+                 'namespace': None,
+                 'method': 'vpnservice_updated'},
+                version='1.0',
+                topic='cisco_csr_ipsec_agent.fake_host')
+
+    def test_create_ipsec_site_connection(self):
+        # Just want to test the calling, so mocking out other actions,
+        # which are covered by other test cases.
+        self._test_update(self.driver.create_ipsec_site_connection,
+                          [FAKE_VPN_CONNECTION],
+                          method_name='create_ipsec_site_connection')
+
+    def test_update_ipsec_site_connection(self):
+        # TODO(pcm) Uncomment, when this is supported by device driver
 #         self._test_update(self.driver.update_ipsec_site_connection,
 #                           [FAKE_VPN_CONNECTION, FAKE_VPN_CONNECTION],
 #                           method_name='update_ipsec_site_connection')
-#
-#     def test_delete_ipsec_site_connection(self):
-#         self._test_update(self.driver.delete_ipsec_site_connection,
-#                           [FAKE_VPN_CONNECTION],
-#                           method_name='delete_ipsec_site_connection')
-#
-#     def test_update_vpnservice(self):
-#         self._test_update(self.driver.update_vpnservice,
-#                           [FAKE_VPN_SERVICE, FAKE_VPN_SERVICE],
-#                           method_name='update_vpnservice')
-#
-#     def test_delete_vpnservice(self):
-#         self._test_update(self.driver.delete_vpnservice,
-#                           [FAKE_VPN_SERVICE],
-#                           method_name='delete_vpnservice')
+        pass
+
+    def test_delete_ipsec_site_connection(self):
+        self._test_update(self.driver.delete_ipsec_site_connection,
+                          [FAKE_VPN_CONNECTION],
+                          method_name='delete_ipsec_site_connection')
+
+    def test_update_vpnservice(self):
+        self._test_update(self.driver.update_vpnservice,
+                          [FAKE_VPN_SERVICE, FAKE_VPN_SERVICE],
+                          method_name='update_vpnservice')
+
+    def test_delete_vpnservice(self):
+        self._test_update(self.driver.delete_vpnservice,
+                          [FAKE_VPN_SERVICE],
+                          method_name='delete_vpnservice')
