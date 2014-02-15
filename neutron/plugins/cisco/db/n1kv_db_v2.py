@@ -911,7 +911,7 @@ def create_profile_binding(db_session, tenant_id, profile_id, profile_type):
     if profile_type not in ["network", "policy"]:
         raise q_exc.NeutronException(_("Invalid profile type"))
 
-    if _profile_binding_exists(tenant_id, profile_id, profile_type):
+    if _profile_binding_exists(db_session, tenant_id, profile_id, profile_type):
         return get_profile_binding(tenant_id, profile_id)
 
     db_session = db_session or db.get_session()
@@ -923,8 +923,8 @@ def create_profile_binding(db_session, tenant_id, profile_id, profile_type):
         return binding
 
 
-def _profile_binding_exists(tenant_id, profile_id, profile_type):
-    db_session = db.get_session()
+def _profile_binding_exists(db_session, tenant_id, profile_id, profile_type):
+    db_session = db_session or db.get_session()
     LOG.debug(_("_profile_binding_exists()"))
     return (db_session.query(n1kv_models_v2.ProfileBinding).
             filter_by(tenant_id=tenant_id, profile_id=profile_id,
@@ -960,6 +960,30 @@ def delete_profile_binding(tenant_id, profile_id):
                     "%(profile_id)s and tenant ID %(tenant_id)s"),
                   {"profile_id": profile_id, "tenant_id": tenant_id})
         return
+
+def update_profile_binding(db_session, profile_id, tenants, profile_type):
+    LOG.debug(_('delete profile_binding()'))
+    if profile_type not in ["network", "policy"]:
+        raise q_exc.NeutronException(_("Invalid profile type"))
+
+    db_session = db_session or db.get_session()
+    with db_session.begin(subtransactions=True):
+        old_tenants = (db_session.query(n1kv_models_v2.ProfileBinding).filter_by(
+                       profile_id=profile_id, profile_type=profile_type).all())
+        new_tenants_set = set(tenants)
+        old_tenants_set = set([tenant['tenant_id'] for tenant in old_tenants])
+
+        for tenant_id in old_tenants_set - new_tenants_set:
+            for tenant in old_tenants:
+                if tenant_id == tenant['tenant_id']:
+                    db_session.delete(tenant)
+                    break
+        for tenant_id in new_tenants_set - old_tenants_set:
+            tenant = n1kv_models_v2.ProfileBinding(profile_type = profile_type,
+                                                   tenant_id = tenant_id,
+                                                   profile_id = profile_id)
+            db_session.add(tenant)
+
 
 
 def _get_profile_bindings(profile_type=None):
@@ -1055,10 +1079,11 @@ class NetworkProfile_db_mixin(object):
             create_profile_binding(context.session, context.tenant_id,
                                    net_profile.id,
                                    c_const.NETWORK)
-            if p.get("add_tenant"):
-                self.add_network_profile_tenant(context.session,
-                                                net_profile.id,
-                                                p["add_tenant"])
+            if p.get("add_tenants"):
+                for tenant in p["add_tenants"]:
+                    self.add_network_profile_tenant(context.session,
+                                                    net_profile.id,
+                                                    tenant)
         return self._make_network_profile_dict(net_profile)
 
     def delete_network_profile(self, context, id):
@@ -1093,12 +1118,16 @@ class NetworkProfile_db_mixin(object):
         p = network_profile["network_profile"]
         original_net_p = get_network_profile(context.session, id)
         # Update network profile to tenant id binding.
-        if context.is_admin and "add_tenant" in p:
-            self.add_network_profile_tenant(context.session, id, 
-                                            p["add_tenant"])
+        if context.is_admin and "add_tenants" in p:
+            if context.tenant_id not in p['add_tenants']:
+                p['add_tenants'].append(context.tenant_id)
+            update_profile_binding(context.session, id, p['add_tenants'], c_const.NETWORK)
             return self._make_network_profile_dict(original_net_p)
-        if context.is_admin and "remove_tenant" in p:
-            delete_profile_binding(p["remove_tenant"], id)
+        if context.is_admin and "remove_tenants" in p:
+            for remove_tenant in p['remove_tenants']:
+                if remove_tenant == context.tenant_id: 
+                    continue
+                delete_profile_binding(remove_tenant, id)
             return self._make_network_profile_dict(original_net_p)
         if original_net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
             #TODO(abhraut): Remove check when Trunk supports segment range.
