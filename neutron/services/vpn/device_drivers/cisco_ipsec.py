@@ -52,6 +52,10 @@ class CsrUnknownMappingError(exceptions.NeutronException):
                 "attribute %(attr)s of %(resource)s")
 
 
+class CsrDriverSyncError(exceptions.NeutronException):
+    message = _("Device driver does not have info on connection %(conn)s")
+
+
 class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
     """RPC API for agent to plugin messaging."""
     IPSEC_PLUGIN_VERSION = '1.0'
@@ -517,52 +521,55 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         LOG.debug(_("PCM: Handling VPN service update notification"))
         self.sync(context, [])
 
-    def perform_pending_operations(self, context):
-        """Get info on all services/conns and process any pending requests."""
+    def update_all_services_and_connections(self, context):
+        """Update services and connections based on plugin info.
+
+        Perform any create and update operations and then update status.
+        Mark every visited connection as no longer "dirty" so they will
+        not be deleted at end of sync processing.
+        """
         vpn_services = self.agent_rpc.get_vpn_services_on_host(context,
                                                                self.host)
         LOG.debug("Sync start for %d VPN services", len(vpn_services))
         for vpn_service in vpn_services:
             LOG.debug(_("Processing service %s"), vpn_service['id'])
-            # TODO(pcm) Handle VPN service deletion?
-            # TODO(pcm) mark/sweep services too?
             service_state = self.snapshot_service_state(vpn_service)
             for ipsec_conn in vpn_service['ipsec_conns']:
-                service_state.snapshot_conn_state(ipsec_conn)
-                if not plugin_utils.in_pending_status(ipsec_conn['status']):
-                    continue
                 if ipsec_conn['status'] == constants.PENDING_CREATE:
                     self.create_ipsec_site_connection(context, ipsec_conn)
-                elif ipsec_conn['status'] == constants.PENDING_UPDATE:
-                    # TODO(pcm): FUTURE - Implement
-                    LOG.debug(_("NOT IMPLEMENTED YET update of connection %s"),
-                              ipsec_conn['id'])
                 else:
-                    LOG.warning(_("PCM: Unexpected connection in "
-                                  "PENDING_DELETE state with data - ignored"))
-                    # TODO(pcm) Is this possible? Do we just try to delete?
+                    prev_status = service_state.conn_status(ipsec_conn['id'])
+                    if not prev_status:
+                        raise CsrDriverSyncError(conn=ipsec_conn['id'])
+                    if prev_status != ipsec_conn['status']:
+                        # TODO(pcm) FUTURE - handle update
+                        pass
+                service_state.snapshot_conn_state(ipsec_conn)
 
     def mark_existing_connections_as_dirty(self):
         """Mark all existing connections as "dirty" for sync."""
-        for vpn_service_state in self.service_state:
+        for _, service_state in self.service_state.items():
             # TODO(pcm) Mark services too?
-            for conn_id in vpn_service_state.conn_state:
-                vpn_service_state.conn_state[conn_id]['is_dirty'] = True
+            for conn_id in service_state.conn_state:
+                service_state.conn_state[conn_id]['is_dirty'] = True
 
-    def remove_unknown_connections(self,context):
+    def remove_unknown_connections(self, context):
         """Remove connections that are not known by service driver."""
-        for vpn_service_state in self.service_state:
-            for conn_id in vpn_service_state.conn_state:
+        for service_state in self.service_state.values():
+            dirty = [c_id for c_id, c in service_state.conn_state.items()
+                     if c['is_dirty']]
+            for conn_id in dirty:
                 self.delete_ipsec_site_connection(context, conn_id)
+                del service_state.conn_state[conn_id]
 
     @lockutils.synchronized('vpn-agent', 'neutron-')
     def sync(self, context, routers):
-        """Perform any pending operations and report urrent status.
+        """Synchronize with plugin and report current status.
 
-        Based on the status of the services and their connections, perform
-        create, delete, and/or update operations. Update the status/state
-        of the connections, and report any changes to the service driver
-        (plugin). Will be called whenever a change is made to a service or
+        Mark all "known" connections as dirty, update them based on
+        information from the plugin, remove any connections that are
+        not updated (dirty), and report any updates back to plugin.
+        Called when update/delete a service or create/update/delete a
         connection (vpnservice_updated message), or router change
         (_process_routers).
 
@@ -574,7 +581,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             5) Cisco CSR restart
         """
         self.mark_existing_connections_as_dirty()
-        self.perform_pending_operations(context)
+        self.update_all_services_and_connections(context)
         self.remove_unknown_connections(context)
         self.report_status(context)
 
@@ -590,6 +597,11 @@ class CiscoCsrVpnServiceState(object):
 
     def get_connection(self, conn_id):
         return self.conn_state.get(conn_id)
+
+    def conn_status(self, conn_id):
+        conn_state = self.get_connection(conn_id)
+        if conn_state:
+            return conn_state['last_status']
 
     def snapshot_conn_state(self, ipsec_conn):
         """Create/obtain connection state and save current status."""
