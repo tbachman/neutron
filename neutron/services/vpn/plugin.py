@@ -18,6 +18,7 @@
 #
 # @author: Swaminathan Vasudevan, Hewlett-Packard
 
+from neutron.db import servicetype_db as st_db
 from neutron.db.vpn import vpn_db
 from neutron.plugins.common import constants
 from neutron.services import service_base
@@ -39,9 +40,15 @@ class VPNDriverPlugin(VPNPlugin, vpn_db.VPNPluginRpcDbMixin):
     #TODO(nati) handle ikepolicy and ipsecpolicy update usecase
     def __init__(self):
         super(VPNDriverPlugin, self).__init__()
-        # HACK Until Service Type Framework is incorporated
-        _, default_provider = service_base.load_drivers(constants.VPN, self)
-        self.ipsec_driver = default_provider
+        self.service_type_manager = st_db.ServiceTypeManager.get_instance()
+        self._load_drivers()
+
+    def _load_drivers(self):
+        """Loads plugin-drivers specified in configuration."""
+        self.drivers, self.default_provider = service_base.load_drivers(
+            constants.VPN, self)
+        # HACK as we are not using Service Type Framework yet...
+        self.ipsec_driver = self.drivers[self.default_provider]
 
     def _get_driver_for_vpnservice(self, vpnservice):
         return self.ipsec_driver

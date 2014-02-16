@@ -16,6 +16,7 @@ import abc
 from collections import namedtuple
 
 import httplib
+from oslo.config import cfg
 
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
@@ -32,6 +33,13 @@ from neutron.services.vpn import device_drivers
 from neutron.services.vpn.device_drivers import (
     cisco_csr_rest_client as csr_client)
 
+
+ipsec_opts = [
+    cfg.IntOpt('ipsec_status_check_interval',
+               default=60,
+               help=_("Interval for checking ipsec status"))
+]
+cfg.CONF.register_opts(ipsec_opts, 'ipsec')
 
 LOG = logging.getLogger(__name__)
 
