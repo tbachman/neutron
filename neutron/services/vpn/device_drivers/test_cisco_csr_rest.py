@@ -1143,7 +1143,7 @@ class TestCsrRestStaticRoute(unittest.TestCase):
         # Now delete and verify that static route is gone
         with HTTMock(csr_request.token, csr_request.delete,
                      csr_request.no_such_resource):
-            route_id = self.csr.make_route_id(cidr, interface)
+            route_id = csr_client.make_route_id(cidr, interface)
             self.csr.delete_static_route(route_id)
             self.assertEqual(httplib.NO_CONTENT, self.csr.status)
             content = self.csr.get_request(location, full_url=True)

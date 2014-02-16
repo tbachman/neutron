@@ -47,7 +47,6 @@ FAKE_VPN_SERVICE = {
 CSR_REST_CLIENT = ('neutron.services.vpn.device_drivers.'
                    'cisco_csr_rest_client.CsrRestClient')
 
-
 def ignore_configuration_file_loading_by_driver():
     cfg.MultiConfigParser.read = mock.MagicMock(return_value=['no.conf', ])
     cfg.CONF.config_file = mock.MagicMock()
@@ -129,7 +128,8 @@ class TestIPsecDeviceDriver(base.BaseTestCase):
                                       title='Static Route')]
         self.driver.csr.make_route_id.side_effect = ['10.1.0.0_24_Tunnel0',
                                                      '10.2.0.0_24_Tunnel0']
-        self.driver.create_ipsec_site_connection(mock.Mock(), self.conn_info)
+        self.driver.create_ipsec_site_connection(mock.Mock(), self.conn_info,
+                                                 using_csr)
         client_calls = [c[0] for c in self.driver.csr.method_calls]
         self.assertEqual(expected, client_calls)
         self.assertEqual(
@@ -401,6 +401,9 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.agent_rpc = mock.Mock()
         self.driver.create_ipsec_site_connection = mock.Mock()
         self.driver.delete_ipsec_site_connection = mock.Mock()
+        # Simulate a single CSR is available - don't care about info
+        self.driver.csr_info['1.1.1.1'] = {}
+
 
     def _get_service_state(self, service_id):
         return self.driver.service_state.get(service_id)
@@ -426,6 +429,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
             'status': constants.PENDING_CREATE,
+            'external_ip': '1.1.1.1',
             'ipsec_conns': [conn1, ]
         }]
         self.driver.update_all_services_and_connections(self.context)
@@ -506,6 +510,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         service_state.snapshot_conn_state(conn1)
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
+            'external_ip': '1.1.1.1',
             'status': constants.ACTIVE,
             'ipsec_conns': [conn1, conn2]
         }]
@@ -574,6 +579,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         service_state.snapshot_conn_state(conn1)
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
+            'external_ip': '1.1.1.1',
             'status': constants.ACTIVE,
             'ipsec_conns': [conn1, conn2]
         }]
@@ -618,6 +624,22 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         }]
         self.driver.agent_rpc.update_status.assert_called_once_with(
             self.context, expected_report)
+
+    def test_sync_failed_for_service_not_on_csr(self):
+        """Failure test of sync of VPN service that is not managed by CSR."""
+        conn1 = {'id': '1', 'status': constants.PENDING_CREATE,
+                 'cisco': {'site_conn_id': u'Tunnel0'}}
+        self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
+            'id': '123',
+            'status': constants.PENDING_CREATE,
+            'external_ip': '2.2.2.2',
+            'ipsec_conns': [conn1, ]
+        }]
+        self.driver.update_all_services_and_connections(self.context)
+        self.assertEqual(0,
+                         self.driver.create_ipsec_site_connection.call_count)
+        # More...
+        self.assertIsNone(self._get_service_state('123'))
 
     def test_report_one_of_two_connect_creates_failed(self):
         """Failure test of reporting when one of two connection creates."""
@@ -828,6 +850,7 @@ class TestCsrIPsecDeviceDriverSyncStatuses(base.BaseTestCase):
         # Plugin only reports on second connection - no change in status
         self.driver.agent_rpc.get_vpn_services_on_host.return_value = [{
             'id': '123',
+            'external_ip': '1.1.1.1',
             'status': constants.ACTIVE,
             'ipsec_conns': [conn2]
         }]

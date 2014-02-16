@@ -32,6 +32,13 @@ LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
+def make_route_id(cidr, interface):
+    net = netaddr.IPNetwork(cidr)
+    return '%(network)s_%(prefix)s_%(interface)s' % {
+        'network': net.network,
+        'prefix': net.prefixlen,
+        'interface': interface}
+
 
 class CsrRestClient(object):
 
@@ -222,13 +229,6 @@ class CsrRestClient(object):
     def create_static_route(self, route_info):
         return self.post_request('routing-svc/static-routes',
                                  payload=route_info)
-
-    def make_route_id(self, cidr, interface):
-        net = netaddr.IPNetwork(cidr)
-        return '%(network)s_%(prefix)s_%(interface)s' % {
-            'network': net.network,
-            'prefix': net.prefixlen,
-            'interface': interface}
 
     def delete_static_route(self, route_id):
         return self.delete_request('routing-svc/static-routes/%s' % route_id)

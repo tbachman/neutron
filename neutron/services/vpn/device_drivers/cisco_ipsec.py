@@ -132,14 +132,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             interval=self.conf.ipsec.ipsec_status_check_interval)
 
         self.load_available_csrs_from_config()
-        # TODO(pcm) Read from INI file. Later get based on subnet of router
-        # PCM: TEMP Stuff...Will only communicate with a hard coded CSR.
-        # Later, will want to do a lazy connect on first use and get the
-        # connection info for the desired router.
-        # Obtain login info for CSR
-        self.csr = csr_client.CsrRestClient('192.168.200.20',
-                                            'stack', 'cisco',
-                                            timeout=csr_client.TIMEOUT)
         self.connections = {}
 
     def load_available_csrs_from_config(self):
@@ -147,8 +139,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
         Loads management port, user, and password, information for available
         CSRs from configuration file. Driver will use this info to configure
-        VPN connections. Each CSR will be associated with a subnet, so that
-        the correct CSR can be selected based on the VPN service's router.
+        VPN connections. The CSR is associated 1:1 with a Neutron router. To
+        identify which CSR to use for a VPN service, the public (GW) IP of
+        the Neutron router will be used as an index into the CSR config info.
         """
         multi_parser = cfg.MultiConfigParser()
         read_ok = multi_parser.read(CONF.config_file)
@@ -159,13 +152,13 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.csr_info = {}
         for parsed_file in multi_parser.parsed:
             for parsed_item in parsed_file.keys():
-                device_type, sep, for_net = parsed_item.partition(':')
+                device_type, sep, for_router = parsed_item.partition(':')
                 if device_type.lower() == 'cisco_csr':
                     try:
-                        netaddr.IPNetwork(for_net)
+                        netaddr.IPNetwork(for_router)
                     except netaddr.core.AddrFormatError:
                         LOG.error(_("Ignoring Cisco CSR configuration entry - "
-                                    "subnet '%s' is not valid"), for_net)
+                                    "subnet '%s' is not valid"), for_router)
                         continue
                     entry = parsed_file[parsed_item]
                     # Check for missing fields
@@ -176,7 +169,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     except KeyError as ke:
                         LOG.error(_("Ignoring Cisco CSR for subnet %(subnet)s "
                                     "- missing %(field)s setting"),
-                                  {'subnet': for_net, 'field': str(ke)})
+                                  {'subnet': for_router, 'field': str(ke)})
                         continue
                     # Validate fields
                     try:
@@ -185,7 +178,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     except ValueError:
                         LOG.error(_("Ignoring Cisco CSR for subnet %s - "
                                     "timeout is not a floating point number"),
-                                  for_net)
+                                  for_router)
                         continue
                     except KeyError:
                         timeout = csr_client.TIMEOUT
@@ -194,16 +187,16 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                     except netaddr.core.AddrFormatError:
                         LOG.error(_("Ignoring Cisco CSR for subnet %s - "
                                     "REST management is not an IP address"),
-                                  for_net)
+                                  for_router)
                         continue
-                    self.csr_info[for_net] = {'rest_mgmt': rest_mgmt_ip,
-                                              'username': username,
-                                              'password': password,
-                                              'timeout': timeout}
+                    self.csr_info[for_router] = {'rest_mgmt': rest_mgmt_ip,
+                                                 'username': username,
+                                                 'password': password,
+                                                 'timeout': timeout}
 
                     LOG.debug(_("Found CSR for subnet %(subnet)s: %(info)s"),
-                              {'subnet': for_net,
-                               'info': self.csr_info[for_net]})
+                              {'subnet': for_router,
+                               'info': self.csr_info[for_router]})
         LOG.info(_("Loaded %d Cisco CSR configurations"), len(self.csr_info))
 
     def create_rpc_dispatcher(self):
@@ -353,7 +346,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         for peer_cidr in conn_info.get('peer_cidrs', []):
             route = {u'destination-network': peer_cidr,
                      u'outgoing-interface': site_conn_id}
-            route_id = self.csr.make_route_id(peer_cidr, site_conn_id)
+            route_id = csr_client.make_route_id(peer_cidr, site_conn_id)
             routes_info.append((route_id, route))
         return routes_info
 
@@ -585,9 +578,14 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             self.agent_rpc.update_status(context, service_report)
 
     def snapshot_service_state(self, vpn_service):
-        """Create/get VPN service state and save current status."""
+        """Create/get VPN service state and save current status.
+        
+        Upon creation, the router's external IP will be used to refer to
+        the associated Cisco CSR.
+        """
         service_state = self.service_state.setdefault(
-            vpn_service['id'], CiscoCsrVpnServiceState())
+            vpn_service['id'],
+            CiscoCsrVpnService(vpn_service['external_ip']))
         service_state.last_status = vpn_service['status']
         return service_state
 
@@ -607,11 +605,18 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                                                self.host)
         LOG.debug("Sync start for %d VPN services", len(vpn_services))
         for vpn_service in vpn_services:
-            LOG.debug(_("Processing service %s"), vpn_service['id'])
+            vpn_service_id = vpn_service['id']
+            csr_id = vpn_service['external_ip']
+            if csr_id not in self.csr_info:
+                LOG.error(_("Skipping VPN service %s as it is not "
+                            "associated with a Cisco CSR"), vpn_service_id)
+                continue
+            LOG.debug(_("Processing service %s"), vpn_service_id)
             service_state = self.snapshot_service_state(vpn_service)
             for ipsec_conn in vpn_service['ipsec_conns']:
                 if ipsec_conn['status'] == constants.PENDING_CREATE:
-                    self.create_ipsec_site_connection(context, ipsec_conn)
+                    self.create_ipsec_site_connection(context, ipsec_conn,
+                                                      csr_id)
                 else:
                     prev_status = service_state.conn_status(ipsec_conn['id'])
                     if not prev_status:
@@ -631,10 +636,11 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def remove_unknown_connections(self, context):
         """Remove connections that are not known by service driver."""
         for service_state in self.service_state.values():
+            csr_id = service_state.using_csr
             dirty = [c_id for c_id, c in service_state.conn_state.items()
                      if c['is_dirty']]
             for conn_id in dirty:
-                self.delete_ipsec_site_connection(context, conn_id)
+                self.delete_ipsec_site_connection(context, conn_id, csr_id)
                 del service_state.conn_state[conn_id]
 
     @lockutils.synchronized('vpn-agent', 'neutron-')
@@ -661,13 +667,14 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.report_status(context)
 
 
-class CiscoCsrVpnServiceState(object):
+class CiscoCsrVpnService(object):
 
     """Maintains state/status information for a service and its connections."""
 
-    def __init__(self):
+    def __init__(self, csr_identifier):
         self.last_status = None
         self.conn_state = {}
+        self.using_csr = csr_identifier
         # TODO(pcm) FUTURE - handle sharing of policies
 
     def get_connection(self, conn_id):
