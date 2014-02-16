@@ -47,11 +47,12 @@ FAKE_VPN_SERVICE = {
 CSR_REST_CLIENT = ('neutron.services.vpn.device_drivers.'
                    'cisco_csr_rest_client.CsrRestClient')
 
+
 def ignore_configuration_file_loading_by_driver():
     cfg.MultiConfigParser.read = mock.MagicMock(return_value=['no.conf', ])
     cfg.CONF.config_file = mock.MagicMock()
     cfg.CONF.config_file.__len__.return_value = 1
-    
+
 
 class TestIPsecDeviceDriver(base.BaseTestCase):
     def setUp(self, driver=ipsec_driver.CiscoCsrIPsecDriver):
@@ -925,14 +926,14 @@ class TestCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
         self.driver.agent_rpc = mock.Mock()
         self.assertEqual(expected, self.driver.csr_info)
 
-    def test_loading_duplicate_csr_configuration(self):
+    def test_skip_loading_duplicate_csr_configuration(self):
         """Failure test that duplicate configurations are ignored."""
         path = self.create_tempfile('test',
                                     '[CISCO_CSR:3.2.1.0]\n'
                                     'rest_mgmt = 10.20.30.1\n'
                                     'username = me\n'
                                     'password = secret\n'
-                                    'timeout = 5.0\n',
+                                    'timeout = 5.0\n'
                                     '[CISCO_CSR:3.2.1.0]\n'
                                     'rest_mgmt = 5.5.5.3\n'
                                     'username = me\n'
@@ -947,3 +948,63 @@ class TestCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
         self.driver.agent_rpc = mock.Mock()
         self.assertEqual(expected, self.driver.csr_info)
 
+    def test_fail_loading_config_with_invalid_timeout(self):
+        """Failure test of invalid timeout in config info."""
+        path = self.create_tempfile('test',
+                                    '[CISCO_CSR:3.2.1.0]\n'
+                                    'rest_mgmt = 10.20.30.1\n'
+                                    'username = me\n'
+                                    'password = secret\n'
+                                    'timeout = yes\n')
+        args = ['--config-file', path]
+        n_cfg.parse(args=args)
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.assertEqual(0, len(self.driver.csr_info))
+
+    def test_fail_loading_config_missing_required_info(self):
+        """Failure test of config missing required info."""
+        path = self.create_tempfile('test',
+                                    '[CISCO_CSR:1.1.1.0]\n'
+                                    'username = me\n'
+                                    'password = secret\n'
+                                    'timeout = 5.0\n'
+                                    '[CISCO_CSR:2.2.2.0]\n'
+                                    'rest_mgmt = 10.20.30.1\n'
+                                    'password = secret\n'
+                                    'timeout = 5.0\n'
+                                    '[CISCO_CSR:3.3.3.0]\n'
+                                    'rest_mgmt = 10.20.30.1\n'
+                                    'username = me\n'
+                                    'timeout = 5.0\n')
+        args = ['--config-file', path]
+        n_cfg.parse(args=args)
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.assertEqual(0, len(self.driver.csr_info))
+
+    def test_fail_loading_config_with_invalid_subnet(self):
+        path = self.create_tempfile('test',
+                                    '[CISCO_CSR:4.3.2.1.0]\n'
+                                    'rest_mgmt = 10.20.30.1\n'
+                                    'username = me\n'
+                                    'password = secret\n'
+                                    'timeout = 5.0\n')
+        args = ['--config-file', path]
+        n_cfg.parse(args=args)
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.assertEqual(0, len(self.driver.csr_info))
+
+    def test_fail_loading_config_with_invalid_mgmt_ip(self):
+        path = self.create_tempfile('test',
+                                    '[CISCO_CSR:3.2.1.0]\n'
+                                    'rest_mgmt = 1.1.1.1.1\n'
+                                    'username = me\n'
+                                    'password = secret\n'
+                                    'timeout = 5.0\n')
+        args = ['--config-file', path]
+        n_cfg.parse(args=args)
+        self.driver = ipsec_driver.CiscoCsrIPsecDriver(self.agent, FAKE_HOST)
+        self.driver.agent_rpc = mock.Mock()
+        self.assertEqual(0, len(self.driver.csr_info))

@@ -14,6 +14,7 @@
 #    under the License.
 import abc
 from collections import namedtuple
+import netaddr
 
 import httplib
 from oslo.config import cfg
@@ -143,7 +144,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
     def load_available_csrs_from_config(self):
         """Read INI for available Cisco CSRs that driver can use.
-        
+
         Loads management port, user, and password, information for available
         CSRs from configuration file. Driver will use this info to configure
         VPN connections. Each CSR will be associated with a subnet, so that
@@ -151,8 +152,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """
         multi_parser = cfg.MultiConfigParser()
         read_ok = multi_parser.read(CONF.config_file)
- 
-        print len(read_ok), len(CONF.config_file)
+
         if len(read_ok) != len(CONF.config_file):
             raise cfg.Error(_("Unable to parse config files for Cisco CSR "
                               "info"))
@@ -161,28 +161,50 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             for parsed_item in parsed_file.keys():
                 device_type, sep, for_net = parsed_item.partition(':')
                 if device_type.lower() == 'cisco_csr':
-                    entry = parsed_file[parsed_item]
                     try:
-                        timeout = float(entry['timeout'][0])
-                    except KeyError:
-                        timeout = csr_client.TIMEOUT
+                        netaddr.IPNetwork(for_net)
+                    except netaddr.core.AddrFormatError:
+                        LOG.error(_("Ignoring Cisco CSR configuration entry - "
+                                    "subnet '%s' is not valid"), for_net)
+                        continue
+                    entry = parsed_file[parsed_item]
+                    # Check for missing fields
+                    try:
+                        rest_mgmt_ip = entry['rest_mgmt'][0]
+                        username = entry['username'][0]
+                        password = entry['password'][0]
+                    except KeyError as ke:
+                        LOG.error(_("Ignoring Cisco CSR for subnet %(subnet)s "
+                                    "- missing %(field)s setting"),
+                                  {'subnet': for_net, 'field': str(ke)})
+                        continue
+                    # Validate fields
+                    try:
+                        timeout = entry['timeout'][0]
+                        timeout = float(timeout)
                     except ValueError:
                         LOG.error(_("Ignoring Cisco CSR for subnet %s - "
                                     "timeout is not a floating point number"),
                                   for_net)
                         continue
-                    self.csr_info[for_net] = {
-                        'rest_mgmt': entry['rest_mgmt'][0],
-                        'username': entry['username'][0],
-                        'password': entry['password'][0],
-                        'timeout': timeout
-                    }
-                   
+                    except KeyError:
+                        timeout = csr_client.TIMEOUT
+                    try:
+                        netaddr.IPAddress(rest_mgmt_ip)
+                    except netaddr.core.AddrFormatError:
+                        LOG.error(_("Ignoring Cisco CSR for subnet %s - "
+                                    "REST management is not an IP address"),
+                                  for_net)
+                        continue
+                    self.csr_info[for_net] = {'rest_mgmt': rest_mgmt_ip,
+                                              'username': username,
+                                              'password': password,
+                                              'timeout': timeout}
+
                     LOG.debug(_("Found CSR for subnet %(subnet)s: %(info)s"),
                               {'subnet': for_net,
                                'info': self.csr_info[for_net]})
         LOG.info(_("Loaded %d Cisco CSR configurations"), len(self.csr_info))
-
 
     def create_rpc_dispatcher(self):
         return n_rpc.PluginRpcDispatcher([self])

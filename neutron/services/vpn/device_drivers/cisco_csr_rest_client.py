@@ -250,13 +250,3 @@ class CsrRestClient(object):
         tunnels = [(t[u'vpn-interface-name'], t[u'status'])
                    for t in results['items']]
         return tunnels
-
-if __name__ == '__main__':
-    csr = CsrRestClient('192.168.200.20', 'stack', 'cisco')
-
-    content = csr.post_request('interfaces/gigabitEthernet0/statistics',
-                               payload={'action': 'clear'})
-    print "Good post status %s, Content=%s" % (csr.status, content)
-    content = csr.post_request('no/such/request',
-                               payload={'foo': 'bar'})
-    print "Bad post status %s, Content=%s" % (csr.status, content)
