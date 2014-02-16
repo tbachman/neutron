@@ -34,12 +34,13 @@ from neutron.services.vpn.device_drivers import (
     cisco_csr_rest_client as csr_client)
 
 
+CONF = cfg.CONF
 ipsec_opts = [
     cfg.IntOpt('ipsec_status_check_interval',
                default=60,
                help=_("Interval for checking ipsec status"))
 ]
-cfg.CONF.register_opts(ipsec_opts, 'ipsec')
+CONF.register_opts(ipsec_opts, 'ipsec')
 
 LOG = logging.getLogger(__name__)
 
@@ -129,6 +130,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.process_status_cache_check.start(
             interval=self.conf.ipsec.ipsec_status_check_interval)
 
+        self.load_available_csrs_from_config()
         # TODO(pcm) Read from INI file. Later get based on subnet of router
         # PCM: TEMP Stuff...Will only communicate with a hard coded CSR.
         # Later, will want to do a lazy connect on first use and get the
@@ -138,6 +140,49 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                             'stack', 'cisco',
                                             timeout=csr_client.TIMEOUT)
         self.connections = {}
+
+    def load_available_csrs_from_config(self):
+        """Read INI for available Cisco CSRs that driver can use.
+        
+        Loads management port, user, and password, information for available
+        CSRs from configuration file. Driver will use this info to configure
+        VPN connections. Each CSR will be associated with a subnet, so that
+        the correct CSR can be selected based on the VPN service's router.
+        """
+        multi_parser = cfg.MultiConfigParser()
+        read_ok = multi_parser.read(CONF.config_file)
+ 
+        print len(read_ok), len(CONF.config_file)
+        if len(read_ok) != len(CONF.config_file):
+            raise cfg.Error(_("Unable to parse config files for Cisco CSR "
+                              "info"))
+        self.csr_info = {}
+        for parsed_file in multi_parser.parsed:
+            for parsed_item in parsed_file.keys():
+                device_type, sep, for_net = parsed_item.partition(':')
+                if device_type.lower() == 'cisco_csr':
+                    entry = parsed_file[parsed_item]
+                    try:
+                        timeout = float(entry['timeout'][0])
+                    except KeyError:
+                        timeout = csr_client.TIMEOUT
+                    except ValueError:
+                        LOG.error(_("Ignoring Cisco CSR for subnet %s - "
+                                    "timeout is not a floating point number"),
+                                  for_net)
+                        continue
+                    self.csr_info[for_net] = {
+                        'rest_mgmt': entry['rest_mgmt'][0],
+                        'username': entry['username'][0],
+                        'password': entry['password'][0],
+                        'timeout': timeout
+                    }
+                   
+                    LOG.debug(_("Found CSR for subnet %(subnet)s: %(info)s"),
+                              {'subnet': for_net,
+                               'info': self.csr_info[for_net]})
+        LOG.info(_("Loaded %d Cisco CSR configurations"), len(self.csr_info))
+
 
     def create_rpc_dispatcher(self):
         return n_rpc.PluginRpcDispatcher([self])
