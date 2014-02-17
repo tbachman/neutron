@@ -307,13 +307,13 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         for _, service_state in self.service_state.items():
             # TODO(pcm) Mark services too?
             for conn_id in service_state.conn_state:
-                service_state.conn_state[conn_id]['is_dirty'] = True
+                service_state.conn_state[conn_id].is_dirty = True
 
     def remove_unknown_connections(self, context):
         """Remove connections that are not known by service driver."""
         for service_state in self.service_state.values():
             dirty = [c_id for c_id, c in service_state.conn_state.items()
-                     if c['is_dirty']]
+                     if c.is_dirty]
             for conn_id in dirty:
                 conn_state = service_state.conn_state[conn_id]
                 conn_state.delete_ipsec_site_connection(context, conn_id)
@@ -329,7 +329,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             LOG.debug(_("Collecting status for service %s"), vpn_service_id)
             any_connections = False
             conn_report = {}
-            tunnels = self.get_ipsec_connections_status()
+            tunnels = vpn_service_state.get_ipsec_connections_status()
             for conn_id, conn_state in vpn_service_state.conn_state.items():
                 tunnel_id = conn_state.tunnel
                 if tunnel_id in tunnels:
@@ -433,7 +433,7 @@ class CiscoCsrVpnService(object):
     def get_ipsec_connections_status(self):
         """Obtain current status of all tunnels on a Cisco CSR."""
         # TODO(pcm) select CSR based on service
-        tunnels = self.using_csr.read_tunnel_statuses()
+        tunnels = self.csr.read_tunnel_statuses()
         LOG.debug(_("PCM CSR RAW DATA %s"), tunnels)
         for tunnel in tunnels:
             LOG.debug("CSR Reports %(tunnel)s status '%(status)s'",
