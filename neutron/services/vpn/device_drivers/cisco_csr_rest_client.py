@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -15,10 +13,10 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
+
 import netaddr
 import time
 
-import httplib
 import requests
 from requests.exceptions import ConnectionError, Timeout, SSLError
 
@@ -49,7 +47,7 @@ class CsrRestClient(object):
         self.host = host
         self.auth = (username, password)
         self.token = None
-        self.status = httplib.OK
+        self.status = requests.codes.OK
         self.timeout = timeout
         self.max_tries = 5
 
@@ -66,12 +64,12 @@ class CsrRestClient(object):
         it can be used in error processing ('error-code', 'error-message',
         and 'detail' fields).
         """
-        if (method in ('POST', 'GET') and self.status == httplib.OK):
+        if (method in ('POST', 'GET') and self.status == requests.codes.OK):
             LOG.debug(_('RESPONSE: %s'), response.json())
             return response.json()
-        if method == 'POST' and self.status == httplib.CREATED:
+        if method == 'POST' and self.status == requests.codes.CREATED:
             return response.headers.get('location', '')
-        if self.status >= httplib.BAD_REQUEST and response.content:
+        if self.status >= requests.codes.BAD_REQUEST and response.content:
             if 'error-code' in response.content:
                 content = jsonutils.loads(response.content)
                 LOG.debug("Error response content %s", content)
@@ -102,17 +100,17 @@ class CsrRestClient(object):
                          'ssl': '(SSLError)'
                          if isinstance(te, SSLError) else '',
                          'host': self.host})
-            self.status = httplib.REQUEST_TIMEOUT
+            self.status = requests.codes.REQUEST_TIMEOUT
         except ConnectionError as ce:
             LOG.error(_("%(method)s: Unable to connect to CSR(%(host)s): "
                         "%(error)s"),
                       {'method': method, 'host': self.host, 'error': ce})
-            self.status = httplib.NOT_FOUND
+            self.status = requests.codes.NOT_FOUND
         except Exception as e:
             LOG.error(_("%(method)s: Unexpected error for CSR (%(host)s): "
                         "%(error)s"),
                       {'method': method, 'host': self.host, 'error': e})
-            self.status = httplib.INTERNAL_SERVER_ERROR
+            self.status = requests.codes.INTERNAL_SERVER_ERROR
         else:
             self.status = response.status_code
             LOG.debug(_("%(method)s: Completed [%(status)s]"),
@@ -169,13 +167,13 @@ class CsrRestClient(object):
         if payload:
             payload = jsonutils.dumps(payload)
         response = self._request(method, url, data=payload, headers=headers)
-        if self.status == httplib.UNAUTHORIZED:
+        if self.status == requests.codes.UNAUTHORIZED:
             if not self.authenticate():
                 return
             headers['X-auth-token'] = self.token
             response = self._request(method, url, data=payload,
                                      headers=headers)
-        if self.status != httplib.REQUEST_TIMEOUT:
+        if self.status != requests.codes.REQUEST_TIMEOUT:
             return response
         LOG.error(_("%(method)s: Request timeout for CSR(%(host)s)"),
                   {'method': method, 'host': self.host})

@@ -17,9 +17,17 @@
 import httplib
 import unittest
 
-import cisco_csr_mock as csr_request
-import cisco_csr_rest_client as csr_client
-import test_cisco_csr_rest as test_csr
+from neutron.services.vpn.device_drivers import (
+    cisco_csr_rest_client as csr_client)
+from neutron.tests.unit.services.vpn.device_drivers import (
+    cisco_csr_mock as csr_request)
+from neutron.tests.unit.services.vpn.device_drivers import (
+    test_cisco_csr_rest as test_csr)
+
+
+# TODO(pcm) Since these work with a live CSR (hardcoded right now), don't run
+# as part of TOX. Could be used for Tempest third party testing. Also, update
+# to read CSR info from config file.
 
 
 def _cleanup_resource(for_test, resource):

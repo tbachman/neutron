@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -15,7 +13,6 @@
 #    under the License.
 #
 # @author: Paul Michali, Cisco Systems, Inc.
-# REMOVE import json
 
 """Mock REST requests to Cisco Cloud Services Router."""
 
@@ -23,12 +20,11 @@ import re
 
 from functools import wraps
 from httmock import urlmatch, all_requests, response
-import httplib
 import requests
 
 from neutron.openstack.common import log as logging
 
-# Temporary flags, until we get fixes sorted out.
+# TODO(pcm) Remove, once verified these have been fixed
 FIXED_CSCum50512 = False
 FIXED_CSCum35484 = False
 FIXED_CSCul82396 = False
@@ -86,14 +82,14 @@ def filter(methods, resource):
 @urlmatch(netloc=r'localhost')
 def token(url, request):
     if 'auth/token-services' in url.path:
-        return {'status_code': httplib.OK,
+        return {'status_code': requests.codes.OK,
                 'content': {'token-id': 'dummy-token'}}
 
 
 @urlmatch(netloc=r'localhost')
 def token_unauthorized(url, request):
     if 'auth/token-services' in url.path:
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
 
 
 @urlmatch(netloc=r'wrong-host')
@@ -112,7 +108,7 @@ def timeout(url, request):
     """Simulated timeout of a normal request."""
 
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     raise requests.Timeout()
 
 
@@ -120,7 +116,7 @@ def timeout(url, request):
 def no_such_resource(url, request):
     """Indicate not found error, when invalid resource requested."""
     if 'no/such/request' in url.path:
-        return {'status_code': httplib.NOT_FOUND}
+        return {'status_code': requests.codes.NOT_FOUND}
 
 
 @filter(['get'], 'global/host-name')
@@ -138,7 +134,7 @@ def expired_request(url, request):
     different resource (e.g. 'global/local-users')
     """
 
-    return {'status_code': httplib.UNAUTHORIZED}
+    return {'status_code': requests.codes.UNAUTHORIZED}
 
 
 @urlmatch(netloc=r'localhost')
@@ -147,15 +143,15 @@ def get(url, request):
         return
     LOG.debug("DEBUG: GET mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     if 'global/host-name' in url.path:
         content = {u'kind': u'object#host-name',
                    u'host-name': u'Router'}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'global/local-users' in url.path:
         content = {u'kind': u'collection#local-user',
                    u'users': ['peter', 'paul', 'mary']}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'interfaces/GigabitEthernet' in url.path:
         actual_interface = url.path.split('/')[-1]
         ip = actual_interface[-1]
@@ -170,7 +166,7 @@ def get(url, request):
                    u'ip-address': u'192.168.200.%s' % ip,
                    u'verify-unicast-source': False,
                    u'type': u'ethernet'}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/ike/policies/2' in url.path:
         content = {u'kind': u'object#ike-policy',
                    u'priority-id': u'2',
@@ -180,7 +176,7 @@ def get(url, request):
                    u'hash': u'sha',
                    u'dhGroup': 5,
                    u'lifetime': 3600}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/ike/keyrings' in url.path:
         content = {u'kind': u'object#ike-keyring',
                    u'keyring-name': u'5',
@@ -189,7 +185,7 @@ def get(url, request):
                         u'encrypted': False,
                         u'peer-address': u'10.10.10.20 255.255.255.0'}
                    ]}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
         ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
@@ -205,7 +201,7 @@ def get(url, request):
                    u'pfs': u'group5',
                    u'lifetime-kb': None,
                    u'idle-time': None}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/site-to-site/Tunnel' in url.path:
         tunnel = url.path.split('/')[-1]
         # Use same number, to allow mock to generate IPSec policy ID
@@ -224,25 +220,25 @@ def get(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': '10.10.10.20'
                    }}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/ike/keepalive' in url.path:
         content = {u'interval': 60,
                    u'retry': 4,
                    u'periodic': True}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'routing-svc/static-routes' in url.path:
         content = {u'destination-network': u'10.1.0.0/24',
                    u'kind': u'object#static-route',
                    u'next-hop-router': None,
                    u'outgoing-interface': u'GigabitEthernet1',
                    u'admin-distance': 1}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/site-to-site/active/sessions':
         # Only including needed fields for mock
         content = {u'kind': u'collection#vpn-active-sessions',
                    u'items': [{u'status': u'DOWN-NEGOTIATING',
                                u'vpn-interface-name': u'Tunnel123'}, ]}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keyrings')
@@ -250,7 +246,7 @@ def get(url, request):
 def get_fqdn(url, request):
     LOG.debug("DEBUG: GET FQDN mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     content = {u'kind': u'object#ike-keyring',
                u'keyring-name': u'5',
                u'pre-shared-key-list': [
@@ -258,7 +254,7 @@ def get_fqdn(url, request):
                     u'encrypted': False,
                     u'peer-address': u'cisco.com'}
                ]}
-    return response(httplib.OK, content=content)
+    return response(requests.codes.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ipsec/policies/')
@@ -266,7 +262,7 @@ def get_fqdn(url, request):
 def get_no_ah(url, request):
     LOG.debug("DEBUG: GET No AH mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     ipsec_policy_id = url.path.split('/')[-1]
     content = {u'kind': u'object#ipsec-policy',
                u'mode': u'tunnel',
@@ -280,7 +276,7 @@ def get_no_ah(url, request):
                u'pfs': u'group5',
                u'lifetime-kb': None,
                u'idle-time': None}
-    return response(httplib.OK, content=content)
+    return response(requests.codes.OK, content=content)
 
 
 @urlmatch(netloc=r'localhost')
@@ -289,7 +285,7 @@ def get_defaults(url, request):
         return
     LOG.debug("DEBUG: GET mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     if 'vpn-svc/ike/policies/2' in url.path:
         content = {u'kind': u'object#ike-policy',
                    u'priority-id': u'2',
@@ -299,7 +295,7 @@ def get_defaults(url, request):
                    u'hash': u'sha',
                    u'dhGroup': 1,
                    u'lifetime': 86400}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     if 'vpn-svc/ipsec/policies/' in url.path:
         ipsec_policy_id = url.path.split('/')[-1]
         content = {u'kind': u'object#ipsec-policy',
@@ -311,14 +307,14 @@ def get_defaults(url, request):
                    u'anti-replay-window-size': u'None',
                    u'lifetime-kb': None,
                    u'idle-time': None}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/site-to-site')
 @urlmatch(netloc=r'localhost')
 def get_unnumbered(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     if FIXED_CSCum50512:
         tunnel = url.path.split('/')[-1]
         ipsec_policy_id = tunnel[6:]
@@ -336,16 +332,16 @@ def get_unnumbered(url, request):
                    u'remote-device': {
                        u'tunnel-ip-address': u'10.10.10.20'
                    }}
-        return response(httplib.OK, content=content)
+        return response(requests.codes.OK, content=content)
     else:
-        return response(httplib.INTERNAL_SERVER_ERROR)
+        return response(requests.codes.INTERNAL_SERVER_ERROR)
 
 
 @filter(['get'], 'vpn-svc/site-to-site')
 @urlmatch(netloc=r'localhost')
 def get_mtu(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     tunnel = url.path.split('/')[-1]
     ipsec_policy_id = tunnel[6:]
     content = {u'kind': u'object#vpn-site-to-site',
@@ -362,25 +358,25 @@ def get_mtu(url, request):
                u'remote-device': {
                    u'tunnel-ip-address': u'10.10.10.20'
                }}
-    return response(httplib.OK, content=content)
+    return response(requests.codes.OK, content=content)
 
 
 @filter(['get'], 'vpn-svc/ike/keepalive')
 @urlmatch(netloc=r'localhost')
 def get_not_configured(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.NOT_FOUND}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.NOT_FOUND}
 
 
 @filter(['get'], 'vpn-svc/site-to-site/active/sessions')
 @urlmatch(netloc=r'localhost')
 def get_none(url, request):
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     content = {u'kind': u'collection#vpn-active-sessions',
                u'items': []}
-    return response(httplib.OK, content=content)
+    return response(requests.codes.OK, content=content)
 
 
 @urlmatch(netloc=r'localhost')
@@ -389,38 +385,38 @@ def post(url, request):
         return
     LOG.debug("DEBUG: POST mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     if 'interfaces/GigabitEthernet' in url.path:
-        return {'status_code': httplib.NO_CONTENT}
+        return {'status_code': requests.codes.NO_CONTENT}
     if 'global/local-users' in url.path:
         if 'username' not in request.body:
-            return {'status_code': httplib.BAD_REQUEST}
+            return {'status_code': requests.codes.BAD_REQUEST}
         if '"privilege": 20' in request.body:
-            return {'status_code': httplib.BAD_REQUEST}
+            return {'status_code': requests.codes.BAD_REQUEST}
         headers = {'location': '%s/test-user' % url.geturl()}
-        return response(httplib.CREATED, headers=headers)
+        return response(requests.codes.CREATED, headers=headers)
     if 'vpn-svc/ike/policies' in url.path:
         headers = {'location': "%s/2" % url.geturl()}
-        return response(httplib.CREATED, headers=headers)
+        return response(requests.codes.CREATED, headers=headers)
     if 'vpn-svc/ipsec/policies' in url.path:
         m = re.search(r'"policy-id": "(\S+)"', request.body)
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
-            return response(httplib.CREATED, headers=headers)
-        return {'status_code': httplib.BAD_REQUEST}
+            return response(requests.codes.CREATED, headers=headers)
+        return {'status_code': requests.codes.BAD_REQUEST}
     if 'vpn-svc/ike/keyrings' in url.path:
         headers = {'location': "%s/5" % url.geturl()}
-        return response(httplib.CREATED, headers=headers)
+        return response(requests.codes.CREATED, headers=headers)
     if 'vpn-svc/site-to-site' in url.path:
         m = re.search(r'"vpn-interface-name": "(\S+)"', request.body)
         if m:
             headers = {'location': "%s/%s" % (url.geturl(), m.group(1))}
-            return response(httplib.CREATED, headers=headers)
-        return {'status_code': httplib.BAD_REQUEST}
+            return response(requests.codes.CREATED, headers=headers)
+        return {'status_code': requests.codes.BAD_REQUEST}
     if 'routing-svc/static-routes' in url.path:
         headers = {'location':
                    "%s/10.1.0.0_24_GigabitEthernet1" % url.geturl()}
-        return response(httplib.CREATED, headers=headers)
+        return response(requests.codes.CREATED, headers=headers)
 
 
 @filter(['post'], 'global/local-users')
@@ -428,8 +424,8 @@ def post(url, request):
 def post_change_attempt(url, request):
     LOG.debug("DEBUG: POST change value mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.NOT_FOUND,
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.NOT_FOUND,
             'content': {
                 u'error-code': -1,
                 u'error-message': u'user test-user already exists'}}
@@ -439,8 +435,8 @@ def post_change_attempt(url, request):
 def post_duplicate(url, request):
     LOG.debug("DEBUG: POST duplicate mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST,
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST,
             'content': {
                 u'error-code': -1,
                 u'error-message': u'policy 2 exist, not allow to '
@@ -452,8 +448,8 @@ def post_duplicate(url, request):
 def post_missing_ipsec_policy(url, request):
     LOG.debug("DEBUG: POST missing ipsec policy mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -461,8 +457,8 @@ def post_missing_ipsec_policy(url, request):
 def post_missing_ike_policy(url, request):
     LOG.debug("DEBUG: POST missing ike policy mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -470,8 +466,8 @@ def post_missing_ike_policy(url, request):
 def post_bad_ip(url, request):
     LOG.debug("DEBUG: POST bad IP mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/site-to-site')
@@ -479,8 +475,8 @@ def post_bad_ip(url, request):
 def post_bad_mtu(url, request):
     LOG.debug("DEBUG: POST bad mtu mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
 
 
 @filter(['post'], 'vpn-svc/ipsec/policies')
@@ -488,8 +484,8 @@ def post_bad_mtu(url, request):
 def post_bad_lifetime(url, request):
     LOG.debug("DEBUG: POST bad lifetime mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
-    return {'status_code': httplib.BAD_REQUEST}
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
 
 
 @urlmatch(netloc=r'localhost')
@@ -498,9 +494,9 @@ def put(url, request):
         return
     LOG.debug("DEBUG: PUT mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     # Any resource
-    return {'status_code': httplib.NO_CONTENT}
+    return {'status_code': requests.codes.NO_CONTENT}
 
 
 @urlmatch(netloc=r'localhost')
@@ -509,9 +505,9 @@ def delete(url, request):
         return
     LOG.debug("DEBUG: DELETE mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     # Any resource
-    return {'status_code': httplib.NO_CONTENT}
+    return {'status_code': requests.codes.NO_CONTENT}
 
 
 @urlmatch(netloc=r'localhost')
@@ -520,9 +516,9 @@ def delete_unknown(url, request):
         return
     LOG.debug("DEBUG: DELETE unknown mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     # Any resource
-    return {'status_code': httplib.NOT_FOUND,
+    return {'status_code': requests.codes.NOT_FOUND,
             'content': {
                 u'error-code': -1,
                 u'error-message': 'user unknown not found'}}
@@ -534,6 +530,6 @@ def delete_not_allowed(url, request):
         return
     LOG.debug("DEBUG: DELETE not allowed mock for %s", url)
     if not request.headers.get('X-auth-token', None):
-        return {'status_code': httplib.UNAUTHORIZED}
+        return {'status_code': requests.codes.UNAUTHORIZED}
     # Any resource
-    return {'status_code': httplib.METHOD_NOT_ALLOWED}
+    return {'status_code': requests.codes.METHOD_NOT_ALLOWED}

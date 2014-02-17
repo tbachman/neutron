@@ -1,5 +1,4 @@
-# Copyright 2013, Nachi Ueno, NTT I3, Inc.
-# All Rights Reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -12,6 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# @author: Paul Michali, Cisco Systems, Inc.
+
 import abc
 from collections import namedtuple
 import netaddr
@@ -121,7 +123,7 @@ def find_available_csrs_from_config(config_files):
                                 "REST management is not an IP address"),
                               for_router)
                     continue
-                # TODO(pcm) Change to tuple
+                # TODO(pcm) Consider tuple
                 csrs_found[for_router] = {'rest_mgmt': rest_mgmt_ip,
                                           'username': username,
                                           'password': password,
@@ -215,42 +217,9 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                   'DOWN': constants.DOWN,
                   'DOWN-NEGOTIATING': constants.DOWN}
 
-    def create_router(self, process_id):
-        """Handling create router event.
-
-        Agent calls this method, when the process namespace
-        is ready.
-        """
-        LOG.debug("PCM: Ignoring create_router call")
-        # TODO(pcm) What to do here?
-        return
-#         if process_id in self.processes:
-#             # In case of vpnservice is created
-#             # before router's namespace
-#             process = self.processes[process_id]
-#             # self._update_nat(process.vpnservice, self.agent.add_nat_rule)
-#             process.enable()
-
-    def destroy_router(self, process_id):
-        """Handling destroy_router event.
-
-        Agent calls this method, when the process namespace
-        is deleted.
-        """
-        LOG.debug("PCM: Ignoring destroy_router call")
-        # TODO(pcm): What to do here?
-        return
-#         if process_id in self.processes:
-#             process = self.processes[process_id]
-#             process.disable()
-#            vpnservice = process.vpnservice
-#             if vpnservice:
-#                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
-#             del self.processes[process_id]
-
     def vpnservice_updated(self, context, **kwargs):
         """Handle VPNaaS service driver change notifications."""
-        LOG.debug(_("PCM: Handling VPN service update notification"))
+        LOG.debug(_("Handling VPN service update notification"))
         self.sync(context, [])
 
     def snapshot_service_state(self, vpn_service):
@@ -269,34 +238,32 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         """Update services and connections based on plugin info.
 
         Perform any create and update operations and then update status.
-        Mark every visited connection as no longer "dirty" so they will
+        Mark every visited ipsec_conn as no longer "dirty" so they will
         not be deleted at end of sync processing.
         """
-        # TODO(pcm) rename vpn_service -> service_data, ipsec_conn -> conn_data
-        # and service_state -> service/vpn_service, conn_state-> connection?
-        vpn_services = self.agent_rpc.get_vpn_services_on_host(context,
-                                                               self.host)
-        LOG.debug("Sync start for %d VPN services", len(vpn_services))
-        for vpn_service in vpn_services:
-            vpn_service_id = vpn_service['id']
-            csr_id = vpn_service['external_ip']
+        services_data = self.agent_rpc.get_vpn_services_on_host(context,
+                                                                self.host)
+        LOG.debug("Sync start for %d VPN services", len(services_data))
+        for service_data in services_data:
+            vpn_service_id = service_data['id']
+            csr_id = service_data['external_ip']
             if csr_id not in self.csrs:
                 LOG.error(_("Skipping VPN service %s as it is not "
                             "associated with a Cisco CSR"), vpn_service_id)
                 continue
             LOG.debug(_("Processing service %s"), vpn_service_id)
-            service_state = self.snapshot_service_state(vpn_service)
-            for ipsec_conn in vpn_service['ipsec_conns']:
-                conn_id = ipsec_conn['id']
-                prev_status = service_state.conn_status(conn_id)
-                conn_state = service_state.snapshot_conn_state(ipsec_conn)
-                if ipsec_conn['status'] == constants.PENDING_CREATE:
-                    conn_state.create_ipsec_site_connection(context,
-                                                            ipsec_conn)
+            vpn_service = self.snapshot_service_state(service_data)
+            for conn_data in service_data['ipsec_conns']:
+                conn_id = conn_data['id']
+                prev_status = vpn_service.conn_status(conn_id)
+                ipsec_conn = vpn_service.snapshot_conn_state(conn_data)
+                if conn_data['status'] == constants.PENDING_CREATE:
+                    ipsec_conn.create_ipsec_site_connection(context,
+                                                            conn_data)
                 else:
                     if not prev_status:
-                        raise CsrDriverSyncError(conn=ipsec_conn['id'])
-                    if prev_status != ipsec_conn['status']:
+                        raise CsrDriverSyncError(conn=conn_data['id'])
+                    if prev_status != conn_data['status']:
                         # TODO(pcm) FUTURE - handle update. May need to save
                         # more state anc compare (peer_id, peer_cidrs, mtu,
                         # psk, dpd, and admin state).
@@ -376,7 +343,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                 })
             if service_changed:
                 vpn_service_state.last_status = service_status
-        LOG.debug(_("PCM: Changes %s"), service_report)
         if service_report:
             self.agent_rpc.update_status(context, service_report)
 
@@ -402,6 +368,16 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.update_all_services_and_connections(context)
         self.remove_unknown_connections(context)
         self.report_status(context)
+
+    def create_router(self, process_id):
+        """Actions taken when router created."""
+        # Note: Since Cisco CSR is running out-of-band, nothing to do here
+        pass
+
+    def destroy_router(self, process_id):
+        """Actions taken when router deleted."""
+        # Note: Since Cisco CSR is running out-of-band, nothing to do here
+        pass
 
 
 class CiscoCsrVpnService(object):
@@ -432,9 +408,7 @@ class CiscoCsrVpnService(object):
 
     def get_ipsec_connections_status(self):
         """Obtain current status of all tunnels on a Cisco CSR."""
-        # TODO(pcm) select CSR based on service
         tunnels = self.csr.read_tunnel_statuses()
-        LOG.debug(_("PCM CSR RAW DATA %s"), tunnels)
         for tunnel in tunnels:
             LOG.debug("CSR Reports %(tunnel)s status '%(status)s'",
                       {'tunnel': tunnel[0], 'status': tunnel[1]})
@@ -458,8 +432,9 @@ class CiscoCsrIPSecConnection(object):
                                   # encryption_algorithm -> encryption
                                   '3des': u'3des',
                                   'aes-128': u'aes',
-                                  'aes-192': u'aes',  # TODO(pcm): fix
-                                  'aes-256': u'aes',  # TODO(pcm): fix
+                                  # TODO(pcm) update these 2 once CSR updated
+                                  'aes-192': u'aes',
+                                  'aes-256': u'aes',
                                   # pfs -> dhGroup
                                   'group2': 2,
                                   'group5': 5,
@@ -474,8 +449,9 @@ class CiscoCsrIPSecConnection(object):
                                     # encryption_algorithm -> esp-encryption
                                     '3des': u'esp-3des',
                                     'aes-128': u'esp-aes',
-                                    'aes-192': u'esp-aes',  # TODO(pcm) fix
-                                    'aes-256': u'esp-aes',  # TODO(pcm) fix
+                                    # TODO(pcm) update these 2 once CSR updated
+                                    'aes-192': u'esp-aes',
+                                    'aes-256': u'esp-aes',
                                     # pfs -> pfs
                                     'group2': u'group2',
                                     'group5': u'group5',
@@ -569,10 +545,11 @@ class CiscoCsrIPSecConnection(object):
             u'vpn-interface-name': site_conn_id,
             u'ipsec-policy-id': ipsec_policy_id,
             u'local-device': {
-                # TODO(pcm): Get CSR port of interface with local subnet
+                # TODO(pcm): FUTURE - Get CSR port of interface with
+                # local subnet
                 u'ip-address': u'GigabitEthernet3',
-                # TODO(pcm): Get IP address of router's public I/F, once CSR is
-                # used as embedded router.
+                # TODO(pcm): FUTURE - Get IP address of router's public
+                # I/F, once CSR is used as embedded router.
                 u'tunnel-ip-address': u'172.24.4.23'
                 # u'tunnel-ip-address': u'%s' % gw_ip
             },
@@ -595,10 +572,10 @@ class CiscoCsrIPSecConnection(object):
     def _check_create(self, resource, which):
         """Determine if REST create request was successful."""
         if self.csr.status == httplib.CREATED:
-            LOG.debug("PCM: %(resource)s %(which)s is configured",
+            LOG.debug("%(resource)s %(which)s is configured",
                       {'resource': resource, 'which': which})
             return
-        LOG.error(_("PCM: Unable to create %(resource)s %(which)s: "
+        LOG.error(_("Unable to create %(resource)s %(which)s: "
                     "%(status)d"),
                   {'resource': resource, 'which': which,
                    'status': self.csr.status})
@@ -685,7 +662,8 @@ class CiscoCsrIPSecConnection(object):
             self.do_create_action('ipsec_connection', connection_info,
                                   site_conn_id, 'IPSec Connection')
 
-            # TODO(pcm): Do DPD and handle if >1 connection and different DPD
+            # TODO(pcm): FUTURE - Do DPD and handle if >1 connection
+            # and different DPD settings
             for route_id, route_info in routes_info:
                 self.do_create_action('static_route', route_info,
                                       route_id, 'Static Route')
