@@ -32,6 +32,7 @@ LOG = logging.getLogger(__name__)
 HEADER_CONTENT_TYPE_JSON = {'content-type': 'application/json'}
 URL_BASE = 'https://%(host)s/api/v1/%(resource)s'
 
+
 def make_route_id(cidr, interface):
     net = netaddr.IPNetwork(cidr)
     return '%(network)s_%(prefix)s_%(interface)s' % {

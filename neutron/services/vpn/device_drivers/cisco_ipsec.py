@@ -66,6 +66,74 @@ class CsrDriverSyncError(exceptions.NeutronException):
     message = _("Device driver does not have info on connection %(conn)s")
 
 
+def find_available_csrs_from_config(config_files):
+    """Read INI for available Cisco CSRs that driver can use.
+
+    Loads management port, user, and password, information for available
+    CSRs from configuration file. Driver will use this info to configure
+    VPN connections. The CSR is associated 1:1 with a Neutron router. To
+    identify which CSR to use for a VPN service, the public (GW) IP of
+    the Neutron router will be used as an index into the CSR config info.
+    """
+    multi_parser = cfg.MultiConfigParser()
+    read_ok = multi_parser.read(config_files)
+
+    if len(read_ok) != len(config_files):
+        raise cfg.Error(_("Unable to parse config files for Cisco CSR "
+                          "info"))
+    csrs_found = {}
+    for parsed_file in multi_parser.parsed:
+        for parsed_item in parsed_file.keys():
+            device_type, sep, for_router = parsed_item.partition(':')
+            if device_type.lower() == 'cisco_csr':
+                try:
+                    netaddr.IPNetwork(for_router)
+                except netaddr.core.AddrFormatError:
+                    LOG.error(_("Ignoring Cisco CSR configuration entry - "
+                                "subnet '%s' is not valid"), for_router)
+                    continue
+                entry = parsed_file[parsed_item]
+                # Check for missing fields
+                try:
+                    rest_mgmt_ip = entry['rest_mgmt'][0]
+                    username = entry['username'][0]
+                    password = entry['password'][0]
+                except KeyError as ke:
+                    LOG.error(_("Ignoring Cisco CSR for subnet %(subnet)s "
+                                "- missing %(field)s setting"),
+                              {'subnet': for_router, 'field': str(ke)})
+                    continue
+                # Validate fields
+                try:
+                    timeout = entry['timeout'][0]
+                    timeout = float(timeout)
+                except ValueError:
+                    LOG.error(_("Ignoring Cisco CSR for subnet %s - "
+                                "timeout is not a floating point number"),
+                              for_router)
+                    continue
+                except KeyError:
+                    timeout = csr_client.TIMEOUT
+                try:
+                    netaddr.IPAddress(rest_mgmt_ip)
+                except netaddr.core.AddrFormatError:
+                    LOG.error(_("Ignoring Cisco CSR for subnet %s - "
+                                "REST management is not an IP address"),
+                              for_router)
+                    continue
+                # TODO(pcm) Change to tuple
+                csrs_found[for_router] = {'rest_mgmt': rest_mgmt_ip,
+                                          'username': username,
+                                          'password': password,
+                                          'timeout': timeout}
+
+                LOG.debug(_("Found CSR for subnet %(subnet)s: %(info)s"),
+                          {'subnet': for_router,
+                           'info': csrs_found[for_router]})
+    LOG.info(_("Loaded %d Cisco CSR configurations"), len(csrs_found))
+    return csrs_found
+
+
 class CiscoCsrIPsecVpnDriverApi(proxy.RpcProxy):
     """RPC API for agent to plugin messaging."""
     IPSEC_PLUGIN_VERSION = '1.0'
@@ -117,7 +185,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         node_topic = '%s.%s' % (self.topic, self.host)
 
         self.service_state = {}
-        self.process_status_cache = {}
 
         self.conn.create_consumer(
             node_topic,
@@ -126,81 +193,263 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         self.conn.consume_in_thread()
         self.agent_rpc = (
             CiscoCsrIPsecVpnDriverApi(topics.CISCO_IPSEC_DRIVER_TOPIC, '1.0'))
-        self.process_status_cache_check = loopingcall.FixedIntervalLoopingCall(
+        self.periodic_report = loopingcall.FixedIntervalLoopingCall(
             self.report_status, self.context)
-        self.process_status_cache_check.start(
+        self.periodic_report.start(
             interval=self.conf.ipsec.ipsec_status_check_interval)
 
-        self.load_available_csrs_from_config()
-        self.connections = {}
-
-    def load_available_csrs_from_config(self):
-        """Read INI for available Cisco CSRs that driver can use.
-
-        Loads management port, user, and password, information for available
-        CSRs from configuration file. Driver will use this info to configure
-        VPN connections. The CSR is associated 1:1 with a Neutron router. To
-        identify which CSR to use for a VPN service, the public (GW) IP of
-        the Neutron router will be used as an index into the CSR config info.
-        """
-        multi_parser = cfg.MultiConfigParser()
-        read_ok = multi_parser.read(CONF.config_file)
-
-        if len(read_ok) != len(CONF.config_file):
-            raise cfg.Error(_("Unable to parse config files for Cisco CSR "
-                              "info"))
-        self.csr_info = {}
-        for parsed_file in multi_parser.parsed:
-            for parsed_item in parsed_file.keys():
-                device_type, sep, for_router = parsed_item.partition(':')
-                if device_type.lower() == 'cisco_csr':
-                    try:
-                        netaddr.IPNetwork(for_router)
-                    except netaddr.core.AddrFormatError:
-                        LOG.error(_("Ignoring Cisco CSR configuration entry - "
-                                    "subnet '%s' is not valid"), for_router)
-                        continue
-                    entry = parsed_file[parsed_item]
-                    # Check for missing fields
-                    try:
-                        rest_mgmt_ip = entry['rest_mgmt'][0]
-                        username = entry['username'][0]
-                        password = entry['password'][0]
-                    except KeyError as ke:
-                        LOG.error(_("Ignoring Cisco CSR for subnet %(subnet)s "
-                                    "- missing %(field)s setting"),
-                                  {'subnet': for_router, 'field': str(ke)})
-                        continue
-                    # Validate fields
-                    try:
-                        timeout = entry['timeout'][0]
-                        timeout = float(timeout)
-                    except ValueError:
-                        LOG.error(_("Ignoring Cisco CSR for subnet %s - "
-                                    "timeout is not a floating point number"),
-                                  for_router)
-                        continue
-                    except KeyError:
-                        timeout = csr_client.TIMEOUT
-                    try:
-                        netaddr.IPAddress(rest_mgmt_ip)
-                    except netaddr.core.AddrFormatError:
-                        LOG.error(_("Ignoring Cisco CSR for subnet %s - "
-                                    "REST management is not an IP address"),
-                                  for_router)
-                        continue
-                    self.csr_info[for_router] = {'rest_mgmt': rest_mgmt_ip,
-                                                 'username': username,
-                                                 'password': password,
-                                                 'timeout': timeout}
-
-                    LOG.debug(_("Found CSR for subnet %(subnet)s: %(info)s"),
-                              {'subnet': for_router,
-                               'info': self.csr_info[for_router]})
-        LOG.info(_("Loaded %d Cisco CSR configurations"), len(self.csr_info))
+        csrs_found = find_available_csrs_from_config(CONF.config_file)
+        self.csrs = dict([(k, csr_client.CsrRestClient(v['rest_mgmt'],
+                                                       v['username'],
+                                                       v['password'],
+                                                       v['timeout']))
+                          for k, v in csrs_found.items()])
 
     def create_rpc_dispatcher(self):
         return n_rpc.PluginRpcDispatcher([self])
+
+    STATUS_MAP = {'ERROR': constants.ERROR,
+                  'UP-ACTIVE': constants.ACTIVE,
+                  'UP-IDLE': constants.ACTIVE,
+                  'UP-NO-IKE': constants.ACTIVE,
+                  'DOWN': constants.DOWN,
+                  'DOWN-NEGOTIATING': constants.DOWN}
+
+    def create_router(self, process_id):
+        """Handling create router event.
+
+        Agent calls this method, when the process namespace
+        is ready.
+        """
+        LOG.debug("PCM: Ignoring create_router call")
+        # TODO(pcm) What to do here?
+        return
+#         if process_id in self.processes:
+#             # In case of vpnservice is created
+#             # before router's namespace
+#             process = self.processes[process_id]
+#             # self._update_nat(process.vpnservice, self.agent.add_nat_rule)
+#             process.enable()
+
+    def destroy_router(self, process_id):
+        """Handling destroy_router event.
+
+        Agent calls this method, when the process namespace
+        is deleted.
+        """
+        LOG.debug("PCM: Ignoring destroy_router call")
+        # TODO(pcm): What to do here?
+        return
+#         if process_id in self.processes:
+#             process = self.processes[process_id]
+#             process.disable()
+#            vpnservice = process.vpnservice
+#             if vpnservice:
+#                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
+#             del self.processes[process_id]
+
+    def vpnservice_updated(self, context, **kwargs):
+        """Handle VPNaaS service driver change notifications."""
+        LOG.debug(_("PCM: Handling VPN service update notification"))
+        self.sync(context, [])
+
+    def snapshot_service_state(self, vpn_service):
+        """Create/get VPN service state and save current status.
+
+        Upon creation, the router's external IP will be used to refer to
+        the associated Cisco CSR.
+        """
+        service_state = self.service_state.setdefault(
+            vpn_service['id'],
+            CiscoCsrVpnService(self.csrs.get(vpn_service['external_ip'])))
+        service_state.last_status = vpn_service['status']
+        return service_state
+
+    def update_all_services_and_connections(self, context):
+        """Update services and connections based on plugin info.
+
+        Perform any create and update operations and then update status.
+        Mark every visited connection as no longer "dirty" so they will
+        not be deleted at end of sync processing.
+        """
+        # TODO(pcm) rename vpn_service -> service_data, ipsec_conn -> conn_data
+        # and service_state -> service/vpn_service, conn_state-> connection?
+        vpn_services = self.agent_rpc.get_vpn_services_on_host(context,
+                                                               self.host)
+        LOG.debug("Sync start for %d VPN services", len(vpn_services))
+        for vpn_service in vpn_services:
+            vpn_service_id = vpn_service['id']
+            csr_id = vpn_service['external_ip']
+            if csr_id not in self.csrs:
+                LOG.error(_("Skipping VPN service %s as it is not "
+                            "associated with a Cisco CSR"), vpn_service_id)
+                continue
+            LOG.debug(_("Processing service %s"), vpn_service_id)
+            service_state = self.snapshot_service_state(vpn_service)
+            for ipsec_conn in vpn_service['ipsec_conns']:
+                conn_id = ipsec_conn['id']
+                prev_status = service_state.conn_status(conn_id)
+                conn_state = service_state.snapshot_conn_state(ipsec_conn)
+                if ipsec_conn['status'] == constants.PENDING_CREATE:
+                    conn_state.create_ipsec_site_connection(context,
+                                                            ipsec_conn)
+                else:
+                    if not prev_status:
+                        raise CsrDriverSyncError(conn=ipsec_conn['id'])
+                    if prev_status != ipsec_conn['status']:
+                        # TODO(pcm) FUTURE - handle update. May need to save
+                        # more state anc compare (peer_id, peer_cidrs, mtu,
+                        # psk, dpd, and admin state).
+                        pass
+
+    def mark_existing_connections_as_dirty(self):
+        """Mark all existing connections as "dirty" for sync."""
+        for _, service_state in self.service_state.items():
+            # TODO(pcm) Mark services too?
+            for conn_id in service_state.conn_state:
+                service_state.conn_state[conn_id]['is_dirty'] = True
+
+    def remove_unknown_connections(self, context):
+        """Remove connections that are not known by service driver."""
+        for service_state in self.service_state.values():
+            dirty = [c_id for c_id, c in service_state.conn_state.items()
+                     if c['is_dirty']]
+            for conn_id in dirty:
+                conn_state = service_state.conn_state[conn_id]
+                conn_state.delete_ipsec_site_connection(context, conn_id)
+                del service_state.conn_state[conn_id]
+
+    def report_status(self, context):
+        """Get current status and report any changes to plugin."""
+        # TODO(pcm) Handle VPN service deletion reporting
+        # TODO(pcm) Refactor as this is long and messy
+        LOG.debug(_("report_status for %d services"), len(self.service_state))
+        service_report = []
+        for vpn_service_id, vpn_service_state in self.service_state.items():
+            LOG.debug(_("Collecting status for service %s"), vpn_service_id)
+            any_connections = False
+            conn_report = {}
+            tunnels = self.get_ipsec_connections_status()
+            for conn_id, conn_state in vpn_service_state.conn_state.items():
+                tunnel_id = conn_state.tunnel
+                if tunnel_id in tunnels:
+                    conn_status = self.STATUS_MAP[tunnels[tunnel_id]]
+                    any_connections = True
+                elif conn_state.last_status != constants.PENDING_DELETE:
+                    conn_status = constants.ERROR
+                else:
+                    conn_status = None
+                if conn_status != conn_state.last_status:
+                    LOG.debug(_("Reporting connection %(conn)s changing "
+                                "status from %(prev)s to %(status)s"),
+                              {'conn': conn_id,
+                               'status': conn_status,
+                               'prev': conn_state.last_status})
+                    request_processed = plugin_utils.in_pending_status(
+                        conn_state.last_status)
+                    conn_report[conn_id] = {
+                        'status': conn_status,
+                        'updated_pending_status': request_processed
+                    }
+                    if conn_status == None:
+                        del vpn_service_state.conn_state[conn_id]
+                    else:
+                        conn_state.last_status = conn_status
+            service_status = (
+                constants.ACTIVE if any_connections else constants.DOWN)
+            # Report any status changes
+            service_changed = service_status != vpn_service_state.last_status
+            if conn_report or service_changed:
+                if service_changed:
+                    LOG.debug(_("VPN service %(service)s changed status from "
+                                "%(prev)s to %(status)s"),
+                              {'service': vpn_service_id,
+                               'prev': vpn_service_state.last_status,
+                               'status': service_status})
+                request_processed = plugin_utils.in_pending_status(
+                    vpn_service_state.last_status)
+                service_report.append({
+                    'id': vpn_service_id,
+                    'status': service_status,
+                    'updated_pending_status': request_processed,
+                    'ipsec_site_connections': conn_report
+                })
+            if service_changed:
+                vpn_service_state.last_status = service_status
+        LOG.debug(_("PCM: Changes %s"), service_report)
+        if service_report:
+            self.agent_rpc.update_status(context, service_report)
+
+    @lockutils.synchronized('vpn-agent', 'neutron-')
+    def sync(self, context, routers):
+        """Synchronize with plugin and report current status.
+
+        Mark all "known" connections as dirty, update them based on
+        information from the plugin, remove any connections that are
+        not updated (dirty), and report any updates back to plugin.
+        Called when update/delete a service or create/update/delete a
+        connection (vpnservice_updated message), or router change
+        (_process_routers).
+
+        TODO(pcm) Handle the following conditions:
+            1) Agent class restarted
+            2) Failure on process creation
+            3) VpnService is deleted during agent down
+            4) RPC failure
+            5) Cisco CSR restart
+        """
+        self.mark_existing_connections_as_dirty()
+        self.update_all_services_and_connections(context)
+        self.remove_unknown_connections(context)
+        self.report_status(context)
+
+
+class CiscoCsrVpnService(object):
+
+    """Maintains state/status information for a service and its connections."""
+
+    def __init__(self, csr):
+        self.last_status = None
+        self.conn_state = {}
+        self.csr = csr
+        # TODO(pcm) FUTURE - handle sharing of policies
+
+    def get_connection(self, conn_id):
+        return self.conn_state.get(conn_id)
+
+    def conn_status(self, conn_id):
+        conn_state = self.get_connection(conn_id)
+        if conn_state:
+            return conn_state.last_status
+
+    def snapshot_conn_state(self, ipsec_conn):
+        """Create/obtain connection state and save current status."""
+        conn_state = self.conn_state.setdefault(
+            ipsec_conn['id'], CiscoCsrIPSecConnection(ipsec_conn, self.csr))
+        conn_state.last_status = ipsec_conn['status']
+        conn_state.is_dirty = False
+        return conn_state
+
+    def get_ipsec_connections_status(self):
+        """Obtain current status of all tunnels on a Cisco CSR."""
+        # TODO(pcm) select CSR based on service
+        tunnels = self.using_csr.read_tunnel_statuses()
+        LOG.debug(_("PCM CSR RAW DATA %s"), tunnels)
+        for tunnel in tunnels:
+            LOG.debug("CSR Reports %(tunnel)s status '%(status)s'",
+                      {'tunnel': tunnel[0], 'status': tunnel[1]})
+        return dict(tunnels)
+
+
+class CiscoCsrIPSecConnection(object):
+
+    """State and actions for IPSec site-to-site connections."""
+
+    def __init__(self, conn_info, csr):
+        self.csr = csr
+        self.steps = []
+        self.last_status = None
+        self.tunnel = conn_info['cisco']['site_conn_id']
 
     DIALECT_MAP = {'ike_policy': {'name': 'IKE Policy',
                                   'v1': u'v1',
@@ -231,13 +480,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
                                     'group2': u'group2',
                                     'group5': u'group5',
                                     'group14': u'group14'}}
-
-    STATUS_MAP = {'ERROR': constants.ERROR,
-                  'UP-ACTIVE': constants.ACTIVE,
-                  'UP-IDLE': constants.ACTIVE,
-                  'UP-NO-IKE': constants.ACTIVE,
-                  'DOWN': constants.DOWN,
-                  'DOWN-NEGOTIATING': constants.DOWN}
 
     def translate_dialect(self, resource, attribute, info):
         """Map VPNaaS attributes values to CSR values for a resource."""
@@ -434,7 +676,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             return
 
         try:
-            self.steps = []
             self.do_create_action('pre_shared_key', psk_info,
                                   conn_id, 'Pre-Shared Key')
             self.do_create_action('ike_policy', ike_policy_info,
@@ -453,7 +694,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             LOG.info(_("FAILED: Create of IPSec site-to-site connection %s"),
                      conn_id)
         else:
-            self.connections[conn_id] = self.steps
             LOG.info(_("SUCCESS: Created IPSec site-to-site connection %s"),
                      conn_id)
 
@@ -464,7 +704,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         failures.
         """
         LOG.debug(_('delete_ipsec_site_connection for %s'), conn_id)
-        self.steps = self.connections.get(conn_id, [])
         if not self.steps:
             LOG.warning(_('Unable to find connection %s'), conn_id)
         else:
@@ -472,225 +711,3 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
         LOG.info(_("COMPLETED: Deleted IPSec site-to-site connection %s"),
                  conn_id)
-
-    def create_router(self, process_id):
-        """Handling create router event.
-
-        Agent calls this method, when the process namespace
-        is ready.
-        """
-        LOG.debug("PCM: Ignoring create_router call")
-        # TODO(pcm) What to do here?
-        return
-#         if process_id in self.processes:
-#             # In case of vpnservice is created
-#             # before router's namespace
-#             process = self.processes[process_id]
-#             # self._update_nat(process.vpnservice, self.agent.add_nat_rule)
-#             process.enable()
-
-    def destroy_router(self, process_id):
-        """Handling destroy_router event.
-
-        Agent calls this method, when the process namespace
-        is deleted.
-        """
-        LOG.debug("PCM: Ignoring destroy_router call")
-        # TODO(pcm): What to do here?
-        return
-#         if process_id in self.processes:
-#             process = self.processes[process_id]
-#             process.disable()
-#            vpnservice = process.vpnservice
-#             if vpnservice:
-#                 self._update_nat(vpnservice, self.agent.remove_nat_rule)
-#             del self.processes[process_id]
-
-    def get_ipsec_connections_status(self):
-        """Obtain current status of all tunnels on a Cisco CSR."""
-        # TODO(pcm) select CSR based on service
-        tunnels = self.csr.read_tunnel_statuses()
-        LOG.debug(_("PCM CSR RAW DATA %s"), tunnels)
-        for tunnel in tunnels:
-            LOG.debug("CSR Reports %(tunnel)s status '%(status)s'",
-                      {'tunnel': tunnel[0], 'status': tunnel[1]})
-        return dict(tunnels)
-
-    def report_status(self, context):
-        """Get current status and report any changes to plugin."""
-        # TODO(pcm) Handle VPN service deletion reporting
-        # TODO(pcm) Refactor as this is long and messy
-        LOG.debug(_("report_status for %d services"), len(self.service_state))
-        service_report = []
-        for vpn_service_id, vpn_service_state in self.service_state.items():
-            LOG.debug(_("Collecting status for service %s"), vpn_service_id)
-            any_connections = False
-            conn_report = {}
-            tunnels = self.get_ipsec_connections_status()
-            for conn_id, conn_state in vpn_service_state.conn_state.items():
-                tunnel_id = conn_state['tunnel']
-                if tunnel_id in tunnels:
-                    conn_status = self.STATUS_MAP[tunnels[tunnel_id]]
-                    any_connections = True
-                elif conn_state['last_status'] != constants.PENDING_DELETE:
-                    conn_status = constants.ERROR
-                else:
-                    conn_status = None
-                if conn_status != conn_state['last_status']:
-                    LOG.debug(_("Reporting connection %(conn)s changing "
-                                "status from %(prev)s to %(status)s"),
-                              {'conn': conn_id,
-                               'status': conn_status,
-                               'prev': conn_state['last_status']})
-                    request_processed = plugin_utils.in_pending_status(
-                        conn_state['last_status'])
-                    conn_report[conn_id] = {
-                        'status': conn_status,
-                        'updated_pending_status': request_processed
-                    }
-                    if conn_status == None:
-                        del vpn_service_state.conn_state[conn_id]
-                    else:
-                        conn_state['last_status'] = conn_status
-            service_status = (
-                constants.ACTIVE if any_connections else constants.DOWN)
-            # Report any status changes
-            service_changed = service_status != vpn_service_state.last_status
-            if conn_report or service_changed:
-                if service_changed:
-                    LOG.debug(_("VPN service %(service)s changed status from "
-                                "%(prev)s to %(status)s"),
-                              {'service': vpn_service_id,
-                               'prev': vpn_service_state.last_status,
-                               'status': service_status})
-                request_processed = plugin_utils.in_pending_status(
-                    vpn_service_state.last_status)
-                service_report.append({
-                    'id': vpn_service_id,
-                    'status': service_status,
-                    'updated_pending_status': request_processed,
-                    'ipsec_site_connections': conn_report
-                })
-            if service_changed:
-                vpn_service_state.last_status = service_status
-        LOG.debug(_("PCM: Changes %s"), service_report)
-        if service_report:
-            self.agent_rpc.update_status(context, service_report)
-
-    def snapshot_service_state(self, vpn_service):
-        """Create/get VPN service state and save current status.
-        
-        Upon creation, the router's external IP will be used to refer to
-        the associated Cisco CSR.
-        """
-        service_state = self.service_state.setdefault(
-            vpn_service['id'],
-            CiscoCsrVpnService(vpn_service['external_ip']))
-        service_state.last_status = vpn_service['status']
-        return service_state
-
-    def vpnservice_updated(self, context, **kwargs):
-        """Handle VPNaaS service driver change notifications."""
-        LOG.debug(_("PCM: Handling VPN service update notification"))
-        self.sync(context, [])
-
-    def update_all_services_and_connections(self, context):
-        """Update services and connections based on plugin info.
-
-        Perform any create and update operations and then update status.
-        Mark every visited connection as no longer "dirty" so they will
-        not be deleted at end of sync processing.
-        """
-        vpn_services = self.agent_rpc.get_vpn_services_on_host(context,
-                                                               self.host)
-        LOG.debug("Sync start for %d VPN services", len(vpn_services))
-        for vpn_service in vpn_services:
-            vpn_service_id = vpn_service['id']
-            csr_id = vpn_service['external_ip']
-            if csr_id not in self.csr_info:
-                LOG.error(_("Skipping VPN service %s as it is not "
-                            "associated with a Cisco CSR"), vpn_service_id)
-                continue
-            LOG.debug(_("Processing service %s"), vpn_service_id)
-            service_state = self.snapshot_service_state(vpn_service)
-            for ipsec_conn in vpn_service['ipsec_conns']:
-                if ipsec_conn['status'] == constants.PENDING_CREATE:
-                    self.create_ipsec_site_connection(context, ipsec_conn,
-                                                      csr_id)
-                else:
-                    prev_status = service_state.conn_status(ipsec_conn['id'])
-                    if not prev_status:
-                        raise CsrDriverSyncError(conn=ipsec_conn['id'])
-                    if prev_status != ipsec_conn['status']:
-                        # TODO(pcm) FUTURE - handle update
-                        pass
-                service_state.snapshot_conn_state(ipsec_conn)
-
-    def mark_existing_connections_as_dirty(self):
-        """Mark all existing connections as "dirty" for sync."""
-        for _, service_state in self.service_state.items():
-            # TODO(pcm) Mark services too?
-            for conn_id in service_state.conn_state:
-                service_state.conn_state[conn_id]['is_dirty'] = True
-
-    def remove_unknown_connections(self, context):
-        """Remove connections that are not known by service driver."""
-        for service_state in self.service_state.values():
-            csr_id = service_state.using_csr
-            dirty = [c_id for c_id, c in service_state.conn_state.items()
-                     if c['is_dirty']]
-            for conn_id in dirty:
-                self.delete_ipsec_site_connection(context, conn_id, csr_id)
-                del service_state.conn_state[conn_id]
-
-    @lockutils.synchronized('vpn-agent', 'neutron-')
-    def sync(self, context, routers):
-        """Synchronize with plugin and report current status.
-
-        Mark all "known" connections as dirty, update them based on
-        information from the plugin, remove any connections that are
-        not updated (dirty), and report any updates back to plugin.
-        Called when update/delete a service or create/update/delete a
-        connection (vpnservice_updated message), or router change
-        (_process_routers).
-
-        TODO(pcm) Handle the following conditions:
-            1) Agent class restarted
-            2) Failure on process creation
-            3) VpnService is deleted during agent down
-            4) RPC failure
-            5) Cisco CSR restart
-        """
-        self.mark_existing_connections_as_dirty()
-        self.update_all_services_and_connections(context)
-        self.remove_unknown_connections(context)
-        self.report_status(context)
-
-
-class CiscoCsrVpnService(object):
-
-    """Maintains state/status information for a service and its connections."""
-
-    def __init__(self, csr_identifier):
-        self.last_status = None
-        self.conn_state = {}
-        self.using_csr = csr_identifier
-        # TODO(pcm) FUTURE - handle sharing of policies
-
-    def get_connection(self, conn_id):
-        return self.conn_state.get(conn_id)
-
-    def conn_status(self, conn_id):
-        conn_state = self.get_connection(conn_id)
-        if conn_state:
-            return conn_state['last_status']
-
-    def snapshot_conn_state(self, ipsec_conn):
-        """Create/obtain connection state and save current status."""
-        conn_state = self.conn_state.setdefault(
-            ipsec_conn['id'],
-            {'last_status': None,
-             'tunnel': ipsec_conn['cisco']['site_conn_id']})
-        conn_state['last_status'] = ipsec_conn['status']
-        conn_state['is_dirty'] = False
-        return conn_state
