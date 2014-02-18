@@ -355,34 +355,10 @@ class Client(object):
 
         :param subnet: subnet dictionary
         """
-        if subnet['cidr']:
-            try:
-                ip = netaddr.IPNetwork(subnet['cidr'])
-                netmask = str(ip.netmask)
-                network_address = str(ip.network)
-            except netaddr.AddrFormatError:
-                msg = _("Invalid input for CIDR")
-                raise q_exc.InvalidInput(error_message=msg)
-        else:
-            netmask = network_address = ""
-        if subnet['allocation_pools']:
-            address_range_start = subnet['allocation_pools'][0]['start']
-            address_range_end = subnet['allocation_pools'][0]['end']
-        else:
-            address_range_start = None
-            address_range_end = None
-        body = {'addressRangeStart': address_range_start,
-                'addressRangeEnd': address_range_end,
-                'ipAddressSubnet': netmask,
-                'description': subnet['name'],
-                'gateway': subnet['gateway_ip'],
-                'networkAddress': network_address,
-                'netSegmentName': subnet['network_id'],
+        body = {'description': subnet['name'],
                 'dhcp': subnet['enable_dhcp'],
-                'dnsServersList': subnet['dns_nameservers'],
-                'id': subnet['id'],
-                'tenantId': subnet['tenant_id']}
-        return self._post(self.ip_pool_path % (subnet['id']),
+                'dnsServersList': subnet['dns_nameservers']}
+        return self._post(self.ip_pool_path % subnet['id'],
                           body=body)
 
     def delete_ip_pool(self, subnet_id):
