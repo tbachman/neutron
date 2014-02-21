@@ -73,32 +73,34 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             LOG.info(_("Initializing driver for type '%s'"), network_type)
             driver.obj.initialize()
 
-    def validate_provider_segment(self, segment):
-        network_type = segment[api.NETWORK_TYPE]
-        driver = self.drivers.get(network_type)
-        if driver:
-            driver.obj.validate_provider_segment(segment)
-        else:
-            msg = _("network_type value '%s' not supported") % network_type
-            raise exc.InvalidInput(error_message=msg)
-
-    def reserve_provider_segment(self, session, segment):
-        network_type = segment.get(api.NETWORK_TYPE)
-        driver = self.drivers.get(network_type)
-        driver.obj.reserve_provider_segment(session, segment)
-
-    def allocate_tenant_segment(self, session):
+    def create_network(self, context):
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segment = driver.obj.allocate_tenant_segment(session)
-            if segment:
-                return segment
-        raise exc.NoNetworkAvailable()
+            segment = driver.obj.create_network(context)
 
-    def release_segment(self, session, segment):
-        network_type = segment.get(api.NETWORK_TYPE)
+    def create_subnet(self, context):
         driver = self.drivers.get(network_type)
-        driver.obj.release_segment(session, segment)
+        driver.obj.create_subnet(context)
+
+    def create_port(self, context):
+        driver = self.drivers.get(network_type)
+        driver.obj.create_port(context)
+
+    def get_segment(self, context):
+        driver = self.drivers.get(network_type)
+        driver.obj.get_segment(context)
+
+    def delete_network(self, context):
+        driver = self.drivers.get(network_type)
+        driver.obj.delete_network(context)
+
+    def delete_subnet(self, context):
+        driver = self.drivers.get(network_type)
+        driver.obj.delete_subnet(context)
+
+    def delete_port(self, context):
+        driver = self.drivers.get(network_type)
+        driver.obj.delete_port(context)
 
 
 class MechanismManager(stevedore.named.NamedExtensionManager):

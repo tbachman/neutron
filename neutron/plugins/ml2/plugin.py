@@ -303,25 +303,14 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         with session.begin(subtransactions=True):
             self._ensure_default_security_group(context, tenant_id)
             result = super(Ml2Plugin, self).create_network(context, network)
-            network_id = result['id']
-            self._process_l3_create(context, result, net_data)
-            # REVISIT(rkukura): Consider moving all segment management
-            # to TypeManager.
-            if segments:
-                for segment in segments:
-                    self.type_manager.reserve_provider_segment(session,
-                                                               segment)
-                    db.add_network_segment(session, network_id, segment)
-            else:
-                segment = self.type_manager.allocate_tenant_segment(session)
-                db.add_network_segment(session, network_id, segment)
             self._extend_network_dict_provider(context, result)
-            mech_context = driver_context.NetworkContext(self, context,
-                                                         result)
-            self.mechanism_manager.create_network_precommit(mech_context)
-
+            network_context = driver_context.NetworkContext(self, context,
+                                                           result)
+            self._process_l3_create(context, result, net_data)
+            self.type_manager.create_network(network_context)
+            self.mechanism_manager.create_network_precommit(network_context)
         try:
-            self.mechanism_manager.create_network_postcommit(mech_context)
+            self.mechanism_manager.create_network_postcommit(driver_context)
         except ml2_exc.MechanismDriverError:
             with excutils.save_and_reraise_exception():
                 LOG.error(_("mechanism_manager.create_network_postcommit "

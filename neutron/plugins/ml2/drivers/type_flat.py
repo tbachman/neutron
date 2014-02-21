@@ -79,6 +79,19 @@ class FlatTypeDriver(api.TypeDriver):
     def initialize(self):
         LOG.info(_("ML2 FlatTypeDriver initialization complete"))
 
+    def create_network(self, context):
+        print "\n\n\n\n\n%s\n\n\n\n" % context.__dict__
+        segments = self._process_provider_create(net_data)
+
+    def create_subnet(self, context):
+        pass
+
+    def create_port(self, context):
+        pass
+
+    def get_segment(self, context):
+        pass
+
     def validate_provider_segment(self, segment):
         physical_network = segment.get(api.PHYSICAL_NETWORK)
         if not physical_network:

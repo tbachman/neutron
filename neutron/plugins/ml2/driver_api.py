@@ -65,67 +65,19 @@ class TypeDriver(object):
         pass
 
     @abstractmethod
-    def validate_provider_segment(self, segment):
-        """Validate attributes of a provider network segment.
-
-        :param segment: segment dictionary using keys defined above
-        :raises: neutron.common.exceptions.InvalidInput if invalid
-
-        Called outside transaction context to validate the provider
-        attributes for a provider network segment. Raise InvalidInput
-        if:
-
-         - any required attribute is missing
-         - any prohibited or unrecognized attribute is present
-         - any attribute value is not valid
-
-        The network_type attribute is present in segment, but
-        need not be validated.
-        """
+    def create_network(self, context):
         pass
 
     @abstractmethod
-    def reserve_provider_segment(self, session, segment):
-        """Reserve resource associated with a provider network segment.
-
-        :param session: database session
-        :param segment: segment dictionary using keys defined above
-
-        Called inside transaction context on session to reserve the
-        type-specific resource for a provider network segment. The
-        segment dictionary passed in was returned by a previous
-        validate_provider_segment() call.
-        """
+    def create_subnet(self, context):
         pass
 
     @abstractmethod
-    def allocate_tenant_segment(self, session):
-        """Allocate resource for a new tenant network segment.
-
-        :param session: database session
-        :returns: segment dictionary using keys defined above
-
-        Called inside transaction context on session to allocate a new
-        tenant network, typically from a type-specific resource
-        pool. If successful, return a segment dictionary describing
-        the segment. If tenant network segment cannot be allocated
-        (i.e. tenant networks not supported or resource pool is
-        exhausted), return None.
-        """
+    def create_port(self, context):
         pass
 
     @abstractmethod
-    def release_segment(self, session, segment):
-        """Release network segment.
-
-        :param session: database session
-        :param segment: segment dictionary using keys defined above
-
-        Called inside transaction context on session to release a
-        tenant or provider network's type-specific resource. Runtime
-        errors are not expected, but raising an exception will result
-        in rollback of the transaction.
-        """
+    def get_segment(self, context):
         pass
 
 
