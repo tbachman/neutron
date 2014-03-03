@@ -182,7 +182,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         # Process again and check that this time only the process_floating_ips
         # was only called.
         agent.process_router(ri)
-        ex_gw_port = agent._get_ex_gw_port(ri)
+        ex_gw_port = ri.router.get('gw_port')
         agent.process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
         self.assertFalse(agent.internal_network_added.called)
@@ -194,7 +194,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         # Process again and check that this time also only the
         # process_floating_ips and external_network remove was called
         agent.process_router(ri)
-        ex_gw_port = agent._get_ex_gw_port(ri)
+        ex_gw_port = ri.router.get('gw_port')
         agent.process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
         self.assertFalse(agent.internal_network_added.called)
