@@ -37,7 +37,13 @@ LOG = logging.getLogger(__name__)
 
 
 class CSR1000vRoutingDriver(RoutingDriverBase):
-    """CSR1000v Routing Driver."""
+    """CSR1000v Routing Driver.
+
+    This driver encapsulates the configuration logic via NETCONF protocol to
+    configure a CSR1000v Virtual Router (IOS-XE based) for implementing
+    Neutron L3 services. These services include routing, NAT and floating
+    IPs (as per Neutron terminology).
+    """
 
     DEV_NAME_LEN = 14
 
@@ -289,6 +295,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
 
     def _get_interfaces(self):
         """Get a list of interfaces on this hosting device.
+
         :return: List of the interfaces
         """
         ioscfg = self._get_running_config()
@@ -300,6 +307,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
 
     def _get_interface_ip(self, interface_name):
         """Get the ip address for an interface.
+
         :param interface_name: interface_name as a string
         :return: ip address of interface as a string
         """
@@ -319,15 +327,27 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface " + interface)
-        if len(intfs_raw) > 0:
-            return True
-        else:
-            return False
+        return len(intfs_raw) > 0
 
     def _enable_intfs(self, conn):
-        # CSR1kv, in release 3.11 GigabitEthernet 0 is no longer present.
-        # so GigabitEthernet 1 is used as management and 2 up
-        # is used for data. Note that this might change in a different release.
+        """Enable the interfaces of a CSR1000v Virtual Router.
+
+        When the virtual router first boots up, all interfaces except
+        management are down. This method will enable all data interfaces.
+        Only the second and third Gig interfaces are enabled now, as these are
+        configured as trunk for VLAN and VXLAN and hence the only ones
+        needed now.
+
+        Note: CSR1kv, in release 3.11 GigabitEthernet 0 is no longer
+        present. So GigabitEthernet 1 is used as management and
+        GigabitEthernet 2 and up are used for data. This might
+        change on future releases.
+
+        :param conn: Connection object
+        :return: True or False
+        """
+
+        #ToDo(Hareesh): Interfaces are hard coded for now.
         interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
         try:
             for i in interfaces:
@@ -341,7 +361,8 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return True
 
     def _get_vrfs(self):
-        """
+        """Get the current VRFs configured in the device.
+
         :return: A list of vrf names as string
         """
         vrfs = []
@@ -356,7 +377,10 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return vrfs
 
     def _get_capabilities(self):
-        """Get the servers NETCONF capabilities."""
+        """Get the servers NETCONF capabilities.
+
+        :return: List of server capabilities.
+        """
         conn = self._get_connection()
         capabilities = []
         for c in conn.server_capabilities:
@@ -366,14 +390,14 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
 
     def _get_running_config(self):
         """Get the CSR's current running config.
-        :return: Current IOS running config
+
+        :return: Current IOS running config as multiline string
         """
         conn = self._get_connection()
         config = conn.get_config(source="running")
         if config:
             root = ET.fromstring(config._raw)
             running_config = root[0][0]
-            # LOG.debug("Running config : %s " % running_config)
             rgx = re.compile("\r*\n+")
             ioscfg = rgx.split(running_config.text)
             return ioscfg
@@ -400,14 +424,16 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return False
 
     def _cfg_exists(self, cfg_str):
-        """Check a partial config string exists in the running config."""
+        """Check a partial config string exists in the running config.
+
+        :param cfg_str: config string to check
+        :return : True or False
+        """
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         cfg_raw = parse.find_lines("^" + cfg_str)
         LOG.debug("_cfg_exists(): Found lines %s " % cfg_raw)
-        if len(cfg_raw) > 0:
-            return True
-        return False
+        return len(cfg_raw) > 0
 
     def set_interface(self, name, ip_address, mask):
         conn = self._get_connection()
@@ -475,6 +501,25 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
                                       inner_intfc,
                                       outer_intfc,
                                       vrf_name):
+        """Configure the NAT rules for an internal network.
+
+        Configuring NAT rules in the CSR1000v is a four step process. First
+        create an ACL for the IP range of the internal network. Then enable
+        dynamic source NATing on the external interface of the CSR for this
+        ACL and VRF of the neutron router. Then enable NAT on the interfaces
+        of the CSR where the internal and external networks are connected.
+
+        :param acl_no: ACL number of the internal network.
+        :param network: internal network
+        :param netmask: netmask of the internal network.
+        :param inner_intfc: (name of) interface connected to the internal
+        network
+        :param outer_intfc: (name of) interface connected to the external
+        network
+        :param vrf_name: VRF corresponding to this virtual router
+        :return: True if configuration succeeded
+        :raises: neutron.plugins.cisco.l3.exceptions.CSR1000vConfigException
+        """
         conn = self._get_connection()
         # Duplicate ACL creation throws error, so checking
         # it first. Remove it in future as this is not common in production
@@ -613,6 +658,8 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
                     <error-severity>error</error-severity>
                 </rpc-error>
             </rpc-reply>
+        :return: True if the config operation completed successfully
+        :raises: neutron.plugins.cisco.l3.exceptions.CSR1000vConfigException
         """
         LOG.debug(_("RPCReply for %(snippet_name)s is %(rpc_obj)s"),
                   {'snippet_name': snippet_name, 'rpc_obj': rpc_obj.xml})
