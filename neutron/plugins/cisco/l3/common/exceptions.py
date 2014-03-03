@@ -14,37 +14,29 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-"""Exceptions used by Cisco Configuration Agent."""
+"""Exceptions by Cisco Configuration Agent."""
 
 from neutron.common import exceptions
 
 
 class DriverException(exceptions.NeutronException):
-    """
-    Exception created by the Driver class.
-    """
+    """Exception created by the Driver class."""
 
 
 class CSR1000vInitializationException(DriverException):
-    """
-    Exception when initialization of CSR1000v Routing Driver object.
-    """
+    """Exception when initialization of CSR1000v Routing Driver object."""
     message = (_("Critical device parameter missing. Failed initializing "
                  "CSR1000vRoutingDriver"))
 
 
 class CSR1000vConnectionException(DriverException):
-    """
-    Connection exception when connecting to CSR1000v hosting device.
-    """
+    """Connection exception when connecting to CSR1000v hosting device."""
     message = (_("Failed connecting to CSR1000v. Reason: %(reason)s. "
                "Connection Params are Host:%(host)s, "
                "Port:%(port)s, Device timeout:%(timeout)s"))
 
 
 class CSR1000vConfigException(DriverException):
-    """
-    Configuration exception thrown when modifying the running config.
-    """
+    """Configuration exception thrown when modifying the running config."""
     message = (_("Error executing snippet:%(snippet)s. "
                  "ErrorType:%(type)s ErrorTag:%(tag)s"))
