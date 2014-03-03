@@ -98,7 +98,7 @@ class HostingDevicesManager(object):
             hosting_device = router['hosting_device']
             _hd_id = hosting_device['id']
             _hd_type = hosting_device['host_type']
-            # Note that we are setting  service as 'Routing' and configuration
+            # Note: We are setting  service as 'Routing' and configuration
             # protocol as 'NETCONF' as the defaults if they are not specified.
             _service_type = hosting_device.get('service_type',
                                                cl3_constants.SERVICE_ROUTING)
