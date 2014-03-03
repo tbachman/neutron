@@ -229,9 +229,6 @@ class CiscoCfgAgent(manager.Manager):
         prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
         port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
 
-    def _get_ex_gw_port(self, ri):
-        return ri.router.get('gw_port')
-
     def process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
 
@@ -250,7 +247,7 @@ class CiscoCfgAgent(manager.Manager):
         the configuration operation fails.
         """
         try:
-            ex_gw_port = self._get_ex_gw_port(ri)
+            ex_gw_port = ri.router.get('gw_port')
             ri.ha_info = ri.router.get('ha_info', None)
             internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
@@ -656,7 +653,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         num_hd_routers = {}
         routers_per_hd = {}
         for ri in router_infos:
-            ex_gw_port = self._get_ex_gw_port(ri)
+            ex_gw_port = ri.router.get('gw_port')
             if ex_gw_port:
                 num_ex_gw_ports += 1
             num_interfaces += len(ri.router.get(

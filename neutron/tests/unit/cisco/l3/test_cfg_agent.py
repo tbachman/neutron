@@ -163,7 +163,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         ri = RouterInfo(router['id'], router=router)
         # Process with initial values
         agent.process_router(ri)
-        ex_gw_port = agent._get_ex_gw_port(ri)
+        ex_gw_port = ri.router.get('gw_port')
         # Assert that process_floating_ips, internal_network & external network
         # added were all called with the right params
         agent.process_router_floating_ips.assert_called_with(
