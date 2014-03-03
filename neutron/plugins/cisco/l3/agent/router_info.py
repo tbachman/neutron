@@ -18,6 +18,17 @@ N_ROUTER_PREFIX = 'nrouter-'
 
 
 class RouterInfo(object):
+    """Wrapper class around the (neutron) router dictionary.
+
+    Information about the neutron router is exchanged as a python dictionary
+    between plugin and config agent. RouterInfo is a wrapper around that dict,
+    with attributes for common parameters. These attributes keep the state
+    of the current router configuration, and is used for detecting router
+    state changes when an updated router dict is received.
+
+    This is a modified version of the RouterInfo class defined in the
+    (reference) l3-agent implementation, for use with cisco config agent.
+    """
 
     def __init__(self, router_id, router):
         self.router_id = router_id
