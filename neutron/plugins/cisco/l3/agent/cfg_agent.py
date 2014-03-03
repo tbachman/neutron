@@ -61,7 +61,7 @@ class CiscoL3PluginApi(proxy.RpcProxy):
         """Make a remote process call to retrieve the sync data for routers.
 
         :param context: session context
-        :param router_ids: list of router ids which we want to get
+        :param router_ids: list of  routers to fetch
         :param hd_ids : hosting device ids, only routers assigned to these
                         hosting devices will be returned.
         """
@@ -124,7 +124,7 @@ class CiscoCfgAgent(manager.Manager):
                           "by agents.")),
         cfg.IntOpt('sync_routers_task_interval', default=60,
                    help=_("Interval between the execution of the "
-                          "sync_routers_task. We check for full sync or "
+                          "sync_routers_task. Checks for full sync or "
                           "process backlogged hosting devices here. Overrides "
                           "openstack periodic scheduler default")),
         cfg.StrOpt('rpc_loop_interval', default=3,
@@ -172,8 +172,9 @@ class CiscoCfgAgent(manager.Manager):
     def _router_added(self, router_id, router):
         """Operations when a router is added.
 
-        We create a new RouterInfo object for this router and add it to the
-        agent's router_info dictionary. We call router_added on the driver.
+        Create a new RouterInfo object for this router and add it to the
+        agent's router_info dictionary.  Then `router_added()` is called on
+        the driver.
 
         :param router_id: id of the router
         :param router: router dict
@@ -187,8 +188,8 @@ class CiscoCfgAgent(manager.Manager):
     def _router_removed(self, router_id, deconfigure=True):
         """Operations when a router is removed.
 
-        We get a RouterInfo object corresponding to the router in the agent's
-        router_info dict. If deconfigure is set to True, we remove the router's
+        Get the RouterInfo object corresponding to the router in the agent's
+        router_info dict. If deconfigure is set to True, remove the router's
         configuration from the hosting device.
         :param router_id: id of the router
         :param deconfigure: if True, the router's configuration is deleted from
@@ -418,9 +419,9 @@ class CiscoCfgAgent(manager.Manager):
 
         Iterating on the set of routers received and comparing it with the
         set of routers already in the agent, new routers which are added are
-        identified. We check the reachability of hosting device where the
-        router is hosted and backlogs it if necessary. For routers which
-        are only updated, we call `process_router()` on them. Note that
+        identified. Then check the reachability (via ping) of hosting device
+        where the router is hosted and backlogs it if necessary. For routers
+        which are only updated, call `process_router()` on them. Note that
         for each router this is done in an independent thread.
 
         When all_routers is set to True, this will result in the detection and
@@ -518,11 +519,11 @@ class CiscoCfgAgent(manager.Manager):
     def _process_backlogged_hosting_devices(self, context):
         """Process currently back logged devices.
 
-        We go through the currently backlogged devices and process them.
+        Go through the currently backlogged devices and process them.
         For devices which are now reachable (compared to last time), we fetch
         the routers they are hosting and process them.
         For devices which have passed the `hosting_device_dead_timeout` and
-        hence presumed dead, we execute a RPC to the plugin informing that.
+        hence presumed dead, execute a RPC to the plugin informing that.
         :param context: RPC context
         :return: None
         """
@@ -582,9 +583,9 @@ class CiscoCfgAgent(manager.Manager):
     def routes_updated(self, ri):
         """Update the state of routes in the router.
 
-         We compare the current routes with the existing routes configured
-         and detect what was removed or added and configure the router in the
-         hosting device accordingly.
+         Compares the current routes with the (configured) existing routes
+         and detect what was removed or added. Then configure the
+         logical router in the hosting device accordingly.
         :param ri: router_info corresponding to the router.
         :return: None
         :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
@@ -694,8 +695,8 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         """Handle the agent_updated notification event.
 
         Plugin sets the `admin_status_up` flag. If `admin-status-up` is set,
-        we set full_sync which will cause a full refresh for routers belonging
-        to this agent.
+        we set full_sync, which will cause a full refresh for routers
+        belonging to this agent.
         Payload format : {'admin_state_up': admin_state_up}
         """
         LOG.debug(_("Agent_updated by plugin.Payload is  %s!"), payload)

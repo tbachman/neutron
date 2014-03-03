@@ -247,10 +247,10 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
 
         The external ncclient library is used for creating this connection.
         This method keeps state of any existing connections and reuses them if
-        we are already connected. Also CSR1000v's interfaces (except
-        management are disabled by default when it is booted. So if connecting
-        for the first time, driver will enable all other interfaces and keep
-        that status in the `_intfs_enabled` flag.
+        already connected. Also CSR1000v's interfaces (except management) are
+        disabled by default when it is booted. So if connecting for the first
+        time, driver will enable all other interfaces and keep that status in
+        the `_intfs_enabled` flag.
         """
         try:
             if self._csr_conn and self._csr_conn.connected:
