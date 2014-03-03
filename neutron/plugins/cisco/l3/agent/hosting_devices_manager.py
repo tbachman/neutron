@@ -234,13 +234,15 @@ class HostingDevicesManager(object):
         LOG.debug(_("Response: %s"), response_dict)
         return response_dict
 
-    def _is_pingable(self, mgmt_ip):
-        r = self._send_ping(mgmt_ip)
-        if r:
-            return False
-        return True
+    def _is_pingable(self, ip):
+        """Checks whether an IP address is reachable by pinging.
 
-    def _send_ping(self, ip):
+        Use linux utils to execute the ping (ICMP ECHO) command.
+        Sends 5 packets with an interval of 0.2 seconds and timeout of 1
+        seconds. Runtime error implies unreachability else IP is pingable.
+        :param ip: IP to check
+        :return: bool - True or False depending on pingability.
+        """
         ping_cmd = ['ping',
                     '-c', '5',
                     '-W', '1',
@@ -250,4 +252,5 @@ class HostingDevicesManager(object):
             linux_utils.execute(ping_cmd, check_exit_code=True)
         except RuntimeError:
             LOG.warn(_("Cannot ping ip address: %s"), ip)
-            return -1
+            return False
+        return True

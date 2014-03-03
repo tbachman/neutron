@@ -58,7 +58,13 @@ class CiscoL3PluginApi(proxy.RpcProxy):
         self.host = host
 
     def get_routers(self, context, router_ids=None, hd_ids=[]):
-        """Make a remote process call to retrieve the sync data for routers."""
+        """Make a remote process call to retrieve the sync data for routers.
+
+        :param context: session context
+        :param router_ids: list of router ids which we want to get
+        :param hd_ids : hosting device ids, only routers assigned to these
+                        hosting devices will be returned.
+        """
         return self.call(context,
                          self.make_msg('cfg_sync_routers', host=self.host,
                                        router_ids=router_ids,
@@ -68,7 +74,8 @@ class CiscoL3PluginApi(proxy.RpcProxy):
     def get_external_network_id(self, context):
         """Make a remote process call to retrieve the external network id.
 
-        @raise common.RemoteError: with TooManyExternalNetworks
+        :param context : session context
+        :raise common.RemoteError: with TooManyExternalNetworks
                                    as exc_type if there are
                                    more than one external network
         """
@@ -80,10 +87,9 @@ class CiscoL3PluginApi(proxy.RpcProxy):
     def report_dead_hosting_devices(self, context, hd_ids=[]):
         """Report that a hosting device cannot be contacted (presumed dead).
 
-        @param: context: contains user information
-        @param: kwargs: hosting_device_ids: list of non-responding
-                                            hosting devices
-        @return: -
+        :param: context: session context
+        :param: hosting_device_ids: list of non-responding hosting devices
+        :return: None
         """
         # Cast since we don't expect a return value.
         self.cast(context,
@@ -120,18 +126,15 @@ class CiscoCfgAgent(manager.Manager):
                    help=_("Interval between the execution of the "
                           "sync_routers_task. We check for full sync or "
                           "process backlogged hosting devices here. Overrides "
-                          "openstack periodic scheduler's default")),
+                          "openstack periodic scheduler default")),
         cfg.StrOpt('rpc_loop_interval', default=3,
                    help=_("Interval when the rpc loop executes. This is when "
                           "agent fetches info about the updated or removed "
-                          "routers notifyed from a plugin side RPC.")),
+                          "routers notified from a plugin side RPC.")),
     ]
 
     def __init__(self, host, conf=None):
-        if conf:
-            self.conf = conf
-        else:
-            self.conf = cfg.CONF
+        self.conf = conf or cfg.CONF
         self.router_info = {}
         self.context = context.get_admin_context_without_session()
         self.plugin_rpc = CiscoL3PluginApi(topics.L3PLUGIN, host)
@@ -231,19 +234,18 @@ class CiscoCfgAgent(manager.Manager):
     def process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
 
-        We get the router dict from  router_info and compare to detect changes
-        from the last known state. We detect new ports or deleted ports and
-        call `internal_network_added()` or `internal_networks_removed()`
-        accordingly. Similiarly changes in ex_gw_port causes
-        `external_gateway_added()` or `external_gateway_removed()` calls. Also
-        we process floating_ips and routes.
-        We set the current state in ri.internal_ports and ri.ex_gw_port for
-        future comparisons.
+        Get the router dict from  RouterInfo and proceed to detect changes
+        from the last known state. When new ports or deleted ports are
+        detected, `internal_network_added()` or `internal_networks_removed()`
+        are called accordingly. Similarly changes in ex_gw_port causes
+         `external_gateway_added()` or `external_gateway_removed()` calls.
+        Next, floating_ips and routes are processed. Also, latest state is
+        stored in ri.internal_ports and ri.ex_gw_port for future comparisons.
 
         :param ri : neutron.plugins.cisco.l3.agent.router_info.RouterInfo
         corresponding to the router being processed.
-        :return None
-        :raises neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        :return:None
+        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
         the configuration operation fails.
         """
         try:
@@ -253,11 +255,10 @@ class CiscoCfgAgent(manager.Manager):
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
             current_port_ids = set([p['id'] for p in internal_ports
                                     if p['admin_state_up']])
-            new_ports = [p for p in internal_ports if
-                         p['id'] in current_port_ids and
-                         p['id'] not in existing_port_ids]
-            old_ports = [p for p in ri.internal_ports if
-                         p['id'] not in current_port_ids]
+            new_ports = [p for p in internal_ports
+                         if p['id'] in (current_port_ids - existing_port_ids)]
+            old_ports = [p for p in ri.internal_ports
+                         if p['id'] not in current_port_ids]
 
             for p in new_ports:
                 self._set_subnet_info(p)
@@ -280,16 +281,16 @@ class CiscoCfgAgent(manager.Manager):
             ri.ex_gw_port = ex_gw_port
             self.routes_updated(ri)
         except DriverException as e:
-            LOG.error(e)
-            raise e
+            with excutils.save_and_reraise_exception():
+                LOG.error(e)
 
     def process_router_floating_ips(self, ri, ex_gw_port):
         """Process a router's floating ips.
 
-        Compare the current floatingips (in ri.floating_ips) with the
-        updated routers floating ips (ri.router.floating_ips) and detect
-        flaoting_ips which were added or removed and notify the driver of the
-        change via `floating_ip_added()` or `floating_ip_removed()`.
+        Compare current floatingips (in ri.floating_ips) with the router's
+        updated floating ips (in ri.router.floating_ips) and detect
+        flaoting_ips which were added or removed. Notify driver of
+        the change via `floating_ip_added()` or `floating_ip_removed()`.
 
         :param ri:  neutron.plugins.cisco.l3.agent.router_info.RouterInfo
         corresponding to the router being processed.
@@ -308,14 +309,13 @@ class CiscoCfgAgent(manager.Manager):
 
         for fip in floating_ips:
             if fip['port_id']:
+                # store to see if floatingip was remapped
+                id_to_fip_map[fip['id']] = fip
                 if fip['id'] not in existing_floating_ip_ids:
                     ri.floating_ips.append(fip)
                     self.floating_ip_added(ri, ex_gw_port,
                                            fip['floating_ip_address'],
                                            fip['fixed_ip_address'])
-
-                # store to see if floatingip was remapped
-                id_to_fip_map[fip['id']] = fip
 
         floating_ip_ids_to_remove = (existing_floating_ip_ids -
                                      cur_floating_ip_ids)
@@ -344,13 +344,13 @@ class CiscoCfgAgent(manager.Manager):
     def external_gateway_added(self, ri, ex_gw_port):
         driver = self._hdm.get_driver(ri)
         driver.external_gateway_added(ri, ex_gw_port)
-        if ri.snat_enabled and len(ri.internal_ports) > 0:
+        if ri.snat_enabled and ri.internal_ports:
             for port in ri.internal_ports:
                 driver.enable_internal_network_NAT(ri, port, ex_gw_port)
 
     def external_gateway_removed(self, ri, ex_gw_port):
         driver = self._hdm.get_driver(ri)
-        if ri.snat_enabled and len(ri.internal_ports) > 0:
+        if ri.snat_enabled and ri.internal_ports:
             for port in ri.internal_ports:
                 driver.disable_internal_network_NAT(ri, port, ex_gw_port)
         driver.external_gateway_removed(ri, ex_gw_port)
