@@ -290,9 +290,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                         if physical_network == network_profile[
                             'physical_network']:
                             break
-                        else:
-                            msg = (_("Unknown provider:physical_network %s") %
-                                   physical_network)
+                    else:
+                        msg = (_("Unknown provider:physical_network %s") %
+                               physical_network)
                     raise q_exc.InvalidInput(error_message=msg)
             else:
                 msg = _("provider:physical_network required")
