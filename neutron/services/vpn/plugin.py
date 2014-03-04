@@ -19,7 +19,8 @@
 # @author: Swaminathan Vasudevan, Hewlett-Packard
 
 from neutron.db.vpn import vpn_db
-from neutron.services.vpn.service_drivers import ipsec as ipsec_driver
+from neutron.plugins.common import constants
+from neutron.services import service_base
 
 
 class VPNPlugin(vpn_db.VPNPluginDb):
@@ -38,7 +39,11 @@ class VPNDriverPlugin(VPNPlugin, vpn_db.VPNPluginRpcDbMixin):
     #TODO(nati) handle ikepolicy and ipsecpolicy update usecase
     def __init__(self):
         super(VPNDriverPlugin, self).__init__()
-        self.ipsec_driver = ipsec_driver.IPsecVPNDriver(self)
+        # TODO(pcm) Remove/replace, once final disposition is made on Service
+        # Type Framework. For now, using STF to load driver based on .ini
+        drivers, default_provider = service_base.load_drivers(
+            constants.VPN, self)
+        self.ipsec_driver = drivers[default_provider]
 
     def _get_driver_for_vpnservice(self, vpnservice):
         return self.ipsec_driver
