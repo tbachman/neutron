@@ -18,6 +18,9 @@ from sqlalchemy import orm
 
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.extensions import portbindings
+
+BINDING_PROFILE_LEN = 4095
 
 
 class NetworkSegment(model_base.BASEV2, models_v2.HasId):
@@ -52,9 +55,13 @@ class PortBinding(model_base.BASEV2):
     port_id = sa.Column(sa.String(36),
                         sa.ForeignKey('ports.id', ondelete="CASCADE"),
                         primary_key=True)
-    host = sa.Column(sa.String(255), nullable=False)
+    host = sa.Column(sa.String(255), nullable=False, default='')
+    vnic_type = sa.Column(sa.String(64), nullable=False,
+                          default=portbindings.VNIC_NORMAL)
+    profile = sa.Column(sa.String(BINDING_PROFILE_LEN), nullable=False,
+                        default='')
     vif_type = sa.Column(sa.String(64), nullable=False)
-    cap_port_filter = sa.Column(sa.Boolean, nullable=False)
+    vif_details = sa.Column(sa.String(4095), nullable=False, default='')
     driver = sa.Column(sa.String(64))
     segment = sa.Column(sa.String(36),
                         sa.ForeignKey('ml2_network_segments.id',

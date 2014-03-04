@@ -25,12 +25,11 @@ import webob.exc as webexc
 import webtest
 
 from neutron.api import extensions
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.db import api as db_api
 from neutron.db import servicetype_db as st_db
 from neutron.extensions import servicetype
-from neutron import manager
 from neutron.plugins.common import constants
 from neutron.services import provider_configuration as provconf
 from neutron.tests import base
@@ -67,7 +66,7 @@ class ServiceTypeManagerTestCase(base.BaseTestCase):
                 'default': False}
         self.manager._load_conf()
         self.assertRaises(
-            q_exc.Invalid, self.manager.conf.add_provider, prov)
+            n_exc.Invalid, self.manager.conf.add_provider, prov)
 
     def test_get_service_providers(self):
         cfg.CONF.set_override('service_provider',
@@ -100,7 +99,7 @@ class ServiceTypeManagerTestCase(base.BaseTestCase):
                                constants.LOADBALANCER +
                                ':lbaas2:driver_path:default'],
                               'service_providers')
-        self.assertRaises(q_exc.Invalid, self.manager._load_conf)
+        self.assertRaises(n_exc.Invalid, self.manager._load_conf)
 
     def test_get_default_provider(self):
         cfg.CONF.set_override('service_provider',
@@ -175,14 +174,12 @@ class ServiceTypeExtensionTestCaseBase(testlib_api.WebTestCase):
     def setUp(self):
         # This is needed because otherwise a failure will occur due to
         # nonexisting core_plugin
-        cfg.CONF.set_override('core_plugin', test_db_plugin.DB_PLUGIN_KLASS)
+        self.setup_coreplugin(test_db_plugin.DB_PLUGIN_KLASS)
 
         cfg.CONF.set_override('service_plugins',
                               ["%s.%s" % (dp.__name__,
                                           dp.DummyServicePlugin.__name__)])
         self.addCleanup(cfg.CONF.reset)
-        # Make sure at each test a new instance of the plugin is returned
-        manager.NeutronManager._instance = None
         # Ensure existing ExtensionManager is not used
         extensions.PluginAwareExtensionManager._instance = None
         ext_mgr = TestServiceTypeExtensionManager()

@@ -26,6 +26,7 @@ import os
 
 from neutron.agent.linux import utils as linux_utils
 from neutron.common import utils
+from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -194,14 +195,16 @@ class IptablesTable(object):
             raise LookupError(_('Unknown chain: %r') % chain)
 
         if '$' in rule:
-            rule = ' '.join(map(self._wrap_target_chain, rule.split(' ')))
+            rule = ' '.join(
+                self._wrap_target_chain(e, wrap) for e in rule.split(' '))
 
         self.rules.append(IptablesRule(chain, rule, wrap, top, self.wrap_name,
                                        tag))
 
-    def _wrap_target_chain(self, s):
+    def _wrap_target_chain(self, s, wrap):
         if s.startswith('$'):
-            return ('%s-%s' % (self.wrap_name, s[1:]))
+            s = ('%s-%s' % (self.wrap_name, get_chain_name(s[1:], wrap)))
+
         return s
 
     def remove_rule(self, chain, rule, wrap=True, top=False):
@@ -214,6 +217,10 @@ class IptablesTable(object):
         """
         chain = get_chain_name(chain, wrap)
         try:
+            if '$' in rule:
+                rule = ' '.join(
+                    self._wrap_target_chain(e, wrap) for e in rule.split(' '))
+
             self.rules.remove(IptablesRule(chain, rule, wrap, top,
                                            self.wrap_name))
             if not wrap:
@@ -351,8 +358,19 @@ class IptablesManager(object):
 
         self._apply()
 
-    @utils.synchronized('iptables', external=True)
     def _apply(self):
+        lock_name = 'iptables'
+        if self.namespace:
+            lock_name += '-' + self.namespace
+
+        try:
+            with lockutils.lock(lock_name, utils.SYNCHRONIZED_PREFIX, True):
+                LOG.debug(_('Got semaphore / lock "%s"'), lock_name)
+                return self._apply_synchronized()
+        finally:
+            LOG.debug(_('Semaphore / lock released "%s"'), lock_name)
+
+    def _apply_synchronized(self):
         """Apply the current in-memory set of iptables rules.
 
         This will blow away any rules left over from previous runs of the

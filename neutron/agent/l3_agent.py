@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2012 Nicira Networks, Inc.  All rights reserved.
+# Copyright 2012 VMware, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Dan Wendlandt, Nicira, Inc
 #
 
 import eventlet
@@ -35,11 +31,13 @@ from neutron.common import topics
 from neutron.common import utils as common_utils
 from neutron import context
 from neutron import manager
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
+from neutron.openstack.common import processutils
 from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
@@ -59,6 +57,7 @@ class L3PluginApi(proxy.RpcProxy):
 
     API version history:
         1.0 - Initial version.
+        1.1 - Floating IP operational status updates
 
     """
 
@@ -88,6 +87,15 @@ class L3PluginApi(proxy.RpcProxy):
                                        host=self.host),
                          topic=self.topic)
 
+    def update_floatingip_statuses(self, context, router_id, fip_statuses):
+        """Call the plugin update floating IPs's operational status."""
+        return self.call(context,
+                         self.make_msg('update_floatingip_statuses',
+                                       router_id=router_id,
+                                       fip_statuses=fip_statuses),
+                         topic=self.topic,
+                         version='1.1')
+
 
 class RouterInfo(object):
 
@@ -97,6 +105,7 @@ class RouterInfo(object):
         self._snat_enabled = None
         self._snat_action = None
         self.internal_ports = []
+        self.floating_ips = set()
         self.root_helper = root_helper
         self.use_namespaces = use_namespaces
         # Invoke the setter for establishing initial SNAT action
@@ -156,9 +165,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         cfg.StrOpt('external_network_bridge', default='br-ex',
                    help=_("Name of bridge used for external network "
                           "traffic.")),
-        cfg.StrOpt('interface_driver',
-                   help=_("The driver used to manage the virtual "
-                          "interface.")),
         cfg.IntOpt('metadata_port',
                    default=9697,
                    help=_("TCP Port used by Neutron metadata namespace "
@@ -167,8 +173,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                    default=0,
                    help=_("Send this many gratuitous ARPs for HA setup, if "
                           "less than or equal to 0, the feature is disabled")),
-        cfg.BoolOpt('use_namespaces', default=True,
-                    help=_("Allow overlapping IP.")),
         cfg.StrOpt('router_id', default='',
                    help=_("If namespaces is disabled, the l3 agent can only"
                           " configure a router that has the matching router "
@@ -216,8 +220,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         self.updated_routers = set()
         self.removed_routers = set()
         self.sync_progress = False
-        if self.conf.use_namespaces:
-            self._destroy_router_namespaces(self.conf.router_id)
+
+        self._delete_stale_namespaces = (self.conf.use_namespaces and
+                                         self.conf.router_delete_namespaces)
 
         self.rpc_loop = loopingcall.FixedIntervalLoopingCall(
             self._rpc_loop)
@@ -240,28 +245,46 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             LOG.error(msg)
             raise SystemExit(msg)
 
-    def _destroy_router_namespaces(self, only_router_id=None):
-        """Destroy router namespaces on the host to eliminate all stale
-        linux devices, iptables rules, and namespaces.
+    def _cleanup_namespaces(self, routers):
+        """Destroy stale router namespaces on host when L3 agent restarts
 
-        If only_router_id is passed, only destroy single namespace, to allow
-        for multiple l3 agents on the same host, without stepping on each
-        other's toes on init.  This only makes sense if only_router_id is set.
+        This routine is called when self._delete_stale_namespaces is True.
+
+        The argument routers is the list of routers that are recorded in
+        the database as being hosted on this node.
         """
-        root_ip = ip_lib.IPWrapper(self.root_helper)
-        for ns in root_ip.get_namespaces(self.root_helper):
-            if ns.startswith(NS_PREFIX):
-                router_id = ns[len(NS_PREFIX):]
-                if only_router_id and not only_router_id == router_id:
-                    continue
+        try:
+            root_ip = ip_lib.IPWrapper(self.root_helper)
 
-                if self.conf.enable_metadata_proxy:
-                    self._destroy_metadata_proxy(router_id, ns)
+            host_namespaces = root_ip.get_namespaces(self.root_helper)
+            router_namespaces = set(ns for ns in host_namespaces
+                                    if ns.startswith(NS_PREFIX))
+            ns_to_ignore = set(NS_PREFIX + r['id'] for r in routers)
+            ns_to_destroy = router_namespaces - ns_to_ignore
+        except RuntimeError:
+            LOG.exception(_('RuntimeError in obtaining router list '
+                            'for namespace cleanup.'))
+        else:
+            self._destroy_stale_router_namespaces(ns_to_destroy)
 
-                try:
-                    self._destroy_router_namespace(ns)
-                except Exception:
-                    LOG.exception(_("Failed deleting namespace '%s'"), ns)
+    def _destroy_stale_router_namespaces(self, router_namespaces):
+        """Destroys the stale router namespaces
+
+        The argumenet router_namespaces is a list of stale router namespaces
+
+        As some stale router namespaces may not be able to be deleted, only
+        one attempt will be made to delete them.
+        """
+        for ns in router_namespaces:
+            if self.conf.enable_metadata_proxy:
+                self._destroy_metadata_proxy(ns[len(NS_PREFIX):], ns)
+
+            try:
+                self._destroy_router_namespace(ns)
+            except RuntimeError:
+                LOG.exception(_('Failed to destroy stale router namespace '
+                                '%s'), ns)
+        self._delete_stale_namespaces = False
 
     def _destroy_router_namespace(self, namespace):
         ns_ip = ip_lib.IPWrapper(self.root_helper, namespace=namespace)
@@ -302,14 +325,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         try:
             return self.plugin_rpc.get_external_network_id(self.context)
         except rpc_common.RemoteError as e:
-            if e.exc_type == 'TooManyExternalNetworks':
-                msg = _(
-                    "The 'gateway_external_network_id' option must be "
-                    "configured for this agent as Neutron has more than "
-                    "one external network.")
-                raise Exception(msg)
-            else:
-                raise
+            with excutils.save_and_reraise_exception():
+                if e.exc_type == 'TooManyExternalNetworks':
+                    msg = _(
+                        "The 'gateway_external_network_id' option must be "
+                        "configured for this agent as Neutron has more than "
+                        "one external network.")
+                    raise Exception(msg)
 
     def _router_added(self, router_id, router):
         ri = RouterInfo(router_id, self.root_helper,
@@ -424,18 +446,41 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             self.external_gateway_removed(ri, ri.ex_gw_port,
                                           interface_name, internal_cidrs)
 
+        # Process static routes for router
+        self.routes_updated(ri)
         # Process SNAT rules for external gateway
         ri.perform_snat_action(self._handle_router_snat_rules,
                                internal_cidrs, interface_name)
 
-        # Process DNAT rules for floating IPs
-        if ex_gw_port:
-            self.process_router_floating_ips(ri, ex_gw_port)
+        # Process SNAT/DNAT rules for floating IPs
+        fip_statuses = {}
+        try:
+            if ex_gw_port:
+                existing_floating_ips = ri.floating_ips
+                self.process_router_floating_ip_nat_rules(ri)
+                ri.iptables_manager.defer_apply_off()
+                # Once NAT rules for floating IPs are safely in place
+                # configure their addresses on the external gateway port
+                fip_statuses = self.process_router_floating_ip_addresses(
+                    ri, ex_gw_port)
+        except Exception:
+            # TODO(salv-orlando): Less broad catching
+            # All floating IPs must be put in error state
+            for fip in ri.router.get(l3_constants.FLOATINGIP_KEY, []):
+                fip_statuses[fip] = l3_constants.FLOATINGIP_STATUS_ERROR
 
+        if ex_gw_port:
+            # Identify floating IPs which were disabled
+            ri.floating_ips = set(fip_statuses.keys())
+            for fip_id in existing_floating_ips - ri.floating_ips:
+                fip_statuses[fip_id] = l3_constants.FLOATINGIP_STATUS_DOWN
+            # Update floating IP status on the neutron server
+            self.plugin_rpc.update_floatingip_statuses(
+                self.context, ri.router_id, fip_statuses)
+
+        # Update ex_gw_port and enable_snat on the router info cache
         ri.ex_gw_port = ex_gw_port
         ri.enable_snat = ri.router.get('enable_snat')
-        self.routes_updated(ri)
-        ri.iptables_manager.defer_apply_off()
 
     def _handle_router_snat_rules(self, ri, ex_gw_port, internal_cidrs,
                                   interface_name, action):
@@ -459,19 +504,35 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                 ri.iptables_manager.ipv4['nat'].add_rule(*rule)
         ri.iptables_manager.apply()
 
-    def process_router_floating_ips(self, ri, ex_gw_port):
-        """Configure the router's floating IPs
-        Configures floating ips in iptables and on the router's gateway device.
+    def process_router_floating_ip_nat_rules(self, ri):
+        """Configure NAT rules for the router's floating IPs.
 
-        Cleans up floating ips that should not longer be configured.
+        Configures iptables rules for the floating ips of the given router
         """
-        interface_name = self.get_external_device_name(ex_gw_port['id'])
-        device = ip_lib.IPDevice(interface_name, self.root_helper,
-                                 namespace=ri.ns_name())
-
         # Clear out all iptables rules for floating ips
         ri.iptables_manager.ipv4['nat'].clear_rules_by_tag('floating_ip')
 
+        # Loop once to ensure that floating ips are configured.
+        for fip in ri.router.get(l3_constants.FLOATINGIP_KEY, []):
+            # Rebuild iptables rules for the floating ip.
+            fixed = fip['fixed_ip_address']
+            fip_ip = fip['floating_ip_address']
+            for chain, rule in self.floating_forward_rules(fip_ip, fixed):
+                ri.iptables_manager.ipv4['nat'].add_rule(chain, rule,
+                                                         tag='floating_ip')
+
+        ri.iptables_manager.apply()
+
+    def process_router_floating_ip_addresses(self, ri, ex_gw_port):
+        """Configure IP addresses on router's external gateway interface.
+
+        Ensures addresses for existing floating IPs and cleans up
+        those that should not longer be configured.
+        """
+        fip_statuses = {}
+        interface_name = self.get_external_device_name(ex_gw_port['id'])
+        device = ip_lib.IPDevice(interface_name, self.root_helper,
+                                 namespace=ri.ns_name())
         existing_cidrs = set([addr['cidr'] for addr in device.addr.list()])
         new_cidrs = set()
 
@@ -484,22 +545,30 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
 
             if ip_cidr not in existing_cidrs:
                 net = netaddr.IPNetwork(ip_cidr)
-                device.addr.add(net.version, ip_cidr, str(net.broadcast))
-                self._send_gratuitous_arp_packet(ri, interface_name, fip_ip)
-
-            # Rebuild iptables rules for the floating ip.
-            fixed = fip['fixed_ip_address']
-            for chain, rule in self.floating_forward_rules(fip_ip, fixed):
-                ri.iptables_manager.ipv4['nat'].add_rule(chain, rule,
-                                                         tag='floating_ip')
-
-        ri.iptables_manager.apply()
+                try:
+                    device.addr.add(net.version, ip_cidr, str(net.broadcast))
+                except (processutils.UnknownArgumentError,
+                        processutils.ProcessExecutionError):
+                    # any exception occurred here should cause the floating IP
+                    # to be set in error state
+                    fip_statuses[fip['id']] = (
+                        l3_constants.FLOATINGIP_STATUS_ERROR)
+                    LOG.warn(_("Unable to configure IP address for "
+                               "floating IP: %s"), fip['id'])
+                    continue
+                # As GARP is processed in a distinct thread the call below
+                # won't raise an exception to be handled.
+                self._send_gratuitous_arp_packet(
+                    ri, interface_name, fip_ip)
+            fip_statuses[fip['id']] = (
+                l3_constants.FLOATINGIP_STATUS_ACTIVE)
 
         # Clean up addresses that no longer belong on the gateway interface.
         for ip_cidr in existing_cidrs - new_cidrs:
             if ip_cidr.endswith(FLOATING_IP_CIDR_SUFFIX):
                 net = netaddr.IPNetwork(ip_cidr)
                 device.addr.delete(net.version, ip_cidr)
+        return fip_statuses
 
     def _get_ex_gw_port(self, ri):
         return ri.router.get('gw_port')
@@ -759,9 +828,18 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             self._process_routers(routers, all_routers=True)
             self.fullsync = False
             LOG.debug(_("_sync_routers_task successfully completed"))
+        except rpc_common.RPCException:
+            LOG.exception(_("Failed synchronizing routers due to RPC error"))
+            self.fullsync = True
+            return
         except Exception:
             LOG.exception(_("Failed synchronizing routers"))
             self.fullsync = True
+
+        # Resync is not necessary for the cleanup of stale
+        # namespaces.
+        if self._delete_stale_namespaces:
+            self._cleanup_namespaces(routers)
 
     def after_start(self):
         LOG.info(_("L3 agent started"))
@@ -868,6 +946,8 @@ def main(manager='neutron.agent.l3_agent.L3NATAgentWithStateReport'):
     eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(L3NATAgent.OPTS)
+    config.register_interface_driver_opts_helper(conf)
+    config.register_use_namespaces_opts_helper(conf)
     config.register_agent_state_opts_helper(conf)
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)

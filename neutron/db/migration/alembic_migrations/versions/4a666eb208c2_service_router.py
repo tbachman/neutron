@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 OpenStack Foundation
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -28,12 +26,14 @@ revision = '4a666eb208c2'
 down_revision = '38fc1f6789f8'
 
 # Change to ['*'] if this migration applies to all plugins
-# This migration must apply to both Nicira plugins as it alters a table
+# This migration must apply to both NVP/NSX plugins as it alters a table
 # used by both of them
 
 migration_for_plugins = [
     'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
-    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin'
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
+    'neutron.plugins.vmware.plugin.NsxPlugin',
+    'neutron.plugins.vmware.plugin.NsxServicePlugin'
 ]
 
 from alembic import op

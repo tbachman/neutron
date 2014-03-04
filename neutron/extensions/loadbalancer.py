@@ -17,6 +17,7 @@
 
 import abc
 
+from oslo.config import cfg
 import six
 
 from neutron.api import extensions
@@ -66,6 +67,11 @@ class StateInvalid(qexception.NeutronException):
 
 class PoolInUse(qexception.InUse):
     message = _("Pool %(pool_id)s is still in use")
+
+
+class HealthMonitorInUse(qexception.InUse):
+    message = _("Health monitor %(monitor_id)s still has associations with "
+                "pools")
 
 
 class PoolStatsNotFound(qexception.NotFound):
@@ -289,6 +295,26 @@ SUB_RESOURCE_ATTRIBUTE_MAP = {
                        }
     }
 }
+
+lbaas_quota_opts = [
+    cfg.IntOpt('quota_vip',
+               default=10,
+               help=_('Number of vips allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_pool',
+               default=10,
+               help=_('Number of pools allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_member',
+               default=-1,
+               help=_('Number of pool members allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_health_monitor',
+               default=-1,
+               help=_('Number of health monitors allowed per tenant. '
+                      'A negative value means unlimited.'))
+]
+cfg.CONF.register_opts(lbaas_quota_opts, 'QUOTAS')
 
 
 class Loadbalancer(extensions.ExtensionDescriptor):

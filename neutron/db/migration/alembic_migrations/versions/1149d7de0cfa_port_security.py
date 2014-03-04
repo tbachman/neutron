@@ -15,7 +15,7 @@
 #    under the License.
 #
 
-"""inital port security
+"""initial port security
 
 Revision ID: 1149d7de0cfa
 Revises: 1b693c095aa3
@@ -30,7 +30,10 @@ down_revision = '1b693c095aa3'
 # Change to ['*'] if this migration applies to all plugins
 
 migration_for_plugins = [
-    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2'
+    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
+    'neutron.plugins.vmware.plugin.NsxPlugin',
+    'neutron.plugins.vmware.plugin.NsxServicePlugin'
 ]
 
 from alembic import op
@@ -64,7 +67,7 @@ def upgrade(active_plugins=None, options=None):
 
     # Copy network and port ids over to network|port(securitybindings) table
     # and set port_security_enabled to false as ip address pairs were not
-    # configured in NVP originally.
+    # configured in NVP/NSX originally.
     op.execute("INSERT INTO networksecuritybindings SELECT id as "
                "network_id, False as port_security_enabled from networks")
     op.execute("INSERT INTO portsecuritybindings SELECT id as port_id, "

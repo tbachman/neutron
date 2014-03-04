@@ -18,7 +18,6 @@ function usage {
   echo "  -c, --coverage              Generate coverage report"
   echo "  -d, --debug                 Run tests with testtools instead of testr. This allows you to use the debugger."
   echo "  -h, --help                  Print this usage message"
-  echo "  --hide-elapsed              Don't print the elapsed time for each test along with slow test list"
   echo "  --virtual-env-path <path>   Location of the virtualenv directory"
   echo "                               Default: \$(pwd)"
   echo "  --virtual-env-name <name>   Name of the virtualenv directory"
@@ -162,7 +161,7 @@ function run_pep8 {
 }
 
 
-TESTRTESTS="python setup.py testr"
+TESTRTESTS="python -m neutron.openstack.common.lockutils python setup.py testr"
 
 if [ $never_venv -eq 0 ]
 then

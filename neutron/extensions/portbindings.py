@@ -18,9 +18,14 @@
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 
-
+# The type of vnic that this port should be attached to
+VNIC_TYPE = 'binding:vnic_type'
 # The service will return the vif type for the specific port.
 VIF_TYPE = 'binding:vif_type'
+# The service may return a dictionary containing additional
+# information needed by the interface driver. The set of items
+# returned may depend on the value of VIF_TYPE.
+VIF_DETAILS = 'binding:vif_details'
 # In some cases different implementations may be run on different hosts.
 # The host on which the port will be allocated.
 HOST_ID = 'binding:host_id'
@@ -28,11 +33,16 @@ HOST_ID = 'binding:host_id'
 # on the specific host to pass and receive vif port specific information to
 # the plugin.
 PROFILE = 'binding:profile'
-# The capabilities will be a dictionary that enables pass information about
-# functionalies neutron provides. The following value should be provided.
+
+# The keys below are used in the VIF_DETAILS attribute to convey
+# information to the VIF driver.
+
+# TODO(rkukura): Replace CAP_PORT_FILTER, which nova no longer
+# understands, with the new set of VIF security details to be used in
+# the VIF_DETAILS attribute.
+#
 #  - port_filter : Boolean value indicating Neutron provides port filtering
 #                  features such as security group and anti MAC/IP spoofing
-CAPABILITIES = 'binding:capabilities'
 CAP_PORT_FILTER = 'port_filter'
 
 VIF_TYPE_UNBOUND = 'unbound'
@@ -45,12 +55,18 @@ VIF_TYPE_802_QBG = '802.1qbg'
 VIF_TYPE_802_QBH = '802.1qbh'
 VIF_TYPE_HYPERV = 'hyperv'
 VIF_TYPE_MIDONET = 'midonet'
+VIF_TYPE_MLNX_DIRECT = 'mlnx_direct'
+VIF_TYPE_MLNX_HOSTDEV = 'hostdev'
 VIF_TYPE_OTHER = 'other'
 VIF_TYPES = [VIF_TYPE_UNBOUND, VIF_TYPE_BINDING_FAILED, VIF_TYPE_OVS,
              VIF_TYPE_IVS, VIF_TYPE_BRIDGE, VIF_TYPE_802_QBG,
              VIF_TYPE_802_QBH, VIF_TYPE_HYPERV, VIF_TYPE_MIDONET,
-             VIF_TYPE_OTHER]
+             VIF_TYPE_MLNX_DIRECT, VIF_TYPE_MLNX_HOSTDEV, VIF_TYPE_OTHER]
 
+VNIC_NORMAL = 'normal'
+VNIC_DIRECT = 'direct'
+VNIC_MACVTAP = 'macvtap'
+VNIC_TYPES = [VNIC_NORMAL, VNIC_DIRECT, VNIC_MACVTAP]
 
 EXTENDED_ATTRIBUTES_2_0 = {
     'ports': {
@@ -58,6 +74,15 @@ EXTENDED_ATTRIBUTES_2_0 = {
                    'default': attributes.ATTR_NOT_SPECIFIED,
                    'enforce_policy': True,
                    'is_visible': True},
+        VIF_DETAILS: {'allow_post': False, 'allow_put': False,
+                      'default': attributes.ATTR_NOT_SPECIFIED,
+                      'enforce_policy': True,
+                      'is_visible': True},
+        VNIC_TYPE: {'allow_post': True, 'allow_put': True,
+                    'default': VNIC_NORMAL,
+                    'is_visible': True,
+                    'validate': {'type:values': VNIC_TYPES},
+                    'enforce_policy': True},
         HOST_ID: {'allow_post': True, 'allow_put': True,
                   'default': attributes.ATTR_NOT_SPECIFIED,
                   'is_visible': True,
@@ -67,10 +92,6 @@ EXTENDED_ATTRIBUTES_2_0 = {
                   'enforce_policy': True,
                   'validate': {'type:dict_or_none': None},
                   'is_visible': True},
-        CAPABILITIES: {'allow_post': False, 'allow_put': False,
-                       'default': attributes.ATTR_NOT_SPECIFIED,
-                       'enforce_policy': True,
-                       'is_visible': True},
     }
 }
 
@@ -102,7 +123,7 @@ class Portbindings(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_updated(cls):
-        return "2012-11-14T10:00:00-00:00"
+        return "2014-02-03T10:00:00-00:00"
 
     def get_extended_resources(self, version):
         if version == "2.0":

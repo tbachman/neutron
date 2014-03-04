@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2012 Nicira Networks, Inc.
+# Copyright 2012 VMware, Inc.
 # All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,9 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Dan Wendlandt, Nicira, Inc
-#
 
 from abc import abstractmethod
 
@@ -130,7 +125,9 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
                       'validate': {'type:string': None},
-                      'is_visible': True}
+                      'is_visible': True},
+        'status': {'allow_post': False, 'allow_put': False,
+                   'is_visible': True},
     },
 }
 

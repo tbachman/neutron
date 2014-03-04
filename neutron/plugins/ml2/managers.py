@@ -133,9 +133,13 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
                  [driver.name for driver in self.ordered_mech_drivers])
 
     def initialize(self):
+        # For ML2 to support bulk operations, each driver must support them
+        self.native_bulk_support = True
         for driver in self.ordered_mech_drivers:
             LOG.info(_("Initializing mechanism driver '%s'"), driver.name)
             driver.obj.initialize()
+            self.native_bulk_support &= getattr(driver.obj,
+                                                'native_bulk_support', True)
 
     def _call_on_drivers(self, method_name, context,
                          continue_on_failure=False):
@@ -433,23 +437,30 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
         attempt to establish a port binding.
         """
         binding = context._binding
-        LOG.debug(_("Attempting to bind port %(port)s on host %(host)s"),
+        LOG.debug(_("Attempting to bind port %(port)s on host %(host)s "
+                    "for vnic_type %(vnic_type)s with profile %(profile)s"),
                   {'port': context._port['id'],
-                   'host': binding.host})
+                   'host': binding.host,
+                   'vnic_type': binding.vnic_type,
+                   'profile': binding.profile})
         for driver in self.ordered_mech_drivers:
             try:
                 driver.obj.bind_port(context)
                 if binding.segment:
                     binding.driver = driver.name
                     LOG.debug(_("Bound port: %(port)s, host: %(host)s, "
+                                "vnic_type: %(vnic_type)s, "
+                                "profile: %(profile)s"
                                 "driver: %(driver)s, vif_type: %(vif_type)s, "
-                                "cap_port_filter: %(cap_port_filter)s, "
+                                "vif_details: %(vif_details)s, "
                                 "segment: %(segment)s"),
                               {'port': context._port['id'],
                                'host': binding.host,
+                               'vnic_type': binding.vnic_type,
+                               'profile': binding.profile,
                                'driver': binding.driver,
                                'vif_type': binding.vif_type,
-                               'cap_port_filter': binding.cap_port_filter,
+                               'vif_details': binding.vif_details,
                                'segment': binding.segment})
                     return
             except Exception:
@@ -501,6 +512,6 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
                                 "unbind_port"),
                               driver.name)
         binding.vif_type = portbindings.VIF_TYPE_UNBOUND
-        binding.cap_port_filter = False
+        binding.vif_details = ''
         binding.driver = None
         binding.segment = None

@@ -16,11 +16,11 @@
 #    under the License.
 
 import abc
+import collections
 import os
 import re
 import shutil
 import socket
-import StringIO
 import sys
 import uuid
 
@@ -49,17 +49,16 @@ OPTS = [
     cfg.StrOpt('dnsmasq_config_file',
                default='',
                help=_('Override the default dnsmasq settings with this file')),
-    cfg.StrOpt('dnsmasq_dns_server',
-               help=_('Use another DNS server before any in '
-                      '/etc/resolv.conf.')),
+    cfg.ListOpt('dnsmasq_dns_servers',
+                help=_('Comma-separated list of the DNS servers which will be '
+                       'used as forwarders.'),
+                deprecated_name='dnsmasq_dns_server'),
     cfg.BoolOpt('dhcp_delete_namespaces', default=False,
                 help=_("Delete namespace after removing a dhcp server.")),
     cfg.IntOpt(
         'dnsmasq_lease_max',
         default=(2 ** 24),
         help=_('Limit number of leases to prevent a denial-of-service.')),
-    cfg.StrOpt('interface_driver',
-               help=_("The driver used to manage the virtual interface.")),
 ]
 
 IPV4 = 4
@@ -133,10 +132,6 @@ class DhcpBase(object):
     @abc.abstractproperty
     def active(self):
         """Boolean representing the running state of the DHCP server."""
-
-    @abc.abstractmethod
-    def release_lease(self, mac_address, removed_ips):
-        """Release a DHCP lease."""
 
     @abc.abstractmethod
     def reload_allocations(self):
@@ -364,8 +359,10 @@ class Dnsmasq(DhcpLocalProcess):
                    min(possible_leases, self.conf.dnsmasq_lease_max))
 
         cmd.append('--conf-file=%s' % self.conf.dnsmasq_config_file)
-        if self.conf.dnsmasq_dns_server:
-            cmd.append('--server=%s' % self.conf.dnsmasq_dns_server)
+        if self.conf.dnsmasq_dns_servers:
+            cmd.extend(
+                '--server=%s' % server
+                for server in self.conf.dnsmasq_dns_servers)
 
         if self.conf.dhcp_domain:
             cmd.append('--domain=%s' % self.conf.dhcp_domain)
@@ -379,16 +376,15 @@ class Dnsmasq(DhcpLocalProcess):
             cmd = ['%s=%s' % pair for pair in env.items()] + cmd
             utils.execute(cmd, self.root_helper)
 
-    def release_lease(self, mac_address, removed_ips):
+    def _release_lease(self, mac_address, ip):
         """Release a DHCP lease."""
-        for ip in removed_ips or []:
-            cmd = ['dhcp_release', self.interface_name, ip, mac_address]
-            if self.network.namespace:
-                ip_wrapper = ip_lib.IPWrapper(self.root_helper,
-                                              self.network.namespace)
-                ip_wrapper.netns.execute(cmd)
-            else:
-                utils.execute(cmd, self.root_helper)
+        cmd = ['dhcp_release', self.interface_name, ip, mac_address]
+        if self.network.namespace:
+            ip_wrapper = ip_lib.IPWrapper(self.root_helper,
+                                          self.network.namespace)
+            ip_wrapper.netns.execute(cmd)
+        else:
+            utils.execute(cmd, self.root_helper)
 
     def reload_allocations(self):
         """Rebuild the dnsmasq config and signal the dnsmasq to reload."""
@@ -400,6 +396,7 @@ class Dnsmasq(DhcpLocalProcess):
                         'turned off DHCP: %s'), self.network.id)
             return
 
+        self._release_unused_leases()
         self._output_hosts_file()
         self._output_opts_file()
         if self.active:
@@ -413,27 +410,54 @@ class Dnsmasq(DhcpLocalProcess):
     def _output_hosts_file(self):
         """Writes a dnsmasq compatible hosts file."""
         r = re.compile('[:.]')
-        buf = StringIO.StringIO()
+        buf = six.StringIO()
 
         for port in self.network.ports:
             for alloc in port.fixed_ips:
                 name = 'host-%s.%s' % (r.sub('-', alloc.ip_address),
                                        self.conf.dhcp_domain)
                 set_tag = ''
+                # (dzyu) Check if it is legal ipv6 address, if so, need wrap
+                # it with '[]' to let dnsmasq to distinguish MAC address from
+                # IPv6 address.
+                ip_address = alloc.ip_address
+                if netaddr.valid_ipv6(ip_address):
+                    ip_address = '[%s]' % ip_address
                 if getattr(port, 'extra_dhcp_opts', False):
                     if self.version >= self.MINIMUM_VERSION:
                         set_tag = 'set:'
 
                     buf.write('%s,%s,%s,%s%s\n' %
-                              (port.mac_address, name, alloc.ip_address,
+                              (port.mac_address, name, ip_address,
                                set_tag, port.id))
                 else:
                     buf.write('%s,%s,%s\n' %
-                              (port.mac_address, name, alloc.ip_address))
+                              (port.mac_address, name, ip_address))
 
         name = self.get_conf_file_name('host')
         utils.replace_file(name, buf.getvalue())
         return name
+
+    def _read_hosts_file_leases(self, filename):
+        leases = set()
+        if os.path.exists(filename):
+            with open(filename) as f:
+                for l in f.readlines():
+                    host = l.strip().split(',')
+                    leases.add((host[2], host[0]))
+        return leases
+
+    def _release_unused_leases(self):
+        filename = self.get_conf_file_name('host')
+        old_leases = self._read_hosts_file_leases(filename)
+
+        new_leases = set()
+        for port in self.network.ports:
+            for alloc in port.fixed_ips:
+                new_leases.add((alloc.ip_address, port.mac_address))
+
+        for ip, mac in old_leases - new_leases:
+            self._release_lease(mac, ip)
 
     def _output_opts_file(self):
         """Write a dnsmasq compatible options file."""
@@ -442,6 +466,9 @@ class Dnsmasq(DhcpLocalProcess):
             subnet_to_interface_ip = self._make_subnet_interface_ip_map()
 
         options = []
+
+        dhcp_ips = collections.defaultdict(list)
+        subnet_idx_map = {}
         for i, subnet in enumerate(self.network.subnets):
             if not subnet.enable_dhcp:
                 continue
@@ -449,6 +476,10 @@ class Dnsmasq(DhcpLocalProcess):
                 options.append(
                     self._format_option(i, 'dns-server',
                                         ','.join(subnet.dns_nameservers)))
+            else:
+                # use the dnsmasq ip as nameservers only if there is no
+                # dns-server submitted by the server
+                subnet_idx_map[subnet.id] = i
 
             gateway = subnet.gateway_ip
             host_routes = []
@@ -485,6 +516,22 @@ class Dnsmasq(DhcpLocalProcess):
                 options.extend(
                     self._format_option(port.id, opt.opt_name, opt.opt_value)
                     for opt in port.extra_dhcp_opts)
+
+            # provides all dnsmasq ip as dns-server if there is more than
+            # one dnsmasq for a subnet and there is no dns-server submitted
+            # by the server
+            if port.device_owner == 'network:dhcp':
+                for ip in port.fixed_ips:
+                    i = subnet_idx_map.get(ip.subnet_id)
+                    if i is None:
+                        continue
+                    dhcp_ips[i].append(ip.ip_address)
+
+        for i, ips in dhcp_ips.items():
+            if len(ips) > 1:
+                options.append(self._format_option(i,
+                                                   'dns-server',
+                                                   ','.join(ips)))
 
         name = self.get_conf_file_name('opts')
         utils.replace_file(name, '\n'.join(options))

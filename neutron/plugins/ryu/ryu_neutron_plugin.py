@@ -22,7 +22,7 @@ from ryu.app import rest_nw_id
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as q_const
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import api as db
@@ -98,7 +98,7 @@ class RyuNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     _supported_extension_aliases = ["external-net", "router", "ext-gw-mode",
                                     "extraroute", "security-group",
-                                    "binding"]
+                                    "binding", "quotas"]
 
     @property
     def supported_extension_aliases(self):
@@ -109,18 +109,19 @@ class RyuNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         return self._aliases
 
     def __init__(self, configfile=None):
+        super(RyuNeutronPluginV2, self).__init__()
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
-            portbindings.CAPABILITIES: {
+            portbindings.VIF_DETAILS: {
+                # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
         portbindings_base.register_port_dict_function()
-        db.configure_db()
         self.tunnel_key = db_api_v2.TunnelKey(
             cfg.CONF.OVS.tunnel_key_min, cfg.CONF.OVS.tunnel_key_max)
         self.ofp_api_host = cfg.CONF.OVS.openflow_rest_api
         if not self.ofp_api_host:
-            raise q_exc.Invalid(_('Invalid configuration. check ryu.ini'))
+            raise n_exc.Invalid(_('Invalid configuration. check ryu.ini'))
 
         self.client = client.OFPClient(self.ofp_api_host)
         self.tun_client = client.TunnelClient(self.ofp_api_host)

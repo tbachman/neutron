@@ -14,6 +14,7 @@
 #    under the License.
 
 
+from neutron.extensions import portbindings
 from neutron.plugins.ml2 import driver_api as api
 from neutron.tests import base
 
@@ -39,17 +40,20 @@ class FakeNetworkContext(api.NetworkContext):
 
 
 class FakePortContext(api.PortContext):
-    def __init__(self, agent_type, agents, segments):
+    def __init__(self, agent_type, agents, segments,
+                 vnic_type=portbindings.VNIC_NORMAL):
         self._agent_type = agent_type
         self._agents = agents
         self._network_context = FakeNetworkContext(segments)
+        self._bound_vnic_type = vnic_type
         self._bound_segment_id = None
         self._bound_vif_type = None
-        self._bound_cap_port_filter = None
+        self._bound_vif_details = None
 
     @property
     def current(self):
-        return {'id': PORT_ID}
+        return {'id': PORT_ID,
+                'binding:vnic_type': self._bound_vnic_type}
 
     @property
     def original(self):
@@ -72,10 +76,10 @@ class FakePortContext(api.PortContext):
         else:
             return []
 
-    def set_binding(self, segment_id, vif_type, cap_port_filter):
+    def set_binding(self, segment_id, vif_type, vif_details):
         self._bound_segment_id = segment_id
         self._bound_vif_type = vif_type
-        self._bound_cap_port_filter = cap_port_filter
+        self._bound_vif_details = vif_details
 
 
 class AgentMechanismBaseTestCase(base.BaseTestCase):
@@ -91,12 +95,15 @@ class AgentMechanismBaseTestCase(base.BaseTestCase):
     def _check_unbound(self, context):
         self.assertIsNone(context._bound_segment_id)
         self.assertIsNone(context._bound_vif_type)
-        self.assertIsNone(context._bound_cap_port_filter)
+        self.assertIsNone(context._bound_vif_details)
 
     def _check_bound(self, context, segment):
         self.assertEqual(context._bound_segment_id, segment[api.ID])
         self.assertEqual(context._bound_vif_type, self.VIF_TYPE)
-        self.assertEqual(context._bound_cap_port_filter, self.CAP_PORT_FILTER)
+        vif_details = context._bound_vif_details
+        self.assertIsNotNone(vif_details)
+        self.assertEqual(vif_details[portbindings.CAP_PORT_FILTER],
+                         self.CAP_PORT_FILTER)
 
 
 class AgentMechanismGenericTestCase(AgentMechanismBaseTestCase):

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2011 Nicira Networks, Inc
+# Copyright 2011 VMware, Inc
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -25,6 +23,7 @@ from oslo.config import cfg
 from neutron.common import config
 from neutron.common import legacy
 from neutron import context
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -102,8 +101,9 @@ def serve_wsgi(cls):
             service = cls.create('quantum')
             service.start()
     except Exception:
-        LOG.exception(_('Unrecoverable error: please check log for details.'))
-        raise
+        with excutils.save_and_reraise_exception():
+            LOG.exception(_('Unrecoverable error: please check log '
+                            'for details.'))
 
     return service
 

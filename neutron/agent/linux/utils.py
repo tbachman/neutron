@@ -28,6 +28,7 @@ from eventlet.green import subprocess
 from eventlet import greenthread
 
 from neutron.common import utils
+from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 
 
@@ -108,3 +109,19 @@ def replace_file(file_name, data):
     tmp_file.close()
     os.chmod(tmp_file.name, 0o644)
     os.rename(tmp_file.name, file_name)
+
+
+def find_child_pids(pid):
+    """Retrieve a list of the pids of child processes of the given pid."""
+
+    try:
+        raw_pids = execute(['ps', '--ppid', pid, '-o', 'pid='])
+    except RuntimeError as e:
+        # Unexpected errors are the responsibility of the caller
+        with excutils.save_and_reraise_exception() as ctxt:
+            # Exception has already been logged by execute
+            no_children_found = 'Exit code: 1' in str(e)
+            if no_children_found:
+                ctxt.reraise = False
+                return []
+    return [x.strip() for x in raw_pids.split('\n') if x.strip()]

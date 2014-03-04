@@ -17,15 +17,20 @@
 
 import os
 
-from mock import patch
+import mock
 from oslo.config import cfg
 
 import neutron.common.test_lib as test_lib
 from neutron.db import api as db
+from neutron.plugins.bigswitch import config
 from neutron.tests.unit.bigswitch import fake_server
 
 RESTPROXY_PKG_PATH = 'neutron.plugins.bigswitch.plugin'
-NOTIFIER = 'neutron.plugins.bigswitch.plugin.RpcProxy'
+NOTIFIER = 'neutron.plugins.bigswitch.plugin.AgentNotifierApi'
+CALLBACKS = 'neutron.plugins.bigswitch.plugin.RestProxyCallbacks'
+CERTFETCH = 'neutron.plugins.bigswitch.servermanager.ServerPool._fetch_cert'
+HTTPCON = 'httplib.HTTPConnection'
+SPAWN = 'eventlet.GreenPool.spawn_n'
 
 
 class BigSwitchTestBase(object):
@@ -37,13 +42,17 @@ class BigSwitchTestBase(object):
         test_lib.test_config['config_files'] = [os.path.join(etc_path,
                                                 'restproxy.ini.test')]
         self.addCleanup(cfg.CONF.reset)
+        config.register_config()
 
     def setup_patches(self):
-        self.httpPatch = patch('httplib.HTTPConnection', create=True,
-                               new=fake_server.HTTPConnectionMock)
-        self.plugin_notifier_p = patch(NOTIFIER)
-        self.addCleanup(self.plugin_notifier_p.stop)
-        self.addCleanup(self.httpPatch.stop)
+        self.httpPatch = mock.patch(HTTPCON, create=True,
+                                    new=fake_server.HTTPConnectionMock)
+        self.plugin_notifier_p = mock.patch(NOTIFIER)
+        self.callbacks_p = mock.patch(CALLBACKS)
+        self.spawn_p = mock.patch(SPAWN)
+        self.addCleanup(mock.patch.stopall)
         self.addCleanup(db.clear_db)
+        self.callbacks_p.start()
         self.plugin_notifier_p.start()
         self.httpPatch.start()
+        self.spawn_p.start()

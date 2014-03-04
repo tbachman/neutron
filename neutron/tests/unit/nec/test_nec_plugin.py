@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import os
 
 import fixtures
@@ -127,7 +128,27 @@ class TestNecV2HTTPResponse(test_plugin.TestV2HTTPResponse,
 
 
 class TestNecPortsV2(test_plugin.TestPortsV2, NecPluginV2TestCase):
-    pass
+
+    def test_delete_ports(self):
+        with self.subnet() as subnet:
+            with contextlib.nested(
+                self.port(subnet=subnet, device_owner='test-owner',
+                          no_delete=True),
+                self.port(subnet=subnet, device_owner='test-owner',
+                          no_delete=True),
+                self.port(subnet=subnet, device_owner='other-owner'),
+            ) as (p1, p2, p3):
+                network_id = subnet['subnet']['network_id']
+                filters = {'network_id': [network_id],
+                           'device_owner': ['test-owner']}
+                self.plugin.delete_ports(self.context, filters)
+
+                self._show('ports', p1['port']['id'],
+                           expected_code=webob.exc.HTTPNotFound.code)
+                self._show('ports', p2['port']['id'],
+                           expected_code=webob.exc.HTTPNotFound.code)
+                self._show('ports', p3['port']['id'],
+                           expected_code=webob.exc.HTTPOk.code)
 
 
 class TestNecNetworksV2(test_plugin.TestNetworksV2, NecPluginV2TestCase):
@@ -843,3 +864,40 @@ class TestNecPluginOfcManager(NecPluginV2TestCase):
         ]
         self.ofc.assert_has_calls(expected)
         self.assertEqual(self.ofc.delete_ofc_port.call_count, 2)
+
+    def _test_delete_port_for_disappeared_ofc_port(self, raised_exc):
+        self.ofc.set_raise_exc('delete_ofc_port', raised_exc)
+
+        with self.port(no_delete=True) as port:
+            port_id = port['port']['id']
+
+            portinfo = {'id': port_id, 'port_no': 123}
+            self.rpcapi_update_ports(added=[portinfo])
+
+            self._delete('ports', port_id)
+
+            # Check the port on neutron db is deleted. NotFound for
+            # neutron port itself should be handled by called. It is
+            # consistent with ML2 behavior, but it may need to be
+            # revisit.
+            self._show('ports', port_id,
+                       expected_code=webob.exc.HTTPNotFound.code)
+
+        ctx = mock.ANY
+        port = mock.ANY
+        expected = [
+            mock.call.exists_ofc_port(ctx, port_id),
+            mock.call.create_ofc_port(ctx, port_id, port),
+            mock.call.exists_ofc_port(ctx, port_id),
+            mock.call.delete_ofc_port(ctx, port_id, port),
+        ]
+        self.ofc.assert_has_calls(expected)
+        self.assertEqual(self.ofc.delete_ofc_port.call_count, 1)
+
+    def test_delete_port_for_nonexist_ofc_port(self):
+        self._test_delete_port_for_disappeared_ofc_port(
+            nexc.OFCResourceNotFound(resource='ofc_port'))
+
+    def test_delete_port_for_noofcmap_ofc_port(self):
+        self._test_delete_port_for_disappeared_ofc_port(
+            nexc.OFCMappingNotFound(resource='port', neutron_id='port1'))

@@ -1,5 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-# Copyright 2011 Nicira Networks, Inc.
+# Copyright 2011 VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,17 +12,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Somik Behera, Nicira Networks, Inc.
-# @author: Brad Hall, Nicira Networks, Inc.
-# @author: Dan Wendlandt, Nicira Networks, Inc.
-# @author: Dave Lapsley, Nicira Networks, Inc.
 
+import distutils.version as dist_version
 import re
 
 from oslo.config import cfg
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
@@ -68,14 +65,15 @@ class BaseOVS(object):
         try:
             return utils.execute(full_args, root_helper=self.root_helper)
         except Exception as e:
-            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
-                      {'cmd': full_args, 'exception': e})
-            if check_error:
-                raise
+            with excutils.save_and_reraise_exception() as ctxt:
+                LOG.error(_("Unable to execute %(cmd)s. "
+                            "Exception: %(exception)s"),
+                          {'cmd': full_args, 'exception': e})
+                if not check_error:
+                    ctxt.reraise = False
 
     def add_bridge(self, bridge_name):
         self.run_vsctl(["--", "--may-exist", "add-br", bridge_name])
-        return OVSBridge(bridge_name, self.root_helper)
 
     def delete_bridge(self, bridge_name):
         self.run_vsctl(["--", "--if-exists", "del-br", bridge_name])
@@ -84,17 +82,19 @@ class BaseOVS(object):
         try:
             self.run_vsctl(['br-exists', bridge_name], check_error=True)
         except RuntimeError as e:
-            if 'Exit code: 2\n' in str(e):
-                return False
-            raise
+            with excutils.save_and_reraise_exception() as ctxt:
+                if 'Exit code: 2\n' in str(e):
+                    ctxt.reraise = False
+                    return False
         return True
 
     def get_bridge_name_for_port_name(self, port_name):
         try:
             return self.run_vsctl(['port-to-br', port_name], check_error=True)
         except RuntimeError as e:
-            if 'Exit code: 1\n' not in str(e):
-                raise
+            with excutils.save_and_reraise_exception() as ctxt:
+                if 'Exit code: 1\n' in str(e):
+                    ctxt.reraise = False
 
     def port_exists(self, port_name):
         return bool(self.get_bridge_name_for_port_name(port_name))
@@ -104,22 +104,29 @@ class OVSBridge(BaseOVS):
     def __init__(self, br_name, root_helper):
         super(OVSBridge, self).__init__(root_helper)
         self.br_name = br_name
-        self.re_id = self.re_compile_id()
         self.defer_apply_flows = False
         self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
 
-    def re_compile_id(self):
-        external = 'external_ids\s*'
-        mac = 'attached-mac="(?P<vif_mac>([a-fA-F\d]{2}:){5}([a-fA-F\d]{2}))"'
-        iface = 'iface-id="(?P<vif_id>[^"]+)"'
-        name = 'name\s*:\s"(?P<port_name>[^"]*)"'
-        port = 'ofport\s*:\s(?P<ofport>-?\d+)'
-        _re = ('%(external)s:\s{ ( %(mac)s,? | %(iface)s,? | . )* }'
-               ' \s+ %(name)s \s+ %(port)s' % {'external': external,
-                                               'mac': mac,
-                                               'iface': iface, 'name': name,
-                                               'port': port})
-        return re.compile(_re, re.M | re.X)
+    def set_controller(self, controller_names):
+        vsctl_command = ['--', 'set-controller', self.br_name]
+        vsctl_command.extend(controller_names)
+        self.run_vsctl(vsctl_command, check_error=True)
+
+    def del_controller(self):
+        self.run_vsctl(['--', 'del-controller', self.br_name],
+                       check_error=True)
+
+    def get_controller(self):
+        res = self.run_vsctl(['--', 'get-controller', self.br_name],
+                             check_error=True)
+        if res:
+            return res.strip().split('\n')
+        return res
+
+    def set_protocols(self, protocols):
+        self.run_vsctl(['--', 'set', 'bridge', self.br_name,
+                        "protocols=%s" % protocols],
+                       check_error=True)
 
     def create(self):
         self.add_bridge(self.br_name)
@@ -282,15 +289,15 @@ class OVSBridge(BaseOVS):
                         "type=patch", "options:peer=%s" % remote_name])
         return self.get_port_ofport(local_name)
 
-    def db_get_map(self, table, record, column):
-        output = self.run_vsctl(["get", table, record, column])
+    def db_get_map(self, table, record, column, check_error=False):
+        output = self.run_vsctl(["get", table, record, column], check_error)
         if output:
             output_str = output.rstrip("\n\r")
             return self.db_str_to_map(output_str)
         return {}
 
-    def db_get_val(self, table, record, column):
-        output = self.run_vsctl(["get", table, record, column])
+    def db_get_val(self, table, record, column, check_error=False):
+        output = self.run_vsctl(["get", table, record, column], check_error)
         if output:
             return output.rstrip("\n\r")
 
@@ -305,7 +312,7 @@ class OVSBridge(BaseOVS):
         return ret
 
     def get_port_name_list(self):
-        res = self.run_vsctl(["list-ports", self.br_name])
+        res = self.run_vsctl(["list-ports", self.br_name], check_error=True)
         if res:
             return res.strip().split("\n")
         return []
@@ -319,16 +326,20 @@ class OVSBridge(BaseOVS):
         try:
             return utils.execute(args, root_helper=self.root_helper).strip()
         except Exception as e:
-            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
-                      {'cmd': args, 'exception': e})
+            with excutils.save_and_reraise_exception():
+                LOG.error(_("Unable to execute %(cmd)s. "
+                            "Exception: %(exception)s"),
+                          {'cmd': args, 'exception': e})
 
     # returns a VIF object for each VIF port
     def get_vif_ports(self):
         edge_ports = []
         port_names = self.get_port_name_list()
         for name in port_names:
-            external_ids = self.db_get_map("Interface", name, "external_ids")
-            ofport = self.db_get_val("Interface", name, "ofport")
+            external_ids = self.db_get_map("Interface", name, "external_ids",
+                                           check_error=True)
+            ofport = self.db_get_val("Interface", name, "ofport",
+                                     check_error=True)
             if "iface-id" in external_ids and "attached-mac" in external_ids:
                 p = VifPort(name, ofport, external_ids["iface-id"],
                             external_ids["attached-mac"], self)
@@ -347,9 +358,9 @@ class OVSBridge(BaseOVS):
     def get_vif_port_set(self):
         port_names = self.get_port_name_list()
         edge_ports = set()
-        args = ['--format=json', '--', '--columns=name,external_ids',
+        args = ['--format=json', '--', '--columns=name,external_ids,ofport',
                 'list', 'Interface']
-        result = self.run_vsctl(args)
+        result = self.run_vsctl(args, check_error=True)
         if not result:
             return edge_ports
         for row in jsonutils.loads(result)['data']:
@@ -357,32 +368,72 @@ class OVSBridge(BaseOVS):
             if name not in port_names:
                 continue
             external_ids = dict(row[1][1])
-            if "iface-id" in external_ids and "attached-mac" in external_ids:
-                edge_ports.add(external_ids['iface-id'])
-            elif ("xs-vif-uuid" in external_ids and
-                  "attached-mac" in external_ids):
-                # if this is a xenserver and iface-id is not automatically
-                # synced to OVS from XAPI, we grab it from XAPI directly
-                iface_id = self.get_xapi_iface_id(external_ids["xs-vif-uuid"])
-                edge_ports.add(iface_id)
+            # Do not consider VIFs which aren't yet ready
+            # This can happen when ofport values are either [] or ["set", []]
+            # We will therefore consider only integer values for ofport
+            ofport = row[2]
+            try:
+                int_ofport = int(ofport)
+            except (ValueError, TypeError):
+                LOG.warn(_("Found not yet ready openvswitch port: %s"), row)
+            else:
+                if int_ofport > 0:
+                    if ("iface-id" in external_ids and
+                        "attached-mac" in external_ids):
+                        edge_ports.add(external_ids['iface-id'])
+                    elif ("xs-vif-uuid" in external_ids and
+                          "attached-mac" in external_ids):
+                        # if this is a xenserver and iface-id is not
+                        # automatically synced to OVS from XAPI, we grab it
+                        # from XAPI directly
+                        iface_id = self.get_xapi_iface_id(
+                            external_ids["xs-vif-uuid"])
+                        edge_ports.add(iface_id)
+                else:
+                    LOG.warn(_("Found failed openvswitch port: %s"), row)
         return edge_ports
 
     def get_vif_port_by_id(self, port_id):
-        args = ['--', '--columns=external_ids,name,ofport',
+        args = ['--format=json', '--', '--columns=external_ids,name,ofport',
                 'find', 'Interface',
                 'external_ids:iface-id="%s"' % port_id]
         result = self.run_vsctl(args)
         if not result:
             return
-        match = self.re_id.search(result)
+        json_result = jsonutils.loads(result)
         try:
-            vif_mac = match.group('vif_mac')
-            vif_id = match.group('vif_id')
-            port_name = match.group('port_name')
-            ofport = int(match.group('ofport'))
-            return VifPort(port_name, ofport, vif_id, vif_mac, self)
+            # Retrieve the indexes of the columns we're looking for
+            headings = json_result['headings']
+            ext_ids_idx = headings.index('external_ids')
+            name_idx = headings.index('name')
+            ofport_idx = headings.index('ofport')
+            # If data attribute is missing or empty the line below will raise
+            # an exeception which will be captured in this block.
+            # We won't deal with the possibility of ovs-vsctl return multiple
+            # rows since the interface identifier is unique
+            data = json_result['data'][0]
+            port_name = data[name_idx]
+            switch = get_bridge_for_iface(self.root_helper, port_name)
+            if switch != self.br_name:
+                LOG.info(_("Port: %(port_name)s is on %(switch)s,"
+                           " not on %(br_name)s"), {'port_name': port_name,
+                                                    'switch': switch,
+                                                    'br_name': self.br_name})
+                return
+            ofport = data[ofport_idx]
+            # ofport must be integer otherwise return None
+            if not isinstance(ofport, int) or ofport == -1:
+                LOG.warn(_("ofport: %(ofport)s for VIF: %(vif)s is not a "
+                           "positive integer"), {'ofport': ofport,
+                                                 'vif': port_id})
+                return
+            # Find VIF's mac address in external ids
+            ext_id_dict = dict((item[0], item[1]) for item in
+                               data[ext_ids_idx][1])
+            vif_mac = ext_id_dict['attached-mac']
+            return VifPort(port_name, ofport, port_id, vif_mac, self)
         except Exception as e:
-            LOG.info(_("Unable to parse regex results. Exception: %s"), e)
+            LOG.warn(_("Unable to parse interface details. Exception: %s"), e)
             return
 
     def delete_ports(self, all_ports=False):
@@ -420,8 +471,8 @@ def get_bridges(root_helper):
     try:
         return utils.execute(args, root_helper=root_helper).strip().split("\n")
     except Exception as e:
-        LOG.exception(_("Unable to retrieve bridges. Exception: %s"), e)
-        return []
+        with excutils.save_and_reraise_exception():
+            LOG.exception(_("Unable to retrieve bridges. Exception: %s"), e)
 
 
 def get_installed_ovs_usr_version(root_helper):
@@ -454,3 +505,44 @@ def get_bridge_external_bridge_id(root_helper, bridge):
     except Exception:
         LOG.exception(_("Bridge %s not found."), bridge)
         return None
+
+
+def _compare_installed_and_required_version(
+        installed_version, required_version, check_type, version_type):
+    if installed_version:
+        if dist_version.StrictVersion(
+                installed_version) < dist_version.StrictVersion(
+                required_version):
+            msg = (_('Failed %(ctype)s version check for Open '
+                     'vSwitch with %(vtype)s support. To use '
+                     '%(vtype)s tunnels with OVS, please ensure '
+                     'the OVS version is %(required)s or newer!') %
+                   {'ctype': check_type, 'vtype': version_type,
+                    'required': required_version})
+            raise SystemError(msg)
+    else:
+        msg = (_('Unable to determine %(ctype)s version for Open '
+                 'vSwitch with %(vtype)s support. To use '
+                 '%(vtype)s tunnels with OVS, please ensure '
+                 'that the version is %(required)s or newer!') %
+               {'ctype': check_type, 'vtype': version_type,
+                'required': required_version})
+        raise SystemError(msg)
+
+
+def check_ovs_vxlan_version(root_helper):
+    min_required_version = constants.MINIMUM_OVS_VXLAN_VERSION
+    installed_klm_version = get_installed_ovs_klm_version()
+    installed_usr_version = get_installed_ovs_usr_version(root_helper)
+    LOG.debug(_("Checking OVS version for VXLAN support "
+                "installed klm version is %s "), installed_klm_version)
+    LOG.debug(_("Checking OVS version for VXLAN support "
+                "installed usr version is %s"), installed_usr_version)
+    # First check the userspace version
+    _compare_installed_and_required_version(installed_usr_version,
+                                            min_required_version,
+                                            'userspace', 'VXLAN')
+    # Now check the kernel version
+    _compare_installed_and_required_version(installed_klm_version,
+                                            min_required_version,
+                                            'kernel', 'VXLAN')

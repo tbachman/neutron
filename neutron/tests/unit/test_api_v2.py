@@ -16,10 +16,10 @@
 #    under the License.
 
 import os
-import urlparse
 
 import mock
 from oslo.config import cfg
+import six.moves.urllib.parse as urlparse
 import webob
 from webob import exc
 import webtest
@@ -30,7 +30,7 @@ from neutron.api.v2 import attributes
 from neutron.api.v2 import base as v2_base
 from neutron.api.v2 import router
 from neutron.common import config
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.manager import NeutronManager
 from neutron.openstack.common.notifier import api as notifer_api
@@ -97,15 +97,13 @@ class APIv2TestBase(base.BaseTestCase):
         super(APIv2TestBase, self).setUp()
 
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
-        # Ensure 'stale' patched copies of the plugin are never returned
-        NeutronManager._instance = None
         # Ensure existing ExtensionManager is not used
         PluginAwareExtensionManager._instance = None
         # Create the default configurations
         args = ['--config-file', etcdir('neutron.conf.test')]
         config.parse(args=args)
         # Update the plugin
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override('allow_pagination', True)
         cfg.CONF.set_override('allow_sorting', True)
         self._plugin_patcher = mock.patch(plugin, autospec=True)
@@ -505,7 +503,7 @@ class APIv2TestCase(APIv2TestBase):
     def test_native_pagination_without_native_sorting(self):
         instance = self.plugin.return_value
         instance._NeutronPluginBaseV2__native_sorting_support = False
-        self.assertRaises(q_exc.Invalid, router.APIRouter)
+        self.assertRaises(n_exc.Invalid, router.APIRouter)
 
     def test_native_pagination_without_allow_sorting(self):
         cfg.CONF.set_override('allow_sorting', False)
@@ -1130,7 +1128,6 @@ class SubresourceTest(base.BaseTestCase):
         super(SubresourceTest, self).setUp()
 
         plugin = 'neutron.tests.unit.test_api_v2.TestSubresourcePlugin'
-        NeutronManager._instance = None
         PluginAwareExtensionManager._instance = None
 
         # Save the global RESOURCE_ATTRIBUTE_MAP
@@ -1140,7 +1137,7 @@ class SubresourceTest(base.BaseTestCase):
 
         args = ['--config-file', etcdir('neutron.conf.test')]
         config.parse(args=args)
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
 
         self._plugin_patcher = mock.patch(plugin, autospec=True)
         self.plugin = self._plugin_patcher.start()
@@ -1354,9 +1351,6 @@ class ExtensionTestCase(base.BaseTestCase):
         super(ExtensionTestCase, self).setUp()
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
 
-        # Ensure 'stale' patched copies of the plugin are never returned
-        NeutronManager._instance = None
-
         # Ensure existing ExtensionManager is not used
         PluginAwareExtensionManager._instance = None
 
@@ -1370,7 +1364,7 @@ class ExtensionTestCase(base.BaseTestCase):
         config.parse(args=args)
 
         # Update the plugin and extensions path
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override('api_extensions_path', EXTDIR)
 
         self._plugin_patcher = mock.patch(plugin, autospec=True)

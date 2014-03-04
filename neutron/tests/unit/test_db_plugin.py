@@ -17,12 +17,9 @@
 
 import contextlib
 import copy
-import datetime
 import os
-import random
 
 import mock
-import netaddr
 from oslo.config import cfg
 from testtools import matchers
 import webob.exc
@@ -34,7 +31,7 @@ from neutron.api.v2 import attributes
 from neutron.api.v2.attributes import ATTR_NOT_SPECIFIED
 from neutron.api.v2.router import APIRouter
 from neutron.common import config
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.common.test_lib import test_config
 from neutron import context
 from neutron.db import api as db
@@ -42,7 +39,6 @@ from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron.manager import NeutronManager
 from neutron.openstack.common import importutils
-from neutron.openstack.common import timeutils
 from neutron.tests import base
 from neutron.tests.unit import test_extensions
 from neutron.tests.unit import testlib_api
@@ -82,8 +78,6 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
               ext_mgr=None):
         super(NeutronDbPluginV2TestCase, self).setUp()
 
-        # Make sure at each test a new instance of the plugin is returned
-        NeutronManager._instance = None
         # Make sure at each test according extensions for the plugin is loaded
         PluginAwareExtensionManager._instance = None
         # Save the attributes map in case the plugin will alter it
@@ -108,7 +102,7 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
             args.extend(['--config-file', config_file])
         config.parse(args=args)
         # Update the plugin
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override(
             'service_plugins',
             [test_config.get(key, default)
@@ -486,7 +480,7 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
     def _do_side_effect(self, patched_plugin, orig, *args, **kwargs):
         """Invoked by test cases for injecting failures in plugin."""
         def second_call(*args, **kwargs):
-            raise q_exc.NeutronException()
+            raise n_exc.NeutronException()
         patched_plugin.side_effect = second_call
         return orig(*args, **kwargs)
 
@@ -1079,10 +1073,10 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             self.assertEqual(port['port']['id'], sport['port']['id'])
 
     def test_delete_port(self):
-        with self.port() as port:
-            req = self.new_show_request('port', self.fmt, port['port']['id'])
-            res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+        with self.port(no_delete=True) as port:
+            self._delete('ports', port['port']['id'])
+            self._show('ports', port['port']['id'],
+                       expected_code=webob.exc.HTTPNotFound.code)
 
     def test_delete_port_public_network(self):
         with self.network(shared=True) as network:
@@ -1093,9 +1087,9 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                                          set_context=True)
 
             port = self.deserialize(self.fmt, port_res)
-            # delete the port
             self._delete('ports', port['port']['id'])
-            # Todo: verify!!!
+            self._show('ports', port['port']['id'],
+                       expected_code=webob.exc.HTTPNotFound.code)
 
     def test_update_port(self):
         with self.port() as port:
@@ -1161,7 +1155,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             id = subnet['subnet']['network_id']
             res = self._create_port(self.fmt, id)
             data = self.deserialize(self.fmt, res)
-            msg = str(q_exc.IpAddressGenerationFailure(net_id=id))
+            msg = str(n_exc.IpAddressGenerationFailure(net_id=id))
             self.assertEqual(data['NeutronError']['message'], msg)
             self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
 
@@ -1246,9 +1240,9 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                                  data['port']['admin_state_up'])
                 ips = res['port']['fixed_ips']
                 self.assertEqual(len(ips), 2)
-                self.assertEqual(ips[0]['ip_address'], '10.0.0.2')
+                self.assertEqual(ips[0]['ip_address'], '10.0.0.3')
                 self.assertEqual(ips[0]['subnet_id'], subnet['subnet']['id'])
-                self.assertEqual(ips[1]['ip_address'], '10.0.0.3')
+                self.assertEqual(ips[1]['ip_address'], '10.0.0.4')
                 self.assertEqual(ips[1]['subnet_id'], subnet['subnet']['id'])
 
     def test_requested_duplicate_mac(self):
@@ -1287,7 +1281,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
         # we just raise the exception that would result.
         @staticmethod
         def fake_gen_mac(context, net_id):
-            raise q_exc.MacAddressGenerationFailure(net_id=net_id)
+            raise n_exc.MacAddressGenerationFailure(net_id=net_id)
 
         with mock.patch.object(neutron.db.db_base_plugin_v2.NeutronDbPluginV2,
                                '_generate_mac', new=fake_gen_mac):
@@ -1603,39 +1597,6 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 for p in ports_to_delete:
                     self._delete('ports', p['port']['id'])
 
-    def test_recycling(self):
-        # set expirations to past so that recycling is checked
-        reference = datetime.datetime(2012, 8, 13, 23, 11, 0)
-        cfg.CONF.set_override('dhcp_lease_duration', 0)
-
-        with self.subnet(cidr='10.0.1.0/24') as subnet:
-            with self.port(subnet=subnet) as port:
-                with mock.patch.object(timeutils, 'utcnow') as mock_utcnow:
-                    mock_utcnow.return_value = reference
-                    ips = port['port']['fixed_ips']
-                    self.assertEqual(len(ips), 1)
-                    self.assertEqual(ips[0]['ip_address'], '10.0.1.2')
-                    self.assertEqual(ips[0]['subnet_id'],
-                                     subnet['subnet']['id'])
-                    net_id = port['port']['network_id']
-                    ports = []
-                    for i in range(16 - 3):
-                        res = self._create_port(self.fmt, net_id=net_id)
-                        p = self.deserialize(self.fmt, res)
-                        ports.append(p)
-                    for i in range(16 - 3):
-                        x = random.randrange(0, len(ports), 1)
-                        p = ports.pop(x)
-                        self._delete('ports', p['port']['id'])
-                    res = self._create_port(self.fmt, net_id=net_id)
-                    port = self.deserialize(self.fmt, res)
-                    ips = port['port']['fixed_ips']
-                    self.assertEqual(len(ips), 1)
-                    self.assertEqual(ips[0]['ip_address'], '10.0.1.3')
-                    self.assertEqual(ips[0]['subnet_id'],
-                                     subnet['subnet']['id'])
-                    self._delete('ports', port['port']['id'])
-
     def test_invalid_admin_state(self):
         with self.network() as network:
             data = {'port': {'network_id': network['network']['id'],
@@ -1670,57 +1631,6 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                         '255.255.255.0',
                         120)
                     self.assertTrue(log.mock_calls)
-
-    def _test_recycle_ip_address(self, ip_to_recycle, allocation_pools=None):
-        plugin = NeutronManager.get_plugin()
-        if not allocation_pools:
-            allocation_pools = [{"start": '10.0.0.10',
-                                "end": '10.0.0.50'}]
-        with self.subnet(cidr='10.0.0.0/24',
-                         allocation_pools=allocation_pools) as subnet:
-            network_id = subnet['subnet']['network_id']
-            subnet_id = subnet['subnet']['id']
-            fixed_ips = [{"subnet_id": subnet_id,
-                          "ip_address": ip_to_recycle}]
-            with self.port(subnet=subnet, fixed_ips=fixed_ips) as port:
-                ctx = context.Context('', port['port']['tenant_id'])
-                ip_address = port['port']['fixed_ips'][0]['ip_address']
-                plugin._recycle_ip(ctx, network_id, subnet_id, ip_address)
-
-                q = ctx.session.query(models_v2.IPAllocation)
-                q = q.filter_by(subnet_id=subnet_id)
-                self.assertEqual(q.count(), 0)
-                # If the IP address is in the allocation pool also verify the
-                # address is returned to the availability range
-                for allocation_pool in allocation_pools:
-                    allocation_pool_range = netaddr.IPRange(
-                        allocation_pool['start'], allocation_pool['end'])
-                if netaddr.IPAddress(ip_to_recycle) in allocation_pool_range:
-                    # Do not worry about no result found exception
-                    pool = ctx.session.query(
-                        models_v2.IPAllocationPool).filter_by(
-                            subnet_id=subnet_id).one()
-                    ip_av_range = ctx.session.query(
-                        models_v2.IPAvailabilityRange).filter_by(
-                            allocation_pool_id=pool['id']).first()
-                    self.assertIsNotNone(ip_av_range)
-                    self.assertIn(netaddr.IPAddress(ip_to_recycle),
-                                  netaddr.IPRange(ip_av_range['first_ip'],
-                                                  ip_av_range['last_ip']))
-
-    def test_recycle_ip_address_outside_allocation_pool(self):
-        self._test_recycle_ip_address('10.0.0.100')
-
-    def test_recycle_ip_address_in_allocation_pool(self):
-        self._test_recycle_ip_address('10.0.0.20')
-
-    def test_recycle_ip_address_on_exhausted_allocation_pool(self):
-        # Perform the recycle ip address on a subnet with a single address
-        # in the pool to verify the corner case exposed by bug 1240353
-        self._test_recycle_ip_address(
-            '10.0.0.20',
-            allocation_pools=[{'start': '10.0.0.20',
-                               'end': '10.0.0.20'}])
 
     def test_max_fixed_ips_exceeded(self):
         with self.subnet(gateway_ip='10.0.0.3',
@@ -1817,6 +1727,17 @@ class TestNetworksV2(NeutronDbPluginV2TestCase):
                                           network['network']['id'])
             res = self.deserialize(self.fmt, req.get_response(self.api))
             self.assertTrue(res['network']['shared'])
+
+    def test_update_network_set_shared_owner_returns_404(self):
+        with self.network(shared=False) as network:
+            net_owner = network['network']['tenant_id']
+            data = {'network': {'shared': True}}
+            req = self.new_update_request('networks',
+                                          data,
+                                          network['network']['id'])
+            req.environ['neutron.context'] = context.Context('u', net_owner)
+            res = req.get_response(self.api)
+            self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
     def test_update_network_with_subnet_set_shared(self):
         with self.network(shared=False) as network:
@@ -2504,7 +2425,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                 res = req.get_response(self.api)
                 data = self.deserialize(self.fmt, res)
                 self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
-                msg = str(q_exc.SubnetInUse(subnet_id=id))
+                msg = str(n_exc.SubnetInUse(subnet_id=id))
                 self.assertEqual(data['NeutronError']['message'], msg)
 
     def test_delete_network(self):
@@ -3576,12 +3497,12 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
     def test_validate_subnet_dns_nameservers_exhausted(self):
         self._helper_test_validate_subnet(
             'max_dns_nameservers',
-            q_exc.DNSNameServersExhausted)
+            n_exc.DNSNameServersExhausted)
 
     def test_validate_subnet_host_routes_exhausted(self):
         self._helper_test_validate_subnet(
             'max_subnet_host_routes',
-            q_exc.HostRoutesExhausted)
+            n_exc.HostRoutesExhausted)
 
 
 class DbModelTestCase(base.BaseTestCase):
@@ -3598,6 +3519,89 @@ class DbModelTestCase(base.BaseTestCase):
                         "admin_state_up=True, shared=None}>")
         final_exp = exp_start_with + exp_middle + exp_end_with
         self.assertEqual(actual_repr_output, final_exp)
+
+
+class TestNeutronDbPluginV2(base.BaseTestCase):
+    """Unit Tests for NeutronDbPluginV2 IPAM Logic."""
+
+    def test_generate_ip(self):
+        with mock.patch.object(db_base_plugin_v2.NeutronDbPluginV2,
+                               '_try_generate_ip') as generate:
+            with mock.patch.object(db_base_plugin_v2.NeutronDbPluginV2,
+                                   '_rebuild_availability_ranges') as rebuild:
+
+                db_base_plugin_v2.NeutronDbPluginV2._generate_ip('c', 's')
+
+        generate.assert_called_once_with('c', 's')
+        self.assertEqual(0, rebuild.call_count)
+
+    def test_generate_ip_exhausted_pool(self):
+        with mock.patch.object(db_base_plugin_v2.NeutronDbPluginV2,
+                               '_try_generate_ip') as generate:
+            with mock.patch.object(db_base_plugin_v2.NeutronDbPluginV2,
+                                   '_rebuild_availability_ranges') as rebuild:
+
+                exception = n_exc.IpAddressGenerationFailure(net_id='n')
+                generate.side_effect = exception
+
+                # I want the side_effect to throw an exception once but I
+                # didn't see a way to do this.  So, let it throw twice and
+                # catch the second one.  Check below to ensure that
+                # _try_generate_ip was called twice.
+                try:
+                    db_base_plugin_v2.NeutronDbPluginV2._generate_ip('c', 's')
+                except n_exc.IpAddressGenerationFailure:
+                    pass
+
+        self.assertEqual(2, generate.call_count)
+        rebuild.assert_called_once_with('c', 's')
+
+    def test_rebuild_availability_ranges(self):
+        pools = [{'id': 'a',
+                  'first_ip': '192.168.1.3',
+                  'last_ip': '192.168.1.10'},
+                 {'id': 'b',
+                  'first_ip': '192.168.1.100',
+                  'last_ip': '192.168.1.120'}]
+
+        allocations = [{'ip_address': '192.168.1.3'},
+                       {'ip_address': '192.168.1.78'},
+                       {'ip_address': '192.168.1.7'},
+                       {'ip_address': '192.168.1.110'},
+                       {'ip_address': '192.168.1.11'},
+                       {'ip_address': '192.168.1.4'},
+                       {'ip_address': '192.168.1.111'}]
+
+        ip_qry = mock.Mock()
+        ip_qry.with_lockmode.return_value = ip_qry
+        ip_qry.filter_by.return_value = allocations
+
+        pool_qry = mock.Mock()
+        pool_qry.options.return_value = pool_qry
+        pool_qry.with_lockmode.return_value = pool_qry
+        pool_qry.filter_by.return_value = pools
+
+        def return_queries_side_effect(*args, **kwargs):
+            if args[0] == models_v2.IPAllocation:
+                return ip_qry
+            if args[0] == models_v2.IPAllocationPool:
+                return pool_qry
+
+        context = mock.Mock()
+        context.session.query.side_effect = return_queries_side_effect
+        subnets = [mock.MagicMock()]
+
+        db_base_plugin_v2.NeutronDbPluginV2._rebuild_availability_ranges(
+            context, subnets)
+
+        actual = [[args[0].allocation_pool_id,
+                   args[0].first_ip, args[0].last_ip]
+                  for _name, args, _kwargs in context.session.add.mock_calls]
+
+        self.assertEqual([['a', '192.168.1.5', '192.168.1.6'],
+                          ['a', '192.168.1.8', '192.168.1.10'],
+                          ['b', '192.168.1.100', '192.168.1.109'],
+                          ['b', '192.168.1.112', '192.168.1.120']], actual)
 
 
 class NeutronDbPluginV2AsMixinTestCase(base.BaseTestCase):

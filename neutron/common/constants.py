@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# TODO(salv-orlando): Verify if a single set of operational
+# status constants is achievable
 NET_STATUS_ACTIVE = 'ACTIVE'
 NET_STATUS_BUILD = 'BUILD'
 NET_STATUS_DOWN = 'DOWN'
@@ -22,6 +24,10 @@ PORT_STATUS_ACTIVE = 'ACTIVE'
 PORT_STATUS_BUILD = 'BUILD'
 PORT_STATUS_DOWN = 'DOWN'
 PORT_STATUS_ERROR = 'ERROR'
+
+FLOATINGIP_STATUS_ACTIVE = 'ACTIVE'
+FLOATINGIP_STATUS_DOWN = 'DOWN'
+FLOATINGIP_STATUS_ERROR = 'ERROR'
 
 DEVICE_OWNER_ROUTER_INTF = "network:router_interface"
 DEVICE_OWNER_ROUTER_GW = "network:router_gateway"
@@ -67,6 +73,7 @@ AGENT_TYPE_OVS = 'Open vSwitch agent'
 AGENT_TYPE_LINUXBRIDGE = 'Linux bridge agent'
 AGENT_TYPE_HYPERV = 'HyperV agent'
 AGENT_TYPE_NEC = 'NEC plugin agent'
+AGENT_TYPE_OFA = 'OFA driver agent'
 AGENT_TYPE_L3 = 'L3 agent'
 AGENT_TYPE_LOADBALANCER = 'Loadbalancer agent'
 AGENT_TYPE_MLNX = 'Mellanox plugin agent'

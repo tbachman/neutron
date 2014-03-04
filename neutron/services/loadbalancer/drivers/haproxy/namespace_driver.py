@@ -27,22 +27,17 @@ from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.common import exceptions
 from neutron.common import utils as n_utils
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
+from neutron.services.loadbalancer.agent import agent_device_driver
 from neutron.services.loadbalancer import constants as lb_const
-from neutron.services.loadbalancer.drivers import agent_device_driver
 from neutron.services.loadbalancer.drivers.haproxy import cfg as hacfg
 
 LOG = logging.getLogger(__name__)
 NS_PREFIX = 'qlbaas-'
 DRIVER_NAME = 'haproxy_ns'
-
-ACTIVE_PENDING = (
-    constants.ACTIVE,
-    constants.PENDING_CREATE,
-    constants.PENDING_UPDATE
-)
 
 STATE_PATH_DEFAULT = '$state_path/lbaas'
 USER_GROUP_DEFAULT = 'nogroup'
@@ -71,10 +66,10 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         try:
             vif_driver = importutils.import_object(conf.interface_driver, conf)
         except ImportError:
-            msg = (_('Error importing interface driver: %s')
-                   % conf.haproxy.interface_driver)
-            LOG.error(msg)
-            raise
+            with excutils.save_and_reraise_exception():
+                msg = (_('Error importing interface driver: %s')
+                       % conf.haproxy.interface_driver)
+                LOG.error(msg)
 
         self.vif_driver = vif_driver
         self.plugin_rpc = plugin_rpc
@@ -272,7 +267,7 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
     def deploy_instance(self, logical_config):
         # do actual deploy only if vip is configured and active
         if ('vip' not in logical_config or
-            logical_config['vip']['status'] not in ACTIVE_PENDING or
+            logical_config['vip']['status'] not in constants.ACTIVE_PENDING or
             not logical_config['vip']['admin_state_up']):
             return
 

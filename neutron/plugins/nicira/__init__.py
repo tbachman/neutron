@@ -1,6 +1,5 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2012 Nicira Networks, Inc.
+# Copyright 2012 VMware, Inc.
+#
 # All Rights Reserved
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,3 +13,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
+import sys
+
+from neutron.plugins.vmware.plugins import base
+from neutron.plugins.vmware.plugins import service
+
+# Kept for backward compatibility
+sys.modules['neutron.plugins.nicira.NeutronPlugin'] = base
+sys.modules['neutron.plugins.nicira.NeutronServicePlugin'] = service

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2011 Nicira Networks, Inc
+# Copyright 2011 VMware, Inc
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -19,6 +17,8 @@
 Neutron base exception handling.
 """
 
+from neutron.openstack.common import excutils
+
 
 class NeutronException(Exception):
     """Base Neutron Exception.
@@ -34,11 +34,11 @@ class NeutronException(Exception):
             super(NeutronException, self).__init__(self.message % kwargs)
             self.msg = self.message % kwargs
         except Exception:
-            if self.use_fatal_exceptions():
-                raise
-            else:
-                # at least get the core message out if something happened
-                super(NeutronException, self).__init__(self.message)
+            with excutils.save_and_reraise_exception() as ctxt:
+                if not self.use_fatal_exceptions():
+                    ctxt.reraise = False
+                    # at least get the core message out if something happened
+                    super(NeutronException, self).__init__(self.message)
 
     def __unicode__(self):
         return unicode(self.msg)

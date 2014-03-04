@@ -56,10 +56,6 @@ def _get_resource_model(resource, old_style):
         return resource_map[resource]
 
 
-def initialize():
-    db.configure_db()
-
-
 def clear_db(base=model_base.BASEV2):
     db.clear_db(base)
 
@@ -144,9 +140,8 @@ def get_ofc_id_lookup_both(session, resource, neutron_id):
         ofc_id = get_ofc_id(session, resource, neutron_id,
                             old_style=True)
     if not ofc_id:
-        reason = (_("NotFound %(resource)s for neutron_id=%(id)s.")
-                  % {'resource': resource, 'id': neutron_id})
-        raise nexc.OFCConsistencyBroken(reason=reason)
+        raise nexc.OFCMappingNotFound(resource=resource,
+                                      neutron_id=neutron_id)
     return ofc_id
 
 

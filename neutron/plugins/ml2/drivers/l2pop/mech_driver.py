@@ -43,7 +43,11 @@ class L2populationMechanismDriver(api.MechanismDriver,
                  ip['ip_address']] for ip in port['fixed_ips']]
 
     def delete_port_precommit(self, context):
-        self.remove_fdb_entries = self._update_port_down(context)
+        # TODO(matrohon): revisit once the original bound segment will be
+        # available in delete_port_postcommit. in delete_port_postcommit
+        # agent_active_ports will be equal to 0, and the _update_port_down
+        # won't need agent_active_ports_count_for_flooding anymore
+        self.remove_fdb_entries = self._update_port_down(context, 1)
 
     def delete_port_postcommit(self, context):
         l2pop_rpc.L2populationAgentNotify.remove_fdb_entries(
@@ -143,17 +147,17 @@ class L2populationMechanismDriver(api.MechanismDriver,
         network_id = port_context['network_id']
 
         session = db_api.get_session()
-        agent_ports = self.get_agent_network_port_count(session, agent_host,
-                                                        network_id)
+        agent_active_ports = self.get_agent_network_active_port_count(
+            session, agent_host, network_id)
 
         other_fdb_entries = {network_id:
                              {'segment_id': segment['segmentation_id'],
                               'network_type': segment['network_type'],
                               'ports': {agent_ip: []}}}
 
-        if agent_ports == 1 or (
+        if agent_active_ports == 1 or (
                 self.get_agent_uptime(agent) < cfg.CONF.l2pop.agent_boot_time):
-            # First port plugged on current agent in this network,
+            # First port activated on current agent in this network,
             # we have to provide it with the whole list of fdb entries
             agent_fdb_entries = {network_id:
                                  {'segment_id': segment['segmentation_id'],
@@ -192,7 +196,8 @@ class L2populationMechanismDriver(api.MechanismDriver,
         l2pop_rpc.L2populationAgentNotify.add_fdb_entries(self.rpc_ctx,
                                                           other_fdb_entries)
 
-    def _update_port_down(self, context):
+    def _update_port_down(self, context,
+                          agent_active_ports_count_for_flooding=0):
         port_context = context.current
         port_infos = self._get_port_infos(context, port_context)
         if not port_infos:
@@ -203,16 +208,16 @@ class L2populationMechanismDriver(api.MechanismDriver,
         network_id = port_context['network_id']
 
         session = db_api.get_session()
-        agent_ports = self.get_agent_network_port_count(session, agent_host,
-                                                        network_id)
+        agent_active_ports = self.get_agent_network_active_port_count(
+            session, agent_host, network_id)
 
         other_fdb_entries = {network_id:
                              {'segment_id': segment['segmentation_id'],
                               'network_type': segment['network_type'],
                               'ports': {agent_ip: []}}}
 
-        if agent_ports == 1:
-            # Agent is removing its last port in this network,
+        if agent_active_ports == agent_active_ports_count_for_flooding:
+            # Agent is removing its last activated port in this network,
             # other agents needs to be notified to delete their flooding entry.
             other_fdb_entries[network_id]['ports'][agent_ip].append(
                 const.FLOODING_ENTRY)

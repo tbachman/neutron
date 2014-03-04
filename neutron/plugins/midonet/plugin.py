@@ -33,7 +33,6 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
-from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
@@ -209,6 +208,7 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     __native_bulk_support = False
 
     def __init__(self):
+        super(MidonetPluginV2, self).__init__()
         # Read config values
         midonet_conf = cfg.CONF.MIDONET
         midonet_uri = midonet_conf.midonet_uri
@@ -231,11 +231,11 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             raise MidonetPluginException(msg=msg)
 
         self.setup_rpc()
-        db.configure_db()
 
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_MIDONET,
-            portbindings.CAPABILITIES: {
+            portbindings.VIF_DETAILS: {
+                # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
 
@@ -725,7 +725,7 @@ class MidonetPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :param router: Router information provided to create a new router.
         """
 
-        # NOTE(dcahill): Similar to the Nicira plugin, we completely override
+        # NOTE(dcahill): Similar to the NSX plugin, we completely override
         # this method in order to be able to use the MidoNet ID as Neutron ID
         # TODO(dcahill): Propose upstream patch for allowing
         # 3rd parties to specify IDs as we do with l2 plugin

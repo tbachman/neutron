@@ -22,22 +22,25 @@ import webob.exc
 from neutron import context
 from neutron.extensions import portbindings
 from neutron.manager import NeutronManager
-from neutron.plugins.bigswitch.plugin import RemoteRestError
 from neutron.tests.unit import _test_extension_portbindings as test_bindings
 from neutron.tests.unit.bigswitch import fake_server
 from neutron.tests.unit.bigswitch import test_base
 from neutron.tests.unit import test_api_v2
 import neutron.tests.unit.test_db_plugin as test_plugin
+import neutron.tests.unit.test_extension_allowedaddresspairs as test_addr_pair
 
 
 class BigSwitchProxyPluginV2TestCase(test_base.BigSwitchTestBase,
                                      test_plugin.NeutronDbPluginV2TestCase):
 
-    def setUp(self):
+    def setUp(self, plugin_name=None):
         self.setup_config_files()
         self.setup_patches()
+        if plugin_name:
+            self._plugin_name = plugin_name
         super(BigSwitchProxyPluginV2TestCase,
               self).setUp(self._plugin_name)
+        self.port_create_status = 'BUILD'
 
 
 class TestBigSwitchProxyBasicGet(test_plugin.TestBasicGet,
@@ -66,49 +69,38 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
     VIF_TYPE = portbindings.VIF_TYPE_OVS
     HAS_PORT_FILTER = False
 
+    def test_update_port_status_build(self):
+        with self.port() as port:
+            self.assertEqual(port['port']['status'], 'BUILD')
+            self.assertEqual(self.port_create_status, 'BUILD')
+
     def _get_ports(self, netid):
         return self.deserialize('json',
                                 self._list_ports('json', netid=netid))['ports']
 
     def test_rollback_for_port_create(self):
-        with self.network(no_delete=True) as n:
+        plugin = NeutronManager.get_plugin()
+        with self.subnet() as s:
             self.httpPatch = patch('httplib.HTTPConnection', create=True,
                                    new=fake_server.HTTPConnectionMock500)
             self.httpPatch.start()
-            kwargs = {'device_id': 'somedevid',
-                      'tenant_id': n['network']['tenant_id']}
-            self._create_port('json', n['network']['id'],
-                              expected_code=
-                              webob.exc.HTTPInternalServerError.code,
-                              **kwargs)
-            self.httpPatch.stop()
-            ports = self._get_ports(n['network']['id'])
-            #failure to create should result in no ports
-            self.assertEqual(0, len(ports))
-
-    def test_rollback_on_port_attach(self):
-        with self.network() as n:
-            plugin_obj = NeutronManager.get_plugin()
-            with patch.object(plugin_obj.servers,
-                              'rest_plug_interface') as mock_plug_interface:
-                mock_plug_interface.side_effect = RemoteRestError(
-                    reason='fake error')
-                kwargs = {'device_id': 'somedevid',
-                          'tenant_id': n['network']['tenant_id']}
-                self._create_port('json', n['network']['id'],
-                                  expected_code=
-                                  webob.exc.HTTPInternalServerError.code,
-                                  **kwargs)
-                port = self._get_ports(n['network']['id'])[0]
-                # Attachment failure should leave created port in error state
-                self.assertEqual('ERROR', port['status'])
-                self._delete('ports', port['id'])
+            kwargs = {'device_id': 'somedevid'}
+            # allow thread spawns for this patch
+            self.spawn_p.stop()
+            with self.port(subnet=s, **kwargs):
+                self.spawn_p.start()
+                plugin.evpool.waitall()
+                self.httpPatch.stop()
+                ports = self._get_ports(s['subnet']['network_id'])
+                #failure to create should result in port in error state
+                self.assertEqual(ports[0]['status'], 'ERROR')
 
     def test_rollback_for_port_update(self):
         with self.network() as n:
-            with self.port(network_id=n['network']['id']) as port:
+            with self.port(network_id=n['network']['id'],
+                           device_id='66') as port:
                 port = self._get_ports(n['network']['id'])[0]
-                data = {'port': {'name': 'aNewName'}}
+                data = {'port': {'name': 'aNewName', 'device_id': '99'}}
                 self.httpPatch = patch('httplib.HTTPConnection', create=True,
                                        new=fake_server.HTTPConnectionMock500)
                 self.httpPatch.start()
@@ -120,7 +112,7 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
                 # name should have stayed the same
                 self.assertEqual(port['name'], uport['name'])
 
-    def test_rollback_for_port_detach(self):
+    def test_rollback_for_port_delete(self):
         with self.network() as n:
             with self.port(network_id=n['network']['id'],
                            device_id='somedevid') as port:
@@ -132,23 +124,31 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
                              webob.exc.HTTPInternalServerError.code)
                 self.httpPatch.stop()
                 port = self._get_ports(n['network']['id'])[0]
-                self.assertEqual('ACTIVE', port['status'])
+                self.assertEqual('BUILD', port['status'])
 
-    def test_rollback_for_port_delete(self):
-        with self.network() as n:
-            with self.port(network_id=n['network']['id'],
-                           device_id='somdevid') as port:
-                plugin_obj = NeutronManager.get_plugin()
-                with patch.object(plugin_obj.servers,
-                                  'rest_delete_port'
-                                  ) as mock_plug_interface:
-                    mock_plug_interface.side_effect = RemoteRestError(
-                        reason='fake error')
-                    self._delete('ports', port['port']['id'],
-                                 expected_code=
-                                 webob.exc.HTTPInternalServerError.code)
-                    port = self._get_ports(n['network']['id'])[0]
-                    self.assertEqual('ERROR', port['status'])
+    def test_correct_shared_net_tenant_id(self):
+        # tenant_id in port requests should match network tenant_id instead
+        # of port tenant_id
+        def rest_port_op(self, ten_id, netid, port):
+            if ten_id != 'SHARED':
+                raise Exception('expecting tenant_id SHARED. got %s' % ten_id)
+        with self.network(tenant_id='SHARED', shared=True) as net:
+            with self.subnet(network=net) as sub:
+                pref = 'neutron.plugins.bigswitch.servermanager.ServerPool.%s'
+                tomock = [pref % 'rest_create_port',
+                          pref % 'rest_update_port',
+                          pref % 'rest_delete_port']
+                patches = [patch(f, create=True, new=rest_port_op)
+                           for f in tomock]
+                for restp in patches:
+                    restp.start()
+                with self.port(subnet=sub, tenant_id='port-owner') as port:
+                    data = {'port': {'binding:host_id': 'someotherhost',
+                            'device_id': 'override_dev'}}
+                    req = self.new_update_request('ports', data,
+                                                  port['port']['id'])
+                    res = req.get_response(self.api)
+                    self.assertEqual(res.status_int, 200)
 
 
 class TestBigSwitchProxyPortsV2IVS(test_plugin.TestPortsV2,
@@ -281,3 +281,8 @@ class TestBigSwitchProxySync(BigSwitchProxyPluginV2TestCase):
         plugin_obj = NeutronManager.get_plugin()
         result = plugin_obj._send_all_data()
         self.assertEqual(result[0], 200)
+
+
+class TestBigSwitchAddressPairs(BigSwitchProxyPluginV2TestCase,
+                                test_addr_pair.TestAllowedAddressPairs):
+    pass

@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 from sqlalchemy import exc as sql_exc
+from sqlalchemy.orm import exc as sa_exc
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
@@ -39,6 +40,7 @@ from neutron import manager
 from neutron.openstack.common import db as os_db
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
 from neutron.openstack.common import rpc as c_rpc
 from neutron.plugins.common import constants as service_constants
@@ -100,9 +102,11 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         # First load drivers, then initialize DB, then initialize drivers
         self.type_manager = managers.TypeManager()
         self.mechanism_manager = managers.MechanismManager()
-        db.initialize()
+        super(Ml2Plugin, self).__init__()
         self.type_manager.initialize()
         self.mechanism_manager.initialize()
+        # bulk support depends on the underlying drivers
+        self.__native_bulk_support = self.mechanism_manager.native_bulk_support
 
         self._setup_rpc()
 
@@ -203,25 +207,52 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         binding = mech_context._binding
         port = mech_context.current
         self._update_port_dict_binding(port, binding)
+
         host = attrs and attrs.get(portbindings.HOST_ID)
         host_set = attributes.is_attr_set(host)
 
+        vnic_type = attrs and attrs.get(portbindings.VNIC_TYPE)
+        vnic_type_set = attributes.is_attr_set(vnic_type)
+
+        # CLI can't send {}, so treat None as {}
+        profile = attrs and attrs.get(portbindings.PROFILE)
+        profile_set = profile is not attributes.ATTR_NOT_SPECIFIED
+        if profile_set and not profile:
+            profile = {}
+
         if binding.vif_type != portbindings.VIF_TYPE_UNBOUND:
-            if (not host_set and binding.segment and
+            if (not host_set and not vnic_type_set and not profile_set and
+                binding.segment and
                 self.mechanism_manager.validate_port_binding(mech_context)):
                 return False
             self.mechanism_manager.unbind_port(mech_context)
             self._update_port_dict_binding(port, binding)
 
         # Return True only if an agent notification is needed.
-        # This will happen if a new host was specified and that host
-        # differs from the current one. Note that host_set is True
+        # This will happen if a new host, vnic_type, or profile was specified
+        # that differs from the current one. Note that host_set is True
         # even if the host is an empty string
-        ret_value = host_set and binding.get('host') != host
+        ret_value = ((host_set and binding.get('host') != host) or
+                     (vnic_type_set and
+                      binding.get('vnic_type') != vnic_type) or
+                     (profile_set and self._get_profile(binding) != profile))
+
         if host_set:
             binding.host = host
             port[portbindings.HOST_ID] = host
 
+        if vnic_type_set:
+            binding.vnic_type = vnic_type
+            port[portbindings.VNIC_TYPE] = vnic_type
+
+        if profile_set:
+            binding.profile = jsonutils.dumps(profile)
+            if len(binding.profile) > models.BINDING_PROFILE_LEN:
+                msg = _("binding:profile value too large")
+                raise exc.InvalidInput(error_message=msg)
+            port[portbindings.PROFILE] = profile
+
+        # To try to [re]bind if host is non-empty.
         if binding.host:
             self.mechanism_manager.bind_port(mech_context)
             self._update_port_dict_binding(port, binding)
@@ -230,9 +261,32 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _update_port_dict_binding(self, port, binding):
         port[portbindings.HOST_ID] = binding.host
+        port[portbindings.VNIC_TYPE] = binding.vnic_type
+        port[portbindings.PROFILE] = self._get_profile(binding)
         port[portbindings.VIF_TYPE] = binding.vif_type
-        port[portbindings.CAPABILITIES] = {
-            portbindings.CAP_PORT_FILTER: binding.cap_port_filter}
+        port[portbindings.VIF_DETAILS] = self._get_vif_details(binding)
+
+    def _get_vif_details(self, binding):
+        if binding.vif_details:
+            try:
+                return jsonutils.loads(binding.vif_details)
+            except Exception:
+                LOG.error(_("Serialized vif_details DB value '%(value)s' "
+                            "for port %(port)s is invalid"),
+                          {'value': binding.vif_details,
+                           'port': binding.port_id})
+        return {}
+
+    def _get_profile(self, binding):
+        if binding.profile:
+            try:
+                return jsonutils.loads(binding.profile)
+            except Exception:
+                LOG.error(_("Serialized profile DB value '%(value)s' for "
+                            "port %(port)s is invalid"),
+                          {'value': binding.profile,
+                           'port': binding.port_id})
+        return {}
 
     def _delete_port_binding(self, mech_context):
         binding = mech_context._binding
@@ -589,9 +643,12 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         session = context.session
         changed_fixed_ips = 'fixed_ips' in port['port']
         with session.begin(subtransactions=True):
-            port_db = (session.query(models_v2.Port).
-                       enable_eagerloads(False).
-                       filter_by(id=id).with_lockmode('update').one())
+            try:
+                port_db = (session.query(models_v2.Port).
+                           enable_eagerloads(False).
+                           filter_by(id=id).with_lockmode('update').one())
+            except sa_exc.NoResultFound:
+                raise exc.PortNotFound(port_id=id)
             original_port = self._make_port_dict(port_db)
             updated_port = super(Ml2Plugin, self).update_port(context, id,
                                                               port)
@@ -644,9 +701,15 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         with session.begin(subtransactions=True):
             if l3plugin:
                 l3plugin.disassociate_floatingips(context, id)
-            port_db = (session.query(models_v2.Port).
-                       enable_eagerloads(False).
-                       filter_by(id=id).with_lockmode('update').one())
+            try:
+                port_db = (session.query(models_v2.Port).
+                           enable_eagerloads(False).
+                           filter_by(id=id).with_lockmode('update').one())
+            except sa_exc.NoResultFound:
+                # the port existed when l3plugin.prevent_l3_port_deletion
+                # was called but now is already gone
+                LOG.debug(_("The port '%s' was deleted"), id)
+                return
             port = self._make_port_dict(port_db)
 
             network = self.get_network(context, port['network_id'])

@@ -21,7 +21,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import validates
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.db import db_base_plugin_v2 as base_db
 from neutron.db import model_base
 from neutron.db import models_v2
@@ -30,6 +30,7 @@ from neutron.extensions import loadbalancer
 from neutron.extensions.loadbalancer import LoadBalancerPluginBase
 from neutron import manager
 from neutron.openstack.common.db import exception
+from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -57,10 +58,10 @@ class PoolStatistics(model_base.BASEV2):
 
     pool_id = sa.Column(sa.String(36), sa.ForeignKey("pools.id"),
                         primary_key=True)
-    bytes_in = sa.Column(sa.Integer, nullable=False)
-    bytes_out = sa.Column(sa.Integer, nullable=False)
-    active_connections = sa.Column(sa.Integer, nullable=False)
-    total_connections = sa.Column(sa.Integer, nullable=False)
+    bytes_in = sa.Column(sa.BigInteger, nullable=False)
+    bytes_out = sa.Column(sa.BigInteger, nullable=False)
+    active_connections = sa.Column(sa.BigInteger, nullable=False)
+    total_connections = sa.Column(sa.BigInteger, nullable=False)
 
     @validates('bytes_in', 'bytes_out',
                'active_connections', 'total_connections')
@@ -204,16 +205,15 @@ class LoadBalancerPluginDb(LoadBalancerPluginBase,
         try:
             r = self._get_by_id(context, model, id)
         except exc.NoResultFound:
-            if issubclass(model, Vip):
-                raise loadbalancer.VipNotFound(vip_id=id)
-            elif issubclass(model, Pool):
-                raise loadbalancer.PoolNotFound(pool_id=id)
-            elif issubclass(model, Member):
-                raise loadbalancer.MemberNotFound(member_id=id)
-            elif issubclass(model, HealthMonitor):
-                raise loadbalancer.HealthMonitorNotFound(monitor_id=id)
-            else:
-                raise
+            with excutils.save_and_reraise_exception():
+                if issubclass(model, Vip):
+                    raise loadbalancer.VipNotFound(vip_id=id)
+                elif issubclass(model, Pool):
+                    raise loadbalancer.PoolNotFound(pool_id=id)
+                elif issubclass(model, Member):
+                    raise loadbalancer.MemberNotFound(member_id=id)
+                elif issubclass(model, HealthMonitor):
+                    raise loadbalancer.HealthMonitorNotFound(monitor_id=id)
         return r
 
     def assert_modification_allowed(self, obj):
@@ -340,7 +340,7 @@ class LoadBalancerPluginDb(LoadBalancerPluginBase,
                 pool = self._get_resource(context, Pool, v['pool_id'])
                 # validate that the pool has same tenant
                 if pool['tenant_id'] != tenant_id:
-                    raise q_exc.NotAuthorized()
+                    raise n_exc.NotAuthorized()
                 # validate that the pool has same protocol
                 if pool['protocol'] != v['protocol']:
                     raise loadbalancer.ProtocolMismatch(
@@ -420,7 +420,7 @@ class LoadBalancerPluginDb(LoadBalancerPluginBase,
 
                         # check that the pool matches the tenant_id
                         if new_pool['tenant_id'] != vip_db['tenant_id']:
-                            raise q_exc.NotAuthorized()
+                            raise n_exc.NotAuthorized()
                         # validate that the pool has same protocol
                         if new_pool['protocol'] != vip_db['protocol']:
                             raise loadbalancer.ProtocolMismatch(
@@ -770,6 +770,15 @@ class LoadBalancerPluginDb(LoadBalancerPluginBase,
         return self._make_health_monitor_dict(monitor_db)
 
     def delete_health_monitor(self, context, id):
+        """Delete health monitor object from DB
+
+        Raises an error if the monitor has associations with pools
+        """
+        query = self._model_query(context, PoolMonitorAssociation)
+        has_associations = query.filter_by(monitor_id=id).first()
+        if has_associations:
+            raise loadbalancer.HealthMonitorInUse(monitor_id=id)
+
         with context.session.begin(subtransactions=True):
             monitor_db = self._get_resource(context, HealthMonitor, id)
             context.session.delete(monitor_db)

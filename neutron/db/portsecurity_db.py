@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Nicira Networks, Inc.  All rights reserved.
+# Copyright 2013 VMware, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Aaron Rosen, Nicira, Inc
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -161,6 +157,13 @@ class PortSecurityDbMixin(object):
         if (psec.PORTSECURITY in port and
             isinstance(port[psec.PORTSECURITY], bool)):
             port_security_enabled = port[psec.PORTSECURITY]
+
+        # If port has an ip and security_groups are passed in
+        # conveniently set port_security_enabled to true this way
+        # user doesn't also have to pass in port_security_enabled=True
+        # when creating ports.
+        elif (has_ip and attrs.is_attr_set('security_groups')):
+            port_security_enabled = True
         else:
             port_security_enabled = self._get_network_security_binding(
                 context, port['network_id'])

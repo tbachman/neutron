@@ -225,6 +225,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         Specify switch address and db configuration.
         """
 
+        super(BrocadePluginV2, self).__init__()
         self.supported_extension_aliases = ["binding", "security-group",
                                             "external-net", "router",
                                             "extraroute", "agent",
@@ -235,7 +236,6 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                    physical_interface)
         self.base_binding_dict = self._get_base_binding_dict()
         portbindings_base.register_port_dict_function()
-        db.configure_db()
         self.ctxt = context.get_admin_context()
         self.ctxt.session = db.get_session()
         self._vlan_bitmap = vbm.VlanBitmap(self.ctxt)
@@ -478,7 +478,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def _get_base_binding_dict(self):
         binding = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_BRIDGE,
-            portbindings.CAPABILITIES: {
+            portbindings.VIF_DETAILS: {
+                # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
         return binding

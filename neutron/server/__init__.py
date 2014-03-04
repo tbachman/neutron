@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 
-# Copyright 2011 Nicira Neworks, Inc.
+# Copyright 2011 VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -28,7 +27,7 @@ from neutron.common import config
 from neutron import service
 
 from neutron.openstack.common import gettextutils
-gettextutils.install('neutron', lazy=False)
+gettextutils.install('neutron', lazy=True)
 
 
 def main():
