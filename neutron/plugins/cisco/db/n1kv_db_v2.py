@@ -1123,13 +1123,13 @@ class NetworkProfile_db_mixin(object):
             if context.tenant_id not in p['add_tenants']:
                 p['add_tenants'].append(context.tenant_id)
             update_profile_binding(context.session, id, p['add_tenants'], c_const.NETWORK)
-            return self._make_network_profile_dict(original_net_p)
+            is_updated = True
         if context.is_admin and "remove_tenants" in p:
             for remove_tenant in p['remove_tenants']:
                 if remove_tenant == context.tenant_id: 
                     continue
                 delete_profile_binding(remove_tenant, id)
-            return self._make_network_profile_dict(original_net_p)
+            is_updated = True
         if original_net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
             #TODO(abhraut): Remove check when Trunk supports segment range.
             if "segment_range" in p and p["segment_range"]:
