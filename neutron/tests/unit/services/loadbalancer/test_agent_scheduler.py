@@ -64,10 +64,6 @@ class LBaaSAgentSchedulerTestCase(test_agent_ext_plugin.AgentDBTestMixIn,
                   'ovs_neutron_plugin.OVSNeutronPluginV2')
 
     def setUp(self):
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
         service_plugins = {
             'lb_plugin_name': test_db_loadbalancer.DB_LB_PLUGIN_KLASS}
 
@@ -93,11 +89,6 @@ class LBaaSAgentSchedulerTestCase(test_agent_ext_plugin.AgentDBTestMixIn,
         # the global attribute map
         attributes.RESOURCE_ATTRIBUTE_MAP.update(
             agent.RESOURCE_ATTRIBUTE_MAP)
-        self.addCleanup(self.restore_attribute_map)
-
-    def restore_attribute_map(self):
-        # Restore the original RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def test_report_states(self):
         self._register_agent_states(lbaas_agents=True)

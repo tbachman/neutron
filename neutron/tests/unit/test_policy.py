@@ -225,6 +225,7 @@ class NeutronPolicyTestCase(base.BaseTestCase):
         self.admin_only_legacy = "role:admin"
         self.admin_or_owner_legacy = "role:admin or tenant_id:%(tenant_id)s"
         # Add a Fake 'something' resource to RESOURCE_ATTRIBUTE_MAP
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
         attributes.RESOURCE_ATTRIBUTE_MAP.update(FAKE_RESOURCE)
         self.rules = dict((k, common_policy.parse_rule(v)) for k, v in {
             "context_is_admin": "role:admin",
@@ -261,15 +262,11 @@ class NeutronPolicyTestCase(base.BaseTestCase):
         def fakepolicyinit():
             common_policy.set_rules(common_policy.Rules(self.rules))
 
-        def remove_fake_resource():
-            del attributes.RESOURCE_ATTRIBUTE_MAP["%ss" % FAKE_RESOURCE_NAME]
-
         self.patcher = mock.patch.object(neutron.policy,
                                          'init',
                                          new=fakepolicyinit)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
-        self.addCleanup(remove_fake_resource)
         self.context = context.Context('fake', 'fake', roles=['user'])
         plugin_klass = importutils.import_class(
             "neutron.db.db_base_plugin_v2.NeutronDbPluginV2")

@@ -16,7 +16,6 @@
 import mock
 import webob.exc
 
-from neutron.api.v2 import attributes
 from neutron.extensions import securitygroup as ext_sg
 from neutron.plugins.mlnx.db import mlnx_db_v2 as mlnx_db
 from neutron.tests.unit import test_extension_security_group as test_sg
@@ -38,16 +37,7 @@ class MlnxSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
         notifier_cls = notifier_p.start()
         self.notifier = mock.Mock()
         notifier_cls.return_value = self.notifier
-        self._attribute_map_bk_ = {}
-        for item in attributes.RESOURCE_ATTRIBUTE_MAP:
-            self._attribute_map_bk_[item] = (attributes.
-                                             RESOURCE_ATTRIBUTE_MAP[item].
-                                             copy())
         super(MlnxSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
-
-    def tearDown(self):
-        attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
-        super(MlnxSecurityGroupsTestCase, self).tearDown()
 
 
 class TestMlnxSecurityGroups(MlnxSecurityGroupsTestCase,

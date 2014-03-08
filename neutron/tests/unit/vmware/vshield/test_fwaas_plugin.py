@@ -15,10 +15,9 @@
 #
 
 import contextlib
-import copy
+from oslo.config import cfg
 import webob.exc
 
-from neutron.api.v2 import attributes
 from neutron import context
 from neutron.extensions import firewall
 from neutron import manager
@@ -40,15 +39,8 @@ class FirewallTestExtensionManager(
         # router, update the map in the l3 extension so it will load
         # the same attributes as the API router
         resources = super(FirewallTestExtensionManager, self).get_resources()
-        firewall_attr_map = copy.deepcopy(firewall.RESOURCE_ATTRIBUTE_MAP)
-        for res in firewall.RESOURCE_ATTRIBUTE_MAP.keys():
-            attr_info = attributes.RESOURCE_ATTRIBUTE_MAP.get(res)
-            if attr_info:
-                firewall.RESOURCE_ATTRIBUTE_MAP[res] = attr_info
-        fw_resources = firewall.Firewall.get_resources()
-        # restore the original resources once the controllers are created
-        firewall.RESOURCE_ATTRIBUTE_MAP = firewall_attr_map
-
+        with self.mock_service_dict(firewall.RESOURCE_ATTRIBUTE_MAP):
+            fw_resources = firewall.Firewall.get_resources()
         resources.extend(fw_resources)
 
         return resources
@@ -82,11 +74,6 @@ class FirewallPluginTestCase(test_db_firewall.FirewallPluginDbTestCase,
             self.fc2.get_firewall_rule)
 
     def setUp(self):
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
-
         super(FirewallPluginTestCase, self).setUp(
             ext_mgr=FirewallTestExtensionManager(),
             fw_plugin=FW_PLUGIN_CLASS)
@@ -95,8 +82,6 @@ class FirewallPluginTestCase(test_db_firewall.FirewallPluginDbTestCase,
 
     def tearDown(self):
         super(FirewallPluginTestCase, self).tearDown()
-        # Restore the global RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
         self.ext_api = None
         self.plugin = None
 
@@ -221,6 +206,7 @@ class FirewallPluginTestCase(test_db_firewall.FirewallPluginDbTestCase,
                     self.assertEqual(res['firewall'][k], v)
 
     def test_list_firewalls(self):
+        cfg.CONF.set_override('quota_firewall', 3, group='QUOTAS')
         keys_list = []
         for i in range(3):
             keys_list.append({'name': "fw" + str(i),

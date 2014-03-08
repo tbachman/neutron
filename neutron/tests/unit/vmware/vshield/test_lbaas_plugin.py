@@ -18,7 +18,6 @@ import contextlib
 import testtools
 from webob import exc as web_exc
 
-from neutron.api.v2 import attributes
 from neutron import context
 from neutron.extensions import loadbalancer as lb
 from neutron import manager
@@ -40,14 +39,8 @@ class LoadBalancerTestExtensionManager(
         # the same attributes as the API router
         resources = super(LoadBalancerTestExtensionManager,
                           self).get_resources()
-        lb_attr_map = lb.RESOURCE_ATTRIBUTE_MAP.copy()
-        for res in lb.RESOURCE_ATTRIBUTE_MAP.keys():
-            attr_info = attributes.RESOURCE_ATTRIBUTE_MAP.get(res)
-            if attr_info:
-                lb.RESOURCE_ATTRIBUTE_MAP[res] = attr_info
-        lb_resources = lb.Loadbalancer.get_resources()
-        # restore the original resources once the controllers are created
-        lb.RESOURCE_ATTRIBUTE_MAP = lb_attr_map
+        with self.mock_service_dict(lb.RESOURCE_ATTRIBUTE_MAP):
+            lb_resources = lb.Loadbalancer.get_resources()
         resources.extend(lb_resources)
         return resources
 
@@ -90,11 +83,6 @@ class TestLoadbalancerPlugin(
             self.fc2.delete_app_profile)
 
     def setUp(self):
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
-
         super(TestLoadbalancerPlugin, self).setUp(
             ext_mgr=LoadBalancerTestExtensionManager(),
             lb_plugin=LBAAS_PLUGIN_CLASS)
@@ -103,8 +91,6 @@ class TestLoadbalancerPlugin(
 
     def tearDown(self):
         super(TestLoadbalancerPlugin, self).tearDown()
-        # Restore the global RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
         self.ext_api = None
         self.plugin = None
 

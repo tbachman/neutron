@@ -73,6 +73,12 @@ class BaseTestCase(testtools.TestCase):
             notification_driver = [test_notifier.__name__]
         cfg.CONF.set_override("notification_driver", notification_driver)
 
+    def mock_dict(self, dict_):
+        """Mock a dict so that changes are reverted at teardown."""
+        dict_p = mock.patch.dict(dict_)
+        dict_p.start()
+        self.addCleanup(dict_p.stop)
+
     def setUp(self):
         super(BaseTestCase, self).setUp()
 

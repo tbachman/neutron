@@ -35,8 +35,6 @@ from neutron.tests.unit import testlib_api
 
 
 class ExtensionTestCase(testlib_api.WebTestCase):
-    def _resotre_attr_map(self):
-        attributes.RESOURCE_ATTRIBUTE_MAP = self._saved_attr_map
 
     def _setUpExtension(self, plugin, service_type,
                         resource_attribute_map, extension_class,
@@ -54,10 +52,7 @@ class ExtensionTestCase(testlib_api.WebTestCase):
         # Ensure existing ExtensionManager is not used
         extensions.PluginAwareExtensionManager._instance = None
 
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self._saved_attr_map = attributes.RESOURCE_ATTRIBUTE_MAP.copy()
-        # Restore the global RESOURCE_ATTRIBUTE_MAP
-        self.addCleanup(self._resotre_attr_map)
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
 
         # Create the default configurations
         args = ['--config-file', test_api_v2.etcdir('neutron.conf.test')]

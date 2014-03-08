@@ -89,6 +89,7 @@ class NetworkGatewayExtensionTestCase(base.BaseTestCase):
         # Instantiate mock plugin and enable extensions
         manager.NeutronManager.get_plugin().supported_extension_aliases = (
             [networkgw.EXT_ALIAS])
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
         ext_mgr = TestExtensionManager()
         PluginAwareExtensionManager._instance = ext_mgr
         self.ext_mdw = test_extensions.setup_extensions_middleware(ext_mgr)

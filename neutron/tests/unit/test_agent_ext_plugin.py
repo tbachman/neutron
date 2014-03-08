@@ -171,17 +171,9 @@ class AgentDBTestCase(AgentDBTestMixIn,
         plugin = 'neutron.tests.unit.test_agent_ext_plugin.TestAgentPlugin'
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
-        # Save the original RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
         ext_mgr = AgentTestExtensionManager()
-        self.addCleanup(self.restore_resource_attribute_map)
+        self.addCleanup(cfg.CONF.reset)
         super(AgentDBTestCase, self).setUp(plugin=plugin, ext_mgr=ext_mgr)
-
-    def restore_resource_attribute_map(self):
-        # Restore the originak RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def test_create_agent(self):
         data = {'agent': {}}

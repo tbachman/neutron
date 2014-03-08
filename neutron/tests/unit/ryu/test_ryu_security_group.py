@@ -19,7 +19,6 @@ import contextlib
 
 import mock
 
-from neutron.api.v2 import attributes
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.tests.unit.ryu import fake_ryu
@@ -42,16 +41,7 @@ class RyuSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
         notifier_cls = notifier_p.start()
         self.notifier = mock.Mock()
         notifier_cls.return_value = self.notifier
-        self._attribute_map_bk_ = {}
-        for item in attributes.RESOURCE_ATTRIBUTE_MAP:
-            self._attribute_map_bk_[item] = (attributes.
-                                             RESOURCE_ATTRIBUTE_MAP[item].
-                                             copy())
         super(RyuSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
-
-    def tearDown(self):
-        super(RyuSecurityGroupsTestCase, self).tearDown()
-        attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
 
 
 class TestRyuSecurityGroups(RyuSecurityGroupsTestCase,

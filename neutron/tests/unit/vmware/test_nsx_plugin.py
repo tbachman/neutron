@@ -426,30 +426,11 @@ class TestL3SecGrpExtensionManager(TestL3ExtensionManager):
         return resources
 
 
-def backup_l3_attribute_map():
-    """Return a backup of the original l3 attribute map."""
-    return dict((res, attrs.copy()) for
-                (res, attrs) in l3.RESOURCE_ATTRIBUTE_MAP.iteritems())
-
-
-def restore_l3_attribute_map(map_to_restore):
-    """Ensure changes made by fake ext mgrs are reverted."""
-    l3.RESOURCE_ATTRIBUTE_MAP = map_to_restore
-
-
 class L3NatTest(test_l3_plugin.L3BaseForIntTests, NsxPluginV2TestCase):
 
-    def _restore_l3_attribute_map(self):
-        l3.RESOURCE_ATTRIBUTE_MAP = self._l3_attribute_map_bk
-
     def setUp(self, plugin=PLUGIN_NAME, ext_mgr=None, service_plugins=None):
-        self._l3_attribute_map_bk = {}
-        for item in l3.RESOURCE_ATTRIBUTE_MAP:
-            self._l3_attribute_map_bk[item] = (
-                l3.RESOURCE_ATTRIBUTE_MAP[item].copy())
+        self.mock_dict(l3.RESOURCE_ATTRIBUTE_MAP)
         cfg.CONF.set_override('api_extensions_path', NSXEXT_PATH)
-        l3_attribute_map_bk = backup_l3_attribute_map()
-        self.addCleanup(restore_l3_attribute_map, l3_attribute_map_bk)
         ext_mgr = ext_mgr or TestL3ExtensionManager()
         super(L3NatTest, self).setUp(
             plugin=plugin, ext_mgr=ext_mgr, service_plugins=service_plugins)
@@ -969,8 +950,7 @@ class NeutronNsxOutOfSync(NsxPluginV2TestCase,
                           ext_sg.SecurityGroupsTestCase):
 
     def setUp(self):
-        l3_attribute_map_bk = backup_l3_attribute_map()
-        self.addCleanup(restore_l3_attribute_map, l3_attribute_map_bk)
+        self.mock_dict(l3.RESOURCE_ATTRIBUTE_MAP)
         super(NeutronNsxOutOfSync, self).setUp(
             ext_mgr=TestL3SecGrpExtensionManager())
 

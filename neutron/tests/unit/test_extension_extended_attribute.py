@@ -93,10 +93,8 @@ class ExtensionExtendedAttributeTestCase(base.BaseTestCase):
         self._api = extensions.ExtensionMiddleware(app, ext_mgr=ext_mgr)
 
         self._tenant_id = "8c70909f-b081-452d-872b-df48e6c355d1"
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
+
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
         # Add the resources to the global attribute map
         # This is done here as the setup process won't
         # initialize the main API router which extends
@@ -104,15 +102,10 @@ class ExtensionExtendedAttributeTestCase(base.BaseTestCase):
         attributes.RESOURCE_ATTRIBUTE_MAP.update(
             extattr.EXTENDED_ATTRIBUTES_2_0)
         self.agentscheduler_dbMinxin = manager.NeutronManager.get_plugin()
-        self.addCleanup(self.restore_attribute_map)
 
         quota.QUOTAS._driver = None
         cfg.CONF.set_override('quota_driver', 'neutron.quota.ConfDriver',
                               group='QUOTAS')
-
-    def restore_attribute_map(self):
-        # Restore the original RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def _do_request(self, method, path, data=None, params=None, action=None):
         content_type = 'application/json'

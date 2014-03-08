@@ -201,27 +201,18 @@ class N1kvPluginTestCase(test_plugin.NeutronDbPluginV2TestCase):
 
         neutron_extensions.append_api_extensions_path(extensions.__path__)
         ext_mgr = NetworkProfileTestExtensionManager()
+        super(N1kvPluginTestCase, self).setUp(self._plugin_name,
+                                              ext_mgr=ext_mgr)
 
-        # Save the original RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.items():
-            self.saved_attr_map[resource] = attrs.copy()
         # Update the RESOURCE_ATTRIBUTE_MAP with n1kv specific extended attrs.
         attributes.RESOURCE_ATTRIBUTE_MAP["networks"].update(
             n1kv.EXTENDED_ATTRIBUTES_2_0["networks"])
         attributes.RESOURCE_ATTRIBUTE_MAP["ports"].update(
             n1kv.EXTENDED_ATTRIBUTES_2_0["ports"])
-        self.addCleanup(self.restore_resource_attribute_map)
         self.addCleanup(db.clear_db)
-        super(N1kvPluginTestCase, self).setUp(self._plugin_name,
-                                              ext_mgr=ext_mgr)
         # Create some of the database entries that we require.
         self._make_test_profile()
         self._make_test_policy_profile()
-
-    def restore_resource_attribute_map(self):
-        # Restore the original RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def test_plugin(self):
         self._make_network('json',

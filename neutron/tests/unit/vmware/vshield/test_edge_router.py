@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
+import contextlib
 
 from eventlet import greenthread
 import mock
@@ -39,19 +39,22 @@ _uuid = uuidutils.generate_uuid
 
 class ServiceRouterTestExtensionManager(object):
 
+    @contextlib.contextmanager
+    def mock_service_dict(self, service_dict):
+        """Update the service attributes with api router attributes."""
+        with mock.patch.dict(service_dict):
+            valued_attributes = ((key, value) for key, value in
+                                 attributes.RESOURCE_ATTRIBUTE_MAP.iteritems()
+                                 if value)
+            service_dict.update(valued_attributes)
+            yield
+
     def get_resources(self):
         # If l3 resources have been loaded and updated by main API
         # router, update the map in the l3 extension so it will load
         # the same attributes as the API router
-        l3_attr_map = copy.deepcopy(l3.RESOURCE_ATTRIBUTE_MAP)
-        for res in l3.RESOURCE_ATTRIBUTE_MAP.keys():
-            attr_info = attributes.RESOURCE_ATTRIBUTE_MAP.get(res)
-            if attr_info:
-                l3.RESOURCE_ATTRIBUTE_MAP[res] = attr_info
-        resources = l3.L3.get_resources()
-        # restore the original resources once the controllers are created
-        l3.RESOURCE_ATTRIBUTE_MAP = l3_attr_map
-
+        with self.mock_service_dict(l3.RESOURCE_ATTRIBUTE_MAP):
+            resources = l3.L3.get_resources()
         return resources
 
     def get_actions(self):

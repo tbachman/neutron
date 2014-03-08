@@ -16,6 +16,7 @@
 #    under the License.
 
 import contextlib
+import mock
 from oslo.config import cfg
 from webob import exc
 
@@ -37,10 +38,18 @@ _get_path = test_api_v2._get_path
 
 class ExtraRouteTestExtensionManager(object):
 
+    @contextlib.contextmanager
+    def mock_service_dict(self, service_dict):
+        """Update the service attributes with api router attributes."""
+        with mock.patch.dict(service_dict):
+            service_dict[l3.ROUTERS].update(
+                extraroute.EXTENDED_ATTRIBUTES_2_0[l3.ROUTERS])
+            yield
+
     def get_resources(self):
-        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
-            extraroute.EXTENDED_ATTRIBUTES_2_0['routers'])
-        return l3.L3.get_resources()
+        with self.mock_service_dict(l3.RESOURCE_ATTRIBUTE_MAP):
+            resources = l3.L3.get_resources()
+        return resources
 
     def get_actions(self):
         return []

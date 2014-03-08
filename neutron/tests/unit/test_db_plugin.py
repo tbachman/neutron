@@ -82,16 +82,9 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         cfg.CONF.set_override('notify_nova_on_port_status_changes', False)
         # Make sure at each test according extensions for the plugin is loaded
         PluginAwareExtensionManager._instance = None
-        # Save the attributes map in case the plugin will alter it
-        # loading extensions
-        # Note(salvatore-orlando): shallow copy is not good enough in
-        # this case, but copy.deepcopy does not seem to work, since it
-        # causes test failures
-        self._attribute_map_bk = {}
-        for item in attributes.RESOURCE_ATTRIBUTE_MAP:
-            self._attribute_map_bk[item] = (attributes.
-                                            RESOURCE_ATTRIBUTE_MAP[item].
-                                            copy())
+
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
+
         self._tenant_id = 'test-tenant'
 
         if not plugin:
@@ -161,8 +154,6 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         # NOTE(jkoelker) for a 'pluggable' framework, Neutron sure
         #                doesn't like when the plugin changes ;)
         db.clear_db()
-        # Restore the original attribute map
-        attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk
         super(NeutronDbPluginV2TestCase, self).tearDown()
 
     def _req(self, method, resource, data=None, fmt=None, id=None, params=None,

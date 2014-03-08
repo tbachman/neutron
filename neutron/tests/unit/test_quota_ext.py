@@ -48,10 +48,7 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
         # Ensure existing ExtensionManager is not used
         extensions.PluginAwareExtensionManager._instance = None
 
-        # Save the global RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
+        self.mock_dict(attributes.RESOURCE_ATTRIBUTE_MAP)
 
         # Create the default configurations
         args = ['--config-file', test_extensions.etcdir('neutron.conf.test')]
@@ -83,8 +80,6 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
         self.plugin = None
         db.clear_db()
 
-        # Restore the global RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
         super(QuotaExtensionTestCase, self).tearDown()
 
 

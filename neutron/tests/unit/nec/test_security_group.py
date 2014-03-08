@@ -19,7 +19,6 @@ import contextlib
 
 import mock
 
-from neutron.api.v2 import attributes
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.plugins.nec.db import api as ndb  # noqa
@@ -38,19 +37,10 @@ class NecSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
         test_sg_rpc.set_firewall_driver(test_sg_rpc.FIREWALL_HYBRID_DRIVER)
         mock.patch(NOTIFIER).start()
         mock.patch(OFC_MANAGER).start()
-        self._attribute_map_bk_ = {}
-        for item in attributes.RESOURCE_ATTRIBUTE_MAP:
-            self._attribute_map_bk_[item] = (attributes.
-                                             RESOURCE_ATTRIBUTE_MAP[item].
-                                             copy())
         super(NecSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
         plugin = manager.NeutronManager.get_plugin()
         self.notifier = plugin.notifier
         self.rpc = plugin.callback_sg
-
-    def tearDown(self):
-        super(NecSecurityGroupsTestCase, self).tearDown()
-        attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
 
 
 class TestNecSGServerRpcCallBack(

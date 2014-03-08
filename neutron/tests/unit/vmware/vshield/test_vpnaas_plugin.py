@@ -13,7 +13,6 @@
 #    under the License.
 
 import contextlib
-import copy
 
 import webob.exc
 
@@ -36,14 +35,8 @@ class VPNTestExtensionManager(
         # router, update the map in the l3 extension so it will load
         # the same attributes as the API router
         resources = super(VPNTestExtensionManager, self).get_resources()
-        vpn_attr_map = copy.deepcopy(vpnaas.RESOURCE_ATTRIBUTE_MAP)
-        for res in vpnaas.RESOURCE_ATTRIBUTE_MAP.keys():
-            attr_info = attributes.RESOURCE_ATTRIBUTE_MAP.get(res)
-            if attr_info:
-                vpnaas.RESOURCE_ATTRIBUTE_MAP[res] = attr_info
-        vpn_resources = vpnaas.Vpnaas.get_resources()
-        # restore the original resources once the controllers are created
-        vpnaas.RESOURCE_ATTRIBUTE_MAP = vpn_attr_map
+        with self.mock_service_dict(vpnaas.RESOURCE_ATTRIBUTE_MAP):
+            vpn_resources = vpnaas.Vpnaas.get_resources()
         resources.extend(vpn_resources)
         return resources
 

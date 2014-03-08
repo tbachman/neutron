@@ -58,10 +58,6 @@ class MacLearningDBTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         self.adminContext = context.get_admin_context()
         test_config['config_files'] = [get_fake_conf('nsx.ini.full.test')]
         cfg.CONF.set_override('api_extensions_path', NSXEXT_PATH)
-        # Save the original RESOURCE_ATTRIBUTE_MAP
-        self.saved_attr_map = {}
-        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
-            self.saved_attr_map[resource] = attrs.copy()
         ext_mgr = MacLearningExtensionManager()
         # mock api client
         self.fc = fake.FakeClient(STUBS_PATH)
@@ -76,13 +72,8 @@ class MacLearningDBTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         instance.return_value.request.side_effect = self.fc.fake_request
         cfg.CONF.set_override('metadata_mode', None, 'NSX')
         self.addCleanup(self.fc.reset_all)
-        self.addCleanup(self.restore_resource_attribute_map)
         super(MacLearningDBTestCase, self).setUp(plugin=PLUGIN_NAME,
                                                  ext_mgr=ext_mgr)
-
-    def restore_resource_attribute_map(self):
-        # Restore the original RESOURCE_ATTRIBUTE_MAP
-        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def test_create_with_mac_learning(self):
         with self.port(arg_list=('mac_learning_enabled',),

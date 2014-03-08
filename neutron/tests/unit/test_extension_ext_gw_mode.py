@@ -286,11 +286,7 @@ class ExtGwModeIntTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
                            test_l3_plugin.L3NatTestCaseMixin):
 
     def setUp(self, plugin=None, svc_plugins=None, ext_mgr=None):
-        # Store l3 resource attribute map as it will be updated
-        self._l3_attribute_map_bk = {}
-        for item in l3.RESOURCE_ATTRIBUTE_MAP:
-            self._l3_attribute_map_bk[item] = (
-                l3.RESOURCE_ATTRIBUTE_MAP[item].copy())
+        self.mock_dict(l3.RESOURCE_ATTRIBUTE_MAP)
         plugin = plugin or (
             'neutron.tests.unit.test_extension_ext_gw_mode.TestDbIntPlugin')
         # for these tests we need to enable overlapping ips
@@ -299,10 +295,6 @@ class ExtGwModeIntTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
         super(ExtGwModeIntTestCase, self).setUp(plugin=plugin,
                                                 ext_mgr=ext_mgr,
                                                 service_plugins=svc_plugins)
-        self.addCleanup(self.restore_l3_attribute_map)
-
-    def restore_l3_attribute_map(self):
-        l3.RESOURCE_ATTRIBUTE_MAP = self._l3_attribute_map_bk
 
     def tearDown(self):
         super(ExtGwModeIntTestCase, self).tearDown()
@@ -404,11 +396,6 @@ class ExtGwModeIntTestCase(test_db_plugin.NeutronDbPluginV2TestCase,
 class ExtGwModeSepTestCase(ExtGwModeIntTestCase):
 
     def setUp(self, plugin=None):
-        # Store l3 resource attribute map as it will be updated
-        self._l3_attribute_map_bk = {}
-        for item in l3.RESOURCE_ATTRIBUTE_MAP:
-            self._l3_attribute_map_bk[item] = (
-                l3.RESOURCE_ATTRIBUTE_MAP[item].copy())
         plugin = plugin or (
             'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin')
         # the L3 service plugin
@@ -419,4 +406,3 @@ class ExtGwModeSepTestCase(ExtGwModeIntTestCase):
         cfg.CONF.set_default('allow_overlapping_ips', True)
         super(ExtGwModeSepTestCase, self).setUp(plugin=plugin,
                                                 svc_plugins=svc_plugins)
-        self.addCleanup(self.restore_l3_attribute_map)
