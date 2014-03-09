@@ -1152,7 +1152,7 @@ class NetworkProfile_db_mixin(object):
                                                         updated_net_p, id)
                 if original_net_p.segment_type == c_const.NETWORK_TYPE_VLAN:
                     sync_vlan_allocations(context.session, updated_net_p)
-                if original_net_p.segment_type == c_const.NETWORK_TYPE_VXLAN:
+                if original_net_p.segment_type == c_const.NETWORK_TYPE_OVERLAY:
                     sync_vxlan_allocations(context.session, updated_net_p)
                 is_updated = True
             else:
