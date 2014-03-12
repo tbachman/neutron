@@ -49,7 +49,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
 
     def _agent_notification(self, context, method, routers,
                             operation, data):
-        """Notify individual l3 agents and Cisco cfg agents."""
+        """Notify individual L3 agents and Cisco cfg agents."""
         adminContext = context.is_admin and context or context.elevated()
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
@@ -81,7 +81,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                           version='1.1')
 
     def _notification(self, context, method, routers, operation, data):
-        """Notify all or individual l3 agents and Cisco cfg agents."""
+        """Notify all or individual L3 agents and Cisco cfg agents."""
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if utils.is_extension_supported(
@@ -112,12 +112,14 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                          topic=topics.L3_AGENT)
 
     def agent_updated(self, context, admin_state_up, host):
+        """Updates agent on host to enable or disable it."""
         #TODO(bobmel): Ensure correct topic is used for Cisco cfg agent
         self._notification_host(context, 'agent_updated',
                                 {'admin_state_up': admin_state_up},
                                 host)
 
     def router_deleted(self, context, router):
+        """Notifies agents about a deleted router."""
         if router['router_type'] == cl3_constants.NAMESPACE_ROUTER_TYPE:
             self._notification_fanout(context, 'router_deleted', router['id'])
         else:
@@ -125,32 +127,54 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                                      operation=None, data=None)
 
     def routers_updated(self, context, routers, operation=None, data=None):
+        """Notifies agents about configuration changes to routers.
+
+        This includes operations performed on the router like when a
+        router interface is added or removed.
+
+        L3 agent or Cisco configuration agent are receiver of the
+        notification.
+        """
         if routers:
             self._notification(context, 'routers_updated', routers,
                                operation, data)
 
     def router_removed_from_agent(self, context, router_id, host):
+        """Notifies L3 agent on host that router has been removed from it."""
         self._notification_host(context, 'router_removed_from_agent',
                                 {'router_id': router_id}, host,
                                 topic=topics.L3_AGENT)
 
     def router_added_to_agent(self, context, routers, host):
+        """Notifies L3 agent on host that router has been added to it."""
         self._notification_host(context, 'router_added_to_agent',
                                 routers, host,
                                 topic=topics.L3_AGENT)
 
     def router_removed_from_hosting_device(self, context, router_id, host):
+        """Notification that router has been removed from hosting device.
+
+        A Cisco configuration agent is the receiver of these notifications.
+        """
         self._notification_host(context, 'router_removed_from_hosting_device',
                                 {'router_id': router_id}, host,
                                 topic=cl3_constants.CFG_AGENT)
 
     def router_added_to_hosting_device(self, context, routers, host):
+        """Notification that router has been added to hosting device.
+
+        A Cisco configuration agent is the receiver of these notifications.
+        """
         self._notification_host(context, 'router_added_to_hosting_device',
                                 routers, host,
                                 topic=cl3_constants.CFG_AGENT)
 
     def hosting_device_removed(self, context, hosting_data, deconfigure,
                                cfg_agent):
+        """Notification that a hosting device has been removed.
+
+        A Cisco configuration agent is the receiver of these notifications.
+        """
         if hosting_data:
             self._notification_host(context, 'hosting_device_removed',
                                     {'hosting_data': hosting_data,

@@ -47,19 +47,19 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
                help=_("Name of the L3 admin tenant")),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
-               help=_("Name of management network for CSR VM configuration."
+               help=_("Name of management network for CSR VM configuration. "
                       "Default value is osn_mgmt_nw")),
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
-               help=_("Default security group applied on management port."
+               help=_("Default security group applied on management port. "
                       "Default value is mgmt_sec_grp")),
     cfg.IntOpt('csr1kv_flavor', default=621,
-               help=_("Name or UUID of Nova flavor used for CSR1kv VM"
+               help=_("Name or UUID of Nova flavor used for CSR1kv VM. "
                       "Default value is 621")),
     cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
-               help=_("Name or UUID of Glance image used for CSR1kv VM"
+               help=_("Name or UUID of Glance image used for CSR1kv VM. "
                       "Default value is csr1kv_openstack_img")),
     cfg.IntOpt('max_routers_per_csr1kv', default=1,
-               help=_("The maximum number of logical routers a CSR1kv VM "
+               help=_("The maximum number of logical routers a CSR1kv VM. "
                       "instance should host. Default value is 1")),
     cfg.IntOpt('csr1kv_booting_time', default=420,
                help=_("The time in seconds it typically takes to boot a "
@@ -67,7 +67,7 @@ HOSTING_DEVICE_MANAGER_OPTS = [
                       "is 420.")),
     cfg.IntOpt('standby_pool_size', default=1,
                help=_("The number of running service VMs to maintain "
-                      "as a pool of standby hosting devices. Default"
+                      "as a pool of standby hosting devices. Default "
                       "value is 1")),
 ]
 
