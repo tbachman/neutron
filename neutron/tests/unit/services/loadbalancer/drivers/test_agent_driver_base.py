@@ -47,7 +47,6 @@ class TestLoadBalancerPluginBase(
 
         self.mock_importer = mock.patch.object(
             agent_driver_base, 'importutils').start()
-        self.addCleanup(mock.patch.stopall)
 
         # needed to reload provider configuration
         st_db.ServiceTypeManager._instance = None
@@ -74,8 +73,6 @@ class TestLoadBalancerCallbacks(TestLoadBalancerPluginBase):
             'neutron.services.loadbalancer.agent_scheduler'
             '.LbaasAgentSchedulerDbMixin.get_lbaas_agents')
         get_lbaas_agents_patcher.start()
-
-        self.addCleanup(mock.patch.stopall)
 
     def test_get_ready_devices(self):
         with self.vip() as vip:
@@ -430,7 +427,6 @@ class TestLoadBalancerCallbacks(TestLoadBalancerPluginBase):
 class TestLoadBalancerAgentApi(base.BaseTestCase):
     def setUp(self):
         super(TestLoadBalancerAgentApi, self).setUp()
-        self.addCleanup(mock.patch.stopall)
 
         self.api = agent_driver_base.LoadBalancerAgentApi('topic')
         self.mock_cast = mock.patch.object(self.api, 'cast').start()
@@ -521,8 +517,6 @@ class TestLoadBalancerPluginNotificationWrapper(TestLoadBalancerPluginBase):
                                              AgentDriverBase(
                                                  self.plugin_instance
                                              ))
-
-        self.addCleanup(mock.patch.stopall)
 
     def test_create_vip(self):
         with self.subnet() as subnet:

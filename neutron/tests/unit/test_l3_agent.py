@@ -91,8 +91,6 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
 
-        self.addCleanup(mock.patch.stopall)
-
     def test_router_info_create(self):
         id = _uuid()
         ri = l3_agent.RouterInfo(id, self.conf.root_helper,
@@ -1195,7 +1193,6 @@ class TestL3AgentEventHandler(base.BaseTestCase):
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         looping_call_p.start()
         self.agent = l3_agent.L3NATAgent(HOSTNAME)
-        self.addCleanup(mock.patch.stopall)
 
     def test_spawn_metadata_proxy(self):
         router_id = _uuid()
