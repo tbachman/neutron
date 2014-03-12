@@ -49,9 +49,6 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # Typical time (in seconds) needed for hosting device (created
     # from this template) to boot into operational state.
     booting_time = sa.Column(sa.Integer, default=0)
-    #TODO(bobmel): Drop 'capacities', and replace by 'capacity' that is a
-    #              measure of slots. Then introduce '???' which is a list
-    #              specifying how many slots the logical resources need.
     # slot capacity
     capacity = sa.Column(sa.String(255))
     # 'tenant_bound' is empty or is id of the only tenant allowed to
@@ -73,7 +70,7 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     schedulers = sa.Column(sa.String(512), nullable=False)
 
 
-#TODO(bobmel): Need to store credentials somewhere/somehow.
+#TODO(bobmel): Need to store credentials.
 class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an appliance hosting Neutron router(s). When the
        hosting device is a Nova VM 'id' is uuid of that VM.

@@ -66,7 +66,6 @@ class RouterInternalError(n_exc.NeutronException):
     message = _("Internal error during router processing.")
 
 
-#TODO(bob-melander): Create binding record when this exception happens.
 class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
@@ -441,7 +440,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 binding_info = self._get_router_binding_info(context,
                                                              router['id'])
         except RouterBindingInfoError:
-            LOG.error(_('DB inconsistency: No hosting info associated with'
+            LOG.error(_('DB inconsistency: No hosting info associated with '
                         'router %s'), router['id'])
             return
         router['router_type'] = binding_info['router_type']

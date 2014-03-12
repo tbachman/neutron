@@ -308,12 +308,12 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
     def setup_logical_port_connectivity(self, context, port_db):
         # Add the VLAN to the VLANs that the hosting port trunks.
         self._perform_logical_port_connectivity_action(
-            context, port_db, 'Adding', n1kv_profile.SEGMENT_ADD)
+            context, port_db, 'Adding', n1kv.SEGMENT_ADD)
 
     def teardown_logical_port_connectivity(self, context, port_db):
         # Remove the VLAN from the VLANs that the hosting port trunks.
         self._perform_logical_port_connectivity_action(
-            context, port_db, 'Removing', n1kv_profile.SEGMENT_DEL)
+            context, port_db, 'Removing', n1kv.SEGMENT_DEL)
 
     def extend_hosting_port_info(self, context, port_db, hosting_info):
         hosting_info['segmentation_id'] = port_db.hosting_info.segmentation_tag
@@ -384,8 +384,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             return
         np_id_t_nw = self._core_plugin.get_network(
             context, port_db.hosting_info.hosting_port['network_id'],
-            [n1kv_profile.PROFILE_ID])
-        if np_id_t_nw.get(n1kv_profile.PROFILE_ID) == self.n1kv_t1_np_id():
+            [n1kv.PROFILE_ID])
+        if np_id_t_nw.get(n1kv.PROFILE_ID) == self.n1kv_t1_np_id():
             # for vxlan trunked segment, id:s end with ':'link local vlan tag
             trunk_spec = (port_db['network_id'] + ':' +
                           str(port_db.hosting_info.segmentation_tag))

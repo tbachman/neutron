@@ -177,6 +177,8 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
             cfg.StrOpt('admin_password', default='secrete')]
         cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
+        self.addCleanup(mock.patch.stopall)
+
         # Mock l3 admin tenant
         self.tenant_id_fcn_p = mock.patch(
             'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
@@ -231,7 +233,6 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
                 self._delete('ports', p['id'])
             self._delete('subnets', self.mgmt_subnet['subnet']['id'])
             self._delete('networks', self.mgmt_nw['network']['id'])
-        mock.patch.stopall()
         super(test_l3_plugin.L3NatDBSepTestCase, self).tearDown()
 
     def test_get_network_succeeds_without_filter(self):
