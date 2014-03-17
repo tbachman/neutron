@@ -208,6 +208,8 @@ class ApicSession(object):
         if response is None:
             raise cexc.ApicHostNoResponse(url=url)
         # Every request refreshes the timeout
+        prev_deadline = self.session_deadline
+        time_now = time.time()
         self.session_deadline = time.time() + self.session_timeout
         if data is None:
             request = url
@@ -224,6 +226,13 @@ class ApicSession(object):
             except (IndexError, KeyError):
                 err_code = '[code for APIC error not found]'
                 err_text = '[text for APIC error not found]'
+
+            if (err_code == '403' and
+                    err_text.lower().startswith('token was invalid')):
+                LOG.debug("Session timed-out @ %s, prev deadline was %s. "
+                          "session timeout is %s seconds" %
+                          (time_now, prev_deadline, self.session_timeout + 5))
+
             raise cexc.ApicResponseNotOk(request=request,
                                          status=response.status_code,
                                          reason=response.reason,
@@ -366,8 +375,14 @@ class ManagedObjectAccess(object):
         return self.session.post_mo(self.mo, *params, **attrs)
 
     def _mo_attributes(self, obj_data):
-        if (self.mo.klass_name in obj_data and
-                'attributes' in obj_data[self.mo.klass_name]):
+        if self.mo.klass_name not in obj_data:
+            LOG.debug("%s not in %s" % (self.mo.klass_name, obj_data))
+        elif 'attributes' not in obj_data[self.mo.klass_name]:
+            LOG.debug("No attributes for %s in %s",
+                      (self.mo.klass_name, obj_data))
+        else:
+        # if (self.mo.klass_name in obj_data and
+        #         'attributes' in obj_data[self.mo.klass_name]):
             return obj_data[self.mo.klass_name]['attributes']
 
     def get(self, *params):
