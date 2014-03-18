@@ -64,7 +64,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'neutron.agent.linux.ip_lib.device_exists')
         self.device_exists = self.device_exists_p.start()
         self.l3pluginApi_cls_p = mock.patch(
-            'neutron.plugins.cisco.l3.agent.cfg_agent.CiscoL3PluginApi')
+            'neutron.plugins.cisco.l3.agent.cfg_agent.CiscoRoutingPluginApi')
         l3pluginApi_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
         l3pluginApi_cls.return_value = self.plugin_api

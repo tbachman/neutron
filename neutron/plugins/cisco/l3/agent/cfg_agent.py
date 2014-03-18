@@ -47,13 +47,13 @@ from neutron import service as neutron_service
 LOG = logging.getLogger(__name__)
 
 
-class CiscoL3PluginApi(proxy.RpcProxy):
+class CiscoRoutingPluginApi(proxy.RpcProxy):
     """Agent side of the agent RPC API."""
 
     BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, topic, host):
-        super(CiscoL3PluginApi, self).__init__(
+        super(CiscoRoutingPluginApi, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
@@ -137,7 +137,7 @@ class CiscoCfgAgent(manager.Manager):
         self.conf = conf or cfg.CONF
         self.router_info = {}
         self.context = context.get_admin_context_without_session()
-        self.plugin_rpc = CiscoL3PluginApi(topics.L3PLUGIN, host)
+        self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
         self.fullsync = True
         self.updated_routers = set()
         self.removed_routers = set()
