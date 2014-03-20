@@ -19,10 +19,12 @@ from abc import ABCMeta
 from abc import abstractmethod
 
 from oslo.config import cfg
+import six
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import base
+from neutron.common import constants as const
 from neutron.common import exceptions as qexception
 from neutron import manager
 from neutron.openstack.common import uuidutils
@@ -158,7 +160,8 @@ def _validate_name_not_default(data, valid_values=None):
 
 attr.validators['type:name_not_default'] = _validate_name_not_default
 
-sg_supported_protocols = [None, 'tcp', 'udp', 'icmp']
+sg_supported_protocols = [None, const.PROTO_NAME_TCP,
+                          const.PROTO_NAME_UDP, const.PROTO_NAME_ICMP]
 sg_supported_ethertypes = ['IPv4', 'IPv6']
 
 # Attribute Map
@@ -223,12 +226,12 @@ EXTENDED_ATTRIBUTES_2_0 = {
 security_group_quota_opts = [
     cfg.IntOpt('quota_security_group',
                default=10,
-               help=_('Number of security groups allowed per tenant,'
-                      '-1 for unlimited')),
+               help=_('Number of security groups allowed per tenant. '
+                      'A negative value means unlimited.')),
     cfg.IntOpt('quota_security_group_rule',
                default=100,
-               help=_('Number of security rules allowed per tenant, '
-                      '-1 for unlimited')),
+               help=_('Number of security rules allowed per tenant. '
+                      'A negative value means unlimited.')),
 ]
 cfg.CONF.register_opts(security_group_quota_opts, 'QUOTAS')
 
@@ -289,8 +292,8 @@ class Securitygroup(extensions.ExtensionDescriptor):
             return {}
 
 
+@six.add_metaclass(ABCMeta)
 class SecurityGroupPluginBase(object):
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def create_security_group(self, context, security_group):

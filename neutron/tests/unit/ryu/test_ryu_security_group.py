@@ -28,8 +28,6 @@ from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
 
 PLUGIN_NAME = ('neutron.plugins.ryu.'
                'ryu_neutron_plugin.RyuNeutronPluginV2')
-AGENT_NAME = ('neutron.plugins.ryu.'
-              'agent.ryu_neutron_agent.OVSNeutronOFPRyuAgent')
 NOTIFIER = ('neutron.plugins.ryu.'
             'ryu_neutron_plugin.AgentNotifierApi')
 
@@ -39,7 +37,6 @@ class RyuSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 
     def setUp(self, plugin=None):
         test_sg_rpc.set_firewall_driver(test_sg_rpc.FIREWALL_HYBRID_DRIVER)
-        self.addCleanup(mock.patch.stopall)
         self.fake_ryu = fake_ryu.patch_fake_ryu_client().start()
         notifier_p = mock.patch(NOTIFIER)
         notifier_cls = notifier_p.start()
@@ -91,7 +88,7 @@ class TestRyuSecurityGroups(RyuSecurityGroupsTestCase,
     def test_security_group_get_port_from_device_with_no_port(self):
         plugin = manager.NeutronManager.get_plugin()
         port_dict = plugin.callbacks.get_port_from_device('bad_device_id')
-        self.assertEqual(None, port_dict)
+        self.assertIsNone(port_dict)
 
 
 class TestRyuSecurityGroupsXML(TestRyuSecurityGroups):

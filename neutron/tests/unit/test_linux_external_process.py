@@ -44,7 +44,9 @@ class TestProcessManager(base.BaseTestCase):
                 manager.enable(callback)
                 callback.assert_called_once_with('pidfile')
                 name.assert_called_once_with(ensure_pids_dir=True)
-                self.execute.assert_called_once_with(['the', 'cmd'], 'sudo')
+                self.execute.assert_called_once_with(['the', 'cmd'],
+                                                     root_helper='sudo',
+                                                     check_exit_code=True)
 
     def test_enable_with_namespace(self):
         callback = mock.Mock()
@@ -167,14 +169,17 @@ class TestProcessManager(base.BaseTestCase):
             self.assertIsNone(manager.pid)
 
     def test_active(self):
-        dummy_cmd_line = 'python foo --router_id=uuid'
-        self.execute.return_value = dummy_cmd_line
-        with mock.patch.object(ep.ProcessManager, 'pid') as pid:
-            pid.__get__ = mock.Mock(return_value=4)
-            manager = ep.ProcessManager(self.conf, 'uuid')
-            self.assertTrue(manager.active)
-            self.execute.assert_called_once_with(['cat', '/proc/4/cmdline'],
-                                                 'sudo')
+        with mock.patch('__builtin__.open') as mock_open:
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = mock.Mock()
+            mock_open.return_value.readline.return_value = \
+                'python foo --router_id=uuid'
+            with mock.patch.object(ep.ProcessManager, 'pid') as pid:
+                pid.__get__ = mock.Mock(return_value=4)
+                manager = ep.ProcessManager(self.conf, 'uuid')
+                self.assertTrue(manager.active)
+
+            mock_open.assert_called_once_with('/proc/4/cmdline', 'r')
 
     def test_active_none(self):
         dummy_cmd_line = 'python foo --router_id=uuid'
@@ -185,11 +190,14 @@ class TestProcessManager(base.BaseTestCase):
             self.assertFalse(manager.active)
 
     def test_active_cmd_mismatch(self):
-        dummy_cmd_line = 'python foo --router_id=anotherid'
-        self.execute.return_value = dummy_cmd_line
-        with mock.patch.object(ep.ProcessManager, 'pid') as pid:
-            pid.__get__ = mock.Mock(return_value=4)
-            manager = ep.ProcessManager(self.conf, 'uuid')
-            self.assertFalse(manager.active)
-            self.execute.assert_called_once_with(['cat', '/proc/4/cmdline'],
-                                                 'sudo')
+        with mock.patch('__builtin__.open') as mock_open:
+            mock_open.return_value.__enter__ = lambda s: s
+            mock_open.return_value.__exit__ = mock.Mock()
+            mock_open.return_value.readline.return_value = \
+                'python foo --router_id=anotherid'
+            with mock.patch.object(ep.ProcessManager, 'pid') as pid:
+                pid.__get__ = mock.Mock(return_value=4)
+                manager = ep.ProcessManager(self.conf, 'uuid')
+                self.assertFalse(manager.active)
+
+            mock_open.assert_called_once_with('/proc/4/cmdline', 'r')

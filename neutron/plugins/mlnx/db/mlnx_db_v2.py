@@ -17,7 +17,7 @@
 
 from sqlalchemy.orm import exc
 
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 import neutron.db.api as db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db as sg_db
@@ -27,10 +27,6 @@ from neutron.plugins.mlnx.common import config  # noqa
 from neutron.plugins.mlnx.db import mlnx_models_v2
 
 LOG = logging.getLogger(__name__)
-
-
-def initialize():
-    db.configure_db()
 
 
 def _remove_non_allocatable_vlans(session, allocations,
@@ -120,7 +116,7 @@ def reserve_network(session):
                  with_lockmode('update').
                  first())
         if not entry:
-            raise q_exc.NoNetworkAvailable()
+            raise n_exc.NoNetworkAvailable()
         LOG.debug(_("Reserving vlan %(seg_id)s on physical network "
                     "%(net)s from pool"),
                   {'seg_id': entry.segmentation_id,
@@ -135,11 +131,10 @@ def reserve_specific_network(session, physical_network, segmentation_id):
         try:
             entry = (session.query(mlnx_models_v2.SegmentationIdAllocation).
                      filter_by(physical_network=physical_network,
-                     segmentation_id=segmentation_id).
-                     with_lockmode('update').
-                     one())
+                               segmentation_id=segmentation_id).
+                     with_lockmode('update').one())
             if entry.allocated:
-                raise q_exc.VlanIdInUse(vlan_id=segmentation_id,
+                raise n_exc.VlanIdInUse(vlan_id=segmentation_id,
                                         physical_network=physical_network)
             LOG.debug(_("Reserving specific vlan %(seg_id)s "
                         "on physical network %(phy_net)s from pool"),
@@ -258,4 +253,4 @@ def set_port_status(port_id, status):
         session.merge(port)
         session.flush()
     except exc.NoResultFound:
-        raise q_exc.PortNotFound(port_id=port_id)
+        raise n_exc.PortNotFound(port_id=port_id)

@@ -26,6 +26,7 @@ import os
 
 from neutron.agent.linux import utils as linux_utils
 from neutron.common import utils
+from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -63,12 +64,13 @@ class IptablesRule(object):
     """
 
     def __init__(self, chain, rule, wrap=True, top=False,
-                 binary_name=binary_name):
+                 binary_name=binary_name, tag=None):
         self.chain = get_chain_name(chain, wrap)
         self.rule = rule
         self.wrap = wrap
         self.top = top
         self.wrap_name = binary_name[:16]
+        self.tag = tag
 
     def __eq__(self, other):
         return ((self.chain == other.chain) and
@@ -177,7 +179,7 @@ class IptablesTable(object):
         self.rules = [r for r in self.rules
                       if jump_snippet not in r.rule]
 
-    def add_rule(self, chain, rule, wrap=True, top=False):
+    def add_rule(self, chain, rule, wrap=True, top=False, tag=None):
         """Add a rule to the table.
 
         This is just like what you'd feed to iptables, just without
@@ -193,13 +195,16 @@ class IptablesTable(object):
             raise LookupError(_('Unknown chain: %r') % chain)
 
         if '$' in rule:
-            rule = ' '.join(map(self._wrap_target_chain, rule.split(' ')))
+            rule = ' '.join(
+                self._wrap_target_chain(e, wrap) for e in rule.split(' '))
 
-        self.rules.append(IptablesRule(chain, rule, wrap, top, self.wrap_name))
+        self.rules.append(IptablesRule(chain, rule, wrap, top, self.wrap_name,
+                                       tag))
 
-    def _wrap_target_chain(self, s):
+    def _wrap_target_chain(self, s, wrap):
         if s.startswith('$'):
-            return ('%s-%s' % (self.wrap_name, s[1:]))
+            s = ('%s-%s' % (self.wrap_name, get_chain_name(s[1:], wrap)))
+
         return s
 
     def remove_rule(self, chain, rule, wrap=True, top=False):
@@ -212,6 +217,10 @@ class IptablesTable(object):
         """
         chain = get_chain_name(chain, wrap)
         try:
+            if '$' in rule:
+                rule = ' '.join(
+                    self._wrap_target_chain(e, wrap) for e in rule.split(' '))
+
             self.rules.remove(IptablesRule(chain, rule, wrap, top,
                                            self.wrap_name))
             if not wrap:
@@ -229,6 +238,13 @@ class IptablesTable(object):
         chained_rules = [rule for rule in self.rules
                          if rule.chain == chain and rule.wrap == wrap]
         for rule in chained_rules:
+            self.rules.remove(rule)
+
+    def clear_rules_by_tag(self, tag):
+        if not tag:
+            return
+        rules = [rule for rule in self.rules if rule.tag == tag]
+        for rule in rules:
             self.rules.remove(rule)
 
 
@@ -342,8 +358,19 @@ class IptablesManager(object):
 
         self._apply()
 
-    @utils.synchronized('iptables', external=True)
     def _apply(self):
+        lock_name = 'iptables'
+        if self.namespace:
+            lock_name += '-' + self.namespace
+
+        try:
+            with lockutils.lock(lock_name, utils.SYNCHRONIZED_PREFIX, True):
+                LOG.debug(_('Got semaphore / lock "%s"'), lock_name)
+                return self._apply_synchronized()
+        finally:
+            LOG.debug(_('Semaphore / lock released "%s"'), lock_name)
+
+    def _apply_synchronized(self):
         """Apply the current in-memory set of iptables rules.
 
         This will blow away any rules left over from previous runs of the
@@ -550,7 +577,7 @@ class IptablesManager(object):
             # Leave it alone
             return True
 
-        # We filter duplicates.  Go throught the chains and rules, letting
+        # We filter duplicates.  Go through the chains and rules, letting
         # the *last* occurrence take precendence since it could have a
         # non-zero [packet:byte] count we want to preserve.  We also filter
         # out anything in the "remove" list.

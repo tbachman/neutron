@@ -1,5 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-# Copyright 2011 Nicira Networks, Inc.
+# Copyright 2011 VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,13 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Somik Behera, Nicira Networks, Inc.
-# @author: Brad Hall, Nicira Networks, Inc.
-# @author: Dan Wendlandt, Nicira Networks, Inc.
-# @author: Dave Lapsley, Nicira Networks, Inc.
-# @author: Aaron Rosen, Nicira Networks, Inc.
-# @author: Bob Kukura, Red Hat, Inc.
-# @author: Seetharama Ayyadevara, Freescale Semiconductor, Inc.
 
 import sys
 
@@ -30,7 +22,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.common import utils
@@ -52,6 +44,7 @@ from neutron.extensions import allowedaddresspairs as addr_pair
 from neutron.extensions import extra_dhcp_opt as edo_ext
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
+from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
@@ -123,18 +116,25 @@ class OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
     def update_device_down(self, rpc_context, **kwargs):
         """Device no longer exists on agent."""
-        # TODO(garyk) - live migration and port status
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
+        host = kwargs.get('host')
+        port = ovs_db_v2.get_port(device)
         LOG.debug(_("Device %(device)s no longer exists on %(agent_id)s"),
                   {'device': device, 'agent_id': agent_id})
-        port = ovs_db_v2.get_port(device)
         if port:
             entry = {'device': device,
                      'exists': True}
-            if port['status'] != q_const.PORT_STATUS_DOWN:
+            plugin = manager.NeutronManager.get_plugin()
+            if (host and
+                not plugin.get_port_host(rpc_context, port['id']) == host):
+                LOG.debug(_("Device %(device)s not bound to the"
+                            " agent host %(host)s"),
+                          {'device': device, 'host': host})
+            elif port['status'] != q_const.PORT_STATUS_DOWN:
                 # Set port status to DOWN
-                ovs_db_v2.set_port_status(port['id'], q_const.PORT_STATUS_DOWN)
+                ovs_db_v2.set_port_status(port['id'],
+                                          q_const.PORT_STATUS_DOWN)
         else:
             entry = {'device': device,
                      'exists': False}
@@ -145,11 +145,19 @@ class OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         """Device is up on agent."""
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
+        host = kwargs.get('host')
+        port = ovs_db_v2.get_port(device)
         LOG.debug(_("Device %(device)s up on %(agent_id)s"),
                   {'device': device, 'agent_id': agent_id})
-        port = ovs_db_v2.get_port(device)
+        plugin = manager.NeutronManager.get_plugin()
         if port:
-            if port['status'] != q_const.PORT_STATUS_ACTIVE:
+            if (host and
+                not plugin.get_port_host(rpc_context, port['id']) == host):
+                LOG.debug(_("Device %(device)s not bound to the"
+                            " agent host %(host)s"),
+                          {'device': device, 'host': host})
+                return
+            elif port['status'] != q_const.PORT_STATUS_ACTIVE:
                 ovs_db_v2.set_port_status(port['id'],
                                           q_const.PORT_STATUS_ACTIVE)
         else:
@@ -274,21 +282,25 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._aliases = aliases
         return self._aliases
 
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+        attributes.NETWORKS, ['_extend_network_dict_provider_ovs'])
+
     def __init__(self, configfile=None):
+        super(OVSNeutronPluginV2, self).__init__()
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
-            portbindings.CAPABILITIES: {
+            portbindings.VIF_DETAILS: {
+                # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
-        ovs_db_v2.initialize()
         self._parse_network_vlan_ranges()
         ovs_db_v2.sync_vlan_allocations(self.network_vlan_ranges)
         self.tenant_network_type = cfg.CONF.OVS.tenant_network_type
-        if self.tenant_network_type not in [constants.TYPE_LOCAL,
-                                            constants.TYPE_VLAN,
-                                            constants.TYPE_GRE,
-                                            constants.TYPE_VXLAN,
-                                            constants.TYPE_NONE]:
+        if self.tenant_network_type not in [svc_constants.TYPE_LOCAL,
+                                            svc_constants.TYPE_VLAN,
+                                            svc_constants.TYPE_GRE,
+                                            svc_constants.TYPE_VXLAN,
+                                            svc_constants.TYPE_NONE]:
             LOG.error(_("Invalid tenant_network_type: %s. "
                       "Server terminated!"),
                       self.tenant_network_type)
@@ -296,7 +308,8 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.enable_tunneling = cfg.CONF.OVS.enable_tunneling
         self.tunnel_type = None
         if self.enable_tunneling:
-            self.tunnel_type = cfg.CONF.OVS.tunnel_type or constants.TYPE_GRE
+            self.tunnel_type = (cfg.CONF.OVS.tunnel_type or
+                                svc_constants.TYPE_GRE)
         elif cfg.CONF.OVS.tunnel_type:
             self.tunnel_type = cfg.CONF.OVS.tunnel_type
             self.enable_tunneling = True
@@ -357,20 +370,22 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 sys.exit(1)
         LOG.info(_("Tunnel ID ranges: %s"), self.tunnel_id_ranges)
 
-    def _extend_network_dict_provider(self, context, network):
-        binding = ovs_db_v2.get_network_binding(context.session,
-                                                network['id'])
+    def _extend_network_dict_provider_ovs(self, network, net_db,
+                                          net_binding=None):
+        # this method used in two cases: when binding is provided explicitly
+        # and when it is a part of db model object
+        binding = net_db.binding if net_db else net_binding
         network[provider.NETWORK_TYPE] = binding.network_type
         if binding.network_type in constants.TUNNEL_NETWORK_TYPES:
             network[provider.PHYSICAL_NETWORK] = None
             network[provider.SEGMENTATION_ID] = binding.segmentation_id
-        elif binding.network_type == constants.TYPE_FLAT:
+        elif binding.network_type == svc_constants.TYPE_FLAT:
             network[provider.PHYSICAL_NETWORK] = binding.physical_network
             network[provider.SEGMENTATION_ID] = None
-        elif binding.network_type == constants.TYPE_VLAN:
+        elif binding.network_type == svc_constants.TYPE_VLAN:
             network[provider.PHYSICAL_NETWORK] = binding.physical_network
             network[provider.SEGMENTATION_ID] = binding.segmentation_id
-        elif binding.network_type == constants.TYPE_LOCAL:
+        elif binding.network_type == svc_constants.TYPE_LOCAL:
             network[provider.PHYSICAL_NETWORK] = None
             network[provider.SEGMENTATION_ID] = None
 
@@ -389,64 +404,64 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         if not network_type_set:
             msg = _("provider:network_type required")
-            raise q_exc.InvalidInput(error_message=msg)
-        elif network_type == constants.TYPE_FLAT:
+            raise n_exc.InvalidInput(error_message=msg)
+        elif network_type == svc_constants.TYPE_FLAT:
             if segmentation_id_set:
                 msg = _("provider:segmentation_id specified for flat network")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             else:
                 segmentation_id = constants.FLAT_VLAN_ID
-        elif network_type == constants.TYPE_VLAN:
+        elif network_type == svc_constants.TYPE_VLAN:
             if not segmentation_id_set:
                 msg = _("provider:segmentation_id required")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             if not utils.is_valid_vlan_tag(segmentation_id):
                 msg = (_("provider:segmentation_id out of range "
                          "(%(min_id)s through %(max_id)s)") %
                        {'min_id': q_const.MIN_VLAN_TAG,
                         'max_id': q_const.MAX_VLAN_TAG})
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
         elif network_type in constants.TUNNEL_NETWORK_TYPES:
             if not self.enable_tunneling:
                 msg = _("%s networks are not enabled") % network_type
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             if physical_network_set:
                 msg = _("provider:physical_network specified for %s "
                         "network") % network_type
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             else:
                 physical_network = None
             if not segmentation_id_set:
                 msg = _("provider:segmentation_id required")
-                raise q_exc.InvalidInput(error_message=msg)
-        elif network_type == constants.TYPE_LOCAL:
+                raise n_exc.InvalidInput(error_message=msg)
+        elif network_type == svc_constants.TYPE_LOCAL:
             if physical_network_set:
                 msg = _("provider:physical_network specified for local "
                         "network")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             else:
                 physical_network = None
             if segmentation_id_set:
                 msg = _("provider:segmentation_id specified for local "
                         "network")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             else:
                 segmentation_id = None
         else:
             msg = _("provider:network_type %s not supported") % network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
 
-        if network_type in [constants.TYPE_VLAN, constants.TYPE_FLAT]:
+        if network_type in [svc_constants.TYPE_VLAN, svc_constants.TYPE_FLAT]:
             if physical_network_set:
                 if physical_network not in self.network_vlan_ranges:
                     msg = _("Unknown provider:physical_network "
                             "%s") % physical_network
-                    raise q_exc.InvalidInput(error_message=msg)
+                    raise n_exc.InvalidInput(error_message=msg)
             elif 'default' in self.network_vlan_ranges:
                 physical_network = 'default'
             else:
                 msg = _("provider:physical_network required")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
 
         return (network_type, physical_network, segmentation_id)
 
@@ -465,9 +480,9 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             if not network_type:
                 # tenant network
                 network_type = self.tenant_network_type
-                if network_type == constants.TYPE_NONE:
-                    raise q_exc.TenantNetworksDisabled()
-                elif network_type == constants.TYPE_VLAN:
+                if network_type == svc_constants.TYPE_NONE:
+                    raise n_exc.TenantNetworksDisabled()
+                elif network_type == svc_constants.TYPE_VLAN:
                     (physical_network,
                      segmentation_id) = ovs_db_v2.reserve_vlan(session)
                 elif network_type in constants.TUNNEL_NETWORK_TYPES:
@@ -475,7 +490,8 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # no reservation needed for TYPE_LOCAL
             else:
                 # provider network
-                if network_type in [constants.TYPE_VLAN, constants.TYPE_FLAT]:
+                if network_type in [svc_constants.TYPE_VLAN,
+                                    svc_constants.TYPE_FLAT]:
                     ovs_db_v2.reserve_specific_vlan(session, physical_network,
                                                     segmentation_id)
                 elif network_type in constants.TUNNEL_NETWORK_TYPES:
@@ -483,11 +499,14 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # no reservation needed for TYPE_LOCAL
             net = super(OVSNeutronPluginV2, self).create_network(context,
                                                                  network)
-            ovs_db_v2.add_network_binding(session, net['id'], network_type,
-                                          physical_network, segmentation_id)
+            binding = ovs_db_v2.add_network_binding(session, net['id'],
+                                                    network_type,
+                                                    physical_network,
+                                                    segmentation_id)
 
             self._process_l3_create(context, net, network['network'])
-            self._extend_network_dict_provider(context, net)
+            # passing None as db model to use binding object
+            self._extend_network_dict_provider_ovs(net, None, binding)
             # note - exception will rollback entire transaction
         LOG.debug(_("Created network: %s"), net['id'])
         return net
@@ -500,7 +519,6 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             net = super(OVSNeutronPluginV2, self).update_network(context, id,
                                                                  network)
             self._process_l3_update(context, net, network['network'])
-            self._extend_network_dict_provider(context, net)
         return net
 
     def delete_network(self, context, id):
@@ -511,8 +529,8 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             if binding.network_type in constants.TUNNEL_NETWORK_TYPES:
                 ovs_db_v2.release_tunnel(session, binding.segmentation_id,
                                          self.tunnel_id_ranges)
-            elif binding.network_type in [constants.TYPE_VLAN,
-                                          constants.TYPE_FLAT]:
+            elif binding.network_type in [svc_constants.TYPE_VLAN,
+                                          svc_constants.TYPE_FLAT]:
                 ovs_db_v2.release_vlan(session, binding.physical_network,
                                        binding.segmentation_id,
                                        self.network_vlan_ranges)
@@ -525,7 +543,6 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         with session.begin(subtransactions=True):
             net = super(OVSNeutronPluginV2, self).get_network(context,
                                                               id, None)
-            self._extend_network_dict_provider(context, net)
         return self._fields(net, fields)
 
     def get_networks(self, context, filters=None, fields=None,
@@ -536,8 +553,6 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             nets = super(OVSNeutronPluginV2,
                          self).get_networks(context, filters, None, sorts,
                                             limit, marker, page_reverse)
-            for net in nets:
-                self._extend_network_dict_provider(context, net)
 
         return [self._fields(net, fields) for net in nets]
 
@@ -566,18 +581,20 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def update_port(self, context, id, port):
         session = context.session
         need_port_update_notify = False
+        changed_fixed_ips = 'fixed_ips' in port['port']
         with session.begin(subtransactions=True):
             original_port = super(OVSNeutronPluginV2, self).get_port(
                 context, id)
             updated_port = super(OVSNeutronPluginV2, self).update_port(
                 context, id, port)
             if addr_pair.ADDRESS_PAIRS in port['port']:
-                self._delete_allowed_address_pairs(context, id)
-                self._process_create_allowed_address_pairs(
-                    context, updated_port,
-                    port['port'][addr_pair.ADDRESS_PAIRS])
-                need_port_update_notify = True
-
+                need_port_update_notify |= (
+                    self.update_address_pairs_on_port(context, id, port,
+                                                      original_port,
+                                                      updated_port))
+            elif changed_fixed_ips:
+                self._check_fixed_ips_and_address_pairs_no_overlap(
+                    context, updated_port)
             need_port_update_notify |= self.update_security_group_on_port(
                 context, id, port, original_port, updated_port)
             self._process_portbindings_create_and_update(context,

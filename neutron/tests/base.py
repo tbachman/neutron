@@ -17,15 +17,18 @@
 
 """Base Test Case for all Unit Tests"""
 
+import contextlib
 import logging
 import os
 
+import eventlet.timeout
 import fixtures
+import mock
 from oslo.config import cfg
-import stubout
 import testtools
 
-from neutron.common import exceptions
+from neutron import manager
+from neutron.tests import post_mortem_debug
 
 
 CONF = cfg.CONF
@@ -33,10 +36,28 @@ TRUE_STRING = ['True', '1']
 LOG_FORMAT = "%(asctime)s %(levelname)8s [%(name)s] %(message)s"
 
 
+def fake_use_fatal_exceptions(*args):
+    return True
+
+
 class BaseTestCase(testtools.TestCase):
+
+    def _cleanup_coreplugin(self):
+        manager.NeutronManager._instance = self._saved_instance
+
+    def setup_coreplugin(self, core_plugin=None):
+        self._saved_instance = manager.NeutronManager._instance
+        self.addCleanup(self._cleanup_coreplugin)
+        manager.NeutronManager._instance = None
+        if core_plugin is not None:
+            cfg.CONF.set_override('core_plugin', core_plugin)
 
     def setUp(self):
         super(BaseTestCase, self).setUp()
+
+        # Configure this first to ensure pm debugging support for setUp()
+        if os.environ.get('OS_POST_MORTEM_DEBUG') in TRUE_STRING:
+            self.addOnException(post_mortem_debug.exception_handler)
 
         if os.environ.get('OS_DEBUG') in TRUE_STRING:
             _level = logging.DEBUG
@@ -62,6 +83,7 @@ class BaseTestCase(testtools.TestCase):
         self.useFixture(fixtures.NestedTempfile())
         self.useFixture(fixtures.TempHomeDir())
 
+        self.addCleanup(mock.patch.stopall)
         self.addCleanup(CONF.reset)
 
         if os.environ.get('OS_STDOUT_CAPTURE') in TRUE_STRING:
@@ -70,8 +92,9 @@ class BaseTestCase(testtools.TestCase):
         if os.environ.get('OS_STDERR_CAPTURE') in TRUE_STRING:
             stderr = self.useFixture(fixtures.StringStream('stderr')).stream
             self.useFixture(fixtures.MonkeyPatch('sys.stderr', stderr))
-        self.stubs = stubout.StubOutForTesting()
-        self.stubs.Set(exceptions, '_FATAL_EXCEPTION_FORMAT_ERRORS', True)
+        self.useFixture(fixtures.MonkeyPatch(
+            'neutron.common.exceptions.NeutronException.use_fatal_exceptions',
+            fake_use_fatal_exceptions))
 
     def config(self, **kw):
         """Override some configuration values.
@@ -88,3 +111,10 @@ class BaseTestCase(testtools.TestCase):
         group = kw.pop('group', None)
         for k, v in kw.iteritems():
             CONF.set_override(k, v, group)
+
+    @contextlib.contextmanager
+    def assert_max_execution_time(self, max_execution_time=5):
+        with eventlet.timeout.Timeout(max_execution_time, False):
+            yield
+            return
+        self.fail('Execution of this test timed out')

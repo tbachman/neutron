@@ -44,6 +44,8 @@ class TestVarmourRouter(base.BaseTestCase):
         self.conf = cfg.ConfigOpts()
         self.conf.register_opts(base_config.core_opts)
         self.conf.register_opts(varmour_router.vArmourL3NATAgent.OPTS)
+        agent_config.register_interface_driver_opts_helper(self.conf)
+        agent_config.register_use_namespaces_opts_helper(self.conf)
         agent_config.register_root_helper(self.conf)
         self.conf.register_opts(interface.OPTS)
         self.conf.set_override('interface_driver',
@@ -78,8 +80,6 @@ class TestVarmourRouter(base.BaseTestCase):
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
 
-        self.addCleanup(mock.patch.stopall)
-
     def _create_router(self):
         router = varmour_router.vArmourL3NATAgent(HOSTNAME, self.conf)
         router.rest.server = FAKE_DIRECTOR
@@ -95,7 +95,7 @@ class TestVarmourRouter(base.BaseTestCase):
 
     def _add_internal_ports(self, router, port_count=1):
         self._del_all_internal_ports(router)
-        for i in range(0, port_count):
+        for i in range(port_count):
             port = {'id': _uuid(),
                     'network_id': _uuid(),
                     'admin_state_up': True,
@@ -114,7 +114,7 @@ class TestVarmourRouter(base.BaseTestCase):
 
     def _add_floating_ips(self, router, port_count=1):
         self._del_all_floating_ips(router)
-        for i in range(0, port_count):
+        for i in range(port_count):
             fip = {'id': _uuid(),
                    'port_id': router['gw_port']['id'],
                    'floating_ip_address': '172.24.4.%s' % (100 + i),

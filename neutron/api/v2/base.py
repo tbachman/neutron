@@ -15,6 +15,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import netaddr
 import webob.exc
 
@@ -24,7 +25,9 @@ from neutron.api import api_common
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.api.v2 import resource as wsgi_resource
+from neutron.common import constants as const
 from neutron.common import exceptions
+from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron import policy
@@ -68,7 +71,13 @@ class Controller(object):
         self._policy_attrs = [name for (name, info) in self._attr_info.items()
                               if info.get('required_by_policy')]
         self._publisher_id = notifier_api.publisher_id('network')
-        self._dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        # use plugin's dhcp notifier, if this is already instantiated
+        agent_notifiers = getattr(plugin, 'agent_notifiers', {})
+        self._dhcp_agent_notifier = (
+            agent_notifiers.get(const.AGENT_TYPE_DHCP) or
+            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        )
+        self._nova_notifier = nova.Notifier()
         self._member_actions = member_actions
         self._primary_key = self._get_primary_key()
         if self._allow_pagination and self._native_pagination:
@@ -265,7 +274,12 @@ class Controller(object):
 
     def _send_dhcp_notification(self, context, data, methodname):
         if cfg.CONF.dhcp_agent_notification:
-            self._dhcp_agent_notifier.notify(context, data, methodname)
+            if self._collection in data:
+                for body in data[self._collection]:
+                    item = {self._resource: body}
+                    self._dhcp_agent_notifier.notify(context, item, methodname)
+            else:
+                self._dhcp_agent_notifier.notify(context, data, methodname)
 
     def index(self, request, **kwargs):
         """Returns a list of the requested entity."""
@@ -403,6 +417,9 @@ class Controller(object):
             else:
                 kwargs.update({self._resource: body})
                 obj = obj_creator(request.context, **kwargs)
+
+                self._nova_notifier.send_network_change(
+                    action, {}, {self._resource: obj})
                 return notify({self._resource: self._view(request.context,
                                                           obj)})
 
@@ -437,6 +454,7 @@ class Controller(object):
                             notifier_api.CONF.default_notification_level,
                             {self._resource + '_id': id})
         result = {self._resource: self._view(request.context, obj)}
+        self._nova_notifier.send_network_change(action, {}, result)
         self._send_dhcp_notification(request.context,
                                      result,
                                      notifier_method)
@@ -468,6 +486,7 @@ class Controller(object):
                           'default' not in value)]
         orig_obj = self._item(request, id, field_list=field_list,
                               parent_id=parent_id)
+        orig_object_copy = copy.copy(orig_obj)
         orig_obj.update(body[self._resource])
         try:
             policy.enforce(request.context,
@@ -494,6 +513,8 @@ class Controller(object):
         self._send_dhcp_notification(request.context,
                                      result,
                                      notifier_method)
+        self._nova_notifier.send_network_change(
+            action, orig_object_copy, result)
         return result
 
     @staticmethod
@@ -604,7 +625,8 @@ class Controller(object):
     def _validate_network_tenant_ownership(self, request, resource_item):
         # TODO(salvatore-orlando): consider whether this check can be folded
         # in the policy engine
-        if self._resource not in ('port', 'subnet'):
+        if (request.context.is_admin or
+                self._resource not in ('port', 'subnet')):
             return
         network = self._plugin.get_network(
             request.context,

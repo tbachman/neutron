@@ -20,6 +20,7 @@ import webob.exc
 
 from neutron import context
 from neutron.openstack.common import log as logging
+from neutron.openstack.common.middleware import request_id
 from neutron import wsgi
 
 LOG = logging.getLogger(__name__)
@@ -31,19 +32,28 @@ class NeutronKeystoneContext(wsgi.Middleware):
     @webob.dec.wsgify
     def __call__(self, req):
         # Determine the user ID
-        user_id = req.headers.get('X_USER_ID', req.headers.get('X_USER'))
+        user_id = req.headers.get('X_USER_ID')
         if not user_id:
-            LOG.debug(_("Neither X_USER_ID nor X_USER found in request"))
+            LOG.debug(_("X_USER_ID is not found in request"))
             return webob.exc.HTTPUnauthorized()
 
         # Determine the tenant
-        tenant_id = req.headers.get('X_TENANT_ID', req.headers.get('X_TENANT'))
+        tenant_id = req.headers.get('X_PROJECT_ID')
 
         # Suck out the roles
-        roles = [r.strip() for r in req.headers.get('X_ROLE', '').split(',')]
+        roles = [r.strip() for r in req.headers.get('X_ROLES', '').split(',')]
+
+        # Human-friendly names
+        tenant_name = req.headers.get('X_PROJECT_NAME')
+        user_name = req.headers.get('X_USER_NAME')
+
+        # Use request_id if already set
+        req_id = req.environ.get(request_id.ENV_REQUEST_ID)
 
         # Create a context with the authentication data
-        ctx = context.Context(user_id, tenant_id, roles=roles)
+        ctx = context.Context(user_id, tenant_id, roles=roles,
+                              user_name=user_name, tenant_name=tenant_name,
+                              request_id=req_id)
 
         # Inject the context...
         req.environ['neutron.context'] = ctx

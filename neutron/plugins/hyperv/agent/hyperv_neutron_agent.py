@@ -21,17 +21,21 @@
 import eventlet
 import platform
 import re
-import sys
 import time
 
 from oslo.config import cfg
 
+from neutron.agent.common import config
 from neutron.agent import rpc as agent_rpc
+from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import config as logging_config
+from neutron.common import constants as n_const
 from neutron.common import topics
 from neutron import context
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import loopingcall
 from neutron.openstack.common.rpc import dispatcher
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.hyperv.agent import utils
 from neutron.plugins.hyperv.agent import utilsfactory
 from neutron.plugins.hyperv.common import constants
@@ -43,8 +47,8 @@ agent_opts = [
         'physical_network_vswitch_mappings',
         default=[],
         help=_('List of <physical_network>:<vswitch> '
-        'where the physical networks can be expressed with '
-        'wildcards, e.g.: ."*:external"')),
+               'where the physical networks can be expressed with '
+               'wildcards, e.g.: ."*:external"')),
     cfg.StrOpt(
         'local_network_vswitch',
         default='private',
@@ -64,6 +68,46 @@ agent_opts = [
 
 CONF = cfg.CONF
 CONF.register_opts(agent_opts, "AGENT")
+config.register_agent_state_opts_helper(cfg.CONF)
+
+
+class HyperVSecurityAgent(sg_rpc.SecurityGroupAgentRpcMixin):
+    # Set RPC API version to 1.1 by default.
+    RPC_API_VERSION = '1.1'
+
+    def __init__(self, context, plugin_rpc):
+        self.context = context
+        self.plugin_rpc = plugin_rpc
+        self.init_firewall()
+
+        if sg_rpc.is_firewall_enabled():
+            self._setup_rpc()
+
+    def _setup_rpc(self):
+        self.topic = topics.AGENT
+        self.dispatcher = self._create_rpc_dispatcher()
+        consumers = [[topics.SECURITY_GROUP, topics.UPDATE]]
+
+        self.connection = agent_rpc.create_consumers(self.dispatcher,
+                                                     self.topic,
+                                                     consumers)
+
+    def _create_rpc_dispatcher(self):
+        rpc_callback = HyperVSecurityCallbackMixin(self)
+        return dispatcher.RpcDispatcher([rpc_callback])
+
+
+class HyperVSecurityCallbackMixin(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
+    # Set RPC API version to 1.1 by default.
+    RPC_API_VERSION = '1.1'
+
+    def __init__(self, sg_agent):
+        self.sg_agent = sg_agent
+
+
+class HyperVPluginApi(agent_rpc.PluginApi,
+                      sg_rpc.SecurityGroupServerRpcApiMixin):
+    pass
 
 
 class HyperVNeutronAgent(object):
@@ -75,12 +119,33 @@ class HyperVNeutronAgent(object):
         self._polling_interval = CONF.AGENT.polling_interval
         self._load_physical_network_mappings()
         self._network_vswitch_map = {}
+        self._set_agent_state()
         self._setup_rpc()
+
+    def _set_agent_state(self):
+        self.agent_state = {
+            'binary': 'neutron-hyperv-agent',
+            'host': cfg.CONF.host,
+            'topic': n_const.L2_AGENT_TOPIC,
+            'configurations': {'vswitch_mappings':
+                               self._physical_network_mappings},
+            'agent_type': n_const.AGENT_TYPE_HYPERV,
+            'start_flag': True}
+
+    def _report_state(self):
+        try:
+            self.state_rpc.report_state(self.context,
+                                        self.agent_state)
+            self.agent_state.pop('start_flag', None)
+        except Exception as ex:
+            LOG.exception(_("Failed reporting state! %s"), ex)
 
     def _setup_rpc(self):
         self.agent_id = 'hyperv_%s' % platform.node()
         self.topic = topics.AGENT
-        self.plugin_rpc = agent_rpc.PluginApi(topics.PLUGIN)
+        self.plugin_rpc = HyperVPluginApi(topics.PLUGIN)
+
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
         # RPC network init
         self.context = context.get_admin_context_without_session()
@@ -95,6 +160,13 @@ class HyperVNeutronAgent(object):
                                                      self.topic,
                                                      consumers)
 
+        self.sec_groups_agent = HyperVSecurityAgent(
+            self.context, self.plugin_rpc)
+        report_interval = CONF.AGENT.report_interval
+        if report_interval:
+            heartbeat = loopingcall.LoopingCall(self._report_state)
+            heartbeat.start(interval=report_interval)
+
     def _load_physical_network_mappings(self):
         self._physical_network_mappings = {}
         for mapping in CONF.AGENT.physical_network_vswitch_mappings:
@@ -104,14 +176,14 @@ class HyperVNeutronAgent(object):
             else:
                 pattern = re.escape(parts[0].strip()).replace('\\*', '.*')
                 vswitch = parts[1].strip()
-                self._physical_network_mappings[re.compile(pattern)] = vswitch
+                self._physical_network_mappings[pattern] = vswitch
 
     def _get_vswitch_for_physical_network(self, phys_network_name):
-        for compre in self._physical_network_mappings:
+        for pattern in self._physical_network_mappings:
             if phys_network_name is None:
                 phys_network_name = ''
-            if compre.match(phys_network_name):
-                return self._physical_network_mappings[compre]
+            if re.match(pattern, phys_network_name):
+                return self._physical_network_mappings[pattern]
         # Not found in the mappings, the vswitch has the same name
         return phys_network_name
 
@@ -136,6 +208,9 @@ class HyperVNeutronAgent(object):
     def port_update(self, context, port=None, network_type=None,
                     segmentation_id=None, physical_network=None):
         LOG.debug(_("port_update received"))
+        if 'security_groups' in port:
+            self.sec_groups_agent.refresh_firewall()
+
         self._treat_vif_port(
             port['id'], port['network_id'],
             network_type, physical_network,
@@ -145,7 +220,7 @@ class HyperVNeutronAgent(object):
         return dispatcher.RpcDispatcher([self])
 
     def _get_vswitch_name(self, network_type, physical_network):
-        if network_type != constants.TYPE_LOCAL:
+        if network_type != p_const.TYPE_LOCAL:
             vswitch_name = self._get_vswitch_for_physical_network(
                 physical_network)
         else:
@@ -160,18 +235,18 @@ class HyperVNeutronAgent(object):
 
         vswitch_name = self._get_vswitch_name(network_type, physical_network)
 
-        if network_type in [constants.TYPE_VLAN, constants.TYPE_FLAT]:
+        if network_type in [p_const.TYPE_VLAN, p_const.TYPE_FLAT]:
             #Nothing to do
             pass
-        elif network_type == constants.TYPE_LOCAL:
+        elif network_type == p_const.TYPE_LOCAL:
             #TODO(alexpilotti): Check that the switch type is private
             #or create it if not existing
             pass
         else:
             raise utils.HyperVException(
-                _("Cannot provision unknown network type %(network_type)s "
-                  "for network %(net_uuid)s"),
-                dict(network_type=network_type, net_uuid=net_uuid))
+                msg=(_("Cannot provision unknown network type %(network_type)s"
+                       " for network %(net_uuid)s") %
+                     dict(network_type=network_type, net_uuid=net_uuid)))
 
         map = {
             'network_type': network_type,
@@ -201,17 +276,17 @@ class HyperVNeutronAgent(object):
 
         self._utils.connect_vnic_to_vswitch(map['vswitch_name'], port_id)
 
-        if network_type == constants.TYPE_VLAN:
+        if network_type == p_const.TYPE_VLAN:
             LOG.info(_('Binding VLAN ID %(segmentation_id)s '
                        'to switch port %(port_id)s'),
                      dict(segmentation_id=segmentation_id, port_id=port_id))
             self._utils.set_vswitch_port_vlan_id(
                 segmentation_id,
                 port_id)
-        elif network_type == constants.TYPE_FLAT:
+        elif network_type == p_const.TYPE_FLAT:
             #Nothing to do
             pass
-        elif network_type == constants.TYPE_LOCAL:
+        elif network_type == p_const.TYPE_LOCAL:
             #Nothing to do
             pass
         else:
@@ -282,6 +357,12 @@ class HyperVNeutronAgent(object):
                     device_details['physical_network'],
                     device_details['segmentation_id'],
                     device_details['admin_state_up'])
+
+                self.sec_groups_agent.prepare_devices_filter(devices)
+                self.plugin_rpc.update_device_up(self.context,
+                                                 device,
+                                                 self.agent_id,
+                                                 cfg.CONF.host)
         return resync
 
     def _treat_devices_removed(self, devices):
@@ -291,7 +372,8 @@ class HyperVNeutronAgent(object):
             try:
                 self.plugin_rpc.update_device_down(self.context,
                                                    device,
-                                                   self.agent_id)
+                                                   self.agent_id,
+                                                   cfg.CONF.host)
             except Exception as e:
                 LOG.debug(
                     _("Removing port failed for device %(device)s: %(e)s"),
@@ -356,4 +438,3 @@ def main():
     # Start everything.
     LOG.info(_("Agent initialized successfully, now running... "))
     plugin.daemon_loop()
-    sys.exit(0)

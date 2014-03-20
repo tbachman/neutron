@@ -21,7 +21,7 @@
 from sqlalchemy.orm import exc as s_exc
 from testtools import matchers
 
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
@@ -100,12 +100,10 @@ class VlanAllocationsTest(base.BaseTestCase):
 
     def setUp(self):
         super(VlanAllocationsTest, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
         n1kv_db_v2.sync_vlan_allocations(self.session, VLAN_RANGES)
-
-    def tearDown(self):
-        super(VlanAllocationsTest, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def test_sync_vlan_allocations_outside_segment_range(self):
         self.assertRaises(c_exc.VlanIDNotFound,
@@ -215,7 +213,7 @@ class VlanAllocationsTest(base.BaseTestCase):
             self.assertThat(vlan_id, matchers.LessThan(VLAN_MAX + 1))
             vlan_ids.add(vlan_id)
 
-        self.assertRaises(q_exc.NoNetworkAvailable,
+        self.assertRaises(n_exc.NoNetworkAvailable,
                           n1kv_db_v2.reserve_vlan,
                           self.session,
                           p)
@@ -243,7 +241,7 @@ class VlanAllocationsTest(base.BaseTestCase):
                                                        PHYS_NET,
                                                        vlan_id).allocated)
 
-        self.assertRaises(q_exc.VlanIdInUse,
+        self.assertRaises(n_exc.VlanIdInUse,
                           n1kv_db_v2.reserve_specific_vlan,
                           self.session,
                           PHYS_NET,
@@ -265,7 +263,7 @@ class VlanAllocationsTest(base.BaseTestCase):
         self.assertTrue(n1kv_db_v2.get_vlan_allocation(self.session, PHYS_NET,
                                                        vlan_id).allocated)
 
-        self.assertRaises(q_exc.VlanIdInUse,
+        self.assertRaises(n_exc.VlanIdInUse,
                           n1kv_db_v2.reserve_specific_vlan,
                           self.session,
                           PHYS_NET,
@@ -284,12 +282,10 @@ class VxlanAllocationsTest(base.BaseTestCase,
 
     def setUp(self):
         super(VxlanAllocationsTest, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
         n1kv_db_v2.sync_vxlan_allocations(self.session, VXLAN_RANGES)
-
-    def tearDown(self):
-        super(VxlanAllocationsTest, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def test_sync_vxlan_allocations_outside_segment_range(self):
         self.assertIsNone(n1kv_db_v2.get_vxlan_allocation(self.session,
@@ -338,7 +334,7 @@ class VxlanAllocationsTest(base.BaseTestCase,
             self.assertThat(vxlan_id, matchers.LessThan(VXLAN_MAX + 1))
             vxlan_ids.add(vxlan_id)
 
-        self.assertRaises(q_exc.NoNetworkAvailable,
+        self.assertRaises(n_exc.NoNetworkAvailable,
                           n1kv_db_v2.reserve_vxlan,
                           self.session,
                           profile)
@@ -392,11 +388,9 @@ class NetworkBindingsTest(test_plugin.NeutronDbPluginV2TestCase):
 
     def setUp(self):
         super(NetworkBindingsTest, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
-
-    def tearDown(self):
-        super(NetworkBindingsTest, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def test_add_network_binding(self):
         with self.network() as network:
@@ -643,11 +637,9 @@ class NetworkProfileTests(base.BaseTestCase,
 
     def setUp(self):
         super(NetworkProfileTests, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
-
-    def tearDown(self):
-        super(NetworkProfileTests, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def test_create_network_profile(self):
         _db_profile = n1kv_db_v2.create_network_profile(self.session,
@@ -670,10 +662,11 @@ class NetworkProfileTests(base.BaseTestCase,
         _db_profile = (n1kv_db_v2.create_network_profile(
                        self.session, TEST_NETWORK_PROFILE_MULTI_SEGMENT))
         self.assertIsNotNone(_db_profile)
-        db_profile = (self.session.query(n1kv_models_v2.NetworkProfile).
-                      filter_by(
-                      name=TEST_NETWORK_PROFILE_MULTI_SEGMENT['name']).
-                      one())
+        db_profile = (
+            self.session.query(
+                n1kv_models_v2.NetworkProfile).filter_by(
+                    name=TEST_NETWORK_PROFILE_MULTI_SEGMENT['name'])
+            .one())
         self.assertIsNotNone(db_profile)
         self.assertEqual(_db_profile.id, db_profile.id)
         self.assertEqual(_db_profile.name, db_profile.name)
@@ -730,7 +723,7 @@ class NetworkProfileTests(base.BaseTestCase,
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-min-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_MIN_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           self.create_network_profile,
                           ctx,
                           test_net_profile)
@@ -738,7 +731,7 @@ class NetworkProfileTests(base.BaseTestCase,
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-max-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_MAX_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           self.create_network_profile,
                           ctx,
                           test_net_profile)
@@ -746,7 +739,7 @@ class NetworkProfileTests(base.BaseTestCase,
         TEST_NETWORK_PROFILE_2['name'] = 'net-profile-overlap'
         TEST_NETWORK_PROFILE_2['segment_range'] = SEGMENT_RANGE_OVERLAP
         test_net_profile = {'network_profile': TEST_NETWORK_PROFILE_2}
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           self.create_network_profile,
                           ctx,
                           test_net_profile)
@@ -819,7 +812,7 @@ class NetworkProfileTests(base.BaseTestCase,
         [n1kv_db_v2.create_network_profile(self.session, p)
          for p in test_profiles]
         # TODO(abhraut): Fix this test to work with real tenant_td
-        profiles = n1kv_db_v2._get_network_profiles()
+        profiles = n1kv_db_v2._get_network_profiles(db_session=self.session)
         self.assertEqual(len(test_profiles), len(list(profiles)))
 
 
@@ -827,11 +820,9 @@ class PolicyProfileTests(base.BaseTestCase):
 
     def setUp(self):
         super(PolicyProfileTests, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
-
-    def tearDown(self):
-        super(PolicyProfileTests, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def test_create_policy_profile(self):
         _db_profile = n1kv_db_v2.create_policy_profile(TEST_POLICY_PROFILE)
@@ -875,11 +866,9 @@ class ProfileBindingTests(base.BaseTestCase,
 
     def setUp(self):
         super(ProfileBindingTests, self).setUp()
-        n1kv_db_v2.initialize()
+        db.configure_db()
         self.session = db.get_session()
-
-    def tearDown(self):
-        super(ProfileBindingTests, self).tearDown()
+        self.addCleanup(db.clear_db)
 
     def _create_test_binding_if_not_there(self, tenant_id, profile_id,
                                           profile_type):
@@ -889,7 +878,8 @@ class ProfileBindingTests(base.BaseTestCase,
                                   tenant_id=tenant_id,
                                   profile_id=profile_id).one())
         except s_exc.NoResultFound:
-            _binding = n1kv_db_v2.create_profile_binding(tenant_id,
+            _binding = n1kv_db_v2.create_profile_binding(self.session,
+                                                         tenant_id,
                                                          profile_id,
                                                          profile_type)
         return _binding
@@ -898,7 +888,9 @@ class ProfileBindingTests(base.BaseTestCase,
         test_tenant_id = "d434dd90-76ec-11e2-bcfd-0800200c9a66"
         test_profile_id = "dd7b9741-76ec-11e2-bcfd-0800200c9a66"
         test_profile_type = "network"
-        n1kv_db_v2.create_profile_binding(test_tenant_id, test_profile_id,
+        n1kv_db_v2.create_profile_binding(self.session,
+                                          test_tenant_id,
+                                          test_profile_id,
                                           test_profile_type)
         try:
             self.session.query(n1kv_models_v2.ProfileBinding).filter_by(
@@ -917,7 +909,8 @@ class ProfileBindingTests(base.BaseTestCase,
         self._create_test_binding_if_not_there(test_tenant_id,
                                                test_profile_id,
                                                test_profile_type)
-        binding = n1kv_db_v2.get_profile_binding(test_tenant_id,
+        binding = n1kv_db_v2.get_profile_binding(self.session,
+                                                 test_tenant_id,
                                                  test_profile_id)
         self.assertEqual(binding.tenant_id, test_tenant_id)
         self.assertEqual(binding.profile_id, test_profile_id)
@@ -930,7 +923,9 @@ class ProfileBindingTests(base.BaseTestCase,
         self._create_test_binding_if_not_there(test_tenant_id,
                                                test_profile_id,
                                                test_profile_type)
-        n1kv_db_v2.delete_profile_binding(test_tenant_id, test_profile_id)
+        n1kv_db_v2.delete_profile_binding(self.session,
+                                          test_tenant_id,
+                                          test_profile_id)
         q = (self.session.query(n1kv_models_v2.ProfileBinding).filter_by(
              profile_type=test_profile_type,
              tenant_id=test_tenant_id,
@@ -942,15 +937,18 @@ class ProfileBindingTests(base.BaseTestCase,
         ctx.tenant_id = "d434dd90-76ec-11e2-bcfd-0800200c9a66"
         test_profile_id = "AAAAAAAA-76ec-11e2-bcfd-0800200c9a66"
         test_profile_type = "policy"
-        n1kv_db_v2.create_profile_binding(cisco_constants.TENANT_ID_NOT_SET,
+        n1kv_db_v2.create_profile_binding(self.session,
+                                          cisco_constants.TENANT_ID_NOT_SET,
                                           test_profile_id,
                                           test_profile_type)
         network_profile = {"network_profile": TEST_NETWORK_PROFILE}
         test_network_profile = self.create_network_profile(ctx,
                                                            network_profile)
-        binding = n1kv_db_v2.get_profile_binding(ctx.tenant_id,
+        binding = n1kv_db_v2.get_profile_binding(self.session,
+                                                 ctx.tenant_id,
                                                  test_profile_id)
         self.assertIsNone(n1kv_db_v2.get_profile_binding(
+            self.session,
             cisco_constants.TENANT_ID_NOT_SET,
             test_profile_id))
         self.assertNotEqual(binding.tenant_id,

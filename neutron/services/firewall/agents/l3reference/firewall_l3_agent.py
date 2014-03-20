@@ -67,13 +67,15 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
         self.conf = conf
         fwaas_driver_class_path = cfg.CONF.fwaas.driver
         self.fwaas_enabled = cfg.CONF.fwaas.enabled
-        try:
-            self.fwaas_driver = importutils.import_object(
-                fwaas_driver_class_path)
-            LOG.debug(_("FWaaS Driver Loaded: '%s'"), fwaas_driver_class_path)
-        except ImportError:
-            msg = _('Error importing FWaaS device driver: %s')
-            raise ImportError(msg % fwaas_driver_class_path)
+        if self.fwaas_enabled:
+            try:
+                self.fwaas_driver = importutils.import_object(
+                    fwaas_driver_class_path)
+                LOG.debug(_("FWaaS Driver Loaded: '%s'"),
+                          fwaas_driver_class_path)
+            except ImportError:
+                msg = _('Error importing FWaaS device driver: %s')
+                raise ImportError(msg % fwaas_driver_class_path)
         self.services_sync = False
         self.root_helper = config.get_root_helper(conf)
         # setup RPC to msg fwaas plugin
@@ -89,11 +91,16 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
             router['id']
             for router in routers
             if router['tenant_id'] == tenant_id]
-        local_ns_list = root_ip.get_namespaces(self.root_helper)
+        local_ns_list = root_ip.get_namespaces(
+            self.root_helper) if self.conf.use_namespaces else []
 
         router_info_list = []
         # Pick up namespaces for Tenant Routers
         for rid in router_ids:
+            # for routers without an interface - get_routers returns
+            # the router - but this is not yet populated in router_info
+            if rid not in self.router_info:
+                continue
             if self.router_info[rid].use_namespaces:
                 router_ns = self.router_info[rid].ns_name()
                 if router_ns in local_ns_list:
@@ -113,6 +120,11 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
                 fw['tenant_id'])
             if not router_info_list:
                 LOG.debug(_('No Routers on tenant: %s'), fw['tenant_id'])
+                # fw was created before any routers were added, and if a
+                # delete is sent then we need to ack so that plugin can
+                # cleanup.
+                if func_name == 'delete_firewall':
+                    self.fwplugin_rpc.firewall_deleted(context, fw['id'])
                 return
             LOG.debug(_("Apply fw on Router List: '%s'"),
                       [ri.router['id'] for ri in router_info_list])
@@ -121,7 +133,10 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
                 self.fwaas_driver.__getattribute__(func_name)(
                     router_info_list,
                     fw)
-                status = constants.ACTIVE
+                if fw['admin_state_up']:
+                    status = constants.ACTIVE
+                else:
+                    status = constants.DOWN
             except fw_ext.FirewallInternalDriverError:
                 LOG.error(_("Firewall Driver Error for %(func_name)s "
                             "for fw: %(fwid)s"),
@@ -129,7 +144,7 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
                 status = constants.ERROR
             # delete needs different handling
             if func_name == 'delete_firewall':
-                if status == constants.ACTIVE:
+                if status in [constants.ACTIVE, constants.DOWN]:
                     self.fwplugin_rpc.firewall_deleted(context, fw['id'])
             else:
                 self.fwplugin_rpc.set_firewall_status(
@@ -166,7 +181,10 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
             # PENDING_UPDATE, PENDING_CREATE, ...
             try:
                 self.fwaas_driver.update_firewall(router_info_list, fw)
-                status = constants.ACTIVE
+                if fw['admin_state_up']:
+                    status = constants.ACTIVE
+                else:
+                    status = constants.DOWN
             except fw_ext.FirewallInternalDriverError:
                 LOG.error(_("Firewall Driver Error on fw state %(fwmsg)s "
                             "for fw: %(fwid)s"),
@@ -214,6 +232,9 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
 
     def process_services_sync(self, ctx):
         """On RPC issues sync with plugin and apply the sync data."""
+        # avoid msg to plugin when fwaas is not configured
+        if not self.fwaas_enabled:
+            return
         try:
             # get all routers
             routers = self.plugin_rpc.get_routers(ctx)
@@ -240,7 +261,7 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
                             # install
                             LOG.debug(_("Apply fw on Router List: '%s'"),
                                       [ri.router['id']
-                                      for ri in router_info_list])
+                                          for ri in router_info_list])
                             # no need to apply sync data for ACTIVE fw
                             if fw['status'] != constants.ACTIVE:
                                 self._invoke_driver_for_sync_from_plugin(

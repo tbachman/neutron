@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import re
+
 from neutron.common import constants
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
@@ -22,7 +24,7 @@ from neutron.plugins.ml2.drivers import mech_agent
 LOG = log.getLogger(__name__)
 
 
-class HypervMechanismDriver(mech_agent.AgentMechanismDriverBase):
+class HypervMechanismDriver(mech_agent.SimpleAgentMechanismDriverBase):
     """Attach to networks using hyperv L2 agent.
 
     The HypervMechanismDriver integrates the ml2 plugin with the
@@ -35,7 +37,7 @@ class HypervMechanismDriver(mech_agent.AgentMechanismDriverBase):
         super(HypervMechanismDriver, self).__init__(
             constants.AGENT_TYPE_HYPERV,
             portbindings.VIF_TYPE_HYPERV,
-            False)
+            {portbindings.CAP_PORT_FILTER: False})
 
     def check_segment_for_agent(self, segment, agent):
         mappings = agent['configurations'].get('vswitch_mappings', {})
@@ -46,6 +48,10 @@ class HypervMechanismDriver(mech_agent.AgentMechanismDriverBase):
         if network_type == 'local':
             return True
         elif network_type in ['flat', 'vlan']:
-            return segment[api.PHYSICAL_NETWORK] in mappings
+            for pattern in mappings:
+                if re.match(pattern, segment[api.PHYSICAL_NETWORK]):
+                    return True
+            else:
+                return False
         else:
             return False

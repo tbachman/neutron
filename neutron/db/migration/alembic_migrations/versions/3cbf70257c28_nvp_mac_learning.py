@@ -30,7 +30,10 @@ down_revision = '5ac71e65402c'
 # Change to ['*'] if this migration applies to all plugins
 
 migration_for_plugins = [
-    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2'
+    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
+    'neutron.plugins.vmware.plugin.NsxPlugin',
+    'neutron.plugins.vmware.plugin.NsxServicePlugin'
 ]
 
 from alembic import op
@@ -49,7 +52,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('port_id', sa.String(length=36), nullable=False),
         sa.Column('mac_learning_enabled', sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(
-        ['port_id'], ['ports.id'], ondelete='CASCADE'),
+            ['port_id'], ['ports.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('port_id'))
 
 

@@ -24,12 +24,5 @@ class EmbranePluginException(neutron_exec.NeutronException):
     message = _("An unexpected error occurred:%(err_msg)s")
 
 
-# Not permitted operation
-class NonPermitted(neutron_exec.BadRequest):
-    pass
-
-
-class StateConstraintException(NonPermitted):
-    message = _("Operation not permitted due to state constraint violation:"
-                "%(operation)s not allowed for DVA %(dva_id)s in state "
-                " %(state)s")
+class UnsupportedException(EmbranePluginException):
+    message = _("%(err_msg)s")

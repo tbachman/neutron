@@ -19,7 +19,7 @@ import contextlib
 from oslo.config import cfg
 from webob import exc
 
-from neutron.common.test_lib import test_config
+from neutron.common import constants
 from neutron.db import extraroute_db
 from neutron.extensions import extraroute
 from neutron.extensions import l3
@@ -143,6 +143,33 @@ class ExtraRouteDBTestCaseBase(object):
                                      sorted(routes))
                     self._routes_update_cleanup(p['port']['id'],
                                                 None, r['router']['id'], [])
+
+    def test_routes_update_for_multiple_routers(self):
+        routes1 = [{'destination': '135.207.0.0/16',
+                   'nexthop': '10.0.0.3'}]
+        routes2 = [{'destination': '12.0.0.0/8',
+                   'nexthop': '10.0.0.4'}]
+        with contextlib.nested(
+                self.router(),
+                self.router(),
+                self.subnet(cidr='10.0.0.0/24')) as (r1, r2, s):
+            with contextlib.nested(
+                    self.port(subnet=s, no_delete=True),
+                    self.port(subnet=s, no_delete=True)) as (p1, p2):
+                body = self._routes_update_prepare(r1['router']['id'],
+                                                   None, p1['port']['id'],
+                                                   routes1)
+                self.assertEqual(body['router']['routes'], routes1)
+
+                body = self._routes_update_prepare(r2['router']['id'],
+                                                   None, p2['port']['id'],
+                                                   routes2)
+                self.assertEqual(body['router']['routes'], routes2)
+
+                self._routes_update_cleanup(p1['port']['id'],
+                                            None, r1['router']['id'], [])
+                self._routes_update_cleanup(p2['port']['id'],
+                                            None, r2['router']['id'], [])
 
     def test_router_update_delete_routes(self):
         routes_orig = [{'destination': '135.207.0.0/16',
@@ -366,7 +393,6 @@ class ExtraRouteDBTestCaseBase(object):
                                                   p['port']['id'])
 
     def test_router_update_on_external_port(self):
-        DEVICE_OWNER_ROUTER_GW = "network:router_gateway"
         with self.router() as r:
             with self.subnet(cidr='10.0.1.0/24') as s:
                 self._set_net_external(s['subnet']['network_id'])
@@ -376,11 +402,12 @@ class ExtraRouteDBTestCaseBase(object):
                 body = self._show('routers', r['router']['id'])
                 net_id = body['router']['external_gateway_info']['network_id']
                 self.assertEqual(net_id, s['subnet']['network_id'])
-                port_res = self._list_ports('json',
-                                            200,
-                                            s['subnet']['network_id'],
-                                            tenant_id=r['router']['tenant_id'],
-                                            device_own=DEVICE_OWNER_ROUTER_GW)
+                port_res = self._list_ports(
+                    'json',
+                    200,
+                    s['subnet']['network_id'],
+                    tenant_id=r['router']['tenant_id'],
+                    device_own=constants.DEVICE_OWNER_ROUTER_GW)
                 port_list = self.deserialize('json', port_res)
                 self.assertEqual(len(port_list['ports']), 1)
 
@@ -400,7 +427,7 @@ class ExtraRouteDBTestCaseBase(object):
                     s['subnet']['network_id'])
                 body = self._show('routers', r['router']['id'])
                 gw_info = body['router']['external_gateway_info']
-                self.assertEqual(gw_info, None)
+                self.assertIsNone(gw_info)
 
     def test_router_list_with_sort(self):
         with contextlib.nested(self.router(name='router1'),
@@ -433,20 +460,16 @@ class ExtraRouteDBTestCaseBase(object):
 class ExtraRouteDBIntTestCase(test_l3.L3NatDBIntTestCase,
                               ExtraRouteDBTestCaseBase):
 
-    def setUp(self, plugin=None):
+    def setUp(self, plugin=None, ext_mgr=None):
         if not plugin:
             plugin = ('neutron.tests.unit.test_extension_extraroute.'
                       'TestExtraRouteIntPlugin')
-        test_config['plugin_name_v2'] = plugin
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
         cfg.CONF.set_default('max_routes', 3)
         ext_mgr = ExtraRouteTestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
-        # L3NatDBIntTestCase will overwrite plugin_name_v2,
-        # so we don't need to setUp on the class here
-        super(test_l3.L3BaseForIntTests, self).setUp()
-
+        super(test_l3.L3BaseForIntTests, self).setUp(plugin=plugin,
+                                                     ext_mgr=ext_mgr)
         # Set to None to reload the drivers
         notifier_api._drivers = None
         cfg.CONF.set_override("notification_driver", [test_notifier.__name__])
@@ -460,8 +483,7 @@ class ExtraRouteDBSepTestCase(test_l3.L3NatDBSepTestCase,
                               ExtraRouteDBTestCaseBase):
     def setUp(self):
         # the plugin without L3 support
-        test_config['plugin_name_v2'] = (
-            'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin')
+        plugin = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
         # the L3 service plugin
         l3_plugin = ('neutron.tests.unit.test_extension_extraroute.'
                      'TestExtraRouteL3NatServicePlugin')
@@ -471,10 +493,8 @@ class ExtraRouteDBSepTestCase(test_l3.L3NatDBSepTestCase,
         cfg.CONF.set_default('allow_overlapping_ips', True)
         cfg.CONF.set_default('max_routes', 3)
         ext_mgr = ExtraRouteTestExtensionManager()
-        test_config['extension_manager'] = ext_mgr
-        # L3NatDBSepTestCase will overwrite plugin_name_v2,
-        # so we don't need to setUp on the class here
         super(test_l3.L3BaseForSepTests, self).setUp(
+            plugin=plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins)
 
         # Set to None to reload the drivers

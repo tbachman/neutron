@@ -15,17 +15,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import zmq
-
+from neutron.openstack.common import importutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.mlnx.common.comm_utils import RetryDecorator
 from neutron.plugins.mlnx.common import exceptions
+
+zmq = importutils.try_import('eventlet.green.zmq')
 
 LOG = logging.getLogger(__name__)
 
 
 class EswitchUtils(object):
     def __init__(self, daemon_endpoint, timeout):
+        if not zmq:
+            msg = _("Failed to import eventlet.green.zmq. "
+                    "Won't connect to eSwitchD - exiting...")
+            LOG.error(msg)
+            raise SystemExit(msg)
         self.__conn = None
         self.daemon = daemon_endpoint
         self.timeout = timeout
@@ -42,6 +49,7 @@ class EswitchUtils(object):
             self.poller.register(self._conn, zmq.POLLIN)
         return self.__conn
 
+    @RetryDecorator(exceptions.RequestTimeout)
     def send_msg(self, msg):
         self._conn.send(msg)
 
@@ -55,7 +63,7 @@ class EswitchUtils(object):
             self._conn.close()
             self.poller.unregister(self._conn)
             self.__conn = None
-            raise exceptions.MlnxException(_("eSwitchD: Request timeout"))
+            raise exceptions.RequestTimeout()
 
     def parse_response_msg(self, recv_msg):
         msg = jsonutils.loads(recv_msg)
@@ -69,7 +77,7 @@ class EswitchUtils(object):
         else:
             error_msg = _("Unknown operation status %s") % msg['status']
         LOG.error(error_msg)
-        raise exceptions.MlnxException(error_msg)
+        raise exceptions.OperationFailed(err_msg=error_msg)
 
     def get_attached_vnics(self):
         LOG.debug(_("get_attached_vnics"))

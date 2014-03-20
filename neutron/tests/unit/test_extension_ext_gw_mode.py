@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2013 Nicira Networks, Inc.
+# Copyright 2013 VMware, Inc.
 # All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,12 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Salvatore Orlando, Nicira, Inc
-#
 
-import stubout
-
-import fixtures
 import mock
 from oslo.config import cfg
 from webob import exc
@@ -47,25 +40,6 @@ FAKE_FIP_INT_PORT_ID = _uuid()
 FAKE_FIP_INT_PORT_MAC = 'aa:aa:aa:aa:aa:aa'
 FAKE_ROUTER_PORT_ID = _uuid()
 FAKE_ROUTER_PORT_MAC = 'bb:bb:bb:bb:bb:bb'
-
-
-class StuboutFixture(fixtures.Fixture):
-    """Setup stubout and add unsetAll to cleanup."""
-
-    def setUp(self):
-        super(StuboutFixture, self).setUp()
-        self.stubs = stubout.StubOutForTesting()
-        self.addCleanup(self.stubs.UnsetAll)
-        self.addCleanup(self.stubs.SmartUnsetAll)
-
-
-def stubout_floating_ip_calls(stubs, fake_count=0):
-
-    def get_floatingips_count(_1, _2, filters):
-        return fake_count
-
-    stubs.Set(l3_db.L3_NAT_db_mixin, 'get_floatingips_count',
-              get_floatingips_count)
 
 
 class TestExtensionManager(object):
@@ -104,8 +78,8 @@ class TestL3GwModeMixin(base.BaseTestCase):
 
     def setUp(self):
         super(TestL3GwModeMixin, self).setUp()
-        stubout_fixture = self.useFixture(StuboutFixture())
-        self.stubs = stubout_fixture.stubs
+        plugin = __name__ + '.' + TestDbIntPlugin.__name__
+        self.setup_coreplugin(plugin)
         self.target_object = TestDbIntPlugin()
         # Patch the context
         ctx_patcher = mock.patch('neutron.context', autospec=True)
@@ -262,7 +236,7 @@ class TestL3GwModeMixin(base.BaseTestCase):
     def test_make_router_dict_no_ext_gw(self):
         self._reset_ext_gw()
         router_dict = self.target_object._make_router_dict(self.router)
-        self.assertEqual(None, router_dict[l3.EXTERNAL_GW_INFO])
+        self.assertIsNone(router_dict[l3.EXTERNAL_GW_INFO])
 
     def test_make_router_dict_with_ext_gw(self):
         router_dict = self.target_object._make_router_dict(self.router)

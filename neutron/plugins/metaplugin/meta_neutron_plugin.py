@@ -18,6 +18,7 @@
 from oslo.config import cfg
 
 from neutron.common import exceptions as exc
+from neutron import context as neutron_context
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
@@ -36,6 +37,24 @@ from neutron.plugins.metaplugin.meta_models_v2 import (NetworkFlavor,
 LOG = logging.getLogger(__name__)
 
 
+# Hooks used to select records which belong a target plugin.
+def _meta_network_model_hook(context, original_model, query):
+    return query.outerjoin(NetworkFlavor,
+                           NetworkFlavor.network_id == models_v2.Network.id)
+
+
+def _meta_port_model_hook(context, original_model, query):
+    return query.join(NetworkFlavor,
+                      NetworkFlavor.network_id == models_v2.Port.network_id)
+
+
+def _meta_flavor_filter_hook(query, filters):
+    if FLAVOR_NETWORK in filters:
+        return query.filter(NetworkFlavor.flavor ==
+                            filters[FLAVOR_NETWORK][0])
+    return query
+
+
 # Metaplugin  Exceptions
 class FlavorNotFound(exc.NotFound):
     message = _("Flavor %(flavor)s could not be found")
@@ -50,12 +69,12 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                    extraroute_db.ExtraRoute_db_mixin):
 
     def __init__(self, configfile=None):
+        super(MetaPluginV2, self).__init__()
         LOG.debug(_("Start initializing metaplugin"))
-        self.supported_extension_aliases = \
-            cfg.CONF.META.supported_extension_aliases.split(',')
-        self.supported_extension_aliases += ['flavor', 'external-net',
-                                             'router', 'ext-gw-mode',
-                                             'extraroute']
+        self.supported_extension_aliases = ['flavor', 'external-net']
+        if cfg.CONF.META.supported_extension_aliases:
+            cfg_aliases = cfg.CONF.META.supported_extension_aliases.split(',')
+            self.supported_extension_aliases += cfg_aliases
 
         # Ignore config option overapping
         def _is_opt_registered(opts, opt):
@@ -78,27 +97,30 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self.plugins[flavor] = self._load_plugin(plugin_provider)
 
         self.l3_plugins = {}
-        l3_plugin_list = [plugin_set.split(':')
-                          for plugin_set
-                          in cfg.CONF.META.l3_plugin_list.split(',')]
-        for flavor, plugin_provider in l3_plugin_list:
-            if flavor in self.plugins:
-                self.l3_plugins[flavor] = self.plugins[flavor]
-            else:
-                # For l3 only plugin
-                self.l3_plugins[flavor] = self._load_plugin(plugin_provider)
+        if cfg.CONF.META.l3_plugin_list:
+            l3_plugin_list = [plugin_set.split(':')
+                              for plugin_set
+                              in cfg.CONF.META.l3_plugin_list.split(',')]
+            for flavor, plugin_provider in l3_plugin_list:
+                if flavor in self.plugins:
+                    self.l3_plugins[flavor] = self.plugins[flavor]
+                else:
+                    # For l3 only plugin
+                    self.l3_plugins[flavor] = self._load_plugin(
+                        plugin_provider)
 
         self.default_flavor = cfg.CONF.META.default_flavor
         if self.default_flavor not in self.plugins:
             raise exc.Invalid(_('default_flavor %s is not plugin list') %
                               self.default_flavor)
 
-        self.default_l3_flavor = cfg.CONF.META.default_l3_flavor
-        if self.default_l3_flavor not in self.l3_plugins:
-            raise exc.Invalid(_('default_l3_flavor %s is not plugin list') %
-                              self.default_l3_flavor)
-
-        db.configure_db()
+        if self.l3_plugins:
+            self.default_l3_flavor = cfg.CONF.META.default_l3_flavor
+            if self.default_l3_flavor not in self.l3_plugins:
+                raise exc.Invalid(_('default_l3_flavor %s is not plugin list')
+                                  % self.default_l3_flavor)
+            self.supported_extension_aliases += ['router', 'ext-gw-mode',
+                                                 'extraroute']
 
         self.extension_map = {}
         if not cfg.CONF.META.extension_map == '':
@@ -108,7 +130,25 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             for method_name, flavor in extension_list:
                 self.extension_map[method_name] = flavor
 
-        self.default_flavor = cfg.CONF.META.default_flavor
+        # Register hooks.
+        # The hooks are applied for each target plugin instance when
+        # calling the base class to get networks/ports so that only records
+        # which belong to the plugin are selected.
+        #NOTE: Doing registration here (within __init__()) is to avoid
+        # registration when merely importing this file. This is only
+        # for running whole unit tests.
+        db_base_plugin_v2.NeutronDbPluginV2.register_model_query_hook(
+            models_v2.Network,
+            'metaplugin_net',
+            _meta_network_model_hook,
+            None,
+            _meta_flavor_filter_hook)
+        db_base_plugin_v2.NeutronDbPluginV2.register_model_query_hook(
+            models_v2.Port,
+            'metaplugin_port',
+            _meta_port_model_hook,
+            None,
+            _meta_flavor_filter_hook)
 
     def _load_plugin(self, plugin_provider):
         LOG.debug(_("Plugin location: %s"), plugin_provider)
@@ -146,30 +186,22 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         flavor = self._get_flavor_by_network_id(context, network['id'])
         network[FLAVOR_NETWORK] = flavor
 
-    def _is_l3_plugin(self, plugin):
-        if hasattr(plugin, 'supported_extension_aliases'):
-            return 'router' in plugin.supported_extension_aliases
-        return False
-
     def create_network(self, context, network):
         n = network['network']
         flavor = n.get(FLAVOR_NETWORK)
         if str(flavor) not in self.plugins:
             flavor = self.default_flavor
         plugin = self._get_plugin(flavor)
-        with context.session.begin(subtransactions=True):
-            net = plugin.create_network(context, network)
-            if not self._is_l3_plugin(plugin):
-                self._process_l3_create(context, net, network['network'])
-            LOG.debug(_("Created network: %(net_id)s with flavor "
-                        "%(flavor)s"), {'net_id': net['id'], 'flavor': flavor})
-            try:
-                meta_db_v2.add_network_flavor_binding(context.session,
-                                                      flavor, str(net['id']))
-            except Exception:
-                LOG.exception(_('Failed to add flavor bindings'))
-                plugin.delete_network(context, net['id'])
-                raise FaildToAddFlavorBinding()
+        net = plugin.create_network(context, network)
+        LOG.debug(_("Created network: %(net_id)s with flavor "
+                    "%(flavor)s"), {'net_id': net['id'], 'flavor': flavor})
+        try:
+            meta_db_v2.add_network_flavor_binding(context.session,
+                                                  flavor, str(net['id']))
+        except Exception:
+            LOG.exception(_('Failed to add flavor bindings'))
+            plugin.delete_network(context, net['id'])
+            raise FaildToAddFlavorBinding()
 
         LOG.debug(_("Created network: %s"), net['id'])
         self._extend_network_dict(context, net)
@@ -178,11 +210,7 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def update_network(self, context, id, network):
         flavor = meta_db_v2.get_flavor_by_network(context.session, id)
         plugin = self._get_plugin(flavor)
-        with context.session.begin(subtransactions=True):
-            net = plugin.update_network(context, id, network)
-            if not self._is_l3_plugin(plugin):
-                self._process_l3_update(context, net, network['network'])
-        return net
+        return plugin.update_network(context, id, network)
 
     def delete_network(self, context, id):
         flavor = meta_db_v2.get_flavor_by_network(context.session, id)
@@ -200,28 +228,24 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             del net['id']
         return net
 
-    def get_networks_with_flavor(self, context, filters=None,
-                                 fields=None):
-        collection = self._model_query(context, models_v2.Network)
-        model = NetworkFlavor
-        collection = collection.join(model,
-                                     models_v2.Network.id == model.network_id)
-        if filters:
-            for key, value in filters.iteritems():
-                if key == FLAVOR_NETWORK:
-                    column = NetworkFlavor.flavor
-                else:
-                    column = getattr(models_v2.Network, key, None)
-                if column:
-                    collection = collection.filter(column.in_(value))
-        return [self._make_network_dict(c, fields) for c in collection]
-
     def get_networks(self, context, filters=None, fields=None):
-        nets = self.get_networks_with_flavor(context, filters, None)
-        if filters:
-            nets = self._filter_nets_l3(context, nets, filters)
-        nets = [self.get_network(context, net['id'], fields)
-                for net in nets]
+        nets = []
+        for flavor, plugin in self.plugins.items():
+            if (filters and FLAVOR_NETWORK in filters and
+                    not flavor in filters[FLAVOR_NETWORK]):
+                continue
+            if filters:
+                #NOTE: copy each time since a target plugin may modify
+                # plugin_filters.
+                plugin_filters = filters.copy()
+            else:
+                plugin_filters = {}
+            plugin_filters[FLAVOR_NETWORK] = [flavor]
+            plugin_nets = plugin.get_networks(context, plugin_filters, fields)
+            for net in plugin_nets:
+                if not fields or FLAVOR_NETWORK in fields:
+                    net[FLAVOR_NETWORK] = flavor
+                nets.append(net)
         return nets
 
     def _get_flavor_by_network_id(self, context, network_id):
@@ -242,19 +266,44 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         return plugin.create_port(context, port)
 
     def update_port(self, context, id, port):
-        port_in_db = self.get_port(context, id)
+        port_in_db = self._get_port(context, id)
         plugin = self._get_plugin_by_network_id(context,
                                                 port_in_db['network_id'])
         return plugin.update_port(context, id, port)
 
     def delete_port(self, context, id, l3_port_check=True):
-        port_in_db = self.get_port(context, id)
+        port_in_db = self._get_port(context, id)
         plugin = self._get_plugin_by_network_id(context,
                                                 port_in_db['network_id'])
-        if l3_port_check:
-            self.prevent_l3_port_deletion(context, id)
-            self.disassociate_floatingips(context, id)
         return plugin.delete_port(context, id, l3_port_check)
+
+    # This is necessary since there is a case that
+    # NeutronManager.get_plugin()._make_port_dict is called.
+    def _make_port_dict(self, port):
+        context = neutron_context.get_admin_context()
+        plugin = self._get_plugin_by_network_id(context,
+                                                port['network_id'])
+        return plugin._make_port_dict(port)
+
+    def get_port(self, context, id, fields=None):
+        port_in_db = self._get_port(context, id)
+        plugin = self._get_plugin_by_network_id(context,
+                                                port_in_db['network_id'])
+        return plugin.get_port(context, id, fields)
+
+    def get_ports(self, context, filters=None, fields=None):
+        all_ports = []
+        for flavor, plugin in self.plugins.items():
+            if filters:
+                #NOTE: copy each time since a target plugin may modify
+                # plugin_filters.
+                plugin_filters = filters.copy()
+            else:
+                plugin_filters = {}
+            plugin_filters[FLAVOR_NETWORK] = [flavor]
+            ports = plugin.get_ports(context, plugin_filters, fields)
+            all_ports += ports
+        return all_ports
 
     def create_subnet(self, context, subnet):
         s = subnet['subnet']
@@ -286,13 +335,17 @@ class MetaPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         if str(flavor) not in self.l3_plugins:
             flavor = self.default_l3_flavor
         plugin = self._get_l3_plugin(flavor)
-        with context.session.begin(subtransactions=True):
-            r_in_db = plugin.create_router(context, router)
-            LOG.debug(_("Created router: %(router_id)s with flavor "
-                        "%(flavor)s"),
-                      {'router_id': r_in_db['id'], 'flavor': flavor})
+        r_in_db = plugin.create_router(context, router)
+        LOG.debug(_("Created router: %(router_id)s with flavor "
+                    "%(flavor)s"),
+                  {'router_id': r_in_db['id'], 'flavor': flavor})
+        try:
             meta_db_v2.add_router_flavor_binding(context.session,
                                                  flavor, str(r_in_db['id']))
+        except Exception:
+            LOG.exception(_('Failed to add flavor bindings'))
+            plugin.delete_router(context, r_in_db['id'])
+            raise FaildToAddFlavorBinding()
 
         LOG.debug(_("Created router: %s"), r_in_db['id'])
         self._extend_router_dict(context, r_in_db)

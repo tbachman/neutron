@@ -17,7 +17,10 @@
 Utility methods for working with WSGI servers redux
 """
 
+import sys
+
 import netaddr
+import six
 import webob.dec
 import webob.exc
 
@@ -84,20 +87,31 @@ def Resource(controller, faults=None, deserializers=None, serializers=None):
             result = method(request=request, **args)
         except (exceptions.NeutronException,
                 netaddr.AddrFormatError) as e:
-            LOG.exception(_('%s failed'), action)
-            e = translate(e, language)
-            body = serializer.serialize({'NeutronError': e})
-            kwargs = {'body': body, 'content_type': content_type}
             for fault in faults:
                 if isinstance(e, fault):
-                    raise faults[fault](**kwargs)
-            raise webob.exc.HTTPInternalServerError(**kwargs)
+                    mapped_exc = faults[fault]
+                    break
+            else:
+                mapped_exc = webob.exc.HTTPInternalServerError
+            if 400 <= mapped_exc.code < 500:
+                LOG.info(_('%(action)s failed (client error): %(exc)s'),
+                         {'action': action, 'exc': e})
+            else:
+                LOG.exception(_('%s failed'), action)
+            e = translate(e, language)
+            # following structure is expected by python-neutronclient
+            err_data = {'type': e.__class__.__name__,
+                        'message': e, 'detail': ''}
+            body = serializer.serialize({'NeutronError': err_data})
+            kwargs = {'body': body, 'content_type': content_type}
+            raise mapped_exc(**kwargs)
         except webob.exc.HTTPException as e:
+            type_, value, tb = sys.exc_info()
             LOG.exception(_('%s failed'), action)
             translate(e, language)
-            e.body = serializer.serialize({'NeutronError': e})
-            e.content_type = content_type
-            raise
+            value.body = serializer.serialize({'NeutronError': e})
+            value.content_type = content_type
+            six.reraise(type_, value, tb)
         except NotImplementedError as e:
             e = translate(e, language)
             # NOTE(armando-migliaccio): from a client standpoint
@@ -110,8 +124,8 @@ def Resource(controller, faults=None, deserializers=None, serializers=None):
                 {'NotImplementedError': e.message})
             kwargs = {'body': body, 'content_type': content_type}
             raise webob.exc.HTTPNotImplemented(**kwargs)
-        except Exception as e:
-            # NOTE(jkoelker) Everyting else is 500
+        except Exception:
+            # NOTE(jkoelker) Everything else is 500
             LOG.exception(_('%s failed'), action)
             # Do not expose details of 500 error to clients.
             msg = _('Request Failed: internal server error while '
@@ -146,10 +160,13 @@ def translate(translatable, locale):
     :returns: the translated object, or the object as-is if it
               was not translated
     """
-    localize = gettextutils.get_localized_message
-    if isinstance(translatable, Exception):
+    localize = gettextutils.translate
+    if isinstance(translatable, exceptions.NeutronException):
+        translatable.msg = localize(translatable.msg, locale)
+    elif isinstance(translatable, webob.exc.HTTPError):
+        translatable.detail = localize(translatable.detail, locale)
+    elif isinstance(translatable, Exception):
         translatable.message = localize(translatable.message, locale)
-        if isinstance(translatable, webob.exc.HTTPError):
-            translatable.detail = localize(translatable.detail, locale)
-        return translatable
-    return localize(translatable, locale)
+    else:
+        return localize(translatable, locale)
+    return translatable

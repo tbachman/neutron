@@ -19,6 +19,8 @@
 
 from heleosapi import info as h_info
 
+from neutron.common import constants
+from neutron.db import models_v2
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -31,7 +33,12 @@ def set_db_item_state(context, neutron_item, new_state):
             context.session.merge(neutron_item)
 
 
-def retrieve_ip_allocation_info(l2_plugin, context, neutron_port):
+def retrieve_subnet(context, subnet_id):
+    return (context.session.query(
+        models_v2.Subnet).filter(models_v2.Subnet.id == subnet_id).one())
+
+
+def retrieve_ip_allocation_info(context, neutron_port):
     """Retrieves ip allocation info for a specific port if any."""
 
     try:
@@ -39,9 +46,10 @@ def retrieve_ip_allocation_info(l2_plugin, context, neutron_port):
     except (KeyError, IndexError):
         LOG.info(_("No ip allocation set"))
         return
-    subnet = l2_plugin._get_subnet(context, subnet_id)
+    subnet = retrieve_subnet(context, subnet_id)
     allocated_ip = neutron_port["fixed_ips"][0]["ip_address"]
-    is_gw_port = neutron_port["device_owner"] == "network:router_gateway"
+    is_gw_port = (neutron_port["device_owner"] ==
+                  constants.DEVICE_OWNER_ROUTER_GW)
     gateway_ip = subnet["gateway_ip"]
 
     ip_allocation_info = h_info.IpAllocationInfo(

@@ -24,6 +24,7 @@ from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron import manager
 from neutron.openstack.common import log
 from neutron.openstack.common.rpc import proxy
+from neutron.openstack.common import uuidutils
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_tunnel
@@ -69,7 +70,13 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         if device.startswith(TAP_DEVICE_PREFIX):
             return device[TAP_DEVICE_PREFIX_LENGTH:]
         else:
-            return device
+            # REVISIT(irenab): Consider calling into bound MD to
+            # handle the get_device_details RPC, then remove the 'else' clause
+            if not uuidutils.is_uuid_like(device):
+                port = db.get_port_from_device_mac(device)
+                if port:
+                    return port.id
+        return device
 
     @classmethod
     def get_port_from_device(cls, device):
@@ -132,6 +139,10 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
             new_status = (q_const.PORT_STATUS_BUILD if port.admin_state_up
                           else q_const.PORT_STATUS_DOWN)
             if port.status != new_status:
+                plugin = manager.NeutronManager.get_plugin()
+                plugin.update_port_status(rpc_context,
+                                          port_id,
+                                          new_status)
                 port.status = new_status
             entry = {'device': device,
                      'network_id': port.network_id,
@@ -153,12 +164,20 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         # TODO(garyk) - live migration and port status
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
+        host = kwargs.get('host')
         LOG.debug(_("Device %(device)s no longer exists at agent "
                     "%(agent_id)s"),
                   {'device': device, 'agent_id': agent_id})
-        port_id = self._device_to_port_id(device)
-
         plugin = manager.NeutronManager.get_plugin()
+        port_id = self._device_to_port_id(device)
+        port_exists = True
+        if (host and not plugin.port_bound_to_host(port_id, host)):
+            LOG.debug(_("Device %(device)s not bound to the"
+                        " agent host %(host)s"),
+                      {'device': device, 'host': host})
+            return {'device': device,
+                    'exists': port_exists}
+
         port_exists = plugin.update_port_status(rpc_context, port_id,
                                                 q_const.PORT_STATUS_DOWN)
 
@@ -169,11 +188,17 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         """Device is up on agent."""
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
+        host = kwargs.get('host')
         LOG.debug(_("Device %(device)s up at agent %(agent_id)s"),
                   {'device': device, 'agent_id': agent_id})
-        port_id = self._device_to_port_id(device)
-
         plugin = manager.NeutronManager.get_plugin()
+        port_id = self._device_to_port_id(device)
+        if (host and not plugin.port_bound_to_host(port_id, host)):
+            LOG.debug(_("Device %(device)s not bound to the"
+                        " agent host %(host)s"),
+                      {'device': device, 'host': host})
+            return
+
         plugin.update_port_status(rpc_context, port_id,
                                   q_const.PORT_STATUS_ACTIVE)
 

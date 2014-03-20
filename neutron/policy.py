@@ -27,6 +27,7 @@ from neutron.api.v2 import attributes
 from neutron.common import exceptions
 import neutron.common.utils as utils
 from neutron import manager
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import policy
@@ -45,7 +46,7 @@ DEPRECATED_POLICY_MAP = {
     'extension:router':
     ['network:router:external'],
     'extension:port_binding':
-    ['port:binding:vif_type', 'port:binding:capabilities',
+    ['port:binding:vif_type', 'port:binding:vif_details',
      'port:binding:profile', 'port:binding:host_id']
 }
 DEPRECATED_ACTION_MAP = {
@@ -274,8 +275,8 @@ class OwnerCheck(policy.Check):
                          fields=[parent_field])
                 target[self.target_field] = data[parent_field]
             except Exception:
-                LOG.exception(_('Policy check error while calling %s!'), f)
-                raise
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(_('Policy check error while calling %s!'), f)
         match = self.match % target
         if self.kind in creds:
             return match == unicode(creds[self.kind])
@@ -370,13 +371,16 @@ def enforce(context, action, target, plugin=None):
     :param plugin: currently unused and deprecated.
         Kept for backward compatibility.
 
-    :raises neutron.exceptions.PolicyNotAllowed: if verification fails.
+    :raises neutron.exceptions.PolicyNotAuthorized: if verification fails.
     """
 
     init()
     rule, target, credentials = _prepare_check(context, action, target)
-    return policy.check(rule, target, credentials,
-                        exc=exceptions.PolicyNotAuthorized, action=action)
+    result = policy.check(rule, target, credentials, action=action)
+    if not result:
+        LOG.debug(_("Failed policy check for '%s'"), action)
+        raise exceptions.PolicyNotAuthorized(action=action)
+    return result
 
 
 def check_is_admin(context):

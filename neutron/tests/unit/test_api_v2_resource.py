@@ -23,7 +23,7 @@ from webob import exc
 import webtest
 
 from neutron.api.v2 import resource as wsgi_resource
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.openstack.common import gettextutils
 from neutron.tests import base
@@ -38,7 +38,7 @@ class RequestTestCase(base.BaseTestCase):
     def test_content_type_missing(self):
         request = wsgi.Request.blank('/tests/123', method='POST')
         request.body = "<body />"
-        self.assertEqual(None, request.get_content_type())
+        self.assertIsNone(request.get_content_type())
 
     def test_content_type_with_charset(self):
         request = wsgi.Request.blank('/tests/123')
@@ -113,13 +113,13 @@ class RequestTestCase(base.BaseTestCase):
         # the best match locale should be None
         request.headers['Accept-Language'] = 'unknown-language'
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
         request.headers['Accept-Language'] = ''
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
         request.headers.pop('Accept-Language')
         language = request.best_match_language()
-        self.assertEqual(language, None)
+        self.assertIsNone(language)
 
 
 class ResourceTestCase(base.BaseTestCase):
@@ -127,9 +127,13 @@ class ResourceTestCase(base.BaseTestCase):
     def test_unmapped_neutron_error_with_json(self):
         msg = u'\u7f51\u7edc'
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
-        expected_res = {'body': {'NeutronError': msg}}
+        expected_res = {'body': {
+            'NeutronError': {
+                'type': 'TestException',
+                'message': msg,
+                'detail': ''}}}
         controller = mock.MagicMock()
         controller.test.side_effect = TestException()
 
@@ -145,9 +149,13 @@ class ResourceTestCase(base.BaseTestCase):
     def test_unmapped_neutron_error_with_xml(self):
         msg = u'\u7f51\u7edc'
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
-        expected_res = {'body': {'NeutronError': msg}}
+        expected_res = {'body': {
+            'NeutronError': {
+                'type': 'TestException',
+                'message': msg,
+                'detail': ''}}}
         controller = mock.MagicMock()
         controller.test.side_effect = TestException()
 
@@ -160,15 +168,14 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
                          expected_res)
 
-    @mock.patch('neutron.openstack.common.gettextutils.Message.data',
-                new_callable=mock.PropertyMock)
+    @mock.patch('neutron.openstack.common.gettextutils.translate')
     def test_unmapped_neutron_error_localized(self, mock_translation):
         gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'
         mock_translation.return_value = msg_translation
         msg = _('Unmapped error')
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
 
         controller = mock.MagicMock()
@@ -186,9 +193,13 @@ class ResourceTestCase(base.BaseTestCase):
     def test_mapped_neutron_error_with_json(self):
         msg = u'\u7f51\u7edc'
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
-        expected_res = {'body': {'NeutronError': msg}}
+        expected_res = {'body': {
+            'NeutronError': {
+                'type': 'TestException',
+                'message': msg,
+                'detail': ''}}}
         controller = mock.MagicMock()
         controller.test.side_effect = TestException()
 
@@ -206,9 +217,13 @@ class ResourceTestCase(base.BaseTestCase):
     def test_mapped_neutron_error_with_xml(self):
         msg = u'\u7f51\u7edc'
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
-        expected_res = {'body': {'NeutronError': msg}}
+        expected_res = {'body': {
+            'NeutronError': {
+                'type': 'TestException',
+                'message': msg,
+                'detail': ''}}}
         controller = mock.MagicMock()
         controller.test.side_effect = TestException()
 
@@ -223,15 +238,14 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
                          expected_res)
 
-    @mock.patch('neutron.openstack.common.gettextutils.Message.data',
-                new_callable=mock.PropertyMock)
+    @mock.patch('neutron.openstack.common.gettextutils.translate')
     def test_mapped_neutron_error_localized(self, mock_translation):
         gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'
         mock_translation.return_value = msg_translation
         msg = _('Unmapped error')
 
-        class TestException(q_exc.NeutronException):
+        class TestException(n_exc.NeutronException):
             message = msg
 
         controller = mock.MagicMock()
@@ -297,7 +311,7 @@ class ResourceTestCase(base.BaseTestCase):
         resource = webtest.TestApp(wsgi_resource.Resource(controller))
 
         environ = {'wsgiorg.routing_args': (None, {'action': 'test'})}
-        res = resource.get('', extra_environ=environ, expect_errors=True)
+        res = resource.get('', extra_environ=environ)
         self.assertEqual(res.status_int, 200)
 
     def test_status_204(self):
@@ -307,8 +321,35 @@ class ResourceTestCase(base.BaseTestCase):
         resource = webtest.TestApp(wsgi_resource.Resource(controller))
 
         environ = {'wsgiorg.routing_args': (None, {'action': 'delete'})}
-        res = resource.delete('', extra_environ=environ, expect_errors=True)
+        res = resource.delete('', extra_environ=environ)
         self.assertEqual(res.status_int, 204)
+
+    def _test_error_log_level(self, map_webob_exc, expect_log_info=False,
+                              use_fault_map=True):
+        class TestException(n_exc.NeutronException):
+            message = 'Test Exception'
+
+        controller = mock.MagicMock()
+        controller.test.side_effect = TestException()
+        faults = {TestException: map_webob_exc} if use_fault_map else {}
+        resource = webtest.TestApp(wsgi_resource.Resource(controller, faults))
+        environ = {'wsgiorg.routing_args': (None, {'action': 'test'})}
+        with mock.patch.object(wsgi_resource, 'LOG') as log:
+            res = resource.get('', extra_environ=environ, expect_errors=True)
+            self.assertEqual(res.status_int, map_webob_exc.code)
+        self.assertEqual(expect_log_info, log.info.called)
+        self.assertNotEqual(expect_log_info, log.exception.called)
+
+    def test_4xx_error_logged_info_level(self):
+        self._test_error_log_level(exc.HTTPNotFound, expect_log_info=True)
+
+    def test_non_4xx_error_logged_exception_level(self):
+        self._test_error_log_level(exc.HTTPServiceUnavailable,
+                                   expect_log_info=False)
+
+    def test_unmapped_error_logged_exception_level(self):
+        self._test_error_log_level(exc.HTTPInternalServerError,
+                                   expect_log_info=False, use_fault_map=False)
 
     def test_no_route_args(self):
         controller = mock.MagicMock()
@@ -327,5 +368,5 @@ class ResourceTestCase(base.BaseTestCase):
 
         environ = {'wsgiorg.routing_args': (None, {'action': 'test'})}
         res = resource.post('', params='{"key": "val"}',
-                            extra_environ=environ, expect_errors=True)
+                            extra_environ=environ)
         self.assertEqual(res.status_int, 200)

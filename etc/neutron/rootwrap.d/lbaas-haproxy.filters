@@ -1,4 +1,4 @@
-# neuton-rootwrap command filters for nodes on which neuton is
+# neutron-rootwrap command filters for nodes on which neutron is
 # expected to control network
 #
 # This file should be owned by (and only-writeable by) the root user
@@ -14,10 +14,8 @@ haproxy: CommandFilter, haproxy, root
 # lbaas-agent uses kill as well, that's handled by the generic KillFilter
 kill_haproxy_usr: KillFilter, root, /usr/sbin/haproxy, -9, -HUP
 
-# lbaas-agent uses cat
-cat: RegExpFilter, cat, root, cat, /proc/\d+/cmdline
-
 ovs-vsctl: CommandFilter, ovs-vsctl, root
+mm-ctl: CommandFilter, mm-ctl, root
 
 # ip_lib
 ip: IpFilter, ip, root

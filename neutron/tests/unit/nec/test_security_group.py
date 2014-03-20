@@ -29,7 +29,6 @@ from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
 
 PLUGIN_NAME = test_nec_plugin.PLUGIN_NAME
 OFC_MANAGER = 'neutron.plugins.nec.nec_plugin.ofc_manager.OFCManager'
-AGENT_NAME = 'neutron.plugins.nec.agent.nec_neutron_agent.NECNeutronAgent'
 NOTIFIER = 'neutron.plugins.nec.nec_plugin.NECPluginV2AgentNotifierApi'
 
 
@@ -37,7 +36,6 @@ class NecSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 
     def setUp(self, plugin=None):
         test_sg_rpc.set_firewall_driver(test_sg_rpc.FIREWALL_HYBRID_DRIVER)
-        self.addCleanup(mock.patch.stopall)
         mock.patch(NOTIFIER).start()
         mock.patch(OFC_MANAGER).start()
         self._attribute_map_bk_ = {}
@@ -46,11 +44,25 @@ class NecSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
                                              RESOURCE_ATTRIBUTE_MAP[item].
                                              copy())
         super(NecSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
-        self.notifier = manager.NeutronManager.get_plugin().notifier
+        plugin = manager.NeutronManager.get_plugin()
+        self.notifier = plugin.notifier
+        self.rpc = plugin.callback_sg
 
     def tearDown(self):
         super(NecSecurityGroupsTestCase, self).tearDown()
         attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
+
+
+class TestNecSGServerRpcCallBack(
+    test_sg_rpc.SGServerRpcCallBackMixinTestCase,
+    NecSecurityGroupsTestCase):
+    pass
+
+
+class TestNecSGServerRpcCallBackXML(
+    test_sg_rpc.SGServerRpcCallBackMixinTestCaseXML,
+    NecSecurityGroupsTestCase):
+    pass
 
 
 class TestNecSecurityGroups(NecSecurityGroupsTestCase,

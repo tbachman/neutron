@@ -1,4 +1,4 @@
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
 
 PLUGIN_NAME = ('neutron.plugins.mlnx.'
                'mlnx_plugin.MellanoxEswitchPlugin')
-AGENT_NAME = ('neutron.plugins.mlnx.'
-              'agent.eswitch_neutron_agent.MlnxEswitchNeutronAgent')
 NOTIFIER = ('neutron.plugins.mlnx.'
             'agent_notify_api.AgentNotifierApi')
 
@@ -46,7 +44,6 @@ class MlnxSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
                                              RESOURCE_ATTRIBUTE_MAP[item].
                                              copy())
         super(MlnxSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
-        self.addCleanup(mock.patch.stopall)
 
     def tearDown(self):
         attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
@@ -96,7 +93,7 @@ class TestMlnxSecurityGroupsDB(MlnxSecurityGroupsTestCase):
 
     def test_security_group_get_port_from_device_with_no_port(self):
         port_dict = mlnx_db.get_port_from_device('bad_device_id')
-        self.assertEqual(None, port_dict)
+        self.assertIsNone(port_dict)
 
 
 class TestMlnxSecurityGroupsDBXML(TestMlnxSecurityGroupsDB):

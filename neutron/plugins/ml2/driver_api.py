@@ -15,6 +15,8 @@
 
 from abc import ABCMeta, abstractmethod, abstractproperty
 
+import six
+
 # The following keys are used in the segment dictionaries passed via
 # the driver API. These are defined separately from similar keys in
 # neutron.extensions.providernet so that drivers don't need to change
@@ -26,6 +28,7 @@ PHYSICAL_NETWORK = 'physical_network'
 SEGMENTATION_ID = 'segmentation_id'
 
 
+@six.add_metaclass(ABCMeta)
 class TypeDriver(object):
     """Define stable abstract interface for ML2 type drivers.
 
@@ -42,8 +45,6 @@ class TypeDriver(object):
     keys. Attributes not applicable for a particular network_type may
     either be excluded or stored as None.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def get_type(self):
@@ -128,6 +129,7 @@ class TypeDriver(object):
         pass
 
 
+@six.add_metaclass(ABCMeta)
 class NetworkContext(object):
     """Context passed to MechanismDrivers for changes to network resources.
 
@@ -136,8 +138,6 @@ class NetworkContext(object):
     from expensive operations are cached so that other
     MechanismDrivers can freely access the same information.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractproperty
     def current(self):
@@ -165,6 +165,7 @@ class NetworkContext(object):
         pass
 
 
+@six.add_metaclass(ABCMeta)
 class SubnetContext(object):
     """Context passed to MechanismDrivers for changes to subnet resources.
 
@@ -173,8 +174,6 @@ class SubnetContext(object):
     from expensive operations are cached so that other
     MechanismDrivers can freely access the same information.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractproperty
     def current(self):
@@ -197,6 +196,7 @@ class SubnetContext(object):
         pass
 
 
+@six.add_metaclass(ABCMeta)
 class PortContext(object):
     """Context passed to MechanismDrivers for changes to port resources.
 
@@ -205,8 +205,6 @@ class PortContext(object):
     expensive operations are cached so that other MechanismDrivers can
     freely access the same information.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractproperty
     def current(self):
@@ -220,7 +218,7 @@ class PortContext(object):
 
     @abstractproperty
     def original(self):
-        """Return the original state of the port
+        """Return the original state of the port.
 
         Return the original state of the port, prior to a call to
         update_port. Method is only valid within calls to
@@ -238,6 +236,31 @@ class PortContext(object):
         """Return the currently bound segment dictionary."""
         pass
 
+    @abstractproperty
+    def original_bound_segment(self):
+        """Return the original bound segment dictionary.
+
+        Return the original bound segment dictionary, prior to a call
+        to update_port.  Method is only valid within calls to
+        update_port_precommit and update_port_postcommit.
+        """
+        pass
+
+    @abstractproperty
+    def bound_driver(self):
+        """Return the currently bound mechanism driver name."""
+        pass
+
+    @abstractproperty
+    def original_bound_driver(self):
+        """Return the original bound mechanism driver name.
+
+        Return the original bound mechanism driver name, prior to a
+        call to update_port.  Method is only valid within calls to
+        update_port_precommit and update_port_postcommit.
+        """
+        pass
+
     @abstractmethod
     def host_agents(self, agent_type):
         """Get agents of the specified type on port's host.
@@ -248,12 +271,12 @@ class PortContext(object):
         pass
 
     @abstractmethod
-    def set_binding(self, segment_id, vif_type, cap_port_filter):
+    def set_binding(self, segment_id, vif_type, vif_details):
         """Set the binding for the port.
 
         :param segment_id: Network segment bound for the port.
         :param vif_type: The VIF type for the bound port.
-        :param cap_port_filter: True if the bound port filters.
+        :param vif_details: Dictionary with details for VIF driver.
 
         Called by MechanismDriver.bind_port to indicate success and
         specify binding details to use for port. The segment_id must
@@ -262,6 +285,7 @@ class PortContext(object):
         pass
 
 
+@six.add_metaclass(ABCMeta)
 class MechanismDriver(object):
     """Define stable abstract interface for ML2 mechanism drivers.
 
@@ -282,8 +306,6 @@ class MechanismDriver(object):
     update network/port case, all data validation must be done within
     methods that are part of the database transaction.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def initialize(self):
@@ -566,7 +588,7 @@ class MechanismDriver(object):
         :param context: PortContext instance describing the port
 
         Called inside transaction context on session, prior to
-        create_network_precommit or update_network_precommit, to
+        create_port_precommit or update_port_precommit, to
         attempt to establish a port binding. If the driver is able to
         bind the port, it calls context.set_binding with the binding
         details.

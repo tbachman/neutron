@@ -33,7 +33,12 @@ migration_for_plugins = [
     'neutron.plugins.bigswitch.plugin.NeutronRestProxyV2',
     'neutron.plugins.hyperv.hyperv_neutron_plugin.HyperVNeutronPlugin',
     'neutron.plugins.midonet.plugin.MidonetPluginV2',
-    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2'
+    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
+    'neutron.plugins.vmware.plugin.NsxPlugin',
+    'neutron.plugins.vmware.plugin.NsxServicePlugin',
+    'neutron.plugins.embrane.plugins.embrane_ovs_plugin.EmbraneOvsPlugin',
+    'neutron.plugins.cisco.network_plugin.PluginV2',
 ]
 
 from neutron.db import migration

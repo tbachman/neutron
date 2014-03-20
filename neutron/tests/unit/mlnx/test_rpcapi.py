@@ -19,13 +19,12 @@
 Unit Tests for Mellanox RPC (major reuse of linuxbridge rpc unit tests)
 """
 
+import fixtures
 from oslo.config import cfg
-import stubout
 
 from neutron.agent import rpc as agent_rpc
 from neutron.common import topics
 from neutron.openstack.common import context
-from neutron.openstack.common import rpc
 from neutron.plugins.mlnx import agent_notify_api
 from neutron.tests import base
 
@@ -51,8 +50,8 @@ class rpcApiTestCase(base.BaseTestCase):
             if expected_retval:
                 return expected_retval
 
-        self.stubs = stubout.StubOutForTesting()
-        self.stubs.Set(rpc, rpc_method, _fake_rpc_method)
+        self.useFixture(fixtures.MonkeyPatch(
+            'neutron.openstack.common.rpc.' + rpc_method, _fake_rpc_method))
 
         retval = getattr(rpcapi, method)(ctxt, **kwargs)
 
@@ -141,11 +140,13 @@ class rpcApiTestCase(base.BaseTestCase):
         self._test_mlnx_api(rpcapi, topics.PLUGIN,
                             'update_device_down', rpc_method='call',
                             device='fake_device',
-                            agent_id='fake_agent_id')
+                            agent_id='fake_agent_id',
+                            host='fake_host')
 
     def test_update_device_up(self):
         rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
         self._test_mlnx_api(rpcapi, topics.PLUGIN,
                             'update_device_up', rpc_method='call',
                             device='fake_device',
-                            agent_id='fake_agent_id')
+                            agent_id='fake_agent_id',
+                            host='fake_host')

@@ -29,9 +29,10 @@ class EmbraneOvsPlugin(base.EmbranePlugin, l2.OVSNeutronPluginV2):
     and the base EmbranePlugin for L3.
 
     '''
-    _plugin_support = openvswitch_support.OpenvswitchSupport
+    _plugin_support = openvswitch_support.OpenvswitchSupport()
 
     def __init__(self):
         '''First run plugin specific initialization, then Embrane's.'''
+        self._supported_extension_aliases.remove("l3_agent_scheduler")
         l2.OVSNeutronPluginV2.__init__(self)
         self._run_embrane_config()

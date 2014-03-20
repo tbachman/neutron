@@ -40,10 +40,11 @@ class TestDebugCommands(base.BaseTestCase):
         cfg.CONF.register_opts(interface.OPTS)
         cfg.CONF.register_opts(NeutronDebugAgent.OPTS)
         cfg.CONF(args=[], project='neutron')
-        cfg.CONF.set_override('use_namespaces', True)
+        config.register_interface_driver_opts_helper(cfg.CONF)
+        config.register_use_namespaces_opts_helper(cfg.CONF)
         config.register_root_helper(cfg.CONF)
+        cfg.CONF.set_override('use_namespaces', True)
 
-        self.addCleanup(mock.patch.stopall)
         device_exists_p = mock.patch(
             'neutron.agent.linux.ip_lib.device_exists', return_value=False)
         device_exists_p.start()
@@ -119,6 +120,7 @@ class TestDebugCommands(base.BaseTestCase):
                      'admin_state_up': True,
                      'network_id': 'fake_net',
                      'tenant_id': 'fake_tenant',
+                     'binding:host_id': cfg.CONF.host,
                      'fixed_ips': [{'subnet_id': 'fake_subnet'}],
                      'device_id': socket.gethostname()}}
         namespace = 'qprobe-fake_port'
@@ -138,7 +140,7 @@ class TestDebugCommands(base.BaseTestCase):
                                                         namespace=namespace
                                                         )])
 
-    def test_create_newwork_probe(self):
+    def test_create_network_probe(self):
         self._test_create_probe(DEVICE_OWNER_NETWORK_PROBE)
 
     def test_create_nova_probe(self):
@@ -163,6 +165,7 @@ class TestDebugCommands(base.BaseTestCase):
                      'admin_state_up': True,
                      'network_id': 'fake_net',
                      'tenant_id': 'fake_tenant',
+                     'binding:host_id': cfg.CONF.host,
                      'fixed_ips': [{'subnet_id': 'fake_subnet'}],
                      'device_id': socket.gethostname()}}
         namespace = 'qprobe-fake_port'
@@ -201,8 +204,8 @@ class TestDebugCommands(base.BaseTestCase):
                                       mock.call.delete_port('fake_port')])
         self.driver.assert_has_calls([mock.call.get_device_name(mock.ANY),
                                       mock.call.unplug('tap12345678-12',
-                                      namespace=namespace,
-                                      bridge=None)])
+                                                       namespace=namespace,
+                                                       bridge=None)])
 
     def test_delete_probe_external(self):
         fake_network = {'network': {'id': 'fake_net',
@@ -222,8 +225,8 @@ class TestDebugCommands(base.BaseTestCase):
                                       mock.call.delete_port('fake_port')])
         self.driver.assert_has_calls([mock.call.get_device_name(mock.ANY),
                                       mock.call.unplug('tap12345678-12',
-                                      namespace=namespace,
-                                      bridge='br-ex')])
+                                                       namespace=namespace,
+                                                       bridge='br-ex')])
 
     def test_delete_probe_without_namespace(self):
         cfg.CONF.set_override('use_namespaces', False)
@@ -313,6 +316,7 @@ class TestDebugCommands(base.BaseTestCase):
                      'admin_state_up': True,
                      'network_id': 'fake_net',
                      'tenant_id': 'fake_tenant',
+                     'binding:host_id': cfg.CONF.host,
                      'fixed_ips': [{'subnet_id': 'fake_subnet'}],
                      'device_id': socket.gethostname()}}
         expected = [mock.call.show_network('fake_net'),

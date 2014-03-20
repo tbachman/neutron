@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.openstack.common import jsonutils
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
 
@@ -77,6 +78,12 @@ class PortContext(MechanismDriverContext, api.PortContext):
                                                network)
         self._binding = db.ensure_port_binding(plugin_context.session,
                                                port['id'])
+        if original_port:
+            self._original_bound_segment_id = self._binding.segment
+            self._original_bound_driver = self._binding.driver
+        else:
+            self._original_bound_segment_id = None
+            self._original_bound_driver = None
 
     @property
     def current(self):
@@ -98,17 +105,28 @@ class PortContext(MechanismDriverContext, api.PortContext):
                 if segment[api.ID] == id:
                     return segment
 
+    @property
+    def original_bound_segment(self):
+        if self._original_bound_segment_id:
+            for segment in self._network_context.network_segments:
+                if segment[api.ID] == self._original_bound_segment_id:
+                    return segment
+
+    @property
+    def bound_driver(self):
+        return self._binding.driver
+
+    @property
+    def original_bound_driver(self):
+        return self._original_bound_driver
+
     def host_agents(self, agent_type):
         return self._plugin.get_agents(self._plugin_context,
                                        filters={'agent_type': [agent_type],
                                                 'host': [self._binding.host]})
 
-    def set_binding(self, segment_id, vif_type, cap_port_filter):
-        # REVISIT(rkukura): Pass extensible list of capabilities? Move
-        # vif_type and capabilities to methods on the bound mechanism
-        # driver?
-
+    def set_binding(self, segment_id, vif_type, vif_details):
         # TODO(rkukura) Verify binding allowed, segment in network
         self._binding.segment = segment_id
         self._binding.vif_type = vif_type
-        self._binding.cap_port_filter = cap_port_filter
+        self._binding.vif_details = jsonutils.dumps(vif_details)

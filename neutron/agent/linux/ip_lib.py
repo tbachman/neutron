@@ -29,6 +29,11 @@ OPTS = [
 
 
 LOOPBACK_DEVNAME = 'lo'
+# NOTE(ethuleau): depend of the version of iproute2, the vlan
+# interface details vary.
+VLAN_INTERFACE_DETAIL = ['vlan protocol 802.1q',
+                         'vlan protocol 802.1Q',
+                         'vlan id']
 
 
 class SubProcessBase(object):
@@ -87,14 +92,18 @@ class IPWrapper(SubProcessBase):
 
     def get_devices(self, exclude_loopback=False):
         retval = []
-        output = self._execute('o', 'link', ('list',),
+        output = self._execute(['o', 'd'], 'link', ('list',),
                                self.root_helper, self.namespace)
         for line in output.split('\n'):
             if '<' not in line:
                 continue
-            tokens = line.split(':', 2)
-            if len(tokens) >= 3:
-                name = tokens[1].strip()
+            tokens = line.split(' ', 2)
+            if len(tokens) == 3:
+                if any(v in tokens[2] for v in VLAN_INTERFACE_DETAIL):
+                    delimiter = '@'
+                else:
+                    delimiter = ':'
+                name = tokens[1].rpartition(delimiter)[0].strip()
 
                 if exclude_loopback and name == LOOPBACK_DEVNAME:
                     continue
@@ -147,8 +156,8 @@ class IPWrapper(SubProcessBase):
             device.link.set_netns(self.namespace)
 
     def add_vxlan(self, name, vni, group=None, dev=None, ttl=None, tos=None,
-                  local=None, port=None):
-        cmd = ['add', name, 'type', 'vxlan', 'id', vni, 'proxy']
+                  local=None, port=None, proxy=False):
+        cmd = ['add', name, 'type', 'vxlan', 'id', vni]
         if group:
                 cmd.extend(['group', group])
         if dev:
@@ -159,6 +168,8 @@ class IPWrapper(SubProcessBase):
                 cmd.extend(['tos', tos])
         if local:
                 cmd.extend(['local', local])
+        if proxy:
+                cmd.append('proxy')
         # tuple: min,max
         if port and len(port) == 2:
                 cmd.extend(['port', port[0], port[1]])
@@ -382,9 +393,8 @@ class IpRouteCommand(IpDeviceCommandBase):
             gateway_index = 2
             parts = default_route_line.split()
             retval = dict(gateway=parts[gateway_index])
-            metric_index = 4
-            parts_has_metric = (len(parts) > metric_index)
-            if parts_has_metric:
+            if 'metric' in parts:
+                metric_index = parts.index('metric') + 1
                 retval.update(metric=int(parts[metric_index]))
 
         return retval
@@ -442,18 +452,18 @@ class IpNetnsCommand(IpCommandBase):
     def execute(self, cmds, addl_env={}, check_exit_code=True):
         if not self._parent.root_helper:
             raise exceptions.SudoRequired()
-        elif not self._parent.namespace:
-            raise Exception(_('No namespace defined for parent'))
-        else:
-            env_params = []
-            if addl_env:
-                env_params = (['env'] +
-                              ['%s=%s' % pair for pair in addl_env.items()])
-            return utils.execute(
-                ['ip', 'netns', 'exec', self._parent.namespace] +
-                env_params + list(cmds),
-                root_helper=self._parent.root_helper,
-                check_exit_code=check_exit_code)
+        ns_params = []
+        if self._parent.namespace:
+            ns_params = ['ip', 'netns', 'exec', self._parent.namespace]
+
+        env_params = []
+        if addl_env:
+            env_params = (['env'] +
+                          ['%s=%s' % pair for pair in addl_env.items()])
+        return utils.execute(
+            ns_params + env_params + list(cmds),
+            root_helper=self._parent.root_helper,
+            check_exit_code=check_exit_code)
 
     def exists(self, name):
         output = self._as_root('list', options='o', use_root_namespace=True)

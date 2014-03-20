@@ -576,6 +576,19 @@ class OvsAgentSchedulerTestCase(OvsAgentSchedulerTestCaseBase):
         self.assertEqual(1, num_before_remove)
         self.assertEqual(0, num_after_remove)
 
+    def test_router_auto_schedule_with_invalid_router(self):
+        with self.router() as router:
+            l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
+            self._register_agent_states()
+        # deleted router
+        ret_a = l3_rpc.sync_routers(self.adminContext, host=L3_HOSTA,
+                                    router_ids=[router['router']['id']])
+        self.assertFalse(ret_a)
+        # non-existent router
+        ret_a = l3_rpc.sync_routers(self.adminContext, host=L3_HOSTA,
+                                    router_ids=[uuidutils.generate_uuid()])
+        self.assertFalse(ret_a)
+
     def test_router_auto_schedule_with_hosted(self):
         with self.router() as router:
             l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
@@ -872,7 +885,7 @@ class OvsAgentSchedulerTestCase(OvsAgentSchedulerTestCaseBase):
                     another_l3_agent_id = com['id']
                     another_l3_agent_host = com['host']
                     break
-            self.assertTrue(another_l3_agent_id is not None)
+            self.assertIsNotNone(another_l3_agent_id)
             self._add_router_to_l3_agent(another_l3_agent_id,
                                          router['router']['id'],
                                          expected_code=exc.HTTPConflict.code)

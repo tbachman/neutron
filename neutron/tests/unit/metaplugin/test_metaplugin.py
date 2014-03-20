@@ -18,15 +18,17 @@
 import os
 
 import mock
-import mox
 from oslo.config import cfg
-import stubout
 import testtools
 
 from neutron import context
 from neutron.db import api as db
+from neutron.db import db_base_plugin_v2
+from neutron.db import models_v2
 from neutron.extensions.flavor import (FLAVOR_NETWORK, FLAVOR_ROUTER)
 from neutron.openstack.common import uuidutils
+from neutron.plugins.metaplugin.meta_neutron_plugin import (
+    FaildToAddFlavorBinding)
 from neutron.plugins.metaplugin.meta_neutron_plugin import FlavorNotFound
 from neutron.plugins.metaplugin.meta_neutron_plugin import MetaPluginV2
 from neutron.tests import base
@@ -49,7 +51,7 @@ def etcdir(*p):
     return os.path.join(ETCDIR, *p)
 
 
-def setup_metaplugin_conf():
+def setup_metaplugin_conf(has_l3=True):
     cfg.CONF.set_override('auth_url', 'http://localhost:35357/v2.0',
                                       'PROXY')
     cfg.CONF.set_override('auth_region', 'RegionOne', 'PROXY')
@@ -57,7 +59,10 @@ def setup_metaplugin_conf():
     cfg.CONF.set_override('admin_password', 'password', 'PROXY')
     cfg.CONF.set_override('admin_tenant_name', 'service', 'PROXY')
     cfg.CONF.set_override('plugin_list', PLUGIN_LIST, 'META')
-    cfg.CONF.set_override('l3_plugin_list', L3_PLUGIN_LIST, 'META')
+    if has_l3:
+        cfg.CONF.set_override('l3_plugin_list', L3_PLUGIN_LIST, 'META')
+    else:
+        cfg.CONF.set_override('l3_plugin_list', "", 'META')
     cfg.CONF.set_override('default_flavor', 'fake2', 'META')
     cfg.CONF.set_override('default_l3_flavor', 'fake1', 'META')
     cfg.CONF.set_override('base_mac', "12:34:56:78:90:ab")
@@ -67,8 +72,19 @@ def setup_metaplugin_conf():
                           'neutron.openstack.common.rpc.impl_fake')
 
 
+# Hooks registered by metaplugin must not exist for other plugins UT.
+# So hooks must be unregistered (overwrite to None in fact).
+def unregister_meta_hooks():
+    db_base_plugin_v2.NeutronDbPluginV2.register_model_query_hook(
+        models_v2.Network, 'metaplugin_net', None, None, None)
+    db_base_plugin_v2.NeutronDbPluginV2.register_model_query_hook(
+        models_v2.Port, 'metaplugin_port', None, None, None)
+
+
 class MetaNeutronPluginV2Test(base.BaseTestCase):
     """Class conisting of MetaNeutronPluginV2 unit tests."""
+
+    has_l3 = True
 
     def setUp(self):
         super(MetaNeutronPluginV2Test, self).setUp()
@@ -78,11 +94,11 @@ class MetaNeutronPluginV2Test(base.BaseTestCase):
         self.context = context.get_admin_context()
 
         db.configure_db()
+        self.addCleanup(db.clear_db)
+        self.addCleanup(unregister_meta_hooks)
 
-        setup_metaplugin_conf()
+        setup_metaplugin_conf(self.has_l3)
 
-        self.mox = mox.Mox()
-        self.stubs = stubout.StubOutForTesting()
         self.client_cls_p = mock.patch('neutronclient.v2_0.client.Client')
         client_cls = self.client_cls_p.start()
         self.client_inst = mock.Mock()
@@ -102,6 +118,8 @@ class MetaNeutronPluginV2Test(base.BaseTestCase):
         self.client_inst.delete_network.return_value = True
         self.client_inst.delete_port.return_value = True
         self.client_inst.delete_subnet.return_value = True
+        plugin = MetaPluginV2.__module__ + '.' + MetaPluginV2.__name__
+        self.setup_coreplugin(plugin)
         self.plugin = MetaPluginV2(configfile=None)
 
     def _fake_network(self, flavor):
@@ -194,10 +212,20 @@ class MetaNeutronPluginV2Test(base.BaseTestCase):
         port1_ret = self.plugin.create_port(self.context, port1)
         port2_ret = self.plugin.create_port(self.context, port2)
         port3_ret = self.plugin.create_port(self.context, port3)
+        ports_all = self.plugin.get_ports(self.context)
 
         self.assertEqual(network_ret1['id'], port1_ret['network_id'])
         self.assertEqual(network_ret2['id'], port2_ret['network_id'])
         self.assertEqual(network_ret3['id'], port3_ret['network_id'])
+        self.assertEqual(3, len(ports_all))
+
+        port1_dict = self.plugin._make_port_dict(port1_ret)
+        port2_dict = self.plugin._make_port_dict(port2_ret)
+        port3_dict = self.plugin._make_port_dict(port3_ret)
+
+        self.assertEqual(port1_dict, port1_ret)
+        self.assertEqual(port2_dict, port2_ret)
+        self.assertEqual(port3_dict, port3_ret)
 
         port1['port']['admin_state_up'] = False
         port2['port']['admin_state_up'] = False
@@ -305,10 +333,42 @@ class MetaNeutronPluginV2Test(base.BaseTestCase):
 
         self.fail("No Error is not raised")
 
-    def tearDown(self):
-        self.mox.UnsetStubs()
-        self.stubs.UnsetAll()
-        self.stubs.SmartUnsetAll()
-        self.mox.VerifyAll()
-        db.clear_db()
-        super(MetaNeutronPluginV2Test, self).tearDown()
+    def test_create_network_flavor_fail(self):
+        with mock.patch('neutron.plugins.metaplugin.meta_db_v2.'
+                        'add_network_flavor_binding',
+                        side_effect=Exception):
+            network = self._fake_network('fake1')
+            self.assertRaises(FaildToAddFlavorBinding,
+                              self.plugin.create_network,
+                              self.context,
+                              network)
+            count = self.plugin.get_networks_count(self.context)
+            self.assertEqual(count, 0)
+
+    def test_create_router_flavor_fail(self):
+        with mock.patch('neutron.plugins.metaplugin.meta_db_v2.'
+                        'add_router_flavor_binding',
+                        side_effect=Exception):
+            router = self._fake_router('fake1')
+            self.assertRaises(FaildToAddFlavorBinding,
+                              self.plugin.create_router,
+                              self.context,
+                              router)
+            count = self.plugin.get_routers_count(self.context)
+            self.assertEqual(count, 0)
+
+
+class MetaNeutronPluginV2TestWithoutL3(MetaNeutronPluginV2Test):
+    """Tests without l3_plugin_list configration."""
+
+    has_l3 = False
+
+    def test_supported_extension_aliases(self):
+        self.assertEqual(self.plugin.supported_extension_aliases,
+                         ['flavor', 'external-net'])
+
+    def test_create_delete_router(self):
+        self.skipTest("Test case without router")
+
+    def test_create_router_flavor_fail(self):
+        self.skipTest("Test case without router")

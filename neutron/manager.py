@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2011 Nicira Networks, Inc
+# Copyright 2011 VMware, Inc
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,7 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Somik Behera, Nicira Networks, Inc.
 
 from oslo.config import cfg
 
@@ -24,6 +21,8 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import periodic_task
 from neutron.plugins.common import constants
+
+from stevedore import driver
 
 
 LOG = logging.getLogger(__name__)
@@ -105,19 +104,13 @@ class NeutronManager(object):
 
         # NOTE(jkoelker) Testing for the subclass with the __subclasshook__
         #                breaks tach monitoring. It has been removed
-        #                intentianally to allow v2 plugins to be monitored
+        #                intentionally to allow v2 plugins to be monitored
         #                for performance metrics.
         plugin_provider = cfg.CONF.core_plugin
-        LOG.debug(_("Plugin location: %s"), plugin_provider)
-        # If the plugin can't be found let them know gracefully
-        try:
-            LOG.info(_("Loading Plugin: %s"), plugin_provider)
-            plugin_klass = importutils.import_class(plugin_provider)
-        except ImportError:
-            LOG.exception(_("Error loading plugin"))
-            raise Exception(_("Plugin not found. "))
+        LOG.info(_("Loading core plugin: %s"), plugin_provider)
+        self.plugin = self._get_plugin_instance('neutron.core_plugins',
+                                                plugin_provider)
         legacy.modernize_quantum_config(cfg.CONF)
-        self.plugin = plugin_klass()
 
         msg = validate_post_plugin_load()
         if msg:
@@ -130,6 +123,21 @@ class NeutronManager(object):
         # the rest of service plugins
         self.service_plugins = {constants.CORE: self.plugin}
         self._load_service_plugins()
+
+    def _get_plugin_instance(self, namespace, plugin_provider):
+        try:
+            # Try to resolve plugin by name
+            mgr = driver.DriverManager(namespace, plugin_provider)
+            plugin_class = mgr.driver
+        except RuntimeError as e1:
+            # fallback to class name
+            try:
+                plugin_class = importutils.import_class(plugin_provider)
+            except ImportError as e2:
+                LOG.exception(_("Error loading plugin by name, %s"), e1)
+                LOG.exception(_("Error loading plugin by class, %s"), e2)
+                raise ImportError(_("Plugin not found."))
+        return plugin_class()
 
     def _load_services_from_core_plugin(self):
         """Puts core plugin in service_plugins for supported services."""
@@ -159,13 +167,10 @@ class NeutronManager(object):
         for provider in plugin_providers:
             if provider == '':
                 continue
-            try:
-                LOG.info(_("Loading Plugin: %s"), provider)
-                plugin_class = importutils.import_class(provider)
-            except ImportError:
-                LOG.exception(_("Error loading plugin"))
-                raise ImportError(_("Plugin not found."))
-            plugin_inst = plugin_class()
+
+            LOG.info(_("Loading Plugin: %s"), provider)
+            plugin_inst = self._get_plugin_instance('neutron.service_plugins',
+                                                    provider)
 
             # only one implementation of svc_type allowed
             # specifying more than one plugin

@@ -28,10 +28,6 @@ from neutron.plugins.ml2 import models
 LOG = log.getLogger(__name__)
 
 
-def initialize():
-    db_api.configure_db()
-
-
 def add_network_segment(session, network_id, segment):
     with session.begin(subtransactions=True):
         record = models.NetworkSegment(
@@ -69,9 +65,7 @@ def ensure_port_binding(session, port_id):
         except exc.NoResultFound:
             record = models.PortBinding(
                 port_id=port_id,
-                host='',
-                vif_type=portbindings.VIF_TYPE_UNBOUND,
-                cap_port_filter=False)
+                vif_type=portbindings.VIF_TYPE_UNBOUND)
             session.add(record)
         return record
 
@@ -91,6 +85,13 @@ def get_port(session, port_id):
             LOG.error(_("Multiple ports have port_id starting with %s"),
                       port_id)
             return
+
+
+def get_port_from_device_mac(device_mac):
+    LOG.debug(_("get_port_from_device_mac() called for mac %s"), device_mac)
+    session = db_api.get_session()
+    qry = session.query(models_v2.Port).filter_by(mac_address=device_mac)
+    return qry.first()
 
 
 def get_port_and_sgs(port_id):
@@ -119,3 +120,17 @@ def get_port_and_sgs(port_id):
         port_dict['fixed_ips'] = [ip['ip_address']
                                   for ip in port['fixed_ips']]
         return port_dict
+
+
+def get_port_binding_host(port_id):
+    session = db_api.get_session()
+    with session.begin(subtransactions=True):
+        try:
+            query = (session.query(models.PortBinding).
+                     filter(models.PortBinding.port_id.startswith(port_id)).
+                     one())
+        except exc.NoResultFound:
+            LOG.debug(_("No binding found for port %(port_id)s"),
+                      {'port_id': port_id})
+            return
+    return query.host

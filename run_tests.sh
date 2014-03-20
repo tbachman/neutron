@@ -18,7 +18,6 @@ function usage {
   echo "  -c, --coverage              Generate coverage report"
   echo "  -d, --debug                 Run tests with testtools instead of testr. This allows you to use the debugger."
   echo "  -h, --help                  Print this usage message"
-  echo "  --hide-elapsed              Don't print the elapsed time for each test along with slow test list"
   echo "  --virtual-env-path <path>   Location of the virtualenv directory"
   echo "                               Default: \$(pwd)"
   echo "  --virtual-env-name <name>   Name of the virtualenv directory"
@@ -102,11 +101,6 @@ if [ $no_site_packages -eq 1 ]; then
   installvenvopts="--no-site-packages"
 fi
 
-function init_testr {
-  if [ ! -d .testrepository ]; then
-    ${wrapper} testr init
-  fi
-}
 
 function run_tests {
   # Cleanup *pyc
@@ -167,7 +161,7 @@ function run_pep8 {
 }
 
 
-TESTRTESTS="python setup.py testr"
+TESTRTESTS="python -m neutron.openstack.common.lockutils python setup.py testr"
 
 if [ $never_venv -eq 0 ]
 then
@@ -213,7 +207,6 @@ if [ $recreate_db -eq 1 ]; then
     rm -f tests.sqlite
 fi
 
-init_testr
 run_tests
 
 # NOTE(sirp): we only want to run pep8 when we're running the full-test suite,

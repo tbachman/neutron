@@ -27,6 +27,10 @@ from neutron.plugins.hyperv.agent import hyperv_neutron_agent
 from neutron.plugins.hyperv.agent import utilsfactory
 from neutron.tests import base
 
+cfg.CONF.import_opt('enable_metrics_collection',
+                    'neutron.plugins.hyperv.agent.hyperv_neutron_agent',
+                    'AGENT')
+
 
 class TestHyperVNeutronAgent(base.BaseTestCase):
 
@@ -39,19 +43,55 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
 
         utilsfactory._get_windows_version = mock.MagicMock(
             return_value='6.2.0')
+
+        class MockFixedIntervalLoopingCall(object):
+            def __init__(self, f):
+                self.f = f
+
+            def start(self, interval=0):
+                self.f()
+
+        mock.patch('neutron.openstack.common.loopingcall.'
+                   'FixedIntervalLoopingCall',
+                   new=MockFixedIntervalLoopingCall)
+
         self.agent = hyperv_neutron_agent.HyperVNeutronAgent()
         self.agent.plugin_rpc = mock.Mock()
+        self.agent.sec_groups_agent = mock.MagicMock()
         self.agent.context = mock.Mock()
         self.agent.agent_id = mock.Mock()
 
-    def test_port_bound(self):
-        port = mock.Mock()
+        fake_agent_state = {
+            'binary': 'neutron-hyperv-agent',
+            'host': 'fake_host_name',
+            'topic': 'N/A',
+            'configurations': {'vswitch_mappings': ['*:MyVirtualSwitch']},
+            'agent_type': 'HyperV agent',
+            'start_flag': True}
+        self.agent_state = fake_agent_state
+
+    def test_port_bound_enable_metrics(self):
+        cfg.CONF.set_override('enable_metrics_collection', True, 'AGENT')
+        self._test_port_bound(True)
+
+    def test_port_bound_no_metrics(self):
+        cfg.CONF.set_override('enable_metrics_collection', False, 'AGENT')
+        self._test_port_bound(False)
+
+    def _test_port_bound(self, enable_metrics):
+        port = mock.MagicMock()
+        mock_enable_metrics = mock.MagicMock()
         net_uuid = 'my-net-uuid'
-        with mock.patch.object(
-                self.agent._utils, 'connect_vnic_to_vswitch'):
-            with mock.patch.object(
-                    self.agent._utils, 'set_vswitch_port_vlan_id'):
-                    self.agent._port_bound(port, net_uuid, 'vlan', None, None)
+
+        with mock.patch.multiple(
+                self.agent._utils,
+                connect_vnic_to_vswitch=mock.MagicMock(),
+                set_vswitch_port_vlan_id=mock.MagicMock(),
+                enable_port_metrics_collection=mock_enable_metrics):
+
+            self.agent._port_bound(port, net_uuid, 'vlan', None, None)
+
+            self.assertEqual(enable_metrics, mock_enable_metrics.called)
 
     def test_port_unbound(self):
         map = {
@@ -90,8 +130,20 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
     def test_treat_devices_added_updates_known_port(self):
         details = mock.MagicMock()
         details.__contains__.side_effect = lambda x: True
-        self.assertTrue(self.mock_treat_devices_added(details,
-                                                      '_treat_vif_port'))
+        with mock.patch.object(self.agent.plugin_rpc,
+                               "update_device_up") as func:
+            self.assertTrue(self.mock_treat_devices_added(details,
+                                                          '_treat_vif_port'))
+            self.assertTrue(func.called)
+
+    def test_treat_devices_added_missing_port_id(self):
+        details = mock.MagicMock()
+        details.__contains__.side_effect = lambda x: False
+        with mock.patch.object(self.agent.plugin_rpc,
+                               "update_device_up") as func:
+            self.assertFalse(self.mock_treat_devices_added(details,
+                                                           '_treat_vif_port'))
+            self.assertFalse(func.called)
 
     def test_treat_devices_removed_returns_true_for_missing_device(self):
         attrs = {'update_device_down.side_effect': Exception()}
@@ -112,10 +164,18 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
     def test_treat_devices_removed_ignores_missing_port(self):
         self.mock_treat_devices_removed(False)
 
+    def test_report_state(self):
+        with mock.patch.object(self.agent.state_rpc,
+                               "report_state") as report_st:
+            self.agent._report_state()
+            report_st.assert_called_with(self.agent.context,
+                                         self.agent.agent_state)
+            self.assertNotIn("start_flag", self.agent.agent_state)
+
     def test_main(self):
         with mock.patch.object(hyperv_neutron_agent,
                                'HyperVNeutronAgent') as plugin:
-            with mock.patch.object(hyperv_neutron_agent, 'cfg') as cfg:
+            with mock.patch.object(hyperv_neutron_agent.cfg, 'CONF') as cfg:
                 with mock.patch('eventlet.monkey_patch') as eventlet:
                     with mock.patch.object(
                         hyperv_neutron_agent,

@@ -15,17 +15,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from contextlib import contextmanager
 from contextlib import nested
 
 import mock
 from mock import call
-import mox
 from oslo.config import cfg
+from testtools import matchers
+import webob.exc
 
 from neutron.agent import firewall as firewall_base
 from neutron.agent.linux import iptables_manager
 from neutron.agent import rpc as agent_rpc
 from neutron.agent import securitygroups_rpc as sg_rpc
+from neutron.common import constants as const
 from neutron import context
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import allowedaddresspairs as addr_pair
@@ -50,11 +53,11 @@ class FakeSGCallback(sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
 class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
     def setUp(self, plugin=None):
-        super(SGServerRpcCallBackMixinTestCase, self).setUp()
+        super(SGServerRpcCallBackMixinTestCase, self).setUp(plugin)
         self.rpc = FakeSGCallback()
 
     def test_security_group_rules_for_devices_ipv4_ingress(self):
-        fake_prefix = test_fw.FAKE_PREFIX['IPv4']
+        fake_prefix = test_fw.FAKE_PREFIX[const.IPv4]
         with self.network() as n:
             with nested(self.subnet(n),
                         self.security_group()) as (subnet_v4,
@@ -62,18 +65,18 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg1_id = sg1['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'tcp', '22',
+                    'ingress', const.PROTO_NAME_TCP, '22',
                     '22')
                 rule2 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'tcp', '23',
+                    'ingress', const.PROTO_NAME_TCP, '23',
                     '23', fake_prefix)
                 rules = {
                     'security_group_rules': [rule1['security_group_rule'],
                                              rule2['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -86,17 +89,19 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
                             {'direction': 'ingress',
-                             'protocol': 'tcp', 'ethertype': 'IPv4',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv4,
                              'port_range_max': 22,
                              'security_group_id': sg1_id,
                              'port_range_min': 22},
-                            {'direction': 'ingress', 'protocol': 'tcp',
-                             'ethertype': 'IPv4',
+                            {'direction': 'ingress',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv4,
                              'port_range_max': 23, 'security_group_id': sg1_id,
                              'port_range_min': 23,
                              'source_ip_prefix': fake_prefix},
@@ -169,7 +174,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id1)
 
     def test_security_group_rules_for_devices_ipv4_egress(self):
-        fake_prefix = test_fw.FAKE_PREFIX['IPv4']
+        fake_prefix = test_fw.FAKE_PREFIX[const.IPv4]
         with self.network() as n:
             with nested(self.subnet(n),
                         self.security_group()) as (subnet_v4,
@@ -177,18 +182,18 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg1_id = sg1['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'egress', 'tcp', '22',
+                    'egress', const.PROTO_NAME_TCP, '22',
                     '22')
                 rule2 = self._build_security_group_rule(
                     sg1_id,
-                    'egress', 'udp', '23',
+                    'egress', const.PROTO_NAME_UDP, '23',
                     '23', fake_prefix)
                 rules = {
                     'security_group_rules': [rule1['security_group_rule'],
                                              rule2['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -201,17 +206,19 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
                             {'direction': 'egress',
-                             'protocol': 'tcp', 'ethertype': 'IPv4',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv4,
                              'port_range_max': 22,
                              'security_group_id': sg1_id,
                              'port_range_min': 22},
-                            {'direction': 'egress', 'protocol': 'udp',
-                             'ethertype': 'IPv4',
+                            {'direction': 'egress',
+                             'protocol': const.PROTO_NAME_UDP,
+                             'ethertype': const.IPv4,
                              'port_range_max': 23, 'security_group_id': sg1_id,
                              'port_range_min': 23,
                              'dest_ip_prefix': fake_prefix},
@@ -232,13 +239,13 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg2_id = sg2['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'tcp', '24',
+                    'ingress', const.PROTO_NAME_TCP, '24',
                     '25', remote_group_id=sg2['security_group']['id'])
                 rules = {
                     'security_group_rules': [rule1['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -258,17 +265,18 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv4',
+                            {'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg2_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg2_id},
                             {'direction': u'ingress',
                              'source_ip_prefix': u'10.0.0.3/32',
-                             'protocol': u'tcp', 'ethertype': u'IPv4',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv4,
                              'port_range_max': 25, 'port_range_min': 24,
                              'remote_group_id': sg2_id,
                              'security_group_id': sg1_id},
@@ -279,7 +287,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id2)
 
     def test_security_group_rules_for_devices_ipv6_ingress(self):
-        fake_prefix = test_fw.FAKE_PREFIX['IPv6']
+        fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,
                                     cidr=fake_prefix,
@@ -289,20 +297,20 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg1_id = sg1['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'tcp', '22',
+                    'ingress', const.PROTO_NAME_TCP, '22',
                     '22',
-                    ethertype='IPv6')
+                    ethertype=const.IPv6)
                 rule2 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'udp', '23',
+                    'ingress', const.PROTO_NAME_UDP, '23',
                     '23', fake_prefix,
-                    ethertype='IPv6')
+                    ethertype=const.IPv6)
                 rules = {
                     'security_group_rules': [rule1['security_group_rule'],
                                              rule2['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -316,17 +324,19 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
                             {'direction': 'ingress',
-                             'protocol': 'tcp', 'ethertype': 'IPv6',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv6,
                              'port_range_max': 22,
                              'security_group_id': sg1_id,
                              'port_range_min': 22},
-                            {'direction': 'ingress', 'protocol': 'udp',
-                             'ethertype': 'IPv6',
+                            {'direction': 'ingress',
+                             'protocol': const.PROTO_NAME_UDP,
+                             'ethertype': const.IPv6,
                              'port_range_max': 23, 'security_group_id': sg1_id,
                              'port_range_min': 23,
                              'source_ip_prefix': fake_prefix},
@@ -336,7 +346,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id1)
 
     def test_security_group_rules_for_devices_ipv6_egress(self):
-        fake_prefix = test_fw.FAKE_PREFIX['IPv6']
+        fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,
                                     cidr=fake_prefix,
@@ -346,20 +356,20 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg1_id = sg1['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'egress', 'tcp', '22',
+                    'egress', const.PROTO_NAME_TCP, '22',
                     '22',
-                    ethertype='IPv6')
+                    ethertype=const.IPv6)
                 rule2 = self._build_security_group_rule(
                     sg1_id,
-                    'egress', 'udp', '23',
+                    'egress', const.PROTO_NAME_UDP, '23',
                     '23', fake_prefix,
-                    ethertype='IPv6')
+                    ethertype=const.IPv6)
                 rules = {
                     'security_group_rules': [rule1['security_group_rule'],
                                              rule2['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -374,18 +384,21 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
                             {'direction': 'egress',
-                             'protocol': 'tcp', 'ethertype': 'IPv6',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv6,
                              'port_range_max': 22,
                              'security_group_id': sg1_id,
                              'port_range_min': 22},
-                            {'direction': 'egress', 'protocol': 'udp',
-                             'ethertype': 'IPv6',
-                             'port_range_max': 23, 'security_group_id': sg1_id,
+                            {'direction': 'egress',
+                             'protocol': const.PROTO_NAME_UDP,
+                             'ethertype': const.IPv6,
+                             'port_range_max': 23,
+                             'security_group_id': sg1_id,
                              'port_range_min': 23,
                              'dest_ip_prefix': fake_prefix},
                             ]
@@ -394,7 +407,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id1)
 
     def test_security_group_rules_for_devices_ipv6_source_group(self):
-        fake_prefix = test_fw.FAKE_PREFIX['IPv6']
+        fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,
                                     cidr=fake_prefix,
@@ -407,15 +420,15 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 sg2_id = sg2['security_group']['id']
                 rule1 = self._build_security_group_rule(
                     sg1_id,
-                    'ingress', 'tcp', '24',
+                    'ingress', const.PROTO_NAME_TCP, '24',
                     '25',
-                    ethertype='IPv6',
+                    ethertype=const.IPv6,
                     remote_group_id=sg2['security_group']['id'])
                 rules = {
                     'security_group_rules': [rule1['security_group_rule']]}
                 res = self._create_security_group_rule(self.fmt, rules)
                 self.deserialize(self.fmt, res)
-                self.assertEqual(res.status_int, 201)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
                 res1 = self._create_port(
                     self.fmt, n['network']['id'],
@@ -438,17 +451,18 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 ports_rpc = self.rpc.security_group_rules_for_devices(
                     ctx, devices=devices)
                 port_rpc = ports_rpc[port_id1]
-                expected = [{'direction': 'egress', 'ethertype': 'IPv4',
+                expected = [{'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg1_id},
-                            {'direction': 'egress', 'ethertype': 'IPv4',
+                            {'direction': 'egress', 'ethertype': const.IPv4,
                              'security_group_id': sg2_id},
-                            {'direction': 'egress', 'ethertype': 'IPv6',
+                            {'direction': 'egress', 'ethertype': const.IPv6,
                              'security_group_id': sg2_id},
                             {'direction': 'ingress',
                              'source_ip_prefix': 'fe80::3/128',
-                             'protocol': 'tcp', 'ethertype': 'IPv6',
+                             'protocol': const.PROTO_NAME_TCP,
+                             'ethertype': const.IPv6,
                              'port_range_max': 25, 'port_range_min': 24,
                              'remote_group_id': sg2_id,
                              'security_group_id': sg1_id},
@@ -488,14 +502,13 @@ class SGAgentRpcCallBackMixinTestCase(base.BaseTestCase):
 
 
 class SecurityGroupAgentRpcTestCase(base.BaseTestCase):
-    def setUp(self):
+    def setUp(self, defer_refresh_firewall=False):
         super(SecurityGroupAgentRpcTestCase, self).setUp()
         self.agent = sg_rpc.SecurityGroupAgentRpcMixin()
         self.agent.context = None
-        self.addCleanup(mock.patch.stopall)
         mock.patch('neutron.agent.linux.iptables_manager').start()
         self.agent.root_helper = 'sudo'
-        self.agent.init_firewall()
+        self.agent.init_firewall(defer_refresh_firewall=defer_refresh_firewall)
         self.firewall = mock.Mock()
         firewall_object = firewall_base.FirewallDriver()
         self.firewall.defer_apply.side_effect = firewall_object.defer_apply
@@ -530,7 +543,7 @@ class SecurityGroupAgentRpcTestCase(base.BaseTestCase):
         self.agent.prepare_devices_filter(['fake_port_id'])
         self.agent.security_groups_rule_updated(['fake_sgid1', 'fake_sgid3'])
         self.agent.refresh_firewall.assert_has_calls(
-            [call.refresh_firewall([self.fake_device])])
+            [call.refresh_firewall([self.fake_device['device']])])
 
     def test_security_groups_rule_not_updated(self):
         self.agent.refresh_firewall = mock.Mock()
@@ -543,7 +556,7 @@ class SecurityGroupAgentRpcTestCase(base.BaseTestCase):
         self.agent.prepare_devices_filter(['fake_port_id'])
         self.agent.security_groups_member_updated(['fake_sgid2', 'fake_sgid3'])
         self.agent.refresh_firewall.assert_has_calls(
-            [call.refresh_firewall([self.fake_device])])
+            [call.refresh_firewall([self.fake_device['device']])])
 
     def test_security_groups_member_not_updated(self):
         self.agent.refresh_firewall = mock.Mock()
@@ -580,6 +593,208 @@ class SecurityGroupAgentRpcTestCase(base.BaseTestCase):
         self.firewall.assert_has_calls([])
 
 
+class SecurityGroupAgentRpcWithDeferredRefreshTestCase(
+    SecurityGroupAgentRpcTestCase):
+
+    def setUp(self):
+        super(SecurityGroupAgentRpcWithDeferredRefreshTestCase, self).setUp(
+            defer_refresh_firewall=True)
+
+    @contextmanager
+    def add_fake_device(self, device, sec_groups, source_sec_groups=None):
+        fake_device = {'device': device,
+                       'security_groups': sec_groups,
+                       'security_group_source_groups': source_sec_groups or [],
+                       'security_group_rules': [{'security_group_id':
+                                                 'fake_sgid1',
+                                                 'remote_group_id':
+                                                 'fake_sgid2'}]}
+        self.firewall.ports[device] = fake_device
+        yield
+        del self.firewall.ports[device]
+
+    def test_security_groups_rule_updated(self):
+        self.agent.security_groups_rule_updated(['fake_sgid1', 'fake_sgid3'])
+        self.assertIn('fake_device', self.agent.devices_to_refilter)
+
+    def test_multiple_security_groups_rule_updated_same_port(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgidX']):
+            self.agent.refresh_firewall = mock.Mock()
+            self.agent.security_groups_rule_updated(['fake_sgid1'])
+            self.agent.security_groups_rule_updated(['fake_sgid2'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertNotIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_security_groups_rule_updated_multiple_ports(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgid2']):
+            self.agent.refresh_firewall = mock.Mock()
+            self.agent.security_groups_rule_updated(['fake_sgid1',
+                                                     'fake_sgid2'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_multiple_security_groups_rule_updated_multiple_ports(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgid2']):
+            self.agent.refresh_firewall = mock.Mock()
+            self.agent.security_groups_rule_updated(['fake_sgid1'])
+            self.agent.security_groups_rule_updated(['fake_sgid2'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_security_groups_member_updated(self):
+        self.agent.security_groups_member_updated(['fake_sgid2', 'fake_sgid3'])
+        self.assertIn('fake_device', self.agent.devices_to_refilter)
+
+    def test_multiple_security_groups_member_updated_same_port(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgid1', 'fake_sgid1B'],
+                                  source_sec_groups=['fake_sgidX']):
+            self.agent.refresh_firewall = mock.Mock()
+            self.agent.security_groups_member_updated(['fake_sgid1',
+                                                       'fake_sgid3'])
+            self.agent.security_groups_member_updated(['fake_sgid2',
+                                                       'fake_sgid3'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertNotIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_security_groups_member_updated_multiple_ports(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgid1', 'fake_sgid1B'],
+                                  source_sec_groups=['fake_sgid2']):
+            self.agent.security_groups_member_updated(['fake_sgid2'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_multiple_security_groups_member_updated_multiple_ports(self):
+        with self.add_fake_device(device='fake_device_2',
+                                  sec_groups=['fake_sgid1', 'fake_sgid1B'],
+                                  source_sec_groups=['fake_sgid1B']):
+            self.agent.security_groups_member_updated(['fake_sgid1B'])
+            self.agent.security_groups_member_updated(['fake_sgid2'])
+            self.assertIn('fake_device', self.agent.devices_to_refilter)
+            self.assertIn('fake_device_2', self.agent.devices_to_refilter)
+
+    def test_security_groups_provider_updated(self):
+        self.agent.security_groups_provider_updated()
+        self.assertTrue(self.agent.global_refresh_firewall)
+
+    def test_setup_port_filters_new_ports_only(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set()
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(['fake_new_device']), set())
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.prepare_devices_filter.assert_called_once_with(
+            set(['fake_new_device']))
+        self.assertFalse(self.agent.refresh_firewall.called)
+
+    def test_setup_port_filters_updated_ports_only(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set()
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(), set(['fake_updated_device']))
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_updated_device']))
+        self.assertFalse(self.agent.prepare_devices_filter.called)
+
+    def test_setup_port_filter_new_and_updated_ports(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set()
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(['fake_new_device']),
+                                      set(['fake_updated_device']))
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.prepare_devices_filter.assert_called_once_with(
+            set(['fake_new_device']))
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_updated_device']))
+
+    def test_setup_port_filters_sg_updates_only(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set(['fake_device'])
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(), set())
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_device']))
+        self.assertFalse(self.agent.prepare_devices_filter.called)
+
+    def test_setup_port_filters_sg_updates_and_new_ports(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set(['fake_device'])
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(['fake_new_device']), set())
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.prepare_devices_filter.assert_called_once_with(
+            set(['fake_new_device']))
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_device']))
+
+    def test_setup_port_filters_sg_updates_and_updated_ports(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set(['fake_device', 'fake_device_2'])
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(
+            set(), set(['fake_device', 'fake_updated_device']))
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_device', 'fake_device_2', 'fake_updated_device']))
+        self.assertFalse(self.agent.prepare_devices_filter.called)
+
+    def test_setup_port_filters_all_updates(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set(['fake_device', 'fake_device_2'])
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(
+            set(['fake_new_device']),
+            set(['fake_device', 'fake_updated_device']))
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.prepare_devices_filter.assert_called_once_with(
+            set(['fake_new_device']))
+        self.agent.refresh_firewall.assert_called_once_with(
+            set(['fake_device', 'fake_device_2', 'fake_updated_device']))
+
+    def test_setup_port_filters_no_update(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set()
+        self.agent.global_refresh_firewall = False
+        self.agent.setup_port_filters(set(), set())
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.assertFalse(self.agent.refresh_firewall.called)
+        self.assertFalse(self.agent.prepare_devices_filter.called)
+
+    def test_setup_port_filters_with_global_refresh(self):
+        self.agent.prepare_devices_filter = mock.Mock()
+        self.agent.refresh_firewall = mock.Mock()
+        self.agent.devices_to_refilter = set()
+        self.agent.global_refresh_firewall = True
+        self.agent.setup_port_filters(set(), set())
+        self.assertFalse(self.agent.devices_to_refilter)
+        self.assertFalse(self.agent.global_refresh_firewall)
+        self.agent.refresh_firewall.assert_called_once_with()
+        self.assertFalse(self.agent.prepare_devices_filter.called)
+
+
 class FakeSGRpcApi(agent_rpc.PluginApi,
                    sg_rpc.SecurityGroupServerRpcApiMixin):
     pass
@@ -597,8 +812,8 @@ class SecurityGroupServerRpcApiTestCase(base.BaseTestCase):
             [call(None,
              {'args':
                  {'devices': ['fake_device']},
-             'method': 'security_group_rules_for_devices',
-             'namespace': None},
+              'method': 'security_group_rules_for_devices',
+              'namespace': None},
              version=sg_rpc.SG_RPC_VERSION,
              topic='fake_topic')])
 
@@ -1079,6 +1294,12 @@ IPTABLES_FILTER_V6_1 = """# Generated by iptables_manager
 %(physdev_is_bridged)s -j %(bn)s-sg-chain
 [0:0] -A %(bn)s-sg-chain %(physdev_mod)s --physdev-INGRESS tap_port1 \
 %(physdev_is_bridged)s -j %(bn)s-i_port1
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 130 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 131 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 132 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 134 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 135 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 136 -j RETURN
 [0:0] -A %(bn)s-i_port1 -m state --state INVALID -j DROP
 [0:0] -A %(bn)s-i_port1 -m state --state RELATED,ESTABLISHED -j RETURN
 [0:0] -A %(bn)s-i_port1 -j %(bn)s-sg-fallback
@@ -1124,6 +1345,12 @@ IPTABLES_FILTER_V6_2 = """# Generated by iptables_manager
 %(physdev_is_bridged)s -j %(bn)s-sg-chain
 [0:0] -A %(bn)s-sg-chain %(physdev_mod)s --physdev-INGRESS tap_port1 \
 %(physdev_is_bridged)s -j %(bn)s-i_port1
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 130 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 131 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 132 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 134 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 135 -j RETURN
+[0:0] -A %(bn)s-i_port1 -p icmpv6 --icmpv6-type 136 -j RETURN
 [0:0] -A %(bn)s-i_port1 -m state --state INVALID -j DROP
 [0:0] -A %(bn)s-i_port1 -m state --state RELATED,ESTABLISHED -j RETURN
 [0:0] -A %(bn)s-i_port1 -j %(bn)s-sg-fallback
@@ -1141,6 +1368,12 @@ IPTABLES_FILTER_V6_2 = """# Generated by iptables_manager
 %(physdev_is_bridged)s -j %(bn)s-sg-chain
 [0:0] -A %(bn)s-sg-chain %(physdev_mod)s --physdev-INGRESS tap_port2 \
 %(physdev_is_bridged)s -j %(bn)s-i_port2
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 130 -j RETURN
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 131 -j RETURN
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 132 -j RETURN
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 134 -j RETURN
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 135 -j RETURN
+[0:0] -A %(bn)s-i_port2 -p icmpv6 --icmpv6-type 136 -j RETURN
 [0:0] -A %(bn)s-i_port2 -m state --state INVALID -j DROP
 [0:0] -A %(bn)s-i_port2 -m state --state RELATED,ESTABLISHED -j RETURN
 [0:0] -A %(bn)s-i_port2 -j %(bn)s-sg-fallback
@@ -1197,59 +1430,62 @@ class TestSecurityGroupAgentWithIptables(base.BaseTestCase):
     PHYSDEV_INGRESS = 'physdev-out'
     PHYSDEV_EGRESS = 'physdev-in'
 
-    def setUp(self):
+    def setUp(self, defer_refresh_firewall=False):
         super(TestSecurityGroupAgentWithIptables, self).setUp()
-        self.mox = mox.Mox()
         cfg.CONF.set_override(
             'firewall_driver',
             self.FIREWALL_DRIVER,
             group='SECURITYGROUP')
-        self.addCleanup(mock.patch.stopall)
-        self.addCleanup(self.mox.UnsetStubs)
 
         self.agent = sg_rpc.SecurityGroupAgentRpcMixin()
         self.agent.context = None
 
         self.root_helper = 'sudo'
         self.agent.root_helper = 'sudo'
-        self.agent.init_firewall()
+        self.agent.init_firewall(defer_refresh_firewall=defer_refresh_firewall)
 
         self.iptables = self.agent.firewall.iptables
-        self.mox.StubOutWithMock(self.iptables, "execute")
+        self.iptables_execute = mock.patch.object(self.iptables,
+                                                  "execute").start()
+        self.iptables_execute_return_values = []
+        self.expected_call_count = 0
+        self.expected_calls = []
+        self.expected_process_inputs = []
+        self.iptables_execute.side_effect = self.iptables_execute_return_values
 
         self.rpc = mock.Mock()
         self.agent.plugin_rpc = self.rpc
         rule1 = [{'direction': 'ingress',
-                  'protocol': 'udp',
-                  'ethertype': 'IPv4',
+                  'protocol': const.PROTO_NAME_UDP,
+                  'ethertype': const.IPv4,
                   'source_ip_prefix': '10.0.0.2',
                   'source_port_range_min': 67,
                   'source_port_range_max': 67,
                   'port_range_min': 68,
                   'port_range_max': 68},
                  {'direction': 'ingress',
-                  'protocol': 'tcp',
-                  'ethertype': 'IPv4',
+                  'protocol': const.PROTO_NAME_TCP,
+                  'ethertype': const.IPv4,
                   'port_range_min': 22,
                   'port_range_max': 22},
                  {'direction': 'egress',
-                  'ethertype': 'IPv4'}]
+                  'ethertype': const.IPv4}]
         rule2 = rule1[:]
         rule2 += [{'direction': 'ingress',
                   'source_ip_prefix': '10.0.0.4',
-                  'ethertype': 'IPv4'}]
+                  'ethertype': const.IPv4}]
         rule3 = rule2[:]
         rule3 += [{'direction': 'ingress',
-                  'protocol': 'icmp',
-                  'ethertype': 'IPv4'}]
+                  'protocol': const.PROTO_NAME_ICMP,
+                  'ethertype': const.IPv4}]
         rule4 = rule1[:]
         rule4 += [{'direction': 'ingress',
                   'source_ip_prefix': '10.0.0.3',
-                  'ethertype': 'IPv4'}]
+                  'ethertype': const.IPv4}]
         rule5 = rule4[:]
         rule5 += [{'direction': 'ingress',
-                  'protocol': 'icmp',
-                  'ethertype': 'IPv4'}]
+                  'protocol': const.PROTO_NAME_ICMP,
+                  'ethertype': const.IPv4}]
         self.devices1 = {'tap_port1': self._device('tap_port1',
                                                    '10.0.0.3',
                                                    '12:34:56:78:9a:bc',
@@ -1287,36 +1523,65 @@ class TestSecurityGroupAgentWithIptables(base.BaseTestCase):
         value = value.replace('[', '\[')
         value = value.replace(']', '\]')
         value = value.replace('*', '\*')
-        return mox.Regex(value)
+        return value
+
+    def _register_mock_call(self, *args, **kwargs):
+        return_value = kwargs.pop('return_value', None)
+        self.iptables_execute_return_values.append(return_value)
+
+        has_process_input = 'process_input' in kwargs
+        process_input = kwargs.get('process_input')
+        self.expected_process_inputs.append((has_process_input, process_input))
+
+        if has_process_input:
+            kwargs['process_input'] = mock.ANY
+        self.expected_calls.append(call(*args, **kwargs))
+        self.expected_call_count += 1
+
+    def _verify_mock_calls(self):
+        self.assertEqual(self.expected_call_count,
+                         self.iptables_execute.call_count)
+        self.iptables_execute.assert_has_calls(self.expected_calls)
+
+        for i, expected in enumerate(self.expected_process_inputs):
+            check, expected_regex = expected
+            if not check:
+                continue
+            # The second or later arguments of self.iptables.execute
+            # are keyword parameter, so keyword argument is extracted by [1]
+            kwargs = self.iptables_execute.call_args_list[i][1]
+            self.assertThat(kwargs['process_input'],
+                            matchers.MatchesRegex(expected_regex))
 
     def _replay_iptables(self, v4_filter, v6_filter):
-        self.iptables.execute(
+        self._register_mock_call(
             ['iptables-save', '-c'],
-            root_helper=self.root_helper).AndReturn('')
-
-        self.iptables.execute(
+            root_helper=self.root_helper,
+            return_value='')
+        self._register_mock_call(
             ['iptables-restore', '-c'],
-            process_input=(self._regex(IPTABLES_NAT + v4_filter)),
-            root_helper=self.root_helper).AndReturn('')
-
-        self.iptables.execute(
+            process_input=self._regex(IPTABLES_NAT + v4_filter),
+            root_helper=self.root_helper,
+            return_value='')
+        self._register_mock_call(
             ['ip6tables-save', '-c'],
-            root_helper=self.root_helper).AndReturn('')
-
-        self.iptables.execute(
+            root_helper=self.root_helper,
+            return_value='')
+        self._register_mock_call(
             ['ip6tables-restore', '-c'],
             process_input=self._regex(v6_filter),
-            root_helper=self.root_helper).AndReturn('')
+            root_helper=self.root_helper,
+            return_value='')
 
     def test_prepare_remove_port(self):
         self.rpc.security_group_rules_for_devices.return_value = self.devices1
         self._replay_iptables(IPTABLES_FILTER_1, IPTABLES_FILTER_V6_1)
         self._replay_iptables(IPTABLES_FILTER_EMPTY, IPTABLES_FILTER_V6_EMPTY)
-        self.mox.ReplayAll()
 
         self.agent.prepare_devices_filter(['tap_port1'])
         self.agent.remove_devices_filter(['tap_port1'])
-        self.mox.VerifyAll()
+
+        self._verify_mock_calls()
 
     def test_security_group_member_updated(self):
         self.rpc.security_group_rules_for_devices.return_value = self.devices1
@@ -1326,7 +1591,6 @@ class TestSecurityGroupAgentWithIptables(base.BaseTestCase):
         self._replay_iptables(IPTABLES_FILTER_2_2, IPTABLES_FILTER_V6_2)
         self._replay_iptables(IPTABLES_FILTER_1, IPTABLES_FILTER_V6_1)
         self._replay_iptables(IPTABLES_FILTER_EMPTY, IPTABLES_FILTER_V6_EMPTY)
-        self.mox.ReplayAll()
 
         self.agent.prepare_devices_filter(['tap_port1'])
         self.rpc.security_group_rules_for_devices.return_value = self.devices2
@@ -1336,19 +1600,19 @@ class TestSecurityGroupAgentWithIptables(base.BaseTestCase):
         self.agent.security_groups_member_updated(['security_group1'])
         self.agent.remove_devices_filter(['tap_port2'])
         self.agent.remove_devices_filter(['tap_port1'])
-        self.mox.VerifyAll()
+
+        self._verify_mock_calls()
 
     def test_security_group_rule_updated(self):
         self.rpc.security_group_rules_for_devices.return_value = self.devices2
         self._replay_iptables(IPTABLES_FILTER_2, IPTABLES_FILTER_V6_2)
         self._replay_iptables(IPTABLES_FILTER_2_3, IPTABLES_FILTER_V6_2)
-        self.mox.ReplayAll()
 
         self.agent.prepare_devices_filter(['tap_port1', 'tap_port3'])
         self.rpc.security_group_rules_for_devices.return_value = self.devices3
         self.agent.security_groups_rule_updated(['security_group1'])
 
-        self.mox.VerifyAll()
+        self._verify_mock_calls()
 
 
 class SGNotificationTestMixin():
@@ -1360,7 +1624,7 @@ class SGNotificationTestMixin():
                 security_group_id = sg['security_group']['id']
                 direction = "ingress"
                 remote_group_id = sg2['security_group']['id']
-                protocol = 'tcp'
+                protocol = const.PROTO_NAME_TCP
                 port_range_min = 88
                 port_range_max = 88
                 with self.security_group_rule(security_group_id, direction,
@@ -1397,9 +1661,7 @@ class SGNotificationTestMixin():
                     self._delete('ports', port['port']['id'])
                     self.notifier.assert_has_calls(
                         [call.security_groups_member_updated(
-                            mock.ANY, [mock.ANY]),
-                         call.security_groups_member_updated(
-                             mock.ANY, [security_group_id])])
+                            mock.ANY, [mock.ANY])])
 
 
 class TestSecurityGroupAgentWithOVSIptables(

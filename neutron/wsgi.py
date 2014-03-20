@@ -18,6 +18,8 @@
 """
 Utility methods for working with WSGI servers
 """
+from __future__ import print_function
+
 import errno
 import os
 import socket
@@ -37,9 +39,12 @@ import webob.exc
 from neutron.common import constants
 from neutron.common import exceptions as exception
 from neutron import context
+from neutron.openstack.common.db.sqlalchemy import session
+from neutron.openstack.common import excutils
 from neutron.openstack.common import gettextutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
+from neutron.openstack.common.service import ProcessLauncher
 
 socket_opts = [
     cfg.IntOpt('backlog',
@@ -53,6 +58,9 @@ socket_opts = [
     cfg.IntOpt('retry_until_window',
                default=30,
                help=_("Number of seconds to keep retrying to listen")),
+    cfg.IntOpt('max_header_line',
+               default=16384,
+               help=_("Max header line to accommodate large tokens")),
     cfg.BoolOpt('use_ssl',
                 default=False,
                 help=_('Enable SSL on the API server')),
@@ -76,18 +84,41 @@ CONF.register_opts(socket_opts)
 LOG = logging.getLogger(__name__)
 
 
-def run_server(application, port):
-    """Run a WSGI server with the given application."""
-    sock = eventlet.listen(('0.0.0.0', port))
-    eventlet.wsgi.server(sock, application)
+class WorkerService(object):
+    """Wraps a worker to be handled by ProcessLauncher"""
+    def __init__(self, service, application):
+        self._service = service
+        self._application = application
+        self._server = None
+
+    def start(self):
+        # We may have just forked from parent process.  A quick disposal of the
+        # existing sql connections avoids producting 500 errors later when they
+        # are discovered to be broken.
+        session.get_engine(sqlite_fk=True).pool.dispose()
+        self._server = self._service.pool.spawn(self._service._run,
+                                                self._application,
+                                                self._service._socket)
+
+    def wait(self):
+        self._service.pool.waitall()
+
+    def stop(self):
+        if isinstance(self._server, eventlet.greenthread.GreenThread):
+            self._server.kill()
+            self._server = None
 
 
 class Server(object):
     """Server class to manage multiple WSGI sockets and applications."""
 
     def __init__(self, name, threads=1000):
+        # Raise the default from 8192 to accommodate large tokens
+        eventlet.wsgi.MAX_HEADER_LINE = CONF.max_header_line
         self.pool = eventlet.GreenPool(threads)
         self.name = name
+        self._launcher = None
+        self._server = None
 
     def _get_socket(self, host, port, backlog):
         bind_addr = (host, port)
@@ -145,9 +176,10 @@ class Server(object):
                     sock = wrap_ssl(sock)
 
             except socket.error as err:
-                if err.errno != errno.EADDRINUSE:
-                    raise
-                eventlet.sleep(0.1)
+                with excutils.save_and_reraise_exception() as ctxt:
+                    if err.errno == errno.EADDRINUSE:
+                        ctxt.reraise = False
+                        eventlet.sleep(0.1)
         if not sock:
             raise RuntimeError(_("Could not bind to %(host)s:%(port)s "
                                "after trying for %(time)d seconds") %
@@ -166,7 +198,7 @@ class Server(object):
 
         return sock
 
-    def start(self, application, port, host='0.0.0.0'):
+    def start(self, application, port, host='0.0.0.0', workers=0):
         """Run a WSGI server with the given application."""
         self._host = host
         self._port = port
@@ -175,7 +207,16 @@ class Server(object):
         self._socket = self._get_socket(self._host,
                                         self._port,
                                         backlog=backlog)
-        self._server = self.pool.spawn(self._run, application, self._socket)
+        if workers < 1:
+            # For the case where only one process is required.
+            self._server = self.pool.spawn(self._run, application,
+                                           self._socket)
+        else:
+            # Minimize the cost of checking for child exit by extending the
+            # wait interval past the default of 0.01s.
+            self._launcher = ProcessLauncher(wait_interval=1.0)
+            self._server = WorkerService(self, application)
+            self._launcher.launch_service(self._server, workers=workers)
 
     @property
     def host(self):
@@ -186,20 +227,26 @@ class Server(object):
         return self._socket.getsockname()[1] if self._socket else self._port
 
     def stop(self):
-        self._server.kill()
+        if self._launcher:
+            # The process launcher does not support stop or kill.
+            self._launcher.running = False
+        else:
+            self._server.kill()
 
     def wait(self):
         """Wait until all servers have completed running."""
         try:
-            self.pool.waitall()
+            if self._launcher:
+                self._launcher.wait()
+            else:
+                self.pool.waitall()
         except KeyboardInterrupt:
             pass
 
     def _run(self, application, socket):
         """Start a WSGI server in a new green thread."""
-        logger = logging.getLogger('eventlet.wsgi.server')
         eventlet.wsgi.server(socket, application, custom_pool=self.pool,
-                             log=logging.WritableLogger(logger))
+                             log=logging.WritableLogger(LOG))
 
 
 class Middleware(object):
@@ -652,19 +699,18 @@ class XMLDeserializer(TextDeserializer):
                 return result
             return dict({root_tag: result}, **links)
         except Exception as e:
-            parseError = False
-            # Python2.7
-            if (hasattr(etree, 'ParseError') and
-                isinstance(e, getattr(etree, 'ParseError'))):
-                parseError = True
-            # Python2.6
-            elif isinstance(e, expat.ExpatError):
-                parseError = True
-            if parseError:
-                msg = _("Cannot understand XML")
-                raise exception.MalformedRequestBody(reason=msg)
-            else:
-                raise
+            with excutils.save_and_reraise_exception():
+                parseError = False
+                # Python2.7
+                if (hasattr(etree, 'ParseError') and
+                    isinstance(e, getattr(etree, 'ParseError'))):
+                    parseError = True
+                # Python2.6
+                elif isinstance(e, expat.ExpatError):
+                    parseError = True
+                if parseError:
+                    msg = _("Cannot understand XML")
+                    raise exception.MalformedRequestBody(reason=msg)
 
     def _from_xml_node(self, node, listnames):
         """Convert a minidom node to a simple Python type.
@@ -786,8 +832,9 @@ class RequestDeserializer(object):
         try:
             deserializer = self.get_body_deserializer(content_type)
         except exception.InvalidContentType:
-            LOG.debug(_("Unable to deserialize body as provided Content-Type"))
-            raise
+            with excutils.save_and_reraise_exception():
+                LOG.debug(_("Unable to deserialize body as provided "
+                            "Content-Type"))
 
         return deserializer.deserialize(request.body, action)
 
@@ -859,7 +906,7 @@ class Application(object):
           res = 'message\n'
 
           # Option 2: a nicely formatted HTTP exception page
-          res = exc.HTTPForbidden(detail='Nice try')
+          res = exc.HTTPForbidden(explanation='Nice try')
 
           # Option 3: a webob Response object (in case you need to play with
           # headers, or you want to be treated like an iterable, or or or)
@@ -894,16 +941,16 @@ class Debug(Middleware):
 
     @webob.dec.wsgify
     def __call__(self, req):
-        print ("*" * 40) + " REQUEST ENVIRON"
+        print(("*" * 40) + " REQUEST ENVIRON")
         for key, value in req.environ.items():
-            print key, "=", value
-        print
+            print(key, "=", value)
+        print()
         resp = req.get_response(self.application)
 
-        print ("*" * 40) + " RESPONSE HEADERS"
+        print(("*" * 40) + " RESPONSE HEADERS")
         for (key, value) in resp.headers.iteritems():
-            print key, "=", value
-        print
+            print(key, "=", value)
+        print()
 
         resp.app_iter = self.print_generator(resp.app_iter)
 
@@ -912,12 +959,12 @@ class Debug(Middleware):
     @staticmethod
     def print_generator(app_iter):
         """Print contents of a wrapper string iterator when iterated."""
-        print ("*" * 40) + " BODY"
+        print(("*" * 40) + " BODY")
         for part in app_iter:
             sys.stdout.write(part)
             sys.stdout.flush()
             yield part
-        print
+        print()
 
 
 class Router(object):
@@ -976,7 +1023,7 @@ class Router(object):
         if not match:
             language = req.best_match_language()
             msg = _('The resource could not be found.')
-            msg = gettextutils.get_localized_message(msg, language)
+            msg = gettextutils.translate(msg, language)
             return webob.exc.HTTPNotFound(explanation=msg)
         app = match['controller']
         return app

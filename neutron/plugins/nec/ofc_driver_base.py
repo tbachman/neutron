@@ -18,15 +18,16 @@
 
 from abc import ABCMeta, abstractmethod
 
+import six
 
+
+@six.add_metaclass(ABCMeta)
 class OFCDriverBase(object):
     """OpenFlow Controller (OFC) Driver Specification.
 
     OFCDriverBase defines the minimum set of methods required by this plugin.
     It would be better that other methods like update_* are implemented.
     """
-
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def create_tenant(self, description, tenant_id=None):
@@ -73,7 +74,7 @@ class OFCDriverBase(object):
 
     @abstractmethod
     def create_port(self, ofc_network_id, portinfo,
-                    port_id=None):
+                    port_id=None, filters=None):
         """Create a new port on specified network at OFC.
 
         :param ofc_network_id: a OFC tenant ID in which a new port belongs.
@@ -88,6 +89,8 @@ class OFCDriverBase(object):
 
             If a port is identified in combination with a network or
             a tenant, such information should be included in the ID.
+        :param filters: A list of packet filter associated with the port.
+            Each element is a tuple (neutron ID, OFC ID)
 
         :returns: ID of the port created at OpenFlow Controller.
         :raises: neutron.plugin.nec.common.exceptions.OFCException
@@ -99,37 +102,5 @@ class OFCDriverBase(object):
         """Delete a port at OpenFlow Controller.
 
         :raises: neutron.plugin.nec.common.exceptions.OFCException
-        """
-        pass
-
-    @abstractmethod
-    def convert_ofc_tenant_id(self, context, ofc_tenant_id):
-        """Convert old-style ofc tenand id to new-style one.
-
-        :param context: neutron context object
-        :param ofc_tenant_id: ofc_tenant_id to be converted
-        """
-        pass
-
-    @abstractmethod
-    def convert_ofc_network_id(self, context, ofc_network_id,
-                               tenant_id):
-        """Convert old-style ofc network id to new-style one.
-
-        :param context: neutron context object
-        :param ofc_network_id: ofc_network_id to be converted
-        :param tenant_id: neutron tenant_id of the network
-        """
-        pass
-
-    @abstractmethod
-    def convert_ofc_port_id(self, context, ofc_port_id,
-                            tenant_id, network_id):
-        """Convert old-style ofc port id to new-style one.
-
-        :param context: neutron context object
-        :param ofc_port_id: ofc_port_id to be converted
-        :param tenant_id: neutron tenant_id of the port
-        :param network_id: neutron network_id of the port
         """
         pass

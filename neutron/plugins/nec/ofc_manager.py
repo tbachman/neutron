@@ -39,23 +39,22 @@ class OFCManager(object):
     of the switch.  An ID named as 'ofc_*' is used to identify resource on OFC.
     """
 
-    def __init__(self):
+    def __init__(self, plugin):
         self.driver = drivers.get_driver(config.OFC.driver)(config.OFC)
+        self.plugin = plugin
 
     def _get_ofc_id(self, context, resource, neutron_id):
-        return ndb.get_ofc_id_lookup_both(context.session,
-                                          resource, neutron_id)
+        return ndb.get_ofc_id(context.session, resource, neutron_id)
 
     def _exists_ofc_item(self, context, resource, neutron_id):
-        return ndb.exists_ofc_item_lookup_both(context.session,
-                                               resource, neutron_id)
+        return ndb.exists_ofc_item(context.session, resource, neutron_id)
 
     def _add_ofc_item(self, context, resource, neutron_id, ofc_id):
         # Ensure a new item is added to the new mapping table
         ndb.add_ofc_item(context.session, resource, neutron_id, ofc_id)
 
     def _del_ofc_item(self, context, resource, neutron_id):
-        ndb.del_ofc_item_lookup_both(context.session, resource, neutron_id)
+        ndb.del_ofc_item(context.session, resource, neutron_id)
 
     def ensure_ofc_tenant(self, context, tenant_id):
         if not self.exists_ofc_tenant(context, tenant_id):
@@ -71,18 +70,12 @@ class OFCManager(object):
 
     def delete_ofc_tenant(self, context, tenant_id):
         ofc_tenant_id = self._get_ofc_id(context, "ofc_tenant", tenant_id)
-        ofc_tenant_id = self.driver.convert_ofc_tenant_id(
-            context, ofc_tenant_id)
-
         self.driver.delete_tenant(ofc_tenant_id)
         self._del_ofc_item(context, "ofc_tenant", tenant_id)
 
     def create_ofc_network(self, context, tenant_id, network_id,
                            network_name=None):
         ofc_tenant_id = self._get_ofc_id(context, "ofc_tenant", tenant_id)
-        ofc_tenant_id = self.driver.convert_ofc_tenant_id(
-            context, ofc_tenant_id)
-
         desc = "ID=%s Name=%s at Neutron." % (network_id, network_name)
         ofc_net_id = self.driver.create_network(ofc_tenant_id, desc,
                                                 network_id)
@@ -93,21 +86,25 @@ class OFCManager(object):
 
     def delete_ofc_network(self, context, network_id, network):
         ofc_net_id = self._get_ofc_id(context, "ofc_network", network_id)
-        ofc_net_id = self.driver.convert_ofc_network_id(
-            context, ofc_net_id, network['tenant_id'])
         self.driver.delete_network(ofc_net_id)
         self._del_ofc_item(context, "ofc_network", network_id)
 
     def create_ofc_port(self, context, port_id, port):
         ofc_net_id = self._get_ofc_id(context, "ofc_network",
                                       port['network_id'])
-        ofc_net_id = self.driver.convert_ofc_network_id(
-            context, ofc_net_id, port['tenant_id'])
         portinfo = ndb.get_portinfo(context.session, port_id)
         if not portinfo:
             raise nexc.PortInfoNotFound(id=port_id)
 
-        ofc_port_id = self.driver.create_port(ofc_net_id, portinfo, port_id)
+        # Associate packet filters
+        filters = self.plugin.get_packet_filters_for_port(context, port)
+        if filters is not None:
+            params = {'filters': filters}
+        else:
+            params = {}
+
+        ofc_port_id = self.driver.create_port(ofc_net_id, portinfo, port_id,
+                                              **params)
         self._add_ofc_item(context, "ofc_port", port_id, ofc_port_id)
 
     def exists_ofc_port(self, context, port_id):
@@ -115,16 +112,12 @@ class OFCManager(object):
 
     def delete_ofc_port(self, context, port_id, port):
         ofc_port_id = self._get_ofc_id(context, "ofc_port", port_id)
-        ofc_port_id = self.driver.convert_ofc_port_id(
-            context, ofc_port_id, port['tenant_id'], port['network_id'])
         self.driver.delete_port(ofc_port_id)
         self._del_ofc_item(context, "ofc_port", port_id)
 
     def create_ofc_packet_filter(self, context, filter_id, filter_dict):
         ofc_net_id = self._get_ofc_id(context, "ofc_network",
                                       filter_dict['network_id'])
-        ofc_net_id = self.driver.convert_ofc_network_id(
-            context, ofc_net_id, filter_dict['tenant_id'])
         in_port_id = filter_dict.get('in_port')
         portinfo = None
         if in_port_id:
@@ -132,25 +125,29 @@ class OFCManager(object):
             if not portinfo:
                 raise nexc.PortInfoNotFound(id=in_port_id)
 
+        # Collect ports to be associated with the filter
+        apply_ports = ndb.get_active_ports_on_ofc(
+            context, filter_dict['network_id'], in_port_id)
         ofc_pf_id = self.driver.create_filter(ofc_net_id,
-                                              filter_dict, portinfo, filter_id)
+                                              filter_dict, portinfo, filter_id,
+                                              apply_ports)
         self._add_ofc_item(context, "ofc_packet_filter", filter_id, ofc_pf_id)
+
+    def update_ofc_packet_filter(self, context, filter_id, filter_dict):
+        ofc_pf_id = self._get_ofc_id(context, "ofc_packet_filter", filter_id)
+        ofc_pf_id = self.driver.convert_ofc_filter_id(context, ofc_pf_id)
+        self.driver.update_filter(ofc_pf_id, filter_dict)
 
     def exists_ofc_packet_filter(self, context, filter_id):
         return self._exists_ofc_item(context, "ofc_packet_filter", filter_id)
 
     def delete_ofc_packet_filter(self, context, filter_id):
         ofc_pf_id = self._get_ofc_id(context, "ofc_packet_filter", filter_id)
-        ofc_pf_id = self.driver.convert_ofc_filter_id(context, ofc_pf_id)
-
         self.driver.delete_filter(ofc_pf_id)
         self._del_ofc_item(context, "ofc_packet_filter", filter_id)
 
     def create_ofc_router(self, context, tenant_id, router_id, name=None):
         ofc_tenant_id = self._get_ofc_id(context, "ofc_tenant", tenant_id)
-        ofc_tenant_id = self.driver.convert_ofc_tenant_id(
-            context, ofc_tenant_id)
-
         desc = "ID=%s Name=%s at Neutron." % (router_id, name)
         ofc_router_id = self.driver.create_router(ofc_tenant_id, router_id,
                                                   desc)

@@ -15,7 +15,6 @@
 
 
 from neutron.api.v2 import attributes as attr
-from neutron.common.test_lib import test_config
 from neutron import context
 from neutron.db import db_base_plugin_v2
 from neutron.db import portsecurity_db
@@ -24,14 +23,20 @@ from neutron.extensions import portsecurity as psec
 from neutron.extensions import securitygroup as ext_sg
 from neutron.manager import NeutronManager
 from neutron.tests.unit import test_db_plugin
+from neutron.tests.unit import test_extension_security_group
 
 DB_PLUGIN_KLASS = ('neutron.tests.unit.test_extension_portsecurity.'
                    'PortSecurityTestPlugin')
 
 
-class PortSecurityTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
+class PortSecurityTestCase(
+    test_extension_security_group.SecurityGroupsTestCase,
+    test_db_plugin.NeutronDbPluginV2TestCase):
+
     def setUp(self, plugin=None):
-        super(PortSecurityTestCase, self).setUp()
+        ext_mgr = (
+            test_extension_security_group.SecurityGroupTestExtensionManager())
+        super(PortSecurityTestCase, self).setUp(plugin=plugin, ext_mgr=ext_mgr)
 
         # Check if a plugin supports security groups
         plugin_obj = NeutronManager.get_plugin()
@@ -131,7 +136,7 @@ class PortSecurityTestPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             # Port security/IP was updated off. Need to check that no security
             # groups are on port.
-            if (ret_port[psec.PORTSECURITY] is not True or not has_ip):
+            if (ret_port[psec.PORTSECURITY] != True or not has_ip):
                 if has_security_groups:
                     raise psec.PortSecurityAndIPRequiredForSecurityGroups()
 
@@ -139,7 +144,7 @@ class PortSecurityTestPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 filters = {'port_id': [id]}
                 security_groups = (super(PortSecurityTestPlugin, self).
                                    _get_port_security_group_bindings(
-                                   context, filters))
+                                       context, filters))
                 if security_groups and not delete_security_groups:
                     raise psec.PortSecurityPortHasSecurityGroup()
 
@@ -161,12 +166,8 @@ class PortSecurityTestPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
 class PortSecurityDBTestCase(PortSecurityTestCase):
     def setUp(self, plugin=None):
-        test_config['plugin_name_v2'] = plugin or DB_PLUGIN_KLASS
-        super(PortSecurityDBTestCase, self).setUp()
-
-    def tearDown(self):
-        del test_config['plugin_name_v2']
-        super(PortSecurityDBTestCase, self).tearDown()
+        plugin = plugin or DB_PLUGIN_KLASS
+        super(PortSecurityDBTestCase, self).setUp(plugin)
 
 
 class TestPortSecurity(PortSecurityDBTestCase):
@@ -235,6 +236,22 @@ class TestPortSecurity(PortSecurityDBTestCase):
         self.assertEqual(port['port'][psec.PORTSECURITY], True)
         self._delete('ports', port['port']['id'])
 
+    def test_create_port_fails_with_secgroup_and_port_security_false(self):
+        if self._skip_security_group:
+            self.skipTest("Plugin does not support security groups")
+        with self.network() as net:
+            with self.subnet(network=net):
+                security_group = self.deserialize(
+                    'json',
+                    self._create_security_group(self.fmt, 'asdf', 'asdf'))
+                security_group_id = security_group['security_group']['id']
+                res = self._create_port('json', net['network']['id'],
+                                        arg_list=('security_groups',
+                                                  'port_security_enabled'),
+                                        security_groups=[security_group_id],
+                                        port_security_enabled=False)
+                self.assertEqual(res.status_int, 400)
+
     def test_create_port_with_default_security_group(self):
         if self._skip_security_group:
             self.skipTest("Plugin does not support security groups")
@@ -245,6 +262,28 @@ class TestPortSecurity(PortSecurityDBTestCase):
                 self.assertEqual(port['port'][psec.PORTSECURITY], True)
                 self.assertEqual(len(port['port'][ext_sg.SECURITYGROUPS]), 1)
                 self._delete('ports', port['port']['id'])
+
+    def test_create_port_with_security_group_and_net_sec_false(self):
+        # This tests that port_security_enabled is true when creating
+        # a port on a network that is marked as port_security_enabled=False
+        # that has a subnet and securiy_groups are passed it.
+        if self._skip_security_group:
+            self.skipTest("Plugin does not support security groups")
+        res = self._create_network('json', 'net1', True,
+                                   arg_list=('port_security_enabled',),
+                                   port_security_enabled=False)
+        net = self.deserialize('json', res)
+        self._create_subnet('json', net['network']['id'], '10.0.0.0/24')
+        security_group = self.deserialize(
+            'json', self._create_security_group(self.fmt, 'asdf', 'asdf'))
+        security_group_id = security_group['security_group']['id']
+        res = self._create_port('json', net['network']['id'],
+                                arg_list=('security_groups',),
+                                security_groups=[security_group_id])
+        port = self.deserialize('json', res)
+        self.assertEqual(port['port'][psec.PORTSECURITY], True)
+        self.assertEqual(port['port']['security_groups'], [security_group_id])
+        self._delete('ports', port['port']['id'])
 
     def test_update_port_security_off_with_security_group(self):
         if self._skip_security_group:

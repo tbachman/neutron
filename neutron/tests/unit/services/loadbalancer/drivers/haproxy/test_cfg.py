@@ -18,9 +18,8 @@
 # @author: Oleg Bondarev (obondarev@mirantis.com)
 
 import contextlib
-import mock
 
-from oslo.config import cfg as config
+import mock
 
 from neutron.services.loadbalancer.drivers.haproxy import cfg
 from neutron.tests import base
@@ -50,9 +49,6 @@ class TestHaproxyCfg(base.BaseTestCase):
                                             '\n'.join(test_config))
 
     def test_build_global(self):
-        if not hasattr(config.CONF, 'user_group'):
-            config.CONF.register_opt(config.StrOpt('user_group'))
-        config.CONF.set_override('user_group', 'test_group')
         expected_opts = ['global',
                          '\tdaemon',
                          '\tuser nobody',
@@ -60,9 +56,8 @@ class TestHaproxyCfg(base.BaseTestCase):
                          '\tlog /dev/log local0',
                          '\tlog /dev/log local1 notice',
                          '\tstats socket test_path mode 0666 level user']
-        opts = cfg._build_global(mock.Mock(), 'test_path')
+        opts = cfg._build_global(mock.Mock(), 'test_path', 'test_group')
         self.assertEqual(expected_opts, list(opts))
-        config.CONF.reset()
 
     def test_build_defaults(self):
         expected_opts = ['defaults',
@@ -74,7 +69,6 @@ class TestHaproxyCfg(base.BaseTestCase):
                          '\ttimeout server 50000']
         opts = cfg._build_defaults(mock.Mock())
         self.assertEqual(expected_opts, list(opts))
-        config.CONF.reset()
 
     def test_build_frontend(self):
         test_config = {'vip': {'id': 'vip_id',
@@ -110,6 +104,18 @@ class TestHaproxyCfg(base.BaseTestCase):
                                     'id': 'member1_id',
                                     'address': '10.0.0.3',
                                     'protocol_port': 80,
+                                    'weight': 1},
+                                   {'status': 'INACTIVE',
+                                    'admin_state_up': True,
+                                    'id': 'member2_id',
+                                    'address': '10.0.0.4',
+                                    'protocol_port': 80,
+                                    'weight': 1},
+                                   {'status': 'PENDING_CREATE',
+                                    'admin_state_up': True,
+                                    'id': 'member3_id',
+                                    'address': '10.0.0.5',
+                                    'protocol_port': 80,
                                     'weight': 1}],
                        'healthmonitors': [{'admin_state_up': True,
                                            'delay': 3,
@@ -124,7 +130,11 @@ class TestHaproxyCfg(base.BaseTestCase):
                          '\ttimeout check 2s',
                          '\tcookie SRV insert indirect nocache',
                          '\tserver member1_id 10.0.0.3:80 weight 1 '
-                         'check inter 3s fall 4 cookie 0']
+                         'check inter 3s fall 4 cookie 0',
+                         '\tserver member2_id 10.0.0.4:80 weight 1 '
+                         'check inter 3s fall 4 cookie 1',
+                         '\tserver member3_id 10.0.0.5:80 weight 1 '
+                         'check inter 3s fall 4 cookie 2']
         opts = cfg._build_backend(test_config)
         self.assertEqual(expected_opts, list(opts))
 

@@ -18,7 +18,6 @@
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.nec.common import ofc_client
-from neutron.plugins.nec.db import api as ndb
 from neutron.plugins.nec import ofc_driver_base
 
 
@@ -61,20 +60,6 @@ class TremaDriverBase(ofc_driver_base.OFCDriverBase):
     def delete_network(self, ofc_network_id):
         return self.client.delete(ofc_network_id)
 
-    def convert_ofc_tenant_id(self, context, ofc_tenant_id):
-        # If ofc_network_id starts with '/', it is already new-style
-        if ofc_tenant_id[0] == '/':
-            return ofc_tenant_id
-        return self._get_tenant_id(ofc_tenant_id)
-
-    def convert_ofc_network_id(self, context, ofc_network_id, tenant_id):
-        # If ofc_network_id starts with '/', it is already new-style
-        if ofc_network_id[0] == '/':
-            return ofc_network_id
-        # Trema sliceable switch does not use tenant_id,
-        # so we can convert ofc_network_id from old id only
-        return self.network_path % ofc_network_id
-
 
 class TremaFilterDriverMixin(object):
     """Trema (Sliceable Switch) PacketFilter Driver Mixin."""
@@ -86,7 +71,7 @@ class TremaFilterDriverMixin(object):
         return True
 
     def create_filter(self, ofc_network_id, filter_dict,
-                      portinfo=None, filter_id=None):
+                      portinfo=None, filter_id=None, apply_ports=None):
         if filter_dict['action'].upper() in ["ACCEPT", "ALLOW"]:
             ofc_action = "ALLOW"
         elif filter_dict['action'].upper() in ["DROP", "DENY"]:
@@ -125,27 +110,29 @@ class TremaFilterDriverMixin(object):
             ofp_wildcards.append("nw_dst:32")
 
         if filter_dict['protocol']:
-            if filter_dict['protocol'].upper() in "ICMP":
+            if filter_dict['protocol'].upper() == "ICMP":
                 body['dl_type'] = "0x800"
                 body['nw_proto'] = hex(1)
-            elif filter_dict['protocol'].upper() in "TCP":
+            elif filter_dict['protocol'].upper() == "TCP":
                 body['dl_type'] = "0x800"
                 body['nw_proto'] = hex(6)
-            elif filter_dict['protocol'].upper() in "UDP":
+            elif filter_dict['protocol'].upper() == "UDP":
                 body['dl_type'] = "0x800"
                 body['nw_proto'] = hex(17)
-            elif filter_dict['protocol'].upper() in "ARP":
+            elif filter_dict['protocol'].upper() == "ARP":
                 body['dl_type'] = "0x806"
                 ofp_wildcards.append("nw_proto")
             else:
                 body['nw_proto'] = filter_dict['protocol']
-                if filter_dict['eth_type']:
-                    body['dl_type'] = filter_dict['eth_type']
-                else:
-                    ofp_wildcards.append("dl_type")
+        else:
+            ofp_wildcards.append("nw_proto")
+
+        if 'dl_type' in body:
+            pass
+        elif filter_dict['eth_type']:
+            body['dl_type'] = filter_dict['eth_type']
         else:
             ofp_wildcards.append("dl_type")
-            ofp_wildcards.append("nw_proto")
 
         if filter_dict['src_port']:
             body['tp_src'] = hex(filter_dict['src_port'])
@@ -168,12 +155,6 @@ class TremaFilterDriverMixin(object):
     def delete_filter(self, ofc_filter_id):
         return self.client.delete(ofc_filter_id)
 
-    def convert_ofc_filter_id(self, context, ofc_filter_id):
-        # If ofc_filter_id starts with '/', it is already new-style
-        if ofc_filter_id[0] == '/':
-            return ofc_filter_id
-        return self.filter_path % ofc_filter_id
-
 
 class TremaPortBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     """Trema (Sliceable Switch) Driver for port base binding.
@@ -185,7 +166,7 @@ class TremaPortBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     port_path = "%(network)s/ports/%(port)s"
 
     def create_port(self, ofc_network_id, portinfo,
-                    port_id=None):
+                    port_id=None, filters=None):
         ofc_port_id = port_id or uuidutils.generate_uuid()
         path = self.ports_path % {'network': ofc_network_id}
         body = {'id': ofc_port_id,
@@ -199,19 +180,6 @@ class TremaPortBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     def delete_port(self, ofc_port_id):
         return self.client.delete(ofc_port_id)
 
-    def convert_ofc_port_id(self, context, ofc_port_id,
-                            tenant_id, network_id):
-        # If ofc_port_id  starts with '/', it is already new-style
-        if ofc_port_id[0] == '/':
-            return ofc_port_id
-
-        ofc_network_id = ndb.get_ofc_id_lookup_both(
-            context.session, 'ofc_network', network_id)
-        ofc_network_id = self.convert_ofc_network_id(
-            context, ofc_network_id, tenant_id)
-        return self.port_path % {'network': ofc_network_id,
-                                 'port': ofc_port_id}
-
 
 class TremaPortMACBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     """Trema (Sliceable Switch) Driver for port-mac base binding.
@@ -224,7 +192,8 @@ class TremaPortMACBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     attachments_path = "%(network)s/ports/%(port)s/attachments"
     attachment_path = "%(network)s/ports/%(port)s/attachments/%(attachment)s"
 
-    def create_port(self, ofc_network_id, portinfo, port_id=None):
+    def create_port(self, ofc_network_id, portinfo, port_id=None,
+                    filters=None):
         #NOTE: This Driver create slices with Port-MAC Based bindings on Trema
         #      Sliceable.  It's REST API requires Port Based binding before you
         #      define Port-MAC Based binding.
@@ -254,20 +223,6 @@ class TremaPortMACBaseDriver(TremaDriverBase, TremaFilterDriverMixin):
     def delete_port(self, ofc_port_id):
         return self.client.delete(ofc_port_id)
 
-    def convert_ofc_port_id(self, context, ofc_port_id, tenant_id, network_id):
-        # If ofc_port_id  starts with '/', it is already new-style
-        if ofc_port_id[0] == '/':
-            return ofc_port_id
-
-        ofc_network_id = ndb.get_ofc_id_lookup_both(
-            context.session, 'ofc_network', network_id)
-        ofc_network_id = self.convert_ofc_network_id(
-            context, ofc_network_id, tenant_id)
-        dummy_port_id = 'dummy-%s' % ofc_port_id
-        return self.attachment_path % {'network': ofc_network_id,
-                                       'port': dummy_port_id,
-                                       'attachment': ofc_port_id}
-
 
 class TremaMACBaseDriver(TremaDriverBase):
     """Trema (Sliceable Switch) Driver for mac base binding.
@@ -282,7 +237,8 @@ class TremaMACBaseDriver(TremaDriverBase):
     def filter_supported(cls):
         return False
 
-    def create_port(self, ofc_network_id, portinfo, port_id=None):
+    def create_port(self, ofc_network_id, portinfo, port_id=None,
+                    filters=None):
         ofc_port_id = port_id or uuidutils.generate_uuid()
         path = self.attachments_path % {'network': ofc_network_id}
         body = {'id': ofc_port_id, 'mac': portinfo.mac}
@@ -292,15 +248,3 @@ class TremaMACBaseDriver(TremaDriverBase):
 
     def delete_port(self, ofc_port_id):
         return self.client.delete(ofc_port_id)
-
-    def convert_ofc_port_id(self, context, ofc_port_id, tenant_id, network_id):
-        # If ofc_port_id  starts with '/', it is already new-style
-        if ofc_port_id[0] == '/':
-            return ofc_port_id
-
-        ofc_network_id = ndb.get_ofc_id_lookup_both(
-            context.session, 'ofc_network', network_id)
-        ofc_network_id = self.convert_ofc_network_id(
-            context, ofc_network_id, tenant_id)
-        return self.attachment_path % {'network': ofc_network_id,
-                                       'attachment': ofc_port_id}

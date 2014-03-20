@@ -25,6 +25,7 @@ from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.common import constants
 from neutron.openstack.common.rpc import common as rpc_common
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.linuxbridge.agent import linuxbridge_neutron_agent
 from neutron.plugins.linuxbridge.common import constants as lconst
 from neutron.tests import base
@@ -55,7 +56,7 @@ class TestLinuxBridge(base.BaseTestCase):
 
     def test_ensure_physical_in_bridge_invalid(self):
         result = self.linux_bridge.ensure_physical_in_bridge('network_id',
-                                                             lconst.TYPE_VLAN,
+                                                             p_const.TYPE_VLAN,
                                                              'physnetx',
                                                              7)
         self.assertFalse(result)
@@ -64,14 +65,14 @@ class TestLinuxBridge(base.BaseTestCase):
         with mock.patch.object(self.linux_bridge,
                                'ensure_flat_bridge') as flat_bridge_func:
             self.linux_bridge.ensure_physical_in_bridge(
-                'network_id', lconst.TYPE_FLAT, 'physnet1', None)
+                'network_id', p_const.TYPE_FLAT, 'physnet1', None)
         self.assertTrue(flat_bridge_func.called)
 
     def test_ensure_physical_in_bridge_vlan(self):
         with mock.patch.object(self.linux_bridge,
                                'ensure_vlan_bridge') as vlan_bridge_func:
             self.linux_bridge.ensure_physical_in_bridge(
-                'network_id', lconst.TYPE_VLAN, 'physnet1', 7)
+                'network_id', p_const.TYPE_VLAN, 'physnet1', 7)
         self.assertTrue(vlan_bridge_func.called)
 
     def test_ensure_physical_in_bridge_vxlan(self):
@@ -97,11 +98,6 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
         super(TestLinuxBridgeAgent, self).setUp()
         cfg.CONF.set_override('rpc_backend',
                               'neutron.openstack.common.rpc.impl_fake')
-        self.lbmgr_patcher = mock.patch('neutron.plugins.linuxbridge.agent.'
-                                        'linuxbridge_neutron_agent.'
-                                        'LinuxBridgeManager')
-        self.lbmgr_mock = self.lbmgr_patcher.start()
-        self.addCleanup(self.lbmgr_patcher.stop)
         self.execute_p = mock.patch.object(ip_lib.IPWrapper, '_execute')
         self.execute = self.execute_p.start()
         self.addCleanup(self.execute_p.stop)
@@ -113,8 +109,6 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
         self.get_mac.return_value = '00:00:00:00:00:01'
 
     def test_update_devices_failed(self):
-        lbmgr_instance = self.lbmgr_mock.return_value
-        lbmgr_instance.update_devices.side_effect = RuntimeError
         agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
                                                                      0,
                                                                      None)
@@ -125,17 +119,18 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
                 raise_exception[0] += 1
             else:
                 raise RuntimeError()
-
-        with mock.patch.object(linuxbridge_neutron_agent.LOG, 'info') as log:
-            log.side_effect = info_mock
-            with testtools.ExpectedException(RuntimeError):
-                agent.daemon_loop()
-            self.assertEqual(3, log.call_count)
+        with mock.patch.object(agent.br_mgr,
+                               "update_devices") as update_devices:
+            update_devices.side_effect = RuntimeError
+            with mock.patch.object(linuxbridge_neutron_agent.LOG,
+                                   'info') as log:
+                log.side_effect = info_mock
+                with testtools.ExpectedException(RuntimeError):
+                    agent.daemon_loop()
+                self.assertEqual(3, log.call_count)
 
     def test_process_network_devices_failed(self):
         device_info = {'current': [1, 2, 3]}
-        lbmgr_instance = self.lbmgr_mock.return_value
-        lbmgr_instance.update_devices.return_value = device_info
         agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
                                                                      0,
                                                                      None)
@@ -147,15 +142,18 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
             else:
                 raise RuntimeError()
 
-        with contextlib.nested(
-            mock.patch.object(linuxbridge_neutron_agent.LOG, 'info'),
-            mock.patch.object(agent, 'process_network_devices')
-        ) as (log, process_network_devices):
-            log.side_effect = info_mock
-            process_network_devices.side_effect = RuntimeError
-            with testtools.ExpectedException(RuntimeError):
-                agent.daemon_loop()
-            self.assertEqual(3, log.call_count)
+        with mock.patch.object(agent.br_mgr,
+                               "update_devices") as update_devices:
+            update_devices.side_effect = device_info
+            with contextlib.nested(
+                mock.patch.object(linuxbridge_neutron_agent.LOG, 'info'),
+                mock.patch.object(agent, 'process_network_devices')
+            ) as (log, process_network_devices):
+                log.side_effect = info_mock
+                process_network_devices.side_effect = RuntimeError
+                with testtools.ExpectedException(RuntimeError):
+                    agent.daemon_loop()
+                self.assertEqual(3, log.call_count)
 
 
 class TestLinuxBridgeManager(base.BaseTestCase):
@@ -209,7 +207,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         vn_id = constants.MAX_VXLAN_VNI
         self.assertEqual(self.lbm.get_vxlan_device_name(vn_id),
                          "vxlan-" + str(vn_id))
-        self.assertEqual(self.lbm.get_vxlan_device_name(vn_id + 1), None)
+        self.assertIsNone(self.lbm.get_vxlan_device_name(vn_id + 1))
 
     def test_get_all_neutron_bridges(self):
         br_list = ["br-int", "brq1", "brq2", "br-ex"]
@@ -256,8 +254,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             get_if_fn.return_value = ["tap1", "tap2", "tap3"]
             self.assertEqual(self.lbm.get_bridge_for_tap_device("tap1"),
                              "br-int")
-            self.assertEqual(self.lbm.get_bridge_for_tap_device("tap4"),
-                             None)
+            self.assertIsNone(self.lbm.get_bridge_for_tap_device("tap4"))
 
     def test_is_device_on_bridge(self):
         self.assertTrue(not self.lbm.is_device_on_bridge(""))
@@ -361,6 +358,13 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                 add_vxlan_fn.assert_called_with("vxlan-" + seg_id, seg_id,
                                                 group="224.0.0.1",
                                                 dev=self.lbm.local_int)
+                cfg.CONF.set_override('l2_population', 'True', 'VXLAN')
+                self.assertEqual(self.lbm.ensure_vxlan(seg_id),
+                                 "vxlan-" + seg_id)
+                add_vxlan_fn.assert_called_with("vxlan-" + seg_id, seg_id,
+                                                group="224.0.0.1",
+                                                dev=self.lbm.local_int,
+                                                proxy=True)
 
     def test_update_interface_ip_details(self):
         gwdict = dict(gateway='1.1.1.1',
@@ -430,18 +434,18 @@ class TestLinuxBridgeManager(base.BaseTestCase):
 
     def test_ensure_physical_in_bridge(self):
         self.assertFalse(
-            self.lbm.ensure_physical_in_bridge("123", lconst.TYPE_VLAN,
+            self.lbm.ensure_physical_in_bridge("123", p_const.TYPE_VLAN,
                                                "phys", "1")
         )
         with mock.patch.object(self.lbm, "ensure_flat_bridge") as flbr_fn:
             self.assertTrue(
-                self.lbm.ensure_physical_in_bridge("123", lconst.TYPE_FLAT,
+                self.lbm.ensure_physical_in_bridge("123", p_const.TYPE_FLAT,
                                                    "physnet1", None)
             )
             self.assertTrue(flbr_fn.called)
         with mock.patch.object(self.lbm, "ensure_vlan_bridge") as vlbr_fn:
             self.assertTrue(
-                self.lbm.ensure_physical_in_bridge("123", lconst.TYPE_VLAN,
+                self.lbm.ensure_physical_in_bridge("123", p_const.TYPE_VLAN,
                                                    "physnet1", "1")
             )
             self.assertTrue(vlbr_fn.called)
@@ -449,7 +453,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         with mock.patch.object(self.lbm, "ensure_vxlan_bridge") as vlbr_fn:
             self.lbm.vxlan_mode = lconst.VXLAN_MCAST
             self.assertTrue(
-                self.lbm.ensure_physical_in_bridge("123", lconst.TYPE_VXLAN,
+                self.lbm.ensure_physical_in_bridge("123", p_const.TYPE_VXLAN,
                                                    "physnet1", "1")
             )
             self.assertTrue(vlbr_fn.called)
@@ -458,7 +462,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
         with mock.patch.object(self.lbm, "device_exists") as de_fn:
             de_fn.return_value = False
             self.assertFalse(
-                self.lbm.add_tap_interface("123", lconst.TYPE_VLAN,
+                self.lbm.add_tap_interface("123", p_const.TYPE_VLAN,
                                            "physnet1", "1", "tap1")
             )
 
@@ -471,7 +475,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                 exec_fn.return_value = False
                 get_br.return_value = True
                 self.assertTrue(self.lbm.add_tap_interface("123",
-                                                           lconst.TYPE_LOCAL,
+                                                           p_const.TYPE_LOCAL,
                                                            "physnet1", None,
                                                            "tap1"))
                 en_fn.assert_called_with("123")
@@ -479,7 +483,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                 get_br.return_value = False
                 exec_fn.return_value = True
                 self.assertFalse(self.lbm.add_tap_interface("123",
-                                                            lconst.TYPE_LOCAL,
+                                                            p_const.TYPE_LOCAL,
                                                             "physnet1", None,
                                                             "tap1"))
 
@@ -487,18 +491,41 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                                    "ensure_physical_in_bridge") as ens_fn:
                 ens_fn.return_value = False
                 self.assertFalse(self.lbm.add_tap_interface("123",
-                                                            lconst.TYPE_VLAN,
+                                                            p_const.TYPE_VLAN,
                                                             "physnet1", "1",
                                                             "tap1"))
 
     def test_add_interface(self):
         with mock.patch.object(self.lbm, "add_tap_interface") as add_tap:
-            self.lbm.add_interface("123", lconst.TYPE_VLAN, "physnet-1",
+            self.lbm.add_interface("123", p_const.TYPE_VLAN, "physnet-1",
                                    "1", "234")
-            add_tap.assert_called_with("123", lconst.TYPE_VLAN, "physnet-1",
+            add_tap.assert_called_with("123", p_const.TYPE_VLAN, "physnet-1",
                                        "1", "tap234")
 
     def test_delete_vlan_bridge(self):
+        with contextlib.nested(
+            mock.patch.object(self.lbm, "device_exists"),
+            mock.patch.object(self.lbm, "get_interfaces_on_bridge"),
+            mock.patch.object(self.lbm, "remove_interface"),
+            mock.patch.object(self.lbm, "get_interface_details"),
+            mock.patch.object(self.lbm, "update_interface_ip_details"),
+            mock.patch.object(self.lbm, "delete_vxlan"),
+            mock.patch.object(utils, "execute")
+        ) as (de_fn, getif_fn, remif_fn, if_det_fn,
+              updif_fn, del_vxlan, exec_fn):
+            de_fn.return_value = False
+            self.lbm.delete_vlan_bridge("br0")
+            self.assertFalse(getif_fn.called)
+
+            de_fn.return_value = True
+            getif_fn.return_value = ["eth0", "eth1", "vxlan-1002"]
+            if_det_fn.return_value = ("ips", "gateway")
+            exec_fn.return_value = False
+            self.lbm.delete_vlan_bridge("br0")
+            updif_fn.assert_called_with("eth1", "br0", "ips", "gateway")
+            del_vxlan.assert_called_with("vxlan-1002")
+
+    def test_delete_vlan_bridge_with_ip(self):
         with contextlib.nested(
             mock.patch.object(self.lbm, "device_exists"),
             mock.patch.object(self.lbm, "get_interfaces_on_bridge"),
@@ -509,17 +536,54 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             mock.patch.object(utils, "execute")
         ) as (de_fn, getif_fn, remif_fn, if_det_fn,
               updif_fn, del_vlan, exec_fn):
-            de_fn.return_value = False
-            self.lbm.delete_vlan_bridge("br0")
-            self.assertFalse(getif_fn.called)
-
             de_fn.return_value = True
-            getif_fn.return_value = ["eth0", "eth1.1", "eth1"]
+            getif_fn.return_value = ["eth0", "eth1.1"]
             if_det_fn.return_value = ("ips", "gateway")
             exec_fn.return_value = False
             self.lbm.delete_vlan_bridge("br0")
-            updif_fn.assert_called_with("eth1", "br0", "ips", "gateway")
+            updif_fn.assert_called_with("eth1.1", "br0", "ips", "gateway")
+            self.assertFalse(del_vlan.called)
+
+    def test_delete_vlan_bridge_no_ip(self):
+        with contextlib.nested(
+            mock.patch.object(self.lbm, "device_exists"),
+            mock.patch.object(self.lbm, "get_interfaces_on_bridge"),
+            mock.patch.object(self.lbm, "remove_interface"),
+            mock.patch.object(self.lbm, "get_interface_details"),
+            mock.patch.object(self.lbm, "update_interface_ip_details"),
+            mock.patch.object(self.lbm, "delete_vlan"),
+            mock.patch.object(utils, "execute")
+        ) as (de_fn, getif_fn, remif_fn, if_det_fn,
+              updif_fn, del_vlan, exec_fn):
+            de_fn.return_value = True
+            getif_fn.return_value = ["eth0", "eth1.1"]
+            exec_fn.return_value = False
+            if_det_fn.return_value = ([], None)
+            self.lbm.delete_vlan_bridge("br0")
             del_vlan.assert_called_with("eth1.1")
+            self.assertFalse(updif_fn.called)
+
+    def test_delete_vxlan_bridge_no_int_mappings(self):
+        interface_mappings = {}
+        lbm = linuxbridge_neutron_agent.LinuxBridgeManager(
+            interface_mappings, self.root_helper)
+
+        with contextlib.nested(
+            mock.patch.object(lbm, "device_exists"),
+            mock.patch.object(lbm, "get_interfaces_on_bridge"),
+            mock.patch.object(lbm, "remove_interface"),
+            mock.patch.object(lbm, "delete_vxlan"),
+            mock.patch.object(utils, "execute")
+        ) as (de_fn, getif_fn, remif_fn, del_vxlan, exec_fn):
+            de_fn.return_value = False
+            lbm.delete_vlan_bridge("br0")
+            self.assertFalse(getif_fn.called)
+
+            de_fn.return_value = True
+            getif_fn.return_value = ["vxlan-1002"]
+            exec_fn.return_value = False
+            lbm.delete_vlan_bridge("br0")
+            del_vxlan.assert_called_with("vxlan-1002")
 
     def test_remove_empty_bridges(self):
         self.lbm.network_map = {'net1': mock.Mock(), 'net2': mock.Mock()}
@@ -571,7 +635,7 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             self.assertTrue(exec_fn.called)
 
     def test_update_devices(self):
-        with mock.patch.object(self.lbm, "udev_get_tap_devices") as gt_fn:
+        with mock.patch.object(self.lbm, "get_tap_devices") as gt_fn:
             gt_fn.return_value = set(["dev1"])
             self.assertIsNone(self.lbm.update_devices(set(["dev1"])))
 
@@ -682,7 +746,7 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
             mock.patch.object(self.lb_rpc.agent.br_mgr,
                               "get_tap_device_name"),
             mock.patch.object(self.lb_rpc.agent.br_mgr,
-                              "udev_get_tap_devices"),
+                              "get_tap_devices"),
             mock.patch.object(self.lb_rpc.agent.br_mgr,
                               "get_bridge_name"),
             mock.patch.object(self.lb_rpc.agent.br_mgr,
@@ -692,56 +756,80 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                               "plugin_rpc", create=True),
             mock.patch.object(self.lb_rpc.sg_agent,
                               "refresh_firewall", create=True)
-        ) as (get_tap_fn, udev_fn, getbr_fn, remif_fn,
+        ) as (get_tap_fn, get_tap_devs_fn, getbr_fn, remif_fn,
               addif_fn, rpc_obj, reffw_fn):
             get_tap_fn.return_value = "tap123"
-            udev_fn.return_value = ["tap123", "tap124"]
+            get_tap_devs_fn.return_value = set(["tap123", "tap124"])
             port = {"admin_state_up": True,
                     "id": "1234-5678",
                     "network_id": "123-123"}
             self.lb_rpc.port_update("unused_context", port=port,
                                     vlan_id="1", physical_network="physnet1")
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_VLAN,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_VLAN,
                                         "physnet1", "1", port["id"])
 
             self.lb_rpc.port_update("unused_context", port=port,
-                                    network_type=lconst.TYPE_VLAN,
+                                    network_type=p_const.TYPE_VLAN,
                                     segmentation_id="2",
                                     physical_network="physnet1")
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_VLAN,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_VLAN,
                                         "physnet1", "2", port["id"])
 
             self.lb_rpc.port_update("unused_context", port=port,
                                     vlan_id=lconst.FLAT_VLAN_ID,
                                     physical_network="physnet1")
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_FLAT,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_FLAT,
                                         "physnet1", None, port["id"])
 
             self.lb_rpc.port_update("unused_context", port=port,
-                                    network_type=lconst.TYPE_FLAT,
+                                    network_type=p_const.TYPE_FLAT,
                                     segmentation_id=None,
                                     physical_network="physnet1")
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_FLAT,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_FLAT,
                                         "physnet1", None, port["id"])
 
             self.lb_rpc.port_update("unused_context", port=port,
                                     vlan_id=lconst.LOCAL_VLAN_ID,
                                     physical_network=None)
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_LOCAL,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_LOCAL,
                                         None, None, port["id"])
 
             self.lb_rpc.port_update("unused_context", port=port,
-                                    network_type=lconst.TYPE_LOCAL,
+                                    network_type=p_const.TYPE_LOCAL,
                                     segmentation_id=None,
                                     physical_network=None)
             self.assertFalse(reffw_fn.called)
-            addif_fn.assert_called_with(port["network_id"], lconst.TYPE_LOCAL,
+            addif_fn.assert_called_with(port["network_id"], p_const.TYPE_LOCAL,
                                         None, None, port["id"])
+
+            addif_fn.return_value = True
+            self.lb_rpc.port_update("unused_context", port=port,
+                                    network_type=p_const.TYPE_LOCAL,
+                                    segmentation_id=None,
+                                    physical_network=None)
+            rpc_obj.update_device_up.assert_called_with(
+                self.lb_rpc.context,
+                "tap123",
+                self.lb_rpc.agent.agent_id,
+                cfg.CONF.host
+            )
+
+            addif_fn.return_value = False
+            self.lb_rpc.port_update("unused_context", port=port,
+                                    network_type=p_const.TYPE_LOCAL,
+                                    segmentation_id=None,
+                                    physical_network=None)
+            rpc_obj.update_device_down.assert_called_with(
+                self.lb_rpc.context,
+                "tap123",
+                self.lb_rpc.agent.agent_id,
+                cfg.CONF.host
+            )
 
             port["admin_state_up"] = False
             port["security_groups"] = True
@@ -753,7 +841,8 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
             rpc_obj.update_device_down.assert_called_with(
                 self.lb_rpc.context,
                 "tap123",
-                self.lb_rpc.agent.agent_id
+                self.lb_rpc.agent.agent_id,
+                cfg.CONF.host
             )
 
     def test_port_update_plugin_rpc_failed(self):
@@ -761,7 +850,7 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                 mock.patch.object(self.lb_rpc.agent.br_mgr,
                                   "get_tap_device_name"),
                 mock.patch.object(self.lb_rpc.agent.br_mgr,
-                                  "udev_get_tap_devices"),
+                                  "get_tap_devices"),
                 mock.patch.object(self.lb_rpc.agent.br_mgr,
                                   "get_bridge_name"),
                 mock.patch.object(self.lb_rpc.agent.br_mgr,
@@ -772,9 +861,9 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                 mock.patch.object(self.lb_rpc.agent,
                                   "plugin_rpc", create=True),
                 mock.patch.object(linuxbridge_neutron_agent.LOG, 'error'),
-        ) as (get_tap_fn, udev_fn, _, _, _, _, plugin_rpc, log):
+        ) as (get_tap_fn, get_tap_devs_fn, _, _, _, _, plugin_rpc, log):
             get_tap_fn.return_value = "tap123"
-            udev_fn.return_value = ["tap123", "tap124"]
+            get_tap_devs_fn.return_value = set(["tap123", "tap124"])
             port = {"admin_state_up": True,
                     "id": "1234-5678",
                     "network_id": "123-123"}
@@ -810,7 +899,7 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                            'dev', 'vxlan-1', 'dst', 'agent_ip'],
                           root_helper=self.root_helper,
                           check_exit_code=False),
-                mock.call(['ip', 'neigh', 'add', 'port_ip', 'lladdr',
+                mock.call(['ip', 'neigh', 'replace', 'port_ip', 'lladdr',
                            'port_mac', 'dev', 'vxlan-1', 'nud', 'permanent'],
                           root_helper=self.root_helper,
                           check_exit_code=False),
@@ -876,5 +965,28 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                            'dev', 'vxlan-1', 'dst', 'agent_ip'],
                           root_helper=self.root_helper,
                           check_exit_code=False),
+            ]
+            execute_fn.assert_has_calls(expected)
+
+    def test_fdb_update_chg_ip(self):
+        fdb_entries = {'chg_ip':
+                       {'net_id':
+                        {'agent_ip':
+                         {'before': [['port_mac', 'port_ip_1']],
+                          'after': [['port_mac', 'port_ip_2']]}}}}
+
+        with mock.patch.object(utils, 'execute',
+                               return_value='') as execute_fn:
+            self.lb_rpc.fdb_update(None, fdb_entries)
+
+            expected = [
+                mock.call(['ip', 'neigh', 'replace', 'port_ip_2', 'lladdr',
+                           'port_mac', 'dev', 'vxlan-1', 'nud', 'permanent'],
+                          root_helper=self.root_helper,
+                          check_exit_code=False),
+                mock.call(['ip', 'neigh', 'del', 'port_ip_1', 'lladdr',
+                           'port_mac', 'dev', 'vxlan-1'],
+                          root_helper=self.root_helper,
+                          check_exit_code=False)
             ]
             execute_fn.assert_has_calls(expected)

@@ -50,10 +50,11 @@ class IPAvailabilityRange(model_base.BASEV2):
     Allocation - first entry from the range will be allocated.
     If the first entry is equal to the last entry then this row
     will be deleted.
-    Recycling ips involves appending to existing ranges. This is
-    only done if the range is contiguous. If not, the first_ip will be
-    the same as the last_ip. When adjacent ips are recycled the ranges
-    will be merged.
+    Recycling ips involves reading the IPAllocationPool and IPAllocation tables
+    and inserting ranges representing available ips.  This happens after the
+    final allocation is pulled from this table and a new ip allocation is
+    requested.  Any contiguous ranges of available ips will be inserted as a
+    single range.
     """
 
     allocation_pool_id = sa.Column(sa.String(36),
@@ -128,6 +129,24 @@ class Port(model_base.BASEV2, HasId, HasTenant):
     status = sa.Column(sa.String(16), nullable=False)
     device_id = sa.Column(sa.String(255), nullable=False)
     device_owner = sa.Column(sa.String(255), nullable=False)
+
+    def __init__(self, id=None, tenant_id=None, name=None, network_id=None,
+                 mac_address=None, admin_state_up=None, status=None,
+                 device_id=None, device_owner=None, fixed_ips=None):
+        self.id = id
+        self.tenant_id = tenant_id
+        self.name = name
+        self.network_id = network_id
+        self.mac_address = mac_address
+        self.admin_state_up = admin_state_up
+        self.device_owner = device_owner
+        self.device_id = device_id
+        # Since this is a relationship only set it if one is passed in.
+        if fixed_ips:
+            self.fixed_ips = fixed_ips
+
+        # NOTE(arosen): status must be set last as an event is triggered on!
+        self.status = status
 
 
 class DNSNameServer(model_base.BASEV2):

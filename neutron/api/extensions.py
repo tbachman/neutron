@@ -18,10 +18,12 @@
 
 from abc import ABCMeta
 import imp
+import itertools
 import os
 
 from oslo.config import cfg
 import routes
+import six
 import webob.dec
 import webob.exc
 
@@ -30,21 +32,22 @@ from neutron.common import exceptions
 import neutron.extensions
 from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
+from neutron import policy
 from neutron import wsgi
 
 
 LOG = logging.getLogger(__name__)
 
 
+@six.add_metaclass(ABCMeta)
 class PluginInterface(object):
-    __metaclass__ = ABCMeta
 
     @classmethod
     def __subclasshook__(cls, klass):
         """Checking plugin class.
 
         The __subclasshook__ method is a class method
-        that will be called everytime a class is tested
+        that will be called every time a class is tested
         using issubclass(klass, PluginInterface).
         In that case, it will check that every method
         marked with the abstractmethod decorator is
@@ -263,8 +266,7 @@ class ExtensionMiddleware(wsgi.Middleware):
     def __init__(self, application,
                  ext_mgr=None):
         self.ext_mgr = (ext_mgr
-                        or ExtensionManager(
-                        get_extensions_path()))
+                        or ExtensionManager(get_extensions_path()))
         mapper = routes.Mapper()
 
         # extended resources
@@ -400,6 +402,7 @@ class ExtensionManager(object):
         self.path = path
         self.extensions = {}
         self._load_all_extensions()
+        policy.reset()
 
     def get_resources(self):
         """Returns a list of ResourceExtension objects."""
@@ -538,7 +541,10 @@ class ExtensionManager(object):
                 LOG.error(_("Extension path '%s' doesn't exist!"), path)
 
     def _load_all_extensions_from_path(self, path):
-        for f in os.listdir(path):
+        # Sorting the extension list makes the order in which they
+        # are loaded predictable across a cluster of load-balanced
+        # Neutron Servers
+        for f in sorted(os.listdir(path)):
             try:
                 LOG.info(_('Loading extension file: %s'), f)
                 mod_name, file_ext = os.path.splitext(os.path.split(f)[-1])
@@ -568,8 +574,7 @@ class ExtensionManager(object):
         LOG.info(_('Loaded extension: %s'), alias)
 
         if alias in self.extensions:
-            raise exceptions.Error(_("Found duplicate extension: %s") %
-                                   alias)
+            raise exceptions.DuplicatedExtension(alias=alias)
         self.extensions[alias] = ext
 
 
@@ -580,6 +585,7 @@ class PluginAwareExtensionManager(ExtensionManager):
     def __init__(self, path, plugins):
         self.plugins = plugins
         super(PluginAwareExtensionManager, self).__init__(path)
+        self.check_if_plugin_extensions_loaded()
 
     def _check_extension(self, extension):
         """Check if an extension is supported by any plugin."""
@@ -617,6 +623,16 @@ class PluginAwareExtensionManager(ExtensionManager):
             cls._instance = cls(get_extensions_path(),
                                 NeutronManager.get_service_plugins())
         return cls._instance
+
+    def check_if_plugin_extensions_loaded(self):
+        """Check if an extension supported by a plugin has been loaded."""
+        plugin_extensions = set(itertools.chain.from_iterable([
+            getattr(plugin, "supported_extension_aliases", [])
+            for plugin in self.plugins.values()]))
+        missing_aliases = plugin_extensions - set(self.extensions)
+        if missing_aliases:
+            raise exceptions.ExtensionsNotFound(
+                extensions=list(missing_aliases))
 
 
 class RequestExtension(object):
@@ -656,7 +672,7 @@ class ResourceExtension(object):
         self.attr_map = attr_map
 
 
-# Returns the extention paths from a config entry and the __path__
+# Returns the extension paths from a config entry and the __path__
 # of neutron.extensions
 def get_extensions_path():
     paths = ':'.join(neutron.extensions.__path__)
@@ -664,3 +680,9 @@ def get_extensions_path():
         paths = ':'.join([cfg.CONF.api_extensions_path, paths])
 
     return paths
+
+
+def append_api_extensions_path(paths):
+    paths = [cfg.CONF.api_extensions_path] + paths
+    cfg.CONF.set_override('api_extensions_path',
+                          ':'.join([p for p in paths if p]))

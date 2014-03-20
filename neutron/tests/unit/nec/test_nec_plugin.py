@@ -30,6 +30,7 @@ from neutron.plugins.nec.db import api as ndb
 from neutron.plugins.nec import nec_plugin
 from neutron.tests.unit.nec import fake_ofc_manager
 from neutron.tests.unit import test_db_plugin as test_plugin
+from neutron.tests.unit import test_extension_allowedaddresspairs as test_pair
 
 
 PLUGIN_NAME = 'neutron.plugins.nec.nec_plugin.NECPluginV2'
@@ -64,27 +65,16 @@ class NecPluginV2TestCaseBase(object):
         os.remove(self.nec_ini_file)
         self.nec_ini_file = None
 
-    def patch_remote_calls(self, use_stop=False):
+    def patch_remote_calls(self):
         self.plugin_notifier_p = mock.patch(NOTIFIER)
         self.ofc_manager_p = mock.patch(OFC_MANAGER)
         self.plugin_notifier_p.start()
         self.ofc_manager_p.start()
-        # When using mock.patch.stopall, we need to ensure
-        # stop is not used anywhere in a single test.
-        # In Neutron several tests use stop for each patched object,
-        # so we need to take care of both cases.
-        if use_stop:
-            self.addCleanup(self.plugin_notifier_p.stop)
-            self.addCleanup(self.ofc_manager_p.stop)
 
-    def setup_nec_plugin_base(self, use_stop_all=True,
-                              use_stop_each=False):
-        # If use_stop_each is set, use_stop_all cannot be set.
-        if use_stop_all and not use_stop_each:
-            self.addCleanup(mock.patch.stopall)
+    def setup_nec_plugin_base(self):
         self._set_nec_ini()
         self.addCleanup(self._clean_nec_ini)
-        self.patch_remote_calls(use_stop_each)
+        self.patch_remote_calls()
 
 
 class NecPluginV2TestCase(NecPluginV2TestCaseBase,
@@ -100,12 +90,12 @@ class NecPluginV2TestCase(NecPluginV2TestCaseBase,
                   'port_added': added, 'port_removed': removed}
         self.callback_nec.update_ports(self.context, **kwargs)
 
-    def setUp(self):
-        self.addCleanup(mock.patch.stopall)
+    def setUp(self, plugin=None, ext_mgr=None):
 
         self._set_nec_ini()
         self.addCleanup(self._clean_nec_ini)
-        super(NecPluginV2TestCase, self).setUp(self._plugin_name)
+        plugin = plugin or self._plugin_name
+        super(NecPluginV2TestCase, self).setUp(plugin, ext_mgr=ext_mgr)
 
         self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.ofc = fake_ofc_manager.patch_ofc_manager()
@@ -122,10 +112,6 @@ class TestNecBasicGet(test_plugin.TestBasicGet, NecPluginV2TestCase):
 
 class TestNecV2HTTPResponse(test_plugin.TestV2HTTPResponse,
                             NecPluginV2TestCase):
-    pass
-
-
-class TestNecPortsV2(test_plugin.TestPortsV2, NecPluginV2TestCase):
     pass
 
 
@@ -563,11 +549,12 @@ class TestNecPluginOfcManager(NecPluginV2TestCase):
         with self.network() as network:
             with self.subnet(network=network):
                 net = network['network']
-                p = self._create_resource('port',
-                                          {'network_id': net['id'],
-                                           'tenant_id': net['tenant_id'],
-                                           'device_owner': 'network:dhcp',
-                                           'device_id': 'dhcp-port1'})
+                p = self._create_resource(
+                    'port',
+                    {'network_id': net['id'],
+                     'tenant_id': net['tenant_id'],
+                     'device_owner': constants.DEVICE_OWNER_DHCP,
+                     'device_id': 'dhcp-port1'})
                 # Make sure that the port is created on OFC.
                 portinfo = {'id': p['id'], 'port_no': 123}
                 self.rpcapi_update_ports(added=[portinfo])
@@ -842,3 +829,45 @@ class TestNecPluginOfcManager(NecPluginV2TestCase):
         ]
         self.ofc.assert_has_calls(expected)
         self.assertEqual(self.ofc.delete_ofc_port.call_count, 2)
+
+    def _test_delete_port_for_disappeared_ofc_port(self, raised_exc):
+        self.ofc.set_raise_exc('delete_ofc_port', raised_exc)
+
+        with self.port(no_delete=True) as port:
+            port_id = port['port']['id']
+
+            portinfo = {'id': port_id, 'port_no': 123}
+            self.rpcapi_update_ports(added=[portinfo])
+
+            self._delete('ports', port_id)
+
+            # Check the port on neutron db is deleted. NotFound for
+            # neutron port itself should be handled by called. It is
+            # consistent with ML2 behavior, but it may need to be
+            # revisit.
+            self._show('ports', port_id,
+                       expected_code=webob.exc.HTTPNotFound.code)
+
+        ctx = mock.ANY
+        port = mock.ANY
+        expected = [
+            mock.call.exists_ofc_port(ctx, port_id),
+            mock.call.create_ofc_port(ctx, port_id, port),
+            mock.call.exists_ofc_port(ctx, port_id),
+            mock.call.delete_ofc_port(ctx, port_id, port),
+        ]
+        self.ofc.assert_has_calls(expected)
+        self.assertEqual(self.ofc.delete_ofc_port.call_count, 1)
+
+    def test_delete_port_for_nonexist_ofc_port(self):
+        self._test_delete_port_for_disappeared_ofc_port(
+            nexc.OFCResourceNotFound(resource='ofc_port'))
+
+    def test_delete_port_for_noofcmap_ofc_port(self):
+        self._test_delete_port_for_disappeared_ofc_port(
+            nexc.OFCMappingNotFound(resource='port', neutron_id='port1'))
+
+
+class TestNecAllowedAddressPairs(NecPluginV2TestCase,
+                                 test_pair.TestAllowedAddressPairs):
+    pass

@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# TODO(salv-orlando): Verify if a single set of operational
+# status constants is achievable
 NET_STATUS_ACTIVE = 'ACTIVE'
 NET_STATUS_BUILD = 'BUILD'
 NET_STATUS_DOWN = 'DOWN'
@@ -22,6 +24,10 @@ PORT_STATUS_ACTIVE = 'ACTIVE'
 PORT_STATUS_BUILD = 'BUILD'
 PORT_STATUS_DOWN = 'DOWN'
 PORT_STATUS_ERROR = 'ERROR'
+
+FLOATINGIP_STATUS_ACTIVE = 'ACTIVE'
+FLOATINGIP_STATUS_DOWN = 'DOWN'
+FLOATINGIP_STATUS_ERROR = 'ERROR'
 
 DEVICE_OWNER_ROUTER_INTF = "network:router_interface"
 DEVICE_OWNER_ROUTER_GW = "network:router_gateway"
@@ -34,11 +40,6 @@ METERING_LABEL_KEY = '_metering_labels'
 
 IPv4 = 'IPv4'
 IPv6 = 'IPv6'
-
-ICMP_PROTOCOL = 1
-TCP_PROTOCOL = 6
-UDP_PROTOCOL = 17
-ICMPv6_PROTOCOL = 58
 
 DHCP_RESPONSE_PORT = 68
 
@@ -72,10 +73,13 @@ AGENT_TYPE_OVS = 'Open vSwitch agent'
 AGENT_TYPE_LINUXBRIDGE = 'Linux bridge agent'
 AGENT_TYPE_HYPERV = 'HyperV agent'
 AGENT_TYPE_NEC = 'NEC plugin agent'
+AGENT_TYPE_OFA = 'OFA driver agent'
 AGENT_TYPE_L3 = 'L3 agent'
 AGENT_TYPE_LOADBALANCER = 'Loadbalancer agent'
 AGENT_TYPE_MLNX = 'Mellanox plugin agent'
 AGENT_TYPE_METERING = 'Metering agent'
+AGENT_TYPE_METADATA = 'Metadata agent'
+AGENT_TYPE_SDNVE = 'IBM SDN-VE agent'
 L2_AGENT_TOPIC = 'N/A'
 
 PAGINATION_INFINITE = 'infinite'
@@ -87,3 +91,22 @@ PORT_BINDING_EXT_ALIAS = 'binding'
 L3_AGENT_SCHEDULER_EXT_ALIAS = 'l3_agent_scheduler'
 DHCP_AGENT_SCHEDULER_EXT_ALIAS = 'dhcp_agent_scheduler'
 LBAAS_AGENT_SCHEDULER_EXT_ALIAS = 'lbaas_agent_scheduler'
+
+# Protocol names and numbers for Security Groups/Firewalls
+PROTO_NAME_TCP = 'tcp'
+PROTO_NAME_ICMP = 'icmp'
+PROTO_NAME_ICMP_V6 = 'icmpv6'
+PROTO_NAME_UDP = 'udp'
+PROTO_NUM_TCP = 6
+PROTO_NUM_ICMP = 1
+PROTO_NUM_ICMP_V6 = 58
+PROTO_NUM_UDP = 17
+
+# List of ICMPv6 types that should be allowed by default:
+# Multicast Listener Query (130),
+# Multicast Listener Report (131),
+# Multicast Listener Done (132),
+# Router Advertisement (134),
+# Neighbor Solicitation (135),
+# Neighbor Advertisement (136)
+ICMPV6_ALLOWED_TYPES = [130, 131, 132, 134, 135, 136]

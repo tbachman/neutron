@@ -23,6 +23,7 @@ from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.extensions.flavor import (FLAVOR_NETWORK)
+from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
 
@@ -93,6 +94,21 @@ class TestABCDriver(TestBase):
              mock.call().addr.add(4, '192.168.1.2/24', '192.168.1.255'),
              mock.call().addr.delete(4, '172.16.77.240/24')])
 
+    def test_l3_init_with_preserve(self):
+        addresses = [dict(ip_version=4, scope='global',
+                          dynamic=False, cidr='192.168.1.3/32')]
+        self.ip_dev().addr.list = mock.Mock(return_value=addresses)
+
+        bc = BaseChild(self.conf)
+        ns = '12345678-1234-5678-90ab-ba0987654321'
+        bc.init_l3('tap0', ['192.168.1.2/24'], namespace=ns,
+                   preserve_ips=['192.168.1.3/32'])
+        self.ip_dev.assert_has_calls(
+            [mock.call('tap0', 'sudo', namespace=ns),
+             mock.call().addr.list(scope='global', filters=['permanent']),
+             mock.call().addr.add(4, '192.168.1.2/24', '192.168.1.255')])
+        self.assertFalse(self.ip_dev().addr.delete.called)
+
 
 class TestOVSInterfaceDriver(TestBase):
 
@@ -110,6 +126,31 @@ class TestOVSInterfaceDriver(TestBase):
     def test_plug_alt_bridge(self):
         self._test_plug(bridge='br-foo')
 
+    def test_plug_configured_bridge(self):
+        br = 'br-v'
+        self.conf.set_override('ovs_use_veth', False)
+        self.conf.set_override('ovs_integration_bridge', br)
+        self.assertEqual(self.conf.ovs_integration_bridge, br)
+
+        def device_exists(dev, root_helper=None, namespace=None):
+            return dev == br
+
+        ovs = interface.OVSInterfaceDriver(self.conf)
+        with mock.patch.object(ovs, '_ovs_add_port') as add_port:
+            self.device_exists.side_effect = device_exists
+            ovs.plug('01234567-1234-1234-99',
+                     'port-1234',
+                     'tap0',
+                     'aa:bb:cc:dd:ee:ff',
+                     bridge=None,
+                     namespace=None)
+
+        add_port.assert_called_once_with('br-v',
+                                         'tap0',
+                                         'port-1234',
+                                         'aa:bb:cc:dd:ee:ff',
+                                         internal=True)
+
     def _test_plug(self, additional_expectation=[], bridge=None,
                    namespace=None):
 
@@ -119,7 +160,8 @@ class TestOVSInterfaceDriver(TestBase):
         def device_exists(dev, root_helper=None, namespace=None):
             return dev == bridge
 
-        vsctl_cmd = ['ovs-vsctl', '--', '--may-exist', 'add-port',
+        vsctl_cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port',
+                     'tap0', '--', 'add-port',
                      bridge, 'tap0', '--', 'set', 'Interface', 'tap0',
                      'type=internal', '--', 'set', 'Interface', 'tap0',
                      'external-ids:iface-id=port-1234', '--', 'set',
@@ -206,7 +248,8 @@ class TestOVSInterfaceDriverWithVeth(TestOVSInterfaceDriver):
                     mock.call().add_veth('tap0', devname,
                                          namespace2=namespace)]
 
-        vsctl_cmd = ['ovs-vsctl', '--', '--may-exist', 'add-port',
+        vsctl_cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port',
+                     'tap0', '--', 'add-port',
                      bridge, 'tap0', '--', 'set', 'Interface', 'tap0',
                      'external-ids:iface-id=port-1234', '--', 'set',
                      'Interface', 'tap0',
@@ -293,7 +336,7 @@ class TestBridgeInterfaceDriver(TestBase):
 
     def test_plug_dev_exists(self):
         self.device_exists.return_value = True
-        with mock.patch('neutron.agent.linux.interface.LOG.warn') as log:
+        with mock.patch('neutron.agent.linux.interface.LOG.info') as log:
             br = interface.BridgeInterfaceDriver(self.conf)
             br.plug('01234567-1234-1234-99',
                     'port-1234',
@@ -330,6 +373,7 @@ class TestBridgeInterfaceDriver(TestBase):
 class TestMetaInterfaceDriver(TestBase):
     def setUp(self):
         super(TestMetaInterfaceDriver, self).setUp()
+        config.register_interface_driver_opts_helper(self.conf)
         self.conf.register_opts(dhcp.OPTS)
         self.client_cls_p = mock.patch('neutronclient.v2_0.client.Client')
         client_cls = self.client_cls_p.start()
@@ -358,9 +402,7 @@ class TestMetaInterfaceDriver(TestBase):
     def test_get_driver_by_network_id(self):
         meta_interface = interface.MetaInterfaceDriver(self.conf)
         driver = meta_interface._get_driver_by_network_id('test')
-        self.assertTrue(isinstance(
-            driver,
-            interface.OVSInterfaceDriver))
+        self.assertIsInstance(driver, interface.OVSInterfaceDriver)
 
     def test_set_device_plugin_tag(self):
         meta_interface = interface.MetaInterfaceDriver(self.conf)
@@ -470,3 +512,58 @@ class TestIVSInterfaceDriver(TestBase):
             execute.assert_called_once_with(ivsctl_cmd, 'sudo')
             self.ip_dev.assert_has_calls([mock.call('ns-0', 'sudo', None),
                                           mock.call().link.delete()])
+
+
+class TestMidonetInterfaceDriver(TestBase):
+    def setUp(self):
+        self.conf = config.setup_conf()
+        self.conf.register_opts(interface.OPTS)
+        config.register_root_helper(self.conf)
+        self.device_exists_p = mock.patch.object(ip_lib, 'device_exists')
+        self.device_exists = self.device_exists_p.start()
+        self.driver = interface.MidonetInterfaceDriver(self.conf)
+        self.network_id = uuidutils.generate_uuid()
+        self.port_id = uuidutils.generate_uuid()
+        self.device_name = "tap0"
+        self.mac_address = "aa:bb:cc:dd:ee:ff"
+        self.bridge = "br-test"
+        self.namespace = "ns-test"
+        super(TestMidonetInterfaceDriver, self).setUp()
+
+    def test_plug(self):
+        cmd = ['mm-ctl', '--bind-port', self.port_id, 'tap0']
+        self.device_exists.return_value = False
+
+        root_dev = mock.Mock()
+        ns_dev = mock.Mock()
+        self.ip().add_veth = mock.Mock(return_value=(root_dev, ns_dev))
+        with mock.patch.object(utils, 'execute') as execute:
+            self.driver.plug(
+                self.network_id, self.port_id,
+                self.device_name, self.mac_address,
+                self.bridge, self.namespace)
+            execute.assert_called_once_with(cmd, 'sudo')
+
+        expected = [mock.call(), mock.call('sudo'),
+                    mock.call().add_veth(self.device_name,
+                                         self.device_name,
+                                         namespace2=self.namespace),
+                    mock.call().ensure_namespace(self.namespace),
+                    mock.call().ensure_namespace().add_device_to_namespace(
+                        mock.ANY)]
+
+        ns_dev.assert_has_calls(
+            [mock.call.link.set_address(self.mac_address)])
+
+        root_dev.assert_has_calls([mock.call.link.set_up()])
+        ns_dev.assert_has_calls([mock.call.link.set_up()])
+        self.ip.assert_has_calls(expected, True)
+
+    def test_unplug(self):
+        self.driver.unplug(self.device_name, self.bridge, self.namespace)
+
+        self.ip_dev.assert_has_calls([
+            mock.call(self.device_name, self.driver.root_helper,
+                      self.namespace),
+            mock.call().link.delete()])
+        self.ip.assert_has_calls(mock.call().garbage_collect_namespace())

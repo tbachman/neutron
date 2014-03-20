@@ -1,4 +1,4 @@
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ class AristaProvisionedVms(model_base.BASEV2, models_v2.HasId,
     """
     __tablename__ = 'arista_provisioned_vms'
 
-    vm_id = sa.Column(sa.String(UUID_LEN))
+    vm_id = sa.Column(sa.String(STR_LEN))
     host_id = sa.Column(sa.String(STR_LEN))
     port_id = sa.Column(sa.String(UUID_LEN))
     network_id = sa.Column(sa.String(UUID_LEN))
@@ -92,13 +92,8 @@ def remember_tenant(tenant_id):
     """
     session = db.get_session()
     with session.begin():
-        tenant = (session.query(AristaProvisionedTenants).
-                  filter_by(tenant_id=tenant_id).first())
-
-        if not tenant:
-            tenant = AristaProvisionedTenants(
-                tenant_id=tenant_id)
-            session.add(tenant)
+        tenant = AristaProvisionedTenants(tenant_id=tenant_id)
+        session.add(tenant)
 
 
 def forget_tenant(tenant_id):
@@ -128,7 +123,7 @@ def num_provisioned_tenants():
 
 
 def remember_vm(vm_id, host_id, port_id, network_id, tenant_id):
-    """Stores all relevent information about a VM in repository.
+    """Stores all relevant information about a VM in repository.
 
     :param vm_id: globally unique identifier for VM instance
     :param host_id: ID of the host where the VM is placed
@@ -138,23 +133,17 @@ def remember_vm(vm_id, host_id, port_id, network_id, tenant_id):
     """
     session = db.get_session()
     with session.begin():
-        vm = (session.query(AristaProvisionedVms).
-              filter_by(vm_id=vm_id, host_id=host_id,
-                        port_id=port_id, tenant_id=tenant_id,
-                        network_id=network_id).first())
-
-        if not vm:
-            vm = AristaProvisionedVms(
-                vm_id=vm_id,
-                host_id=host_id,
-                port_id=port_id,
-                network_id=network_id,
-                tenant_id=tenant_id)
-            session.add(vm)
+        vm = AristaProvisionedVms(
+            vm_id=vm_id,
+            host_id=host_id,
+            port_id=port_id,
+            network_id=network_id,
+            tenant_id=tenant_id)
+        session.add(vm)
 
 
 def forget_vm(vm_id, host_id, port_id, network_id, tenant_id):
-    """Removes all relevent information about a VM from repository.
+    """Removes all relevant information about a VM from repository.
 
     :param vm_id: globally unique identifier for VM instance
     :param host_id: ID of the host where the VM is placed
@@ -171,7 +160,7 @@ def forget_vm(vm_id, host_id, port_id, network_id, tenant_id):
 
 
 def remember_network(tenant_id, network_id, segmentation_id):
-    """Stores all relevent information about a Network in repository.
+    """Stores all relevant information about a Network in repository.
 
     :param tenant_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
@@ -179,20 +168,15 @@ def remember_network(tenant_id, network_id, segmentation_id):
     """
     session = db.get_session()
     with session.begin():
-        net = (session.query(AristaProvisionedNets).
-               filter_by(tenant_id=tenant_id,
-                         network_id=network_id).first())
-
-        if not net:
-            net = AristaProvisionedNets(
-                tenant_id=tenant_id,
-                network_id=network_id,
-                segmentation_id=segmentation_id)
-            session.add(net)
+        net = AristaProvisionedNets(
+            tenant_id=tenant_id,
+            network_id=network_id,
+            segmentation_id=segmentation_id)
+        session.add(net)
 
 
 def forget_network(tenant_id, network_id):
-    """Deletes all relevent information about a Network from repository.
+    """Deletes all relevant information about a Network from repository.
 
     :param tenant_id: globally unique neutron tenant identifier
     :param network_id: globally unique neutron network identifier
@@ -408,12 +392,6 @@ class NeutronNets(db_base_plugin_v2.NeutronDbPluginV2):
 
     def get_all_ports_for_tenant(self, tenant_id):
         filters = {'tenant_id': [tenant_id]}
-        return super(NeutronNets,
-                     self).get_ports(self.admin_ctx, filters=filters) or []
-
-    def get_all_ports_for_vm(self, tenant_id, vm_id):
-        filters = {'tenant_id': [tenant_id],
-                   'device_id': [vm_id]}
         return super(NeutronNets,
                      self).get_ports(self.admin_ctx, filters=filters) or []
 

@@ -26,11 +26,18 @@ DEFAULT_INTERFACE_MAPPINGS = []
 vlan_opts = [
     cfg.StrOpt('tenant_network_type', default='vlan',
                help=_("Network type for tenant networks "
-               "(local, ib, vlan, or none)")),
+                      "(local, vlan, or none)")),
     cfg.ListOpt('network_vlan_ranges',
                 default=DEFAULT_VLAN_RANGES,
                 help=_("List of <physical_network>:<vlan_min>:<vlan_max> "
                        "or <physical_network>")),
+    cfg.ListOpt('physical_network_type_mappings',
+                default=[],
+                help=_("List of <physical_network>:<physical_network_type> "
+                       " with physical_network_type is either eth or ib")),
+    cfg.StrOpt('physical_network_type', default='eth',
+               help=_("Physical network type for provider network "
+                      "(eth or ib)"))
 ]
 
 
@@ -43,18 +50,25 @@ eswitch_opts = [
                help=_("Type of VM network interface: mlnx_direct or "
                       "hostdev")),
     cfg.StrOpt('daemon_endpoint',
-               default='tcp://127.0.0.1:5001',
+               default='tcp://127.0.0.1:60001',
                help=_('eswitch daemon end point')),
     cfg.IntOpt('request_timeout', default=3000,
                help=_("The number of milliseconds the agent will wait for "
                       "response on request to daemon.")),
+    cfg.IntOpt('retries', default=3,
+               help=_("The number of retries the agent will send request "
+                      "to daemon before giving up")),
+    cfg.IntOpt('backoff_rate', default=2,
+               help=_("backoff rate multiplier for waiting period between "
+                      "retries for request to daemon, i.e. value of 2 will "
+                      " double the request timeout each retry")),
 ]
 
 agent_opts = [
     cfg.IntOpt('polling_interval', default=2,
                help=_("The number of seconds the agent will wait between "
                       "polling for local device changes.")),
-    cfg.BoolOpt('rpc_support_old_agents', default=True,
+    cfg.BoolOpt('rpc_support_old_agents', default=False,
                 help=_("Enable server RPC compatibility with old agents")),
 ]
 

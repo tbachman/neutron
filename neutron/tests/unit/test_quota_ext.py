@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
+
 import mock
 from oslo.config import cfg
 import testtools
@@ -27,8 +29,6 @@ from neutron.common import exceptions
 from neutron import context
 from neutron.db import api as db
 from neutron.db import quota_db
-from neutron import manager
-from neutron.plugins.linuxbridge.db import l2network_db_v2
 from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
@@ -45,9 +45,6 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
 
     def setUp(self):
         super(QuotaExtensionTestCase, self).setUp()
-        # Ensure 'stale' patched copies of the plugin are never returned
-        manager.NeutronManager._instance = None
-
         # Ensure existing ExtensionManager is not used
         extensions.PluginAwareExtensionManager._instance = None
 
@@ -61,7 +58,7 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
         config.parse(args=args)
 
         # Update the plugin and extensions path
-        cfg.CONF.set_override('core_plugin', TARGET_PLUGIN)
+        self.setup_coreplugin(TARGET_PLUGIN)
         cfg.CONF.set_override(
             'quota_items',
             ['network', 'subnet', 'port', 'extra1'],
@@ -75,7 +72,7 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
         # extra1 here is added later, so have to do it manually
         quota.QUOTAS.register_resource_by_name('extra1')
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
-        l2network_db_v2.initialize()
+        db.configure_db()
         app = config.load_paste_app('extensions_test_app')
         ext_middleware = extensions.ExtensionMiddleware(app, ext_mgr=ext_mgr)
         self.api = webtest.TestApp(ext_middleware)
@@ -327,6 +324,13 @@ class QuotaExtensionDbTestCaseXML(QuotaExtensionDbTestCase):
 class QuotaExtensionCfgTestCase(QuotaExtensionTestCase):
     fmt = 'json'
 
+    def setUp(self):
+        cfg.CONF.set_override(
+            'quota_driver',
+            'neutron.quota.ConfDriver',
+            group='QUOTAS')
+        super(QuotaExtensionCfgTestCase, self).setUp()
+
     def test_quotas_default_values(self):
         tenant_id = 'tenant_id1'
         env = {'neutron.context': context.Context('', tenant_id)}
@@ -401,3 +405,32 @@ class TestDbQuotaDriver(base.BaseTestCase):
             get_tenant_quotas.assert_called_once_with(ctx,
                                                       default_quotas,
                                                       target_tenant)
+
+
+class TestQuotaDriverLoad(base.BaseTestCase):
+    def setUp(self):
+        super(TestQuotaDriverLoad, self).setUp()
+        # Make sure QuotaEngine is reinitialized in each test.
+        quota.QUOTAS._driver = None
+
+    def _test_quota_driver(self, cfg_driver, loaded_driver,
+                           with_quota_db_module=True):
+        cfg.CONF.set_override('quota_driver', cfg_driver, group='QUOTAS')
+        with mock.patch.dict(sys.modules, {}):
+            if (not with_quota_db_module and
+                    'neutron.db.quota_db' in sys.modules):
+                del sys.modules['neutron.db.quota_db']
+            driver = quota.QUOTAS.get_driver()
+            self.assertEqual(loaded_driver, driver.__class__.__name__)
+
+    def test_quota_db_driver_with_quotas_table(self):
+        self._test_quota_driver('neutron.db.quota_db.DbQuotaDriver',
+                                'DbQuotaDriver', True)
+
+    def test_quota_db_driver_fallback_conf_driver(self):
+        self._test_quota_driver('neutron.db.quota_db.DbQuotaDriver',
+                                'ConfDriver', False)
+
+    def test_quota_conf_driver(self):
+        self._test_quota_driver('neutron.quota.ConfDriver',
+                                'ConfDriver', True)

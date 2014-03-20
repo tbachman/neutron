@@ -26,8 +26,6 @@ from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
 
 PLUGIN_NAME = ('neutron.plugins.linuxbridge.'
                'lb_neutron_plugin.LinuxBridgePluginV2')
-AGENT_NAME = ('neutron.plugins.linuxbridge.'
-              'agent.linuxbridg_neutron_agent.LinuxBridgeNeutronAgentRPC')
 NOTIFIER = ('neutron.plugins.linuxbridge.'
             'lb_neutron_plugin.AgentNotifierApi')
 
@@ -47,7 +45,6 @@ class LinuxBridgeSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
                                              RESOURCE_ATTRIBUTE_MAP[item].
                                              copy())
         super(LinuxBridgeSecurityGroupsTestCase, self).setUp(PLUGIN_NAME)
-        self.addCleanup(mock.patch.stopall)
 
     def tearDown(self):
         attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk_
@@ -95,7 +92,7 @@ class TestLinuxBridgeSecurityGroupsDB(LinuxBridgeSecurityGroupsTestCase):
 
     def test_security_group_get_port_from_device_with_no_port(self):
         port_dict = lb_db.get_port_from_device('bad_device_id')
-        self.assertEqual(None, port_dict)
+        self.assertIsNone(port_dict)
 
 
 class TestLinuxBridgeSecurityGroupsDBXML(TestLinuxBridgeSecurityGroupsDB):

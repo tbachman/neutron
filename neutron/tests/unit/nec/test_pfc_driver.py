@@ -17,16 +17,18 @@
 
 import random
 import string
+import uuid
 
-import mox
+import mock
 import netaddr
 
-from neutron import context
+from neutron.common import constants
 from neutron.openstack.common import uuidutils
 from neutron.plugins.nec.common import ofc_client as ofc
-from neutron.plugins.nec.db import api as ndb
 from neutron.plugins.nec.db import models as nmodels
 from neutron.plugins.nec import drivers
+from neutron.plugins.nec.drivers import pfc
+from neutron.plugins.nec.extensions import packetfilter as ext_pf
 from neutron.tests import base
 
 
@@ -47,13 +49,13 @@ def _ofc(id):
 class PFCDriverTestBase(base.BaseTestCase):
 
     driver = 'neutron.plugins.nec.drivers.pfc.PFCDriverBase'
+    filter_supported = False
 
     def setUp(self):
         super(PFCDriverTestBase, self).setUp()
-        self.mox = mox.Mox()
         self.driver = drivers.get_driver(self.driver)(TestConfig)
-        self.mox.StubOutWithMock(ofc.OFCClient, 'do_request')
-        self.addCleanup(self.mox.UnsetStubs)
+        self.do_request = mock.patch.object(ofc.OFCClient,
+                                            'do_request').start()
 
     def get_ofc_item_random_params(self):
         """create random parameters for ofc_item test."""
@@ -85,14 +87,12 @@ class PFCDriverTestBase(base.BaseTestCase):
             body['description'] = ofc_description
         if post_id:
             body['id'] = ofc_t
-            ofc.OFCClient.do_request("POST", path, body=body)
+            self.do_request.return_value = None
         else:
-            ofc.OFCClient.do_request("POST", path, body=body).\
-                AndReturn({'id': ofc_t})
-        self.mox.ReplayAll()
+            self.do_request.return_value = {'id': ofc_t}
 
         ret = self.driver.create_tenant(description, t)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("POST", path, body=body)
         self.assertEqual(ret, tenant_path)
 
     def testa_create_tenant(self):
@@ -104,11 +104,9 @@ class PFCDriverTestBase(base.BaseTestCase):
         t, n, p = self.get_ofc_item_random_params()
 
         path = "/tenants/%s" % _ofc(t)
-        ofc.OFCClient.do_request("DELETE", path)
-        self.mox.ReplayAll()
 
         self.driver.delete_tenant(path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", path)
 
     def testd_create_network(self):
         t, n, p = self.get_ofc_item_random_params()
@@ -119,12 +117,10 @@ class PFCDriverTestBase(base.BaseTestCase):
         post_path = "%s/networks" % tenant_path
         body = {'description': ofc_description}
         network = {'id': _ofc(n)}
-        ofc.OFCClient.do_request("POST", post_path, body=body).\
-            AndReturn(network)
-        self.mox.ReplayAll()
+        self.do_request.return_value = network
 
         ret = self.driver.create_network(tenant_path, description, n)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("POST", post_path, body=body)
         net_path = "/tenants/%s/networks/%s" % (_ofc(t), _ofc(n))
         self.assertEqual(ret, net_path)
 
@@ -132,13 +128,11 @@ class PFCDriverTestBase(base.BaseTestCase):
         t, n, p = self.get_ofc_item_random_params()
 
         net_path = "/tenants/%s/networks/%s" % (_ofc(t), _ofc(n))
-        ofc.OFCClient.do_request("DELETE", net_path)
-        self.mox.ReplayAll()
 
         self.driver.delete_network(net_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", net_path)
 
-    def testg_create_port(self):
+    def _test_create_port(self, call_filters_arg=None, send_filters_arg=None):
         t, n, p = self.get_ofc_item_random_params()
 
         net_path = "/tenants/%s/networks/%s" % (_ofc(t), _ofc(n))
@@ -148,31 +142,63 @@ class PFCDriverTestBase(base.BaseTestCase):
         body = {'datapath_id': p.datapath_id,
                 'port': str(p.port_no),
                 'vid': str(p.vlan_id)}
+        if send_filters_arg is not None:
+            body['filters'] = send_filters_arg
         port = {'id': _ofc(p.id)}
-        ofc.OFCClient.do_request("POST", post_path, body=body).AndReturn(port)
-        self.mox.ReplayAll()
+        self.do_request.return_value = port
 
-        ret = self.driver.create_port(net_path, p, p.id)
-        self.mox.VerifyAll()
+        if call_filters_arg is not None:
+            ret = self.driver.create_port(net_path, p, p.id, call_filters_arg)
+        else:
+            ret = self.driver.create_port(net_path, p, p.id)
+        self.do_request.assert_called_once_with("POST", post_path, body=body)
         self.assertEqual(ret, port_path)
+
+    def testg_create_port(self):
+        self._test_create_port()
+
+    def test_create_port_with_filters_argument(self):
+        # If no filter support, 'filters' argument is passed to OFC.
+        # Note that it will be overridden in a test class with filter support.
+        self._test_create_port(call_filters_arg=['dummy'],
+                               send_filters_arg=None)
 
     def testh_delete_port(self):
         t, n, p = self.get_ofc_item_random_params()
 
         port_path = "/tenants/%s/networks/%s/ports/%s" % (_ofc(t), _ofc(n),
                                                           _ofc(p.id))
-        ofc.OFCClient.do_request("DELETE", port_path)
-        self.mox.ReplayAll()
 
         self.driver.delete_port(port_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", port_path)
 
     def test_filter_supported(self):
-        self.assertFalse(self.driver.filter_supported())
+        self.assertEqual(self.filter_supported, self.driver.filter_supported())
 
 
 class PFCDriverBaseTest(PFCDriverTestBase):
-    pass
+
+    def test_extract_ofc_network_id(self):
+        network_id = '/tenants/tenant-a/networks/network-a'
+        self.assertEqual('network-a',
+                         self.driver._extract_ofc_network_id(network_id))
+
+    def test_extract_ofc_network_id_failure(self):
+        network_id = '/tenants/tenant-a/networks/network-a/dummy'
+        self.assertRaises(pfc.InvalidOFCIdFormat,
+                          self.driver._extract_ofc_network_id, network_id)
+
+    def test_extract_ofc_port_id(self):
+        port_id = '/tenants/tenant-a/networks/network-a/ports/port-a'
+        self.assertEqual({'tenant': 'tenant-a',
+                          'network': 'network-a',
+                          'port': 'port-a'},
+                         self.driver._extract_ofc_port_id(port_id))
+
+    def test_extract_ofc_port_id_failure(self):
+        port_id = '/tenants/tenant-a/dummy/network-a/ports/port-a'
+        self.assertRaises(pfc.InvalidOFCIdFormat,
+                          self.driver._extract_ofc_port_id, port_id)
 
 
 class PFCV3DriverTest(PFCDriverTestBase):
@@ -180,23 +206,16 @@ class PFCV3DriverTest(PFCDriverTestBase):
 
     def testa_create_tenant(self):
         t, n, p = self.get_ofc_item_random_params()
-        self.mox.ReplayAll()
-
         ret = self.driver.create_tenant('dummy_desc', t)
-        self.mox.VerifyAll()
-
+        self.assertEqual(0, self.do_request.call_count)
         ofc_t_path = "/tenants/" + self._generate_ofc_tenant_id(t)
         self.assertEqual(ofc_t_path, ret)
 
     def testc_delete_tenant(self):
         t, n, p = self.get_ofc_item_random_params()
-
         path = "/tenants/%s" % _ofc(t)
-        # There is no API call.
-        self.mox.ReplayAll()
-
         self.driver.delete_tenant(path)
-        self.mox.VerifyAll()
+        self.assertEqual(0, self.do_request.call_count)
 
 
 class PFCV4DriverTest(PFCDriverTestBase):
@@ -214,12 +233,10 @@ class PFCV5DriverTest(PFCDriverTestBase):
         tenant_path = "/tenants/%s" % _ofc(t)
         post_path = "%s/routers" % tenant_path
         router = {'id': _ofc(r)}
-        ofc.OFCClient.do_request("POST", post_path,
-                                 body=None).AndReturn(router)
-        self.mox.ReplayAll()
+        self.do_request.return_value = router
 
         ret = self.driver.create_router(tenant_path, description, r)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("POST", post_path, body=None)
         router_path = "/tenants/%s/routers/%s" % (_ofc(t), _ofc(r))
         self.assertEqual(ret, router_path)
 
@@ -228,11 +245,9 @@ class PFCV5DriverTest(PFCDriverTestBase):
         r = uuidutils.generate_uuid()
 
         router_path = "/tenants/%s/routers/%s" % (_ofc(t), _ofc(r))
-        ofc.OFCClient.do_request("DELETE", router_path)
-        self.mox.ReplayAll()
 
         self.driver.delete_router(router_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", router_path)
 
     def test_add_router_interface(self):
         t = uuidutils.generate_uuid()
@@ -249,13 +264,12 @@ class PFCV5DriverTest(PFCDriverTestBase):
                 'ip_address': ip_address,
                 'mac_address': mac_address}
         inf = {'id': _ofc(p)}
-        ofc.OFCClient.do_request("POST", infs_path,
-                                 body=body).AndReturn(inf)
-        self.mox.ReplayAll()
+        self.do_request.return_value = inf
 
         ret = self.driver.add_router_interface(router_path, net_path,
                                                ip_address, mac_address)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("POST", infs_path, body=body)
+
         inf_path = "%s/interfaces/%s" % (router_path, _ofc(p))
         self.assertEqual(ret, inf_path)
 
@@ -269,22 +283,16 @@ class PFCV5DriverTest(PFCDriverTestBase):
         ip_address = '10.1.1.1/24'
         mac_address = '11:22:33:44:55:66'
 
-        body = {'ip_address': ip_address,
-                'mac_address': mac_address}
-        ofc.OFCClient.do_request("PUT", inf_path, body=body)
-
-        body = {'ip_address': ip_address}
-        ofc.OFCClient.do_request("PUT", inf_path, body=body)
-
-        body = {'mac_address': mac_address}
-        ofc.OFCClient.do_request("PUT", inf_path, body=body)
-
-        self.mox.ReplayAll()
-
         self.driver.update_router_interface(inf_path, ip_address, mac_address)
         self.driver.update_router_interface(inf_path, ip_address=ip_address)
         self.driver.update_router_interface(inf_path, mac_address=mac_address)
-        self.mox.VerifyAll()
+
+        self.do_request.assert_has_calls([
+            mock.call("PUT", inf_path, body={'ip_address': ip_address,
+                                             'mac_address': mac_address}),
+            mock.call("PUT", inf_path, body={'ip_address': ip_address}),
+            mock.call("PUT", inf_path, body={'mac_address': mac_address}),
+        ])
 
     def test_delete_router_interface(self):
         t = uuidutils.generate_uuid()
@@ -293,11 +301,9 @@ class PFCV5DriverTest(PFCDriverTestBase):
 
         router_path = "/tenants/%s/routers/%s" % (_ofc(t), _ofc(r))
         inf_path = "%s/interfaces/%s" % (router_path, _ofc(p))
-        ofc.OFCClient.do_request("DELETE", inf_path)
-        self.mox.ReplayAll()
 
         self.driver.delete_router_interface(inf_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", inf_path)
 
     def _get_route_id(self, dest, nexthop):
         dest = netaddr.IPNetwork(dest)
@@ -313,13 +319,11 @@ class PFCV5DriverTest(PFCDriverTestBase):
         nexthop = '192.168.100.10'
         body = {'destination': dest, 'nexthop': nexthop}
         route_id = self._get_route_id(dest, nexthop)
-        ofc.OFCClient.do_request("POST", routes_path,
-                                 body=body).AndReturn({'id': route_id})
-        self.mox.ReplayAll()
+        self.do_request.return_value = {'id': route_id}
 
         ret = self.driver.add_router_route(router_path, '10.1.1.0/24',
                                            '192.168.100.10')
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("POST", routes_path, body=body)
         route_path = routes_path + '/' + route_id
         self.assertEqual(ret, route_path)
 
@@ -332,11 +336,9 @@ class PFCV5DriverTest(PFCDriverTestBase):
 
         route_id = self._get_route_id('10.1.1.0/24', '192.168.100.10')
         route_path = routes_path + '/' + route_id
-        ofc.OFCClient.do_request("DELETE", route_path)
-        self.mox.ReplayAll()
 
         self.driver.delete_router_route(route_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("DELETE", route_path)
 
     def test_list_router_routes(self):
         t = uuidutils.generate_uuid()
@@ -350,11 +352,10 @@ class PFCV5DriverTest(PFCDriverTestBase):
         data = {'routes': [{'id': self._get_route_id(route[0], route[1]),
                             'destination': route[0], 'nexthop': route[1]}
                            for route in routes]}
-        ofc.OFCClient.do_request("GET", routes_path).AndReturn(data)
-        self.mox.ReplayAll()
+        self.do_request.return_value = data
 
         ret = self.driver.list_router_routes(router_path)
-        self.mox.VerifyAll()
+        self.do_request.assert_called_once_with("GET", routes_path)
 
         expected = [{'id': (routes_path + "/" +
                             self._get_route_id(route[0], route[1])),
@@ -362,6 +363,302 @@ class PFCV5DriverTest(PFCDriverTestBase):
                     for route in routes]
         self.assertEqual(len(routes), len(ret))
         self.assertEqual(data['routes'], expected)
+
+
+class PFCFilterDriverTestMixin:
+    def _test_create_filter(self, filter_dict=None, filter_post=None,
+                            apply_ports=None):
+        t, n, p = self.get_ofc_item_random_params()
+
+        filter_id = uuidutils.generate_uuid()
+        f = {'priority': 123, 'action': "ACCEPT"}
+        if filter_dict:
+            f.update(filter_dict)
+
+        net_path = "/networks/%s" % n
+        body = {'action': 'pass', 'priority': 123}
+        if filter_post:
+            body.update(filter_post)
+
+        self.do_request.return_value = {'id': filter_id}
+        if apply_ports is not None:
+            ret = self.driver.create_filter(net_path, f, p,
+                                            apply_ports=apply_ports)
+        else:
+            ret = self.driver.create_filter(net_path, f, p)
+        self.do_request.assert_called_once_with("POST", "/filters",
+                                                body=body)
+        self.assertEqual(ret, '/filters/%s' % filter_id)
+
+    def test_create_filter_accept(self):
+        self._test_create_filter(filter_dict={'action': 'ACCEPT'})
+
+    def test_create_filter_allow(self):
+        self._test_create_filter(filter_dict={'action': 'ALLOW'})
+
+    def test_create_filter_deny(self):
+        self._test_create_filter(filter_dict={'action': 'DENY'},
+                                 filter_post={'action': 'drop'})
+
+    def test_create_filter_drop(self):
+        self._test_create_filter(filter_dict={'action': 'DROP'},
+                                 filter_post={'action': 'drop'})
+
+    def test_create_filter_empty_field_not_post(self):
+        filter_dict = {'src_mac': '', 'src_cidr': '', 'src_port': 0,
+                       'dst_mac': '', 'dst_cidr': '', 'dst_port': 0,
+                       'protocol': '', 'eth_type': 0}
+        filter_post = {}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_none_field_not_post(self):
+        filter_dict = {'src_mac': None, 'src_cidr': None, 'src_port': None,
+                       'dst_mac': None, 'dst_cidr': None, 'dst_port': None,
+                       'protocol': None, 'eth_type': None}
+        filter_post = {}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_all_fields(self):
+        filter_dict = {'src_mac': '11:22:33:44:55:66',
+                       'dst_mac': '77:88:99:aa:bb:cc',
+                       'src_cidr': '192.168.3.0/24',
+                       'dst_cidr': '10.11.240.0/20',
+                       'src_port': 12345,
+                       'dst_port': 23456,
+                       'protocol': '0x10',
+                       'eth_type': 0x800}
+        filter_post = filter_dict.copy()
+        filter_post['protocol'] = 16
+        filter_post['eth_type'] = '0x800'
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_cidr_ip_addr_32(self):
+        filter_dict = {'src_cidr': '192.168.3.1',
+                       'dst_cidr': '10.11.240.2'}
+        filter_post = {'src_cidr': '192.168.3.1/32',
+                       'dst_cidr': '10.11.240.2/32'}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_proto_tcp(self):
+        filter_dict = {'protocol': 'TCP'}
+        filter_post = {'protocol': constants.PROTO_NUM_TCP}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_proto_udp(self):
+        filter_dict = {'protocol': 'UDP'}
+        filter_post = {'protocol': constants.PROTO_NUM_UDP}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_proto_icmp(self):
+        filter_dict = {'protocol': 'ICMP'}
+        filter_post = {'protocol': constants.PROTO_NUM_ICMP}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_proto_arp_not_proto_post(self):
+        filter_dict = {'protocol': 'ARP'}
+        filter_post = {}
+        self._test_create_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_create_filter_apply_ports(self):
+        apply_ports = [
+            ('p1', '/tenants/tenant-1/networks/network-1/ports/port-1'),
+            ('p2', '/tenants/tenant-2/networks/network-2/ports/port-2')]
+        filter_post = {'apply_ports': [
+            {'tenant': 'tenant-1', 'network': 'network-1', 'port': 'port-1'},
+            {'tenant': 'tenant-2', 'network': 'network-2', 'port': 'port-2'}
+        ]}
+        self._test_create_filter(filter_dict={}, apply_ports=apply_ports,
+                                 filter_post=filter_post)
+
+    def _test_update_filter(self, filter_dict=None, filter_post=None):
+        filter_id = uuidutils.generate_uuid()
+        ofc_filter_id = '/filters/%s' % filter_id
+        self.driver.update_filter(ofc_filter_id, filter_dict)
+        self.do_request.assert_called_once_with("PUT", ofc_filter_id,
+                                                body=filter_post)
+
+    def test_update_filter_empty_fields(self):
+        filter_dict = {'src_mac': '', 'src_cidr': '', 'src_port': 0,
+                       'dst_mac': '', 'dst_cidr': '', 'dst_port': 0,
+                       'protocol': '', 'eth_type': 0}
+        filter_post = {'src_mac': '', 'src_cidr': '', 'src_port': '',
+                       'dst_mac': '', 'dst_cidr': '', 'dst_port': '',
+                       'protocol': '', 'eth_type': ''}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_none_fields(self):
+        filter_dict = {'src_mac': None, 'src_cidr': None, 'src_port': None,
+                       'dst_mac': None, 'dst_cidr': None, 'dst_port': None,
+                       'protocol': None, 'eth_type': None}
+        filter_post = {'src_mac': '', 'src_cidr': '', 'src_port': '',
+                       'dst_mac': '', 'dst_cidr': '', 'dst_port': '',
+                       'protocol': '', 'eth_type': ''}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_all_fields(self):
+        filter_dict = {'src_mac': '11:22:33:44:55:66',
+                       'dst_mac': '77:88:99:aa:bb:cc',
+                       'src_cidr': '192.168.3.0/24',
+                       'dst_cidr': '10.11.240.0/20',
+                       'src_port': 12345,
+                       'dst_port': 23456,
+                       'protocol': '0x10',
+                       'eth_type': 0x800}
+        filter_post = filter_dict.copy()
+        filter_post['protocol'] = 16
+        filter_post['eth_type'] = '0x800'
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_cidr_ip_addr_32(self):
+        filter_dict = {'src_cidr': '192.168.3.1',
+                       'dst_cidr': '10.11.240.2'}
+        filter_post = {'src_cidr': '192.168.3.1/32',
+                       'dst_cidr': '10.11.240.2/32'}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_proto_tcp(self):
+        filter_dict = {'protocol': 'TCP'}
+        filter_post = {'protocol': constants.PROTO_NUM_TCP}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_proto_udp(self):
+        filter_dict = {'protocol': 'UDP'}
+        filter_post = {'protocol': constants.PROTO_NUM_UDP}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_proto_icmp(self):
+        filter_dict = {'protocol': 'ICMP'}
+        filter_post = {'protocol': constants.PROTO_NUM_ICMP}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_update_filter_proto_arp_post_empty(self):
+        filter_dict = {'protocol': 'ARP'}
+        filter_post = {'protocol': ''}
+        self._test_update_filter(filter_dict=filter_dict,
+                                 filter_post=filter_post)
+
+    def test_delete_filter(self):
+        t, n, p = self.get_ofc_item_random_params()
+        f_path = "/filters/%s" % uuidutils.generate_uuid()
+        self.driver.delete_filter(f_path)
+        self.do_request.assert_called_once_with("DELETE", f_path)
+
+    def _test_validate_filter_duplicate_priority(self, method, found_dup):
+        with mock.patch('neutron.manager.NeutronManager'
+                        '.get_plugin') as get_plugin:
+            plugin = get_plugin.return_value
+            if found_dup:
+                plugin.get_packet_filters.return_value = ['found']
+            else:
+                plugin.get_packet_filters.return_value = []
+            network_id = str(uuid.uuid4())
+            filter_dict = {'network_id': network_id,
+                           'priority': 12}
+            if found_dup:
+                self.assertRaises(ext_pf.PacketFilterDuplicatedPriority,
+                                  method, 'context', filter_dict)
+            else:
+                self.assertIsNone(method('context', filter_dict))
+            plugin.get_packet_filters.assert_called_once_with(
+                'context',
+                filters={'network_id': [network_id],
+                         'priority': [12]},
+                fields=['id'])
+
+    def test_validate_filter_create_no_duplicate_priority(self):
+        self._test_validate_filter_duplicate_priority(
+            self.driver.validate_filter_create,
+            found_dup=False)
+
+    def test_validate_filter_create_duplicate_priority(self):
+        self._test_validate_filter_duplicate_priority(
+            self.driver.validate_filter_create,
+            found_dup=True)
+
+    def test_validate_filter_update_action_raises_error(self):
+        filter_dict = {'action': 'ALLOW'}
+        self.assertRaises(ext_pf.PacketFilterUpdateNotSupported,
+                          self.driver.validate_filter_update,
+                          'context', filter_dict)
+
+    def test_validate_filter_update_priority_raises_error(self):
+        filter_dict = {'priority': '13'}
+        self.assertRaises(ext_pf.PacketFilterUpdateNotSupported,
+                          self.driver.validate_filter_update,
+                          'context', filter_dict)
+
+    def _test_validate_filter_ipv6_not_supported(self, field, create=True):
+        if create:
+            filter_dict = {'network_id': 'net1', 'priority': 12}
+            method = self.driver.validate_filter_create
+        else:
+            filter_dict = {}
+            method = self.driver.validate_filter_update
+        filter_dict[field] = 'fe80::1'
+        self.assertRaises(ext_pf.PacketFilterIpVersionNonSupported,
+                          method, 'context', filter_dict)
+        filter_dict[field] = '10.56.3.3'
+        self.assertIsNone(method('context', filter_dict))
+
+    def test_validate_filter_create_ipv6_not_supported(self):
+        with mock.patch('neutron.manager.NeutronManager'
+                        '.get_plugin') as get_plugin:
+            plugin = get_plugin.return_value
+            plugin.get_packet_filters.return_value = []
+            self._test_validate_filter_ipv6_not_supported(
+                'src_cidr', create=True)
+            self._test_validate_filter_ipv6_not_supported(
+                'dst_cidr', create=True)
+
+    def test_validate_filter_update_ipv6_not_supported(self):
+        self._test_validate_filter_ipv6_not_supported('src_cidr', create=False)
+        self._test_validate_filter_ipv6_not_supported('dst_cidr', create=False)
+
+    def _test_validate_filter_priority_range_one(self, method, priority, ok):
+        filter_dict = {'priority': priority, 'network_id': 'net1'}
+        if ok:
+            self.assertIsNone(method('context', filter_dict))
+        else:
+            self.assertRaises(ext_pf.PacketFilterInvalidPriority,
+                              method, 'context', filter_dict)
+
+    def test_validate_filter_create_priority_range(self):
+        with mock.patch('neutron.manager.NeutronManager'
+                        '.get_plugin') as get_plugin:
+            plugin = get_plugin.return_value
+            plugin.get_packet_filters.return_value = []
+
+            method = self.driver.validate_filter_create
+            self._test_validate_filter_priority_range_one(method, 0, False)
+            self._test_validate_filter_priority_range_one(method, 1, True)
+            self._test_validate_filter_priority_range_one(method, 32766, True)
+            self._test_validate_filter_priority_range_one(method, 32767, False)
+
+
+class PFCV51DriverTest(PFCFilterDriverTestMixin, PFCV5DriverTest):
+    driver = 'pfc_v51'
+    filter_supported = True
+
+    def test_create_port_with_filters_argument(self):
+        self._test_create_port(
+            call_filters_arg=[('neutron-id-1', '/filters/filter-1'),
+                              ('neutron-id-2', '/filters/filter-2')],
+            send_filters_arg=['filter-1', 'filter-2'])
 
 
 class PFCDriverStringTest(base.BaseTestCase):
@@ -405,122 +702,3 @@ class PFCDriverStringTest(base.BaseTestCase):
 
         ret_str = self.driver._generate_pfc_description(random_str)
         self.assertEqual(exp_str, ret_str)
-
-
-class PFCIdConvertTest(base.BaseTestCase):
-    driver = 'neutron.plugins.nec.drivers.pfc.PFCDriverBase'
-
-    def setUp(self):
-        super(PFCIdConvertTest, self).setUp()
-        self.mox = mox.Mox()
-        self.driver = drivers.get_driver(self.driver)(TestConfig)
-        self.ctx = self.mox.CreateMock(context.Context)
-        self.ctx.session = "session"
-        self.mox.StubOutWithMock(ndb, 'get_ofc_id_lookup_both')
-        self.addCleanup(self.mox.UnsetStubs)
-
-    def generate_random_ids(self, count=1):
-        if count == 1:
-            return uuidutils.generate_uuid()
-        else:
-            return [uuidutils.generate_uuid() for _ in xrange(count)]
-
-    def test_convert_tenant_id(self):
-        ofc_t_id = self.generate_random_ids(1)
-        print ofc_t_id
-        ret = self.driver.convert_ofc_tenant_id(self.ctx, ofc_t_id)
-        self.assertEqual(ret, '/tenants/%s' % ofc_t_id)
-
-    def test_convert_tenant_id_noconv(self):
-        ofc_t_id = '/tenants/%s' % self.generate_random_ids(1)
-        ret = self.driver.convert_ofc_tenant_id(self.ctx, ofc_t_id)
-        self.assertEqual(ret, ofc_t_id)
-
-    def test_convert_network_id(self):
-        t_id, ofc_t_id, ofc_n_id = self.generate_random_ids(3)
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_tenant', t_id).AndReturn(ofc_t_id)
-        self.mox.ReplayAll()
-
-        ret = self.driver.convert_ofc_network_id(self.ctx, ofc_n_id, t_id)
-        self.assertEqual(ret, ('/tenants/%(tenant)s/networks/%(network)s' %
-                               {'tenant': ofc_t_id, 'network': ofc_n_id}))
-        self.mox.VerifyAll()
-
-    def test_convert_network_id_with_new_tenant_id(self):
-        t_id, ofc_t_id, ofc_n_id = self.generate_random_ids(3)
-        ofc_t_path = '/tenants/%s' % ofc_t_id
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_tenant', t_id).AndReturn(ofc_t_path)
-        self.mox.ReplayAll()
-
-        ret = self.driver.convert_ofc_network_id(self.ctx, ofc_n_id, t_id)
-        self.assertEqual(ret, ('/tenants/%(tenant)s/networks/%(network)s' %
-                               {'tenant': ofc_t_id, 'network': ofc_n_id}))
-        self.mox.VerifyAll()
-
-    def test_convert_network_id_noconv(self):
-        t_id = 'dummy'
-        ofc_t_id, ofc_n_id = self.generate_random_ids(2)
-        ofc_n_id = ('/tenants/%(tenant)s/networks/%(network)s' %
-                    {'tenant': ofc_t_id, 'network': ofc_n_id})
-        ret = self.driver.convert_ofc_network_id(self.ctx, ofc_n_id, t_id)
-        self.assertEqual(ret, ofc_n_id)
-
-    def test_convert_port_id(self):
-        t_id, n_id = self.generate_random_ids(2)
-        ofc_t_id, ofc_n_id, ofc_p_id = self.generate_random_ids(3)
-
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_network', n_id).AndReturn(ofc_n_id)
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_tenant', t_id).AndReturn(ofc_t_id)
-        self.mox.ReplayAll()
-
-        ret = self.driver.convert_ofc_port_id(self.ctx, ofc_p_id, t_id, n_id)
-        exp = ('/tenants/%(tenant)s/networks/%(network)s/ports/%(port)s' %
-               {'tenant': ofc_t_id, 'network': ofc_n_id, 'port': ofc_p_id})
-        self.assertEqual(ret, exp)
-        self.mox.VerifyAll()
-
-    def test_convert_port_id_with_new_tenant_id(self):
-        t_id, n_id = self.generate_random_ids(2)
-        ofc_t_id, ofc_n_id, ofc_p_id = self.generate_random_ids(3)
-
-        ofc_t_path = '/tenants/%s' % ofc_t_id
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_network', n_id).AndReturn(ofc_n_id)
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_tenant', t_id).AndReturn(ofc_t_path)
-        self.mox.ReplayAll()
-
-        ret = self.driver.convert_ofc_port_id(self.ctx, ofc_p_id, t_id, n_id)
-        exp = ('/tenants/%(tenant)s/networks/%(network)s/ports/%(port)s' %
-               {'tenant': ofc_t_id, 'network': ofc_n_id, 'port': ofc_p_id})
-        self.assertEqual(ret, exp)
-        self.mox.VerifyAll()
-
-    def test_convert_port_id_with_new_network_id(self):
-        t_id, n_id = self.generate_random_ids(2)
-        ofc_t_id, ofc_n_id, ofc_p_id = self.generate_random_ids(3)
-
-        ofc_n_path = ('/tenants/%(tenant)s/networks/%(network)s' %
-                      {'tenant': ofc_t_id, 'network': ofc_n_id})
-        ndb.get_ofc_id_lookup_both(
-            self.ctx.session, 'ofc_network', n_id).AndReturn(ofc_n_path)
-        self.mox.ReplayAll()
-
-        ret = self.driver.convert_ofc_port_id(self.ctx, ofc_p_id, t_id, n_id)
-        exp = ('/tenants/%(tenant)s/networks/%(network)s/ports/%(port)s' %
-               {'tenant': ofc_t_id, 'network': ofc_n_id, 'port': ofc_p_id})
-        self.assertEqual(ret, exp)
-        self.mox.VerifyAll()
-
-    def test_convert_port_id_noconv(self):
-        t_id = n_id = 'dummy'
-        ofc_t_id, ofc_n_id, ofc_p_id = self.generate_random_ids(3)
-        ofc_p_id = ('/tenants/%(tenant)s/networs/%(network)s/ports/%(port)s'
-                    % {'tenant': ofc_t_id, 'network': ofc_n_id,
-                       'port': ofc_p_id})
-        ret = self.driver.convert_ofc_port_id(self.ctx, ofc_p_id, t_id, n_id)
-        self.assertEqual(ret, ofc_p_id)

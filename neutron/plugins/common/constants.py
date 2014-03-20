@@ -58,6 +58,12 @@ PENDING_DELETE = "PENDING_DELETE"
 INACTIVE = "INACTIVE"
 ERROR = "ERROR"
 
+ACTIVE_PENDING = (
+    ACTIVE,
+    PENDING_CREATE,
+    PENDING_UPDATE
+)
+
 # FWaaS firewall rule action
 FWAAS_ALLOW = "allow"
 FWAAS_DENY = "deny"
@@ -66,3 +72,11 @@ FWAAS_DENY = "deny"
 TCP = "tcp"
 UDP = "udp"
 ICMP = "icmp"
+
+# Network Type constants
+TYPE_FLAT = 'flat'
+TYPE_GRE = 'gre'
+TYPE_LOCAL = 'local'
+TYPE_VXLAN = 'vxlan'
+TYPE_VLAN = 'vlan'
+TYPE_NONE = 'none'

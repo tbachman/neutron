@@ -23,6 +23,7 @@ import shutil
 import jinja2
 import netaddr
 from oslo.config import cfg
+import six
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -85,13 +86,13 @@ def _get_template(template_file):
     return JINJA_ENV.get_template(template_file)
 
 
+@six.add_metaclass(abc.ABCMeta)
 class BaseSwanProcess():
     """Swan Family Process Manager
 
     This class manages start/restart/stop ipsec process.
     This class create/delete config template
     """
-    __metaclass__ = abc.ABCMeta
 
     binary = "ipsec"
     CONFIG_DIRS = [
@@ -130,14 +131,13 @@ class BaseSwanProcess():
         self.conf = conf
         self.id = process_id
         self.root_helper = root_helper
-        self.vpnservice = vpnservice
         self.updated_pending_status = False
         self.namespace = namespace
         self.connection_status = {}
         self.config_dir = os.path.join(
             cfg.CONF.ipsec.config_base_dir, self.id)
         self.etc_dir = os.path.join(self.config_dir, 'etc')
-        self.translate_dialect()
+        self.update_vpnservice(vpnservice)
 
     def translate_dialect(self):
         if not self.vpnservice:
@@ -150,6 +150,10 @@ class BaseSwanProcess():
                         'pfs']:
                 self._dialect(ipsec_site_conn['ikepolicy'], key)
                 self._dialect(ipsec_site_conn['ipsecpolicy'], key)
+
+    def update_vpnservice(self, vpnservice):
+        self.vpnservice = vpnservice
+        self.translate_dialect()
 
     def _dialect(self, obj, key):
         obj[key] = self.DIALECT_MAP.get(obj[key], obj[key])
@@ -434,6 +438,8 @@ class OpenSwanProcess(BaseSwanProcess):
                        '--ctlbase', self.pid_path,
                        '--shutdown',
                        ])
+        #clean connection_status info
+        self.connection_status = {}
 
 
 class IPsecVpnDriverApi(proxy.RpcProxy):
@@ -465,6 +471,7 @@ class IPsecVpnDriverApi(proxy.RpcProxy):
                          topic=self.topic)
 
 
+@six.add_metaclass(abc.ABCMeta)
 class IPsecDriver(device_drivers.DeviceDriver):
     """VPN Device Driver for IPSec.
 
@@ -478,7 +485,6 @@ class IPsecDriver(device_drivers.DeviceDriver):
     #   1.0 Initial version
 
     RPC_API_VERSION = '1.0'
-    __metaclass__ = abc.ABCMeta
 
     def __init__(self, agent, host):
         self.agent = agent
@@ -543,7 +549,7 @@ class IPsecDriver(device_drivers.DeviceDriver):
     def ensure_process(self, process_id, vpnservice=None):
         """Ensuring process.
 
-        If the process dosen't exist, it will create process
+        If the process doesn't exist, it will create process
         and store it in self.processs
         """
         process = self.processes.get(process_id)
@@ -554,6 +560,8 @@ class IPsecDriver(device_drivers.DeviceDriver):
                 vpnservice,
                 namespace)
             self.processes[process_id] = process
+        elif vpnservice:
+            process.update_vpnservice(vpnservice)
         return process
 
     def create_router(self, process_id):

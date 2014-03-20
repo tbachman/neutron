@@ -16,10 +16,11 @@
 # limitations under the License.
 
 import mock
+from oslo.config import cfg
 import testtools
 from testtools import matchers
 
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.db import api as db
 from neutron.openstack.common.db import exception as db_exc
 from neutron.openstack.common.db.sqlalchemy import session
@@ -40,11 +41,14 @@ TUN_MAX = 109
 TUNNEL_RANGES = [(TUN_MIN, TUN_MAX)]
 UPDATED_TUNNEL_RANGES = [(TUN_MIN + 5, TUN_MAX + 5)]
 
+PLUGIN_NAME = ('neutron.plugins.openvswitch.'
+               'ovs_neutron_plugin.OVSNeutronPluginV2')
+
 
 class VlanAllocationsTest(base.BaseTestCase):
     def setUp(self):
         super(VlanAllocationsTest, self).setUp()
-        ovs_db_v2.initialize()
+        db.configure_db()
         ovs_db_v2.sync_vlan_allocations(VLAN_RANGES)
         self.session = db.get_session()
         self.addCleanup(db.clear_db)
@@ -128,7 +132,7 @@ class VlanAllocationsTest(base.BaseTestCase):
             self.assertThat(vlan_id, matchers.LessThan(VLAN_MAX + 1))
             vlan_ids.add(vlan_id)
 
-        with testtools.ExpectedException(q_exc.NoNetworkAvailable):
+        with testtools.ExpectedException(n_exc.NoNetworkAvailable):
             physical_network, vlan_id = ovs_db_v2.reserve_vlan(self.session)
 
         ovs_db_v2.release_vlan(self.session, PHYS_NET, vlan_ids.pop(),
@@ -151,7 +155,7 @@ class VlanAllocationsTest(base.BaseTestCase):
         self.assertTrue(ovs_db_v2.get_vlan_allocation(PHYS_NET,
                                                       vlan_id).allocated)
 
-        with testtools.ExpectedException(q_exc.VlanIdInUse):
+        with testtools.ExpectedException(n_exc.VlanIdInUse):
             ovs_db_v2.reserve_specific_vlan(self.session, PHYS_NET, vlan_id)
 
         ovs_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
@@ -165,7 +169,7 @@ class VlanAllocationsTest(base.BaseTestCase):
         self.assertTrue(ovs_db_v2.get_vlan_allocation(PHYS_NET,
                                                       vlan_id).allocated)
 
-        with testtools.ExpectedException(q_exc.VlanIdInUse):
+        with testtools.ExpectedException(n_exc.VlanIdInUse):
             ovs_db_v2.reserve_specific_vlan(self.session, PHYS_NET, vlan_id)
 
         ovs_db_v2.release_vlan(self.session, PHYS_NET, vlan_id, VLAN_RANGES)
@@ -188,7 +192,7 @@ class VlanAllocationsTest(base.BaseTestCase):
 class TunnelAllocationsTest(base.BaseTestCase):
     def setUp(self):
         super(TunnelAllocationsTest, self).setUp()
-        ovs_db_v2.initialize()
+        db.configure_db()
         ovs_db_v2.sync_tunnel_allocations(TUNNEL_RANGES)
         self.session = db.get_session()
         self.addCleanup(db.clear_db)
@@ -224,7 +228,7 @@ class TunnelAllocationsTest(base.BaseTestCase):
             self.assertThat(tunnel_id, matchers.LessThan(TUN_MAX + 1))
             tunnel_ids.add(tunnel_id)
 
-        with testtools.ExpectedException(q_exc.NoNetworkAvailable):
+        with testtools.ExpectedException(n_exc.NoNetworkAvailable):
             tunnel_id = ovs_db_v2.reserve_tunnel(self.session)
 
         ovs_db_v2.release_tunnel(self.session, tunnel_ids.pop(), TUNNEL_RANGES)
@@ -250,7 +254,7 @@ class TunnelAllocationsTest(base.BaseTestCase):
         ovs_db_v2.reserve_specific_tunnel(self.session, tunnel_id)
         self.assertTrue(ovs_db_v2.get_tunnel_allocation(tunnel_id).allocated)
 
-        with testtools.ExpectedException(q_exc.TunnelIdInUse):
+        with testtools.ExpectedException(n_exc.TunnelIdInUse):
             ovs_db_v2.reserve_specific_tunnel(self.session, tunnel_id)
 
         ovs_db_v2.release_tunnel(self.session, tunnel_id, TUNNEL_RANGES)
@@ -262,7 +266,7 @@ class TunnelAllocationsTest(base.BaseTestCase):
         ovs_db_v2.reserve_specific_tunnel(self.session, tunnel_id)
         self.assertTrue(ovs_db_v2.get_tunnel_allocation(tunnel_id).allocated)
 
-        with testtools.ExpectedException(q_exc.TunnelIdInUse):
+        with testtools.ExpectedException(n_exc.TunnelIdInUse):
             ovs_db_v2.reserve_specific_tunnel(self.session, tunnel_id)
 
         ovs_db_v2.release_tunnel(self.session, tunnel_id, TUNNEL_RANGES)
@@ -288,24 +292,26 @@ class TunnelAllocationsTest(base.BaseTestCase):
             error = db_exc.DBDuplicateEntry(['id'])
             query_mock.side_effect = error
 
-            with testtools.ExpectedException(q_exc.NeutronException):
+            with testtools.ExpectedException(n_exc.NeutronException):
                 ovs_db_v2.add_tunnel_endpoint('10.0.0.1', 5)
             self.assertEqual(query_mock.call_count, 5)
 
 
 class NetworkBindingsTest(test_plugin.NeutronDbPluginV2TestCase):
     def setUp(self):
-        super(NetworkBindingsTest, self).setUp()
-        ovs_db_v2.initialize()
+        cfg.CONF.set_override('network_vlan_ranges', ['physnet1:1000:2999'],
+                              group='OVS')
+        super(NetworkBindingsTest, self).setUp(plugin=PLUGIN_NAME)
+        db.configure_db()
         self.session = db.get_session()
 
     def test_add_network_binding(self):
-        with self.network() as network:
+        params = {'provider:network_type': 'vlan',
+                  'provider:physical_network': PHYS_NET,
+                  'provider:segmentation_id': 1234}
+        params['arg_list'] = tuple(params.keys())
+        with self.network(**params) as network:
             TEST_NETWORK_ID = network['network']['id']
-            self.assertIsNone(ovs_db_v2.get_network_binding(self.session,
-                                                            TEST_NETWORK_ID))
-            ovs_db_v2.add_network_binding(self.session, TEST_NETWORK_ID,
-                                          'vlan', PHYS_NET, 1234)
             binding = ovs_db_v2.get_network_binding(self.session,
                                                     TEST_NETWORK_ID)
             self.assertIsNotNone(binding)

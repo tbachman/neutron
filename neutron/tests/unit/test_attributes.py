@@ -18,7 +18,7 @@
 import testtools
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.tests import base
 
 
@@ -65,6 +65,24 @@ class TestAttributes(base.BaseTestCase):
         msg = attributes._validate_values(7, (4, 6))
         self.assertEqual(msg, "'7' is not in (4, 6)")
 
+    def test_validate_not_empty_string(self):
+        msg = attributes._validate_not_empty_string('    ', None)
+        self.assertEqual(msg, u"'    ' Blank strings are not permitted")
+
+    def test_validate_not_empty_string_or_none(self):
+        msg = attributes._validate_not_empty_string_or_none('    ', None)
+        self.assertEqual(msg, u"'    ' Blank strings are not permitted")
+
+        msg = attributes._validate_not_empty_string_or_none(None, None)
+        self.assertIsNone(msg)
+
+    def test_validate_string_or_none(self):
+        msg = attributes._validate_not_empty_string_or_none('test', None)
+        self.assertIsNone(msg)
+
+        msg = attributes._validate_not_empty_string_or_none(None, None)
+        self.assertIsNone(msg)
+
     def test_validate_string(self):
         msg = attributes._validate_string(None, None)
         self.assertEqual(msg, "'None' is not a valid string")
@@ -97,11 +115,11 @@ class TestAttributes(base.BaseTestCase):
         result = attributes._validate_no_whitespace(data)
         self.assertEqual(result, data)
 
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes._validate_no_whitespace,
                           'i have whitespace')
 
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes._validate_no_whitespace,
                           'i\thave\twhitespace')
 
@@ -151,14 +169,28 @@ class TestAttributes(base.BaseTestCase):
         self.assertEqual(msg,
                          "'10' is too large - must be no larger than '9'")
 
-    def test_validate_mac_address(self):
+    def _test_validate_mac_address(self, validator, allow_none=False):
         mac_addr = "ff:16:3e:4f:00:00"
-        msg = attributes._validate_mac_address(mac_addr)
+        msg = validator(mac_addr)
         self.assertIsNone(msg)
 
         mac_addr = "ffa:16:3e:4f:00:00"
-        msg = attributes._validate_mac_address(mac_addr)
+        msg = validator(mac_addr)
         self.assertEqual(msg, "'%s' is not a valid MAC address" % mac_addr)
+
+        mac_addr = None
+        msg = validator(mac_addr)
+        if allow_none:
+            self.assertIsNone(msg)
+        else:
+            self.assertEqual(msg, "'None' is not a valid MAC address")
+
+    def test_validate_mac_address(self):
+        self._test_validate_mac_address(attributes._validate_mac_address)
+
+    def test_validate_mac_address_or_none(self):
+        self._test_validate_mac_address(
+            attributes._validate_mac_address_or_none, allow_none=True)
 
     def test_validate_ip_address(self):
         ip_addr = '1.1.1.1'
@@ -378,29 +410,50 @@ class TestAttributes(base.BaseTestCase):
                                          attributes.MAC_PATTERN)
         self.assertIsNotNone(msg)
 
-    def test_validate_subnet(self):
+    def _test_validate_subnet(self, validator, allow_none=False):
         # Valid - IPv4
         cidr = "10.0.2.0/24"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         self.assertIsNone(msg)
 
         # Valid - IPv6 without final octets
         cidr = "fe80::/24"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         self.assertIsNone(msg)
 
         # Valid - IPv6 with final octets
         cidr = "fe80::/24"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
+        self.assertIsNone(msg)
+
+        # Valid - uncompressed ipv6 address
+        cidr = "fe80:0:0:0:0:0:0:0/128"
+        msg = validator(cidr, None)
+        self.assertIsNone(msg)
+
+        # Valid - ipv6 address with multiple consecutive zero
+        cidr = "2001:0db8:0:0:1::1/128"
+        msg = validator(cidr, None)
+        self.assertIsNone(msg)
+
+        # Valid - ipv6 address with multiple consecutive zero
+        cidr = "2001:0db8::1:0:0:1/128"
+        msg = validator(cidr, None)
+        self.assertIsNone(msg)
+
+        # Valid - ipv6 address with multiple consecutive zero
+        cidr = "2001::0:1:0:0:1100/120"
+        msg = validator(cidr, None)
+        self.assertIsNone(msg)
+
+        # Valid - abbreviated ipv4 address
+        cidr = "10/24"
+        msg = validator(cidr, None)
         self.assertIsNone(msg)
 
         # Invalid - IPv4 missing mask
         cidr = "10.0.2.0"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         error = _("'%(data)s' isn't a recognized IP subnet cidr,"
                   " '%(cidr)s' is recommended") % {"data": cidr,
                                                    "cidr": "10.0.2.0/32"}
@@ -408,8 +461,7 @@ class TestAttributes(base.BaseTestCase):
 
         # Invalid - IPv4 with final octets
         cidr = "192.168.1.1/24"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         error = _("'%(data)s' isn't a recognized IP subnet cidr,"
                   " '%(cidr)s' is recommended") % {"data": cidr,
                                                    "cidr": "192.168.1.0/24"}
@@ -417,8 +469,7 @@ class TestAttributes(base.BaseTestCase):
 
         # Invalid - IPv6 without final octets, missing mask
         cidr = "fe80::"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         error = _("'%(data)s' isn't a recognized IP subnet cidr,"
                   " '%(cidr)s' is recommended") % {"data": cidr,
                                                    "cidr": "fe80::/128"}
@@ -426,8 +477,7 @@ class TestAttributes(base.BaseTestCase):
 
         # Invalid - IPv6 with final octets, missing mask
         cidr = "fe80::0"
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         error = _("'%(data)s' isn't a recognized IP subnet cidr,"
                   " '%(cidr)s' is recommended") % {"data": cidr,
                                                    "cidr": "fe80::/128"}
@@ -435,29 +485,53 @@ class TestAttributes(base.BaseTestCase):
 
         # Invalid - Address format error
         cidr = 'invalid'
-        msg = attributes._validate_subnet(cidr,
-                                          None)
+        msg = validator(cidr, None)
         error = "'%s' is not a valid IP subnet" % cidr
         self.assertEqual(msg, error)
 
-    def test_validate_regex(self):
+        cidr = None
+        msg = validator(cidr, None)
+        if allow_none:
+            self.assertIsNone(msg)
+        else:
+            error = "'%s' is not a valid IP subnet" % cidr
+            self.assertEqual(msg, error)
+
+    def test_validate_subnet(self):
+        self._test_validate_subnet(attributes._validate_subnet)
+
+    def test_validate_subnet_or_none(self):
+        self._test_validate_subnet(attributes._validate_subnet_or_none,
+                                   allow_none=True)
+
+    def _test_validate_regex(self, validator, allow_none=False):
         pattern = '[hc]at'
 
         data = None
-        msg = attributes._validate_regex(data, pattern)
-        self.assertEqual(msg, "'%s' is not a valid input" % data)
+        msg = validator(data, pattern)
+        if allow_none:
+            self.assertIsNone(msg)
+        else:
+            self.assertEqual(msg, "'None' is not a valid input")
 
         data = 'bat'
-        msg = attributes._validate_regex(data, pattern)
+        msg = validator(data, pattern)
         self.assertEqual(msg, "'%s' is not a valid input" % data)
 
         data = 'hat'
-        msg = attributes._validate_regex(data, pattern)
+        msg = validator(data, pattern)
         self.assertIsNone(msg)
 
         data = 'cat'
-        msg = attributes._validate_regex(data, pattern)
+        msg = validator(data, pattern)
         self.assertIsNone(msg)
+
+    def test_validate_regex(self):
+        self._test_validate_regex(attributes._validate_regex)
+
+    def test_validate_regex_or_none(self):
+        self._test_validate_regex(attributes._validate_regex_or_none,
+                                  allow_none=True)
 
     def test_validate_uuid(self):
         msg = attributes._validate_uuid('garbage')
@@ -508,7 +582,7 @@ class TestAttributes(base.BaseTestCase):
                              'f3eeab00-8367-4524-b662-55e64d4cacb5']]
         for uuid_list in valid_uuid_lists:
             msg = attributes._validate_uuid_list(uuid_list)
-            self.assertEqual(msg, None)
+            self.assertIsNone(msg)
 
     def test_validate_dict_type(self):
         for value in (None, True, '1', []):
@@ -622,7 +696,7 @@ class TestConvertToBoolean(base.BaseTestCase):
     def test_convert_to_boolean_int(self):
         self.assertIs(attributes.convert_to_boolean(0), False)
         self.assertIs(attributes.convert_to_boolean(1), True)
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes.convert_to_boolean,
                           7)
 
@@ -633,7 +707,7 @@ class TestConvertToBoolean(base.BaseTestCase):
         self.assertIs(attributes.convert_to_boolean('false'), False)
         self.assertIs(attributes.convert_to_boolean('0'), False)
         self.assertIs(attributes.convert_to_boolean('1'), True)
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes.convert_to_boolean,
                           '7')
 
@@ -648,12 +722,12 @@ class TestConvertToInt(base.BaseTestCase):
     def test_convert_to_int_str(self):
         self.assertEqual(attributes.convert_to_int('4'), 4)
         self.assertEqual(attributes.convert_to_int('6'), 6)
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes.convert_to_int,
                           'garbage')
 
     def test_convert_to_int_none(self):
-        self.assertRaises(q_exc.InvalidInput,
+        self.assertRaises(n_exc.InvalidInput,
                           attributes.convert_to_int,
                           None)
 
@@ -688,11 +762,11 @@ class TestConvertKvp(base.BaseTestCase):
         self.assertEqual({'a': ['b'], 'c': ['d']}, result)
 
     def test_convert_kvp_str_to_list_fails_for_missing_key(self):
-        with testtools.ExpectedException(q_exc.InvalidInput):
+        with testtools.ExpectedException(n_exc.InvalidInput):
             attributes.convert_kvp_str_to_list('=a')
 
     def test_convert_kvp_str_to_list_fails_for_missing_equals(self):
-        with testtools.ExpectedException(q_exc.InvalidInput):
+        with testtools.ExpectedException(n_exc.InvalidInput):
             attributes.convert_kvp_str_to_list('a')
 
     def test_convert_kvp_str_to_list_succeeds_for_one_equals(self):

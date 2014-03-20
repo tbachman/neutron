@@ -31,7 +31,6 @@ class Ml2SecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 
     def setUp(self, plugin=None):
         test_sg_rpc.set_firewall_driver(test_sg_rpc.FIREWALL_HYBRID_DRIVER)
-        self.addCleanup(mock.patch.stopall)
         notifier_p = mock.patch(NOTIFIER)
         notifier_cls = notifier_p.start()
         self.notifier = mock.Mock()
@@ -51,6 +50,11 @@ class Ml2SecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 class TestMl2SecurityGroups(Ml2SecurityGroupsTestCase,
                             test_sg.TestSecurityGroups,
                             test_sg_rpc.SGNotificationTestMixin):
+    def setUp(self):
+        super(TestMl2SecurityGroups, self).setUp()
+        plugin = manager.NeutronManager.get_plugin()
+        plugin.start_rpc_listener()
+
     def test_security_group_get_port_from_device(self):
         with self.network() as n:
             with self.subnet(n):
@@ -82,7 +86,7 @@ class TestMl2SecurityGroups(Ml2SecurityGroupsTestCase,
     def test_security_group_get_port_from_device_with_no_port(self):
         plugin = manager.NeutronManager.get_plugin()
         port_dict = plugin.callbacks.get_port_from_device('bad_device_id')
-        self.assertEqual(None, port_dict)
+        self.assertIsNone(port_dict)
 
 
 class TestMl2SecurityGroupsXML(TestMl2SecurityGroups):

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2012 Nicira Networks, Inc.  All rights reserved.
+# Copyright 2012 VMware, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Aaron Rosen, Nicira, Inc
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -30,10 +26,10 @@ from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import uuidutils
 
 
-IP_PROTOCOL_MAP = {'tcp': constants.TCP_PROTOCOL,
-                   'udp': constants.UDP_PROTOCOL,
-                   'icmp': constants.ICMP_PROTOCOL,
-                   'icmpv6': constants.ICMPv6_PROTOCOL}
+IP_PROTOCOL_MAP = {constants.PROTO_NAME_TCP: constants.PROTO_NUM_TCP,
+                   constants.PROTO_NAME_UDP: constants.PROTO_NUM_UDP,
+                   constants.PROTO_NAME_ICMP: constants.PROTO_NUM_ICMP,
+                   constants.PROTO_NAME_ICMP_V6: constants.PROTO_NUM_ICMP_V6}
 
 
 class SecurityGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -304,13 +300,13 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         if not rule['protocol']:
             raise ext_sg.SecurityGroupProtocolRequiredWithPorts()
         ip_proto = self._get_ip_proto_number(rule['protocol'])
-        if ip_proto in [constants.TCP_PROTOCOL, constants.UDP_PROTOCOL]:
+        if ip_proto in [constants.PROTO_NUM_TCP, constants.PROTO_NUM_UDP]:
             if (rule['port_range_min'] is not None and
                 rule['port_range_min'] <= rule['port_range_max']):
                 pass
             else:
                 raise ext_sg.SecurityGroupInvalidPortRange()
-        elif ip_proto == constants.ICMP_PROTOCOL:
+        elif ip_proto == constants.PROTO_NUM_ICMP:
             for attr, field in [('port_range_min', 'type'),
                                 ('port_range_max', 'code')]:
                 if rule[attr] > 255:
@@ -395,9 +391,21 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
 
             # Check in database if rule exists
             filters = self._make_security_group_rule_filter_dict(i)
-            rules = self.get_security_group_rules(context, filters)
-            if rules:
-                raise ext_sg.SecurityGroupRuleExists(id=str(rules[0]['id']))
+            db_rules = self.get_security_group_rules(context, filters)
+            # Note(arosen): the call to get_security_group_rules wildcards
+            # values in the filter that have a value of [None]. For
+            # example, filters = {'remote_group_id': [None]} will return
+            # all security group rules regardless of their value of
+            # remote_group_id. Therefore it is not possible to do this
+            # query unless the behavior of _get_collection()
+            # is changed which cannot be because other methods are already
+            # relying on this behavor. Therefore, we do the filtering
+            # below to check for these corner cases.
+            for db_rule in db_rules:
+                # need to remove id from db_rule for matching
+                id = db_rule.pop('id')
+                if (i['security_group_rule'] == db_rule):
+                    raise ext_sg.SecurityGroupRuleExists(id=id)
 
     def get_security_group_rules(self, context, filters=None, fields=None,
                                  sorts=None, limit=None, marker=None,

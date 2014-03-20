@@ -15,7 +15,6 @@
 
 
 from neutron.api.v2 import attributes as attr
-from neutron.common.test_lib import test_config
 from neutron.db import allowedaddresspairs_db as addr_pair_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import portsecurity_db
@@ -29,8 +28,8 @@ DB_PLUGIN_KLASS = ('neutron.tests.unit.test_extension_allowedaddresspairs.'
 
 
 class AllowedAddressPairTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
-    def setUp(self, plugin=None):
-        super(AllowedAddressPairTestCase, self).setUp()
+    def setUp(self, plugin=None, ext_mgr=None):
+        super(AllowedAddressPairTestCase, self).setUp(plugin)
 
         # Check if a plugin supports security groups
         plugin_obj = NeutronManager.get_plugin()
@@ -64,6 +63,7 @@ class AllowedAddressPairTestPlugin(portsecurity_db.PortSecurityDbMixin,
         return port['port']
 
     def update_port(self, context, id, port):
+        changed_fixed_ips = 'fixed_ips' in port['port']
         delete_addr_pairs = self._check_update_deletes_allowed_address_pairs(
             port)
         has_addr_pairs = self._check_update_has_allowed_address_pairs(port)
@@ -81,22 +81,18 @@ class AllowedAddressPairTestPlugin(portsecurity_db.PortSecurityDbMixin,
                 self._process_create_allowed_address_pairs(
                     context, ret_port,
                     ret_port[addr_pair.ADDRESS_PAIRS])
+            elif changed_fixed_ips:
+                self._check_fixed_ips_and_address_pairs_no_overlap(context,
+                                                                   ret_port)
 
         return ret_port
 
 
 class AllowedAddressPairDBTestCase(AllowedAddressPairTestCase):
-    def setUp(self, plugin=None):
-        test_config['plugin_name_v2'] = DB_PLUGIN_KLASS
-        super(AllowedAddressPairDBTestCase, self).setUp()
-
-    def tearDown(self):
-        del test_config['plugin_name_v2']
-        super(AllowedAddressPairDBTestCase, self).tearDown()
-
-
-class AllowedAddressPairDBTestCaseXML(AllowedAddressPairDBTestCase):
-    fmt = 'xml'
+    def setUp(self, plugin=None, ext_mgr=None):
+        plugin = plugin or DB_PLUGIN_KLASS
+        super(AllowedAddressPairDBTestCase,
+              self).setUp(plugin=plugin, ext_mgr=ext_mgr)
 
 
 class TestAllowedAddressPairs(AllowedAddressPairDBTestCase):
@@ -196,6 +192,34 @@ class TestAllowedAddressPairs(AllowedAddressPairDBTestCase):
                              address_pairs)
             self._delete('ports', port['port']['id'])
 
+    def test_update_fixed_ip_to_address_pair_ip_fail(self):
+        with self.network() as net:
+            with self.subnet(network=net):
+                address_pairs = [{'ip_address': '10.0.0.65'}]
+                res = self._create_port(self.fmt, net['network']['id'],
+                                        arg_list=(addr_pair.ADDRESS_PAIRS,),
+                                        allowed_address_pairs=address_pairs)
+                port = self.deserialize(self.fmt, res)['port']
+                data = {'port': {'fixed_ips': [{'ip_address': '10.0.0.65'}]}}
+                req = self.new_update_request('ports', data, port['id'])
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_int, 400)
+                self._delete('ports', port['id'])
+
+    def test_update_fixed_ip_to_address_pair_with_mac_fail(self):
+        with self.network() as net:
+            with self.subnet(network=net):
+                res = self._create_port(self.fmt, net['network']['id'])
+                port = self.deserialize(self.fmt, res)['port']
+                address_pairs = [
+                    {'mac_address': port['mac_address'],
+                     'ip_address': port['fixed_ips'][0]['ip_address']}]
+                data = {'port': {addr_pair.ADDRESS_PAIRS: address_pairs}}
+                req = self.new_update_request('ports', data, port['id'])
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_int, 400)
+                self._delete('ports', port['id'])
+
     def test_create_address_gets_port_mac(self):
         with self.network() as net:
             address_pairs = [{'ip_address': '23.23.23.23'}]
@@ -239,7 +263,6 @@ class TestAllowedAddressPairs(AllowedAddressPairDBTestCase):
                                         port_security_enabled=True,
                                         allowed_address_pairs=address_pairs)
                 port = self.deserialize(self.fmt, res)
-                print port
                 update_port = {'port': {psec.PORTSECURITY: False}}
                 # If plugin implements security groups we also need to remove
                 # the security group on port.
@@ -266,3 +289,7 @@ class TestAllowedAddressPairs(AllowedAddressPairDBTestCase):
             port = self.deserialize(self.fmt, req.get_response(self.api))
             self.assertEqual(port['port'][addr_pair.ADDRESS_PAIRS], [])
             self._delete('ports', port['port']['id'])
+
+
+class TestAllowedAddressPairsXML(TestAllowedAddressPairs):
+    fmt = 'xml'

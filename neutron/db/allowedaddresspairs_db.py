@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Nicira Networks, Inc.  All rights reserved.
+# Copyright 2013 VMware, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Aaron Rosen, Nicira, Inc
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -55,9 +52,6 @@ class AllowedAddressPairsMixin(object):
                     if ((fixed_ip['ip_address'] == address_pair['ip_address'])
                         and (port['mac_address'] ==
                              address_pair['mac_address'])):
-                        #TODO(arosen) - need to query for address pairs
-                        # to check for same condition if fixed_ips change to
-                        # be an address pair.
                         raise addr_pair.AddressPairMatchesPortFixedIPAndMac()
                 db_pair = AllowedAddressPair(
                     port_id=port['id'],
@@ -66,6 +60,14 @@ class AllowedAddressPairsMixin(object):
                 context.session.add(db_pair)
 
         return allowed_address_pairs
+
+    def _check_fixed_ips_and_address_pairs_no_overlap(self, context, port):
+        address_pairs = self.get_allowed_address_pairs(context, port['id'])
+        for fixed_ip in port['fixed_ips']:
+            for address_pair in address_pairs:
+                if (fixed_ip['ip_address'] == address_pair['ip_address']
+                    and port['mac_address'] == address_pair['mac_address']):
+                    raise addr_pair.AddressPairMatchesPortFixedIPAndMac()
 
     def get_allowed_address_pairs(self, context, port_id):
         pairs = (context.session.query(AllowedAddressPair).
@@ -119,3 +121,40 @@ class AllowedAddressPairsMixin(object):
         """
         return (addr_pair.ADDRESS_PAIRS in port['port'] and
                 not self._has_address_pairs(port))
+
+    def is_address_pairs_attribute_updated(self, port, update_attrs):
+        """Check if the address pairs attribute is being updated.
+
+        Returns True if there is an update. This can be used to decide
+        if a port update notification should be sent to agents or third
+        party controllers.
+        """
+
+        new_pairs = update_attrs.get(addr_pair.ADDRESS_PAIRS)
+        if new_pairs is None:
+            return False
+        old_pairs = port.get(addr_pair.ADDRESS_PAIRS)
+
+        # Missing or unchanged address pairs in attributes mean no update
+        return new_pairs != old_pairs
+
+    def update_address_pairs_on_port(self, context, port_id, port,
+                                     original_port, updated_port):
+        """Update allowed address pairs on port.
+
+        Returns True if an update notification is required. Notification
+        is not done here because other changes on the port may need
+        notification. This method is expected to be called within
+        a transaction.
+        """
+        new_pairs = port['port'].get(addr_pair.ADDRESS_PAIRS)
+
+        if self.is_address_pairs_attribute_updated(original_port,
+                                                   port['port']):
+            updated_port[addr_pair.ADDRESS_PAIRS] = new_pairs
+            self._delete_allowed_address_pairs(context, port_id)
+            self._process_create_allowed_address_pairs(
+                context, updated_port, new_pairs)
+            return True
+
+        return False

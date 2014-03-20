@@ -34,16 +34,10 @@ TOP_CHAIN = WRAP_NAME + "-FORWARD"
 RULE = '-r-'
 LABEL = '-l-'
 
-IptablesDriverOpts = [
-    cfg.StrOpt('interface_driver',
-               help=_("The driver used to manage the virtual "
-                      "interface.")),
-    cfg.BoolOpt('use_namespaces', default=True,
-                help=_("Allow overlapping IP."))
-]
+config.register_interface_driver_opts_helper(cfg.CONF)
+config.register_use_namespaces_opts_helper(cfg.CONF)
 config.register_root_helper(cfg.CONF)
 cfg.CONF.register_opts(interface.OPTS)
-cfg.CONF.register_opts(IptablesDriverOpts)
 
 
 class IptablesManagerTransaction(object):
@@ -77,7 +71,7 @@ class RouterWithMetering(object):
         self.router = router
         self.root_helper = config.get_root_helper(self.conf)
         self.iptables_manager = iptables_manager.IptablesManager(
-            root_helper=self.conf.root_helper,
+            root_helper=self.root_helper,
             namespace=self.ns_name(),
             binary_name=WRAP_NAME)
         self.metering_labels = {}
@@ -154,7 +148,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             if rule['direction'] == 'egress':
                 dir = '-o ' + ext_dev
 
-            if rule['excluded'] == 'true':
+            if rule['excluded']:
                 ipt_rule = dir + ' -d ' + remote_ip + ' -j RETURN'
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule, wrap=False,
                                            top=True)

@@ -47,6 +47,22 @@ class TestWSGIServer(base.BaseTestCase):
         server.stop()
         server.wait()
 
+    @mock.patch('neutron.wsgi.ProcessLauncher')
+    def test_start_multiple_workers(self, ProcessLauncher):
+        launcher = ProcessLauncher.return_value
+
+        server = wsgi.Server("test_multiple_processes")
+        server.start(None, 0, host="127.0.0.1", workers=2)
+        launcher.running = True
+        launcher.launch_service.assert_called_once_with(server._server,
+                                                        workers=2)
+
+        server.stop()
+        self.assertFalse(launcher.running)
+
+        server.wait()
+        launcher.wait.assert_called_once_with()
+
     def test_start_random_port_with_ipv6(self):
         server = wsgi.Server("test_random_port")
         server.start(None, 0, host="::1")
@@ -556,7 +572,7 @@ class DictSerializerTest(base.BaseTestCase):
     def test_dispatch_default(self):
         serializer = wsgi.DictSerializer()
         self.assertEqual(
-            serializer.serialize({}, 'NonExistantAction'), '')
+            serializer.serialize({}, 'NonExistentAction'), '')
 
 
 class JSONDictSerializerTest(base.BaseTestCase):
@@ -684,7 +700,7 @@ class RequestHeadersDeserializerTest(base.BaseTestCase):
         req = wsgi.Request.blank('/')
 
         self.assertEqual(
-            deserializer.deserialize(req, 'nonExistant'), {})
+            deserializer.deserialize(req, 'nonExistent'), {})
 
     def test_custom(self):
         class Deserializer(wsgi.RequestHeadersDeserializer):
@@ -825,27 +841,14 @@ class ResourceTest(base.BaseTestCase):
         self.assertEqual(500, result.status_int)
 
 
-class ServerTest(base.BaseTestCase):
-
-    def test_run_server(self):
-        with mock.patch('eventlet.listen') as listen:
-            with mock.patch('eventlet.wsgi.server') as server:
-                wsgi.run_server(mock.sentinel.application, mock.sentinel.port)
-                server.assert_called_once_with(
-                    listen.return_value,
-                    mock.sentinel.application
-                )
-            listen.assert_called_once_with(('0.0.0.0', mock.sentinel.port))
-
-
 class MiddlewareTest(base.BaseTestCase):
     def test_process_response(self):
         def application(environ, start_response):
-            response = 'Sucess'
+            response = 'Success'
             return response
         response = application('test', 'fake')
         result = wsgi.Middleware(application).process_response(response)
-        self.assertEqual('Sucess', result)
+        self.assertEqual('Success', result)
 
 
 class FaultTest(base.BaseTestCase):

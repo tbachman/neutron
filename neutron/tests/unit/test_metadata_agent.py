@@ -23,6 +23,7 @@ import testtools
 import webob
 
 from neutron.agent.metadata import agent
+from neutron.common import constants
 from neutron.common import utils
 from neutron.tests import base
 
@@ -34,6 +35,8 @@ class FakeConf(object):
     auth_url = 'http://127.0.0.1'
     auth_strategy = 'keystone'
     auth_region = 'region'
+    auth_insecure = False
+    auth_ca_cert = None
     endpoint_type = 'adminURL'
     nova_metadata_ip = '9.9.9.9'
     nova_metadata_port = 8775
@@ -55,8 +58,9 @@ class TestMetadataProxyHandler(base.BaseTestCase):
 
     def test_call(self):
         req = mock.Mock()
-        with mock.patch.object(self.handler, '_get_instance_id') as get_id:
-            get_id.return_value = 'id'
+        with mock.patch.object(self.handler,
+                               '_get_instance_and_tenant_id') as get_ids:
+            get_ids.return_value = ('instance_id', 'tenant_id')
             with mock.patch.object(self.handler, '_proxy_request') as proxy:
                 proxy.return_value = 'value'
 
@@ -65,21 +69,23 @@ class TestMetadataProxyHandler(base.BaseTestCase):
 
     def test_call_no_instance_match(self):
         req = mock.Mock()
-        with mock.patch.object(self.handler, '_get_instance_id') as get_id:
-            get_id.return_value = None
+        with mock.patch.object(self.handler,
+                               '_get_instance_and_tenant_id') as get_ids:
+            get_ids.return_value = None, None
             retval = self.handler(req)
             self.assertIsInstance(retval, webob.exc.HTTPNotFound)
 
     def test_call_internal_server_error(self):
         req = mock.Mock()
-        with mock.patch.object(self.handler, '_get_instance_id') as get_id:
-            get_id.side_effect = Exception
+        with mock.patch.object(self.handler,
+                               '_get_instance_and_tenant_id') as get_ids:
+            get_ids.side_effect = Exception
             retval = self.handler(req)
             self.assertIsInstance(retval, webob.exc.HTTPInternalServerError)
             self.assertEqual(len(self.log.mock_calls), 2)
 
-    def _get_instance_id_helper(self, headers, list_ports_retval,
-                                networks=None, router_id=None):
+    def _get_instance_and_tenant_id_helper(self, headers, list_ports_retval,
+                                           networks=None, router_id=None):
         headers['X-Forwarded-For'] = '192.168.1.1'
         req = mock.Mock(headers=headers)
 
@@ -87,8 +93,7 @@ class TestMetadataProxyHandler(base.BaseTestCase):
             return {'ports': list_ports_retval.pop(0)}
 
         self.qclient.return_value.list_ports.side_effect = mock_list_ports
-        retval = self.handler._get_instance_id(req)
-
+        instance_id, tenant_id = self.handler._get_instance_and_tenant_id(req)
         expected = [
             mock.call(
                 username=FakeConf.admin_user,
@@ -97,7 +102,9 @@ class TestMetadataProxyHandler(base.BaseTestCase):
                 auth_url=FakeConf.auth_url,
                 password=FakeConf.admin_password,
                 auth_strategy=FakeConf.auth_strategy,
-                auth_token=None,
+                token=None,
+                insecure=FakeConf.auth_insecure,
+                ca_cert=FakeConf.auth_ca_cert,
                 endpoint_url=None,
                 endpoint_type=FakeConf.endpoint_type)
         ]
@@ -106,7 +113,7 @@ class TestMetadataProxyHandler(base.BaseTestCase):
             expected.append(
                 mock.call().list_ports(
                     device_id=router_id,
-                    device_owner='network:router_interface'
+                    device_owner=constants.DEVICE_OWNER_ROUTER_INTF
                 )
             )
 
@@ -118,7 +125,7 @@ class TestMetadataProxyHandler(base.BaseTestCase):
 
         self.qclient.assert_has_calls(expected)
 
-        return retval
+        return (instance_id, tenant_id)
 
     def test_get_instance_id_router_id(self):
         router_id = 'the_id'
@@ -129,13 +136,14 @@ class TestMetadataProxyHandler(base.BaseTestCase):
         networks = ['net1', 'net2']
         ports = [
             [{'network_id': 'net1'}, {'network_id': 'net2'}],
-            [{'device_id': 'device_id'}]
+            [{'device_id': 'device_id', 'tenant_id': 'tenant_id'}]
         ]
 
         self.assertEqual(
-            self._get_instance_id_helper(headers, ports, networks=networks,
-                                         router_id=router_id),
-            'device_id'
+            self._get_instance_and_tenant_id_helper(headers, ports,
+                                                    networks=networks,
+                                                    router_id=router_id),
+            ('device_id', 'tenant_id')
         )
 
     def test_get_instance_id_router_id_no_match(self):
@@ -149,10 +157,11 @@ class TestMetadataProxyHandler(base.BaseTestCase):
             [{'network_id': 'net1'}, {'network_id': 'net2'}],
             []
         ]
-
-        self.assertIsNone(
-            self._get_instance_id_helper(headers, ports, networks=networks,
-                                         router_id=router_id),
+        self.assertEqual(
+            self._get_instance_and_tenant_id_helper(headers, ports,
+                                                    networks=networks,
+                                                    router_id=router_id),
+            (None, None)
         )
 
     def test_get_instance_id_network_id(self):
@@ -162,12 +171,14 @@ class TestMetadataProxyHandler(base.BaseTestCase):
         }
 
         ports = [
-            [{'device_id': 'device_id'}]
+            [{'device_id': 'device_id',
+              'tenant_id': 'tenant_id'}]
         ]
 
         self.assertEqual(
-            self._get_instance_id_helper(headers, ports, networks=['the_id']),
-            'device_id'
+            self._get_instance_and_tenant_id_helper(headers, ports,
+                                                    networks=['the_id']),
+            ('device_id', 'tenant_id')
         )
 
     def test_get_instance_id_network_id_no_match(self):
@@ -178,8 +189,10 @@ class TestMetadataProxyHandler(base.BaseTestCase):
 
         ports = [[]]
 
-        self.assertIsNone(
-            self._get_instance_id_helper(headers, ports, networks=['the_id'])
+        self.assertEqual(
+            self._get_instance_and_tenant_id_helper(headers, ports,
+                                                    networks=['the_id']),
+            (None, None)
         )
 
     def _proxy_request_test_helper(self, response_code=200, method='GET'):
@@ -188,13 +201,16 @@ class TestMetadataProxyHandler(base.BaseTestCase):
 
         req = mock.Mock(path_info='/the_path', query_string='', headers=hdrs,
                         method=method, body=body)
-        resp = mock.Mock(status=response_code)
+        resp = mock.MagicMock(status=response_code)
+        req.response = resp
         with mock.patch.object(self.handler, '_sign_instance_id') as sign:
             sign.return_value = 'signed'
             with mock.patch('httplib2.Http') as mock_http:
+                resp.__getitem__.return_value = "text/plain"
                 mock_http.return_value.request.return_value = (resp, 'content')
 
-                retval = self.handler._proxy_request('the_id', req)
+                retval = self.handler._proxy_request('the_id', 'tenant_id',
+                                                     req)
                 mock_http.assert_has_calls([
                     mock.call().request(
                         'http://9.9.9.9:8775/the_path',
@@ -202,7 +218,8 @@ class TestMetadataProxyHandler(base.BaseTestCase):
                         headers={
                             'X-Forwarded-For': '8.8.8.8',
                             'X-Instance-ID-Signature': 'signed',
-                            'X-Instance-ID': 'the_id'
+                            'X-Instance-ID': 'the_id',
+                            'X-Tenant-ID': 'tenant_id'
                         },
                         body=body
                     )]
@@ -211,11 +228,14 @@ class TestMetadataProxyHandler(base.BaseTestCase):
                 return retval
 
     def test_proxy_request_post(self):
-        self.assertEqual('content',
-                         self._proxy_request_test_helper(method='POST'))
+        response = self._proxy_request_test_helper(method='POST')
+        self.assertEqual(response.content_type, "text/plain")
+        self.assertEqual(response.body, 'content')
 
     def test_proxy_request_200(self):
-        self.assertEqual('content', self._proxy_request_test_helper(200))
+        response = self._proxy_request_test_helper(200)
+        self.assertEqual(response.content_type, "text/plain")
+        self.assertEqual(response.body, 'content')
 
     def test_proxy_request_403(self):
         self.assertIsInstance(self._proxy_request_test_helper(403),
@@ -265,7 +285,7 @@ class TestUnixDomainWSGIServer(base.BaseTestCase):
     def test_start(self):
         mock_app = mock.Mock()
         with mock.patch.object(self.server, 'pool') as pool:
-            self.server.start(mock_app, '/the/path')
+            self.server.start(mock_app, '/the/path', workers=0, backlog=128)
             self.eventlet.assert_has_calls([
                 mock.call.listen(
                     '/the/path',
@@ -278,6 +298,22 @@ class TestUnixDomainWSGIServer(base.BaseTestCase):
                 mock_app,
                 self.eventlet.listen.return_value
             )
+
+    @mock.patch('neutron.openstack.common.service.ProcessLauncher')
+    def test_start_multiple_workers(self, process_launcher):
+        launcher = process_launcher.return_value
+
+        mock_app = mock.Mock()
+        self.server.start(mock_app, '/the/path', workers=2, backlog=128)
+        launcher.running = True
+        launcher.launch_service.assert_called_once_with(self.server._server,
+                                                        workers=2)
+
+        self.server.stop()
+        self.assertFalse(launcher.running)
+
+        self.server.wait()
+        launcher.wait.assert_called_once_with()
 
     def test_run(self):
         with mock.patch.object(agent, 'logging') as logging:
@@ -298,8 +334,12 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
         super(TestUnixDomainMetadataProxy, self).setUp()
         self.cfg_p = mock.patch.object(agent, 'cfg')
         self.cfg = self.cfg_p.start()
-        self.addCleanup(self.cfg_p.stop)
+        looping_call_p = mock.patch(
+            'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
+        self.looping_mock = looping_call_p.start()
         self.cfg.CONF.metadata_proxy_socket = '/the/path'
+        self.cfg.CONF.metadata_workers = 0
+        self.cfg.CONF.metadata_backlog = 128
 
     def test_init_doesnot_exists(self):
         with mock.patch('os.path.isdir') as isdir:
@@ -363,7 +403,8 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
                         server.assert_has_calls([
                             mock.call('neutron-metadata-agent'),
                             mock.call().start(handler.return_value,
-                                              '/the/path'),
+                                              '/the/path', workers=0,
+                                              backlog=128),
                             mock.call().wait()]
                         )
 
@@ -381,3 +422,21 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
                                 mock.call(cfg.CONF),
                                 mock.call().run()]
                             )
+
+    def test_init_state_reporting(self):
+        with mock.patch('os.makedirs'):
+            proxy = agent.UnixDomainMetadataProxy(mock.Mock())
+            self.looping_mock.assert_called_once_with(proxy._report_state)
+            self.looping_mock.return_value.start.assert_called_once_with(
+                interval=mock.ANY)
+
+    def test_report_state(self):
+        with mock.patch('neutron.agent.rpc.PluginReportStateAPI') as state_api:
+            with mock.patch('os.makedirs'):
+                proxy = agent.UnixDomainMetadataProxy(mock.Mock())
+                self.assertTrue(proxy.agent_state['start_flag'])
+                proxy._report_state()
+                self.assertNotIn('start_flag', proxy.agent_state)
+                state_api_inst = state_api.return_value
+                state_api_inst.report_state.assert_called_once_with(
+                    proxy.context, proxy.agent_state, use_call=True)

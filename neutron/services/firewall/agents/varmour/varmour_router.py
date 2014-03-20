@@ -88,10 +88,10 @@ class vArmourL3NATAgent(l3_agent.L3NATAgent,
 
             del self.router_info[router_id]
 
-    def _spawn_metadata_proxy(self, router_info):
+    def _spawn_metadata_proxy(self, router_id, ns_name):
         return
 
-    def _destroy_metadata_proxy(self, router_info):
+    def _destroy_metadata_proxy(self, router_id, ns_name):
         return
 
     def _set_subnet_info(self, port):
@@ -331,6 +331,8 @@ def main():
     eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(vArmourL3NATAgent.OPTS)
+    config.register_interface_driver_opts_helper(conf)
+    config.register_use_namespaces_opts_helper(conf)
     config.register_agent_state_opts_helper(conf)
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)

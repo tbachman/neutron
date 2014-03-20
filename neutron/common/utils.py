@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2011, Nicira Networks, Inc.
+# Copyright 2011, VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -17,7 +15,6 @@
 #
 # Borrowed from nova code base, more utilities will be added/borrowed as and
 # when needed.
-# @author: Somik Behera, Nicira Networks, Inc.
 
 """Utilities and helper functions."""
 
@@ -36,8 +33,9 @@ from neutron.openstack.common import log as logging
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 LOG = logging.getLogger(__name__)
+SYNCHRONIZED_PREFIX = 'neutron-'
 
-synchronized = lockutils.synchronized_with_prefix('neutron-')
+synchronized = lockutils.synchronized_with_prefix(SYNCHRONIZED_PREFIX)
 
 
 def read_cached_file(filename, cache_info, reload_func=None):
@@ -88,10 +86,6 @@ def find_config_file(options, config_file):
                         '/usr/etc/neutron',
                         '/usr/local/etc/neutron',
                         '/etc/neutron/',
-                        # TODO(markmcclain) remove in Icehouse
-                        '/usr/etc/quantum',
-                        '/usr/local/etc/quantum',
-                        '/etc/quantum/',
                         '/etc']
 
     if 'plugin' in options:
@@ -158,7 +152,7 @@ def parse_mappings(mapping_list, unique_values=True):
 
 
 def get_hostname():
-    return socket.getfqdn()
+    return socket.gethostname()
 
 
 def compare_elements(a, b):
@@ -180,7 +174,7 @@ def dict2str(dic):
 
 def str2dict(string):
     res_dict = {}
-    for keyvalue in string.split(',', 1):
+    for keyvalue in string.split(','):
         (key, value) = keyvalue.split('=', 1)
         res_dict[key] = value
     return res_dict

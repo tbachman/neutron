@@ -1,4 +1,4 @@
-# Copyright 2011 Nicira Networks, Inc.
+# Copyright 2011 VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,7 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Dan Wendlandt, Nicira, Inc.
 
 """
 v2 Neutron Plug-in API specification.
@@ -23,10 +22,11 @@ methods that needs to be implemented by a v2 Neutron Plug-in.
 
 from abc import ABCMeta, abstractmethod
 
+import six
 
+
+@six.add_metaclass(ABCMeta)
 class NeutronPluginBaseV2(object):
-
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def create_subnet(self, context, subnet):
@@ -324,3 +324,15 @@ class NeutronPluginBaseV2(object):
         :param id: UUID representing the port to delete.
         """
         pass
+
+    def start_rpc_listener(self):
+        """Start the rpc listener.
+
+        Most plugins start an RPC listener implicitly on initialization.  In
+        order to support multiple process RPC, the plugin needs to expose
+        control over when this is started.
+
+        .. note:: this method is optional, as it was not part of the originally
+                  defined plugin API.
+        """
+        raise NotImplementedError

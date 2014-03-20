@@ -25,8 +25,10 @@ from neutron.agent.common import config
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
+from neutron.agent.linux import ovs_lib  # noqa
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants
+from neutron.common import exceptions
 from neutron.common import legacy
 from neutron.common import topics
 from neutron.common import utils
@@ -35,6 +37,7 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
+from neutron.openstack.common.rpc import common
 from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron import service as neutron_service
@@ -49,8 +52,6 @@ class DhcpAgent(manager.Manager):
         cfg.StrOpt('dhcp_driver',
                    default='neutron.agent.linux.dhcp.Dnsmasq',
                    help=_("The driver used to manage the DHCP server.")),
-        cfg.BoolOpt('use_namespaces', default=True,
-                    help=_("Allow overlapping IP.")),
         cfg.BoolOpt('enable_isolated_metadata', default=False,
                     help=_("Support Metadata requests on isolated networks.")),
         cfg.BoolOpt('enable_metadata_network', default=False,
@@ -125,11 +126,24 @@ class DhcpAgent(manager.Manager):
 
             getattr(driver, action)(**action_kwargs)
             return True
-
-        except Exception:
+        except exceptions.Conflict:
+            # No need to resync here, the agent will receive the event related
+            # to a status update for the network
+            LOG.warning(_('Unable to %(action)s dhcp for %(net_id)s: there is '
+                          'a conflict with its current state; please check '
+                          'that the network and/or its subnet(s) still exist.')
+                        % {'net_id': network.id, 'action': action})
+        except Exception as e:
             self.needs_resync = True
-            LOG.exception(_('Unable to %s dhcp.'), action)
+            if (isinstance(e, common.RemoteError)
+                and e.exc_type == 'NetworkNotFound'
+                or isinstance(e, exceptions.NetworkNotFound)):
+                LOG.warning(_("Network %s has been deleted."), network.id)
+            else:
+                LOG.exception(_('Unable to %(action)s dhcp for %(net_id)s.')
+                              % {'net_id': network.id, 'action': action})
 
+    @utils.synchronized('dhcp-agent')
     def sync_state(self):
         """Sync the local DHCP state with Neutron."""
         LOG.info(_('Synchronizing state'))
@@ -148,7 +162,9 @@ class DhcpAgent(manager.Manager):
                                     'network %s'), deleted_id)
 
             for network in active_networks:
-                pool.spawn_n(self.configure_dhcp_for_network, network)
+                pool.spawn(self.safe_configure_dhcp_for_network, network)
+            pool.waitall()
+            LOG.info(_('Synchronizing state complete'))
 
         except Exception:
             self.needs_resync = True
@@ -166,15 +182,28 @@ class DhcpAgent(manager.Manager):
         """Spawn a thread to periodically resync the dhcp state."""
         eventlet.spawn(self._periodic_resync_helper)
 
-    def enable_dhcp_helper(self, network_id):
-        """Enable DHCP for a network that meets enabling criteria."""
+    def safe_get_network_info(self, network_id):
         try:
             network = self.plugin_rpc.get_network_info(network_id)
+            if not network:
+                LOG.warn(_('Network %s has been deleted.'), network_id)
+            return network
         except Exception:
             self.needs_resync = True
-            LOG.exception(_('Network %s RPC info call failed.'), network_id)
-            return
-        self.configure_dhcp_for_network(network)
+            LOG.exception(_('Network %s info call failed.'), network_id)
+
+    def enable_dhcp_helper(self, network_id):
+        """Enable DHCP for a network that meets enabling criteria."""
+        network = self.safe_get_network_info(network_id)
+        if network:
+            self.configure_dhcp_for_network(network)
+
+    def safe_configure_dhcp_for_network(self, network):
+        try:
+            self.configure_dhcp_for_network(network)
+        except (exceptions.NetworkNotFound, RuntimeError):
+            LOG.warn(_('Network %s may have been deleted and its resources '
+                       'may have already been disposed.'), network.id)
 
     def configure_dhcp_for_network(self, network):
         if not network.admin_state_up:
@@ -208,11 +237,8 @@ class DhcpAgent(manager.Manager):
             # DHCP current not running for network.
             return self.enable_dhcp_helper(network_id)
 
-        try:
-            network = self.plugin_rpc.get_network_info(network_id)
-        except Exception:
-            self.needs_resync = True
-            LOG.exception(_('Network %s RPC info call failed.'), network_id)
+        network = self.safe_get_network_info(network_id)
+        if not network:
             return
 
         old_cidrs = set(s.cidr for s in old_network.subnets if s.enable_dhcp)
@@ -226,22 +252,6 @@ class DhcpAgent(manager.Manager):
                 self.cache.put(network)
         else:
             self.disable_dhcp_helper(network.id)
-
-    def release_lease_for_removed_ips(self, port, network):
-        """Releases the dhcp lease for ips removed from a port."""
-        prev_port = self.cache.get_port_by_id(port.id)
-        if prev_port:
-            previous_ips = set(fixed_ip.ip_address
-                               for fixed_ip in prev_port.fixed_ips)
-            current_ips = set(fixed_ip.ip_address
-                              for fixed_ip in port.fixed_ips)
-            # pass in port with removed ips on it
-            removed_ips = previous_ips - current_ips
-            if removed_ips:
-                self.call_driver('release_lease',
-                                 network,
-                                 mac_address=port.mac_address,
-                                 removed_ips=removed_ips)
 
     @utils.synchronized('dhcp-agent')
     def network_create_end(self, context, payload):
@@ -283,11 +293,10 @@ class DhcpAgent(manager.Manager):
     @utils.synchronized('dhcp-agent')
     def port_update_end(self, context, payload):
         """Handle the port.update.end notification event."""
-        port = dhcp.DictModel(payload['port'])
-        network = self.cache.get_network_by_id(port.network_id)
+        updated_port = dhcp.DictModel(payload['port'])
+        network = self.cache.get_network_by_id(updated_port.network_id)
         if network:
-            self.release_lease_for_removed_ips(port, network)
-            self.cache.put_port(port)
+            self.cache.put_port(updated_port)
             self.call_driver('reload_allocations', network)
 
     # Use the update handler for the port create event.
@@ -300,12 +309,6 @@ class DhcpAgent(manager.Manager):
         if port:
             network = self.cache.get_network_by_id(port.network_id)
             self.cache.remove_port(port)
-            removed_ips = [fixed_ip.ip_address
-                           for fixed_ip in port.fixed_ips]
-            self.call_driver('release_lease',
-                             network,
-                             mac_address=port.mac_address,
-                             removed_ips=removed_ips)
             self.call_driver('reload_allocations', network)
 
     def enable_isolated_metadata_proxy(self, network):
@@ -391,38 +394,45 @@ class DhcpPluginApi(proxy.RpcProxy):
 
     def get_network_info(self, network_id):
         """Make a remote process call to retrieve network info."""
-        return dhcp.NetModel(self.use_namespaces,
-                             self.call(self.context,
-                                       self.make_msg('get_network_info',
-                                                     network_id=network_id,
-                                                     host=self.host),
-                                       topic=self.topic))
+        network = self.call(self.context,
+                            self.make_msg('get_network_info',
+                                          network_id=network_id,
+                                          host=self.host),
+                            topic=self.topic)
+        if network:
+            return dhcp.NetModel(self.use_namespaces, network)
 
     def get_dhcp_port(self, network_id, device_id):
         """Make a remote process call to get the dhcp port."""
-        return dhcp.DictModel(self.call(self.context,
-                                        self.make_msg('get_dhcp_port',
-                                        network_id=network_id,
-                                        device_id=device_id,
-                                        host=self.host),
-                              topic=self.topic))
+        port = self.call(self.context,
+                         self.make_msg('get_dhcp_port',
+                                       network_id=network_id,
+                                       device_id=device_id,
+                                       host=self.host),
+                         topic=self.topic)
+        if port:
+            return dhcp.DictModel(port)
 
     def create_dhcp_port(self, port):
         """Make a remote process call to create the dhcp port."""
-        return dhcp.DictModel(self.call(self.context,
-                                        self.make_msg('create_dhcp_port',
-                                                      port=port,
-                                                      host=self.host),
-                                        topic=self.topic))
+        port = self.call(self.context,
+                         self.make_msg('create_dhcp_port',
+                                       port=port,
+                                       host=self.host),
+                         topic=self.topic)
+        if port:
+            return dhcp.DictModel(port)
 
     def update_dhcp_port(self, port_id, port):
         """Make a remote process call to update the dhcp port."""
-        return dhcp.DictModel(self.call(self.context,
-                                        self.make_msg('update_dhcp_port',
-                                                      port_id=port_id,
-                                                      port=port,
-                                                      host=self.host),
-                                        topic=self.topic))
+        port = self.call(self.context,
+                         self.make_msg('update_dhcp_port',
+                                       port_id=port_id,
+                                       port=port,
+                                       host=self.host),
+                         topic=self.topic)
+        if port:
+            return dhcp.DictModel(port)
 
     def release_dhcp_port(self, network_id, device_id):
         """Make a remote process call to release the dhcp port."""
@@ -577,6 +587,8 @@ class DhcpAgentWithStateReport(DhcpAgent):
 
 def register_options():
     cfg.CONF.register_opts(DhcpAgent.OPTS)
+    config.register_interface_driver_opts_helper(cfg.CONF)
+    config.register_use_namespaces_opts_helper(cfg.CONF)
     config.register_agent_state_opts_helper(cfg.CONF)
     config.register_root_helper(cfg.CONF)
     cfg.CONF.register_opts(dhcp.OPTS)

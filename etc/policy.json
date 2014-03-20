@@ -5,6 +5,7 @@
     "admin_only": "rule:context_is_admin",
     "regular_user": "",
     "shared": "field:networks:shared=True",
+    "shared_firewalls": "field:firewalls:shared=True",
     "external": "field:networks:router:external=True",
     "default": "rule:admin_or_owner",
 
@@ -34,6 +35,7 @@
     "create_network:provider:segmentation_id": "rule:admin_only",
     "update_network": "rule:admin_or_owner",
     "update_network:segments": "rule:admin_only",
+    "update_network:shared": "rule:admin_only",
     "update_network:provider:network_type": "rule:admin_only",
     "update_network:provider:physical_network": "rule:admin_only",
     "update_network:provider:segmentation_id": "rule:admin_only",
@@ -45,18 +47,21 @@
     "create_port:port_security_enabled": "rule:admin_or_network_owner",
     "create_port:binding:host_id": "rule:admin_only",
     "create_port:binding:profile": "rule:admin_only",
+    "create_port:binding:vnic_type": "rule:admin_or_owner",
     "create_port:mac_learning_enabled": "rule:admin_or_network_owner",
     "get_port": "rule:admin_or_owner",
     "get_port:queue_id": "rule:admin_only",
     "get_port:binding:vif_type": "rule:admin_only",
-    "get_port:binding:capabilities": "rule:admin_only",
+    "get_port:binding:vif_details": "rule:admin_only",
     "get_port:binding:host_id": "rule:admin_only",
     "get_port:binding:profile": "rule:admin_only",
+    "get_port:binding:vnic_type": "rule:admin_or_owner",
     "update_port": "rule:admin_or_owner",
     "update_port:fixed_ips": "rule:admin_or_network_owner",
     "update_port:port_security_enabled": "rule:admin_or_network_owner",
     "update_port:binding:host_id": "rule:admin_only",
     "update_port:binding:profile": "rule:admin_only",
+    "update_port:binding:vnic_type": "rule:admin_or_owner",
     "update_port:mac_learning_enabled": "rule:admin_or_network_owner",
     "delete_port": "rule:admin_or_owner",
 
@@ -71,13 +76,13 @@
     "delete_firewall": "rule:admin_or_owner",
 
     "create_firewall_policy": "",
-    "get_firewall_policy": "rule:admin_or_owner",
+    "get_firewall_policy": "rule:admin_or_owner or rule:shared_firewalls",
     "create_firewall_policy:shared": "rule:admin_or_owner",
     "update_firewall_policy": "rule:admin_or_owner",
     "delete_firewall_policy": "rule:admin_or_owner",
 
     "create_firewall_rule": "",
-    "get_firewall_rule": "rule:admin_or_owner",
+    "get_firewall_rule": "rule:admin_or_owner or rule:shared_firewalls",
     "create_firewall_rule:shared": "rule:admin_or_owner",
     "get_firewall_rule:shared": "rule:admin_or_owner",
     "update_firewall_rule": "rule:admin_or_owner",
@@ -127,5 +132,9 @@
 
     "create_metering_label_rule": "rule:admin_only",
     "delete_metering_label_rule": "rule:admin_only",
-    "get_metering_label_rule": "rule:admin_only"
+    "get_metering_label_rule": "rule:admin_only",
+
+    "get_service_provider": "rule:regular_user",
+    "get_lsn": "rule:admin_only",
+    "create_lsn": "rule:admin_only"
 }

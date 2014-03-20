@@ -19,8 +19,9 @@
 from oslo.config import cfg
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.common import topics
+from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import l3_gwmode_db
@@ -43,11 +44,11 @@ DEFAULT_VLAN_RANGES = []
 hyperv_opts = [
     cfg.StrOpt('tenant_network_type', default='local',
                help=_("Network type for tenant networks "
-               "(local, flat, vlan or none)")),
+                      "(local, flat, vlan or none)")),
     cfg.ListOpt('network_vlan_ranges',
                 default=DEFAULT_VLAN_RANGES,
                 help=_("List of <physical_network>:<vlan_min>:<vlan_max> "
-                "or <physical_network>")),
+                       "or <physical_network>")),
 ]
 
 cfg.CONF.register_opts(hyperv_opts, "HYPERV")
@@ -76,14 +77,14 @@ class LocalNetworkProvider(BaseNetworkProvider):
         if attributes.is_attr_set(segmentation_id):
             msg = _("segmentation_id specified "
                     "for %s network") % network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
         attrs[provider.SEGMENTATION_ID] = None
 
         physical_network = attrs.get(provider.PHYSICAL_NETWORK)
         if attributes.is_attr_set(physical_network):
             msg = _("physical_network specified "
                     "for %s network") % network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
         attrs[provider.PHYSICAL_NETWORK] = None
 
     def extend_network_dict(self, network, binding):
@@ -98,7 +99,7 @@ class FlatNetworkProvider(BaseNetworkProvider):
         if attributes.is_attr_set(segmentation_id):
             msg = _("segmentation_id specified "
                     "for %s network") % network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
         segmentation_id = constants.FLAT_VLAN_ID
         attrs[provider.SEGMENTATION_ID] = segmentation_id
 
@@ -124,7 +125,7 @@ class VlanNetworkProvider(BaseNetworkProvider):
             physical_network = attrs.get(provider.PHYSICAL_NETWORK)
             if not attributes.is_attr_set(physical_network):
                 msg = _("physical_network not provided")
-                raise q_exc.InvalidInput(error_message=msg)
+                raise n_exc.InvalidInput(error_message=msg)
             self._db.reserve_specific_vlan(session, physical_network,
                                            segmentation_id)
         else:
@@ -143,7 +144,8 @@ class VlanNetworkProvider(BaseNetworkProvider):
         network[provider.SEGMENTATION_ID] = binding.segmentation_id
 
 
-class HyperVNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
+class HyperVNeutronPlugin(agents_db.AgentDbMixin,
+                          db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
                           l3_gwmode_db.L3_NAT_db_mixin,
                           portbindings_base.PortBindingBaseMixin):
@@ -153,7 +155,7 @@ class HyperVNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     # is qualified by class
     __native_bulk_support = True
     supported_extension_aliases = ["provider", "external-net", "router",
-                                   "ext-gw-mode", "binding", "quotas"]
+                                   "agent", "ext-gw-mode", "binding", "quotas"]
 
     def __init__(self, configfile=None):
         self._db = hyperv_db.HyperVPluginDB()
@@ -165,21 +167,20 @@ class HyperVNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         self._parse_network_vlan_ranges()
         self._create_network_providers_map()
-
         self._db.sync_vlan_allocations(self._network_vlan_ranges)
 
         self._setup_rpc()
 
     def _set_tenant_network_type(self):
         tenant_network_type = cfg.CONF.HYPERV.tenant_network_type
-        if tenant_network_type not in [constants.TYPE_LOCAL,
-                                       constants.TYPE_FLAT,
-                                       constants.TYPE_VLAN,
-                                       constants.TYPE_NONE]:
+        if tenant_network_type not in [svc_constants.TYPE_LOCAL,
+                                       svc_constants.TYPE_FLAT,
+                                       svc_constants.TYPE_VLAN,
+                                       svc_constants.TYPE_NONE]:
             msg = _(
                 "Invalid tenant_network_type: %s. "
                 "Agent terminated!") % tenant_network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
         self._tenant_network_type = tenant_network_type
 
     def _setup_rpc(self):
@@ -209,23 +210,23 @@ class HyperVNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _create_network_providers_map(self):
         self._network_providers_map = {
-            constants.TYPE_LOCAL: LocalNetworkProvider(),
-            constants.TYPE_FLAT: FlatNetworkProvider(),
-            constants.TYPE_VLAN: VlanNetworkProvider()
+            svc_constants.TYPE_LOCAL: LocalNetworkProvider(),
+            svc_constants.TYPE_FLAT: FlatNetworkProvider(),
+            svc_constants.TYPE_VLAN: VlanNetworkProvider()
         }
 
     def _process_provider_create(self, context, session, attrs):
         network_type = attrs.get(provider.NETWORK_TYPE)
         network_type_set = attributes.is_attr_set(network_type)
         if not network_type_set:
-            if self._tenant_network_type == constants.TYPE_NONE:
-                raise q_exc.TenantNetworksDisabled()
+            if self._tenant_network_type == svc_constants.TYPE_NONE:
+                raise n_exc.TenantNetworksDisabled()
             network_type = self._tenant_network_type
             attrs[provider.NETWORK_TYPE] = network_type
 
         if network_type not in self._network_providers_map:
             msg = _("Network type %s not supported") % network_type
-            raise q_exc.InvalidInput(error_message=msg)
+            raise n_exc.InvalidInput(error_message=msg)
         p = self._network_providers_map[network_type]
         # Provider specific network creation
         p.create_network(session, attrs)

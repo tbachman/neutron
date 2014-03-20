@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
-
 from oslo.config import cfg
 import stevedore
 
@@ -46,16 +44,16 @@ class TypeManager(stevedore.named.NamedExtensionManager):
 
     def _register_types(self):
         for ext in self:
-            type = ext.obj.get_type()
-            if type in self.drivers:
+            network_type = ext.obj.get_type()
+            if network_type in self.drivers:
                 LOG.error(_("Type driver '%(new_driver)s' ignored because type"
                             " driver '%(old_driver)s' is already registered"
                             " for type '%(type)s'"),
                           {'new_driver': ext.name,
-                           'old_driver': self.drivers[type].name,
-                           'type': type})
+                           'old_driver': self.drivers[network_type].name,
+                           'type': network_type})
             else:
-                self.drivers[type] = ext
+                self.drivers[network_type] = ext
         LOG.info(_("Registered types: %s"), self.drivers.keys())
 
     def _check_tenant_network_types(self, types):
@@ -64,15 +62,15 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             if network_type in self.drivers:
                 self.tenant_network_types.append(network_type)
             else:
-                LOG.error(_("No type driver for tenant network_type: %s. "
-                            "Service terminated!"),
-                          network_type)
-                sys.exit(1)
+                msg = _("No type driver for tenant network_type: %s. "
+                        "Service terminated!") % network_type
+                LOG.error(msg)
+                raise SystemExit(msg)
         LOG.info(_("Tenant network_types: %s"), self.tenant_network_types)
 
     def initialize(self):
-        for type, driver in self.drivers.iteritems():
-            LOG.info(_("Initializing driver for type '%s'"), type)
+        for network_type, driver in self.drivers.iteritems():
+            LOG.info(_("Initializing driver for type '%s'"), network_type)
             driver.obj.initialize()
 
     def validate_provider_segment(self, segment):
@@ -135,9 +133,13 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
                  [driver.name for driver in self.ordered_mech_drivers])
 
     def initialize(self):
+        # For ML2 to support bulk operations, each driver must support them
+        self.native_bulk_support = True
         for driver in self.ordered_mech_drivers:
             LOG.info(_("Initializing mechanism driver '%s'"), driver.name)
             driver.obj.initialize()
+            self.native_bulk_support &= getattr(driver.obj,
+                                                'native_bulk_support', True)
 
     def _call_on_drivers(self, method_name, context,
                          continue_on_failure=False):
@@ -359,7 +361,7 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
         if any mechanism driver create_port_postcommit call fails.
 
         Called after the database transaction. Errors raised by
-        mechanism drivers are left to propogate to the caller, where
+        mechanism drivers are left to propagate to the caller, where
         the port will be deleted, triggering any required
         cleanup. There is no guarantee that all mechanism drivers are
         called in this case.
@@ -431,27 +433,34 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
         :param context: PortContext instance describing the port
 
         Called inside transaction context on session, prior to
-        create_network_precommit or update_network_precommit, to
+        create_port_precommit or update_port_precommit, to
         attempt to establish a port binding.
         """
         binding = context._binding
-        LOG.debug(_("Attempting to bind port %(port)s on host %(host)s"),
+        LOG.debug(_("Attempting to bind port %(port)s on host %(host)s "
+                    "for vnic_type %(vnic_type)s with profile %(profile)s"),
                   {'port': context._port['id'],
-                   'host': binding.host})
+                   'host': binding.host,
+                   'vnic_type': binding.vnic_type,
+                   'profile': binding.profile})
         for driver in self.ordered_mech_drivers:
             try:
                 driver.obj.bind_port(context)
                 if binding.segment:
                     binding.driver = driver.name
                     LOG.debug(_("Bound port: %(port)s, host: %(host)s, "
+                                "vnic_type: %(vnic_type)s, "
+                                "profile: %(profile)s"
                                 "driver: %(driver)s, vif_type: %(vif_type)s, "
-                                "cap_port_filter: %(cap_port_filter)s, "
+                                "vif_details: %(vif_details)s, "
                                 "segment: %(segment)s"),
                               {'port': context._port['id'],
                                'host': binding.host,
+                               'vnic_type': binding.vnic_type,
+                               'profile': binding.profile,
                                'driver': binding.driver,
                                'vif_type': binding.vif_type,
-                               'cap_port_filter': binding.cap_port_filter,
+                               'vif_details': binding.vif_details,
                                'segment': binding.segment})
                     return
             except Exception:
@@ -503,6 +512,6 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
                                 "unbind_port"),
                               driver.name)
         binding.vif_type = portbindings.VIF_TYPE_UNBOUND
-        binding.cap_port_filter = False
+        binding.vif_details = ''
         binding.driver = None
         binding.segment = None

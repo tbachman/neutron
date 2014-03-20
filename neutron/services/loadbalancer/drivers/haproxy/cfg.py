@@ -18,8 +18,6 @@
 
 import itertools
 
-from oslo.config import cfg
-
 from neutron.agent.linux import utils
 from neutron.plugins.common import constants as qconstants
 from neutron.services.loadbalancer import constants
@@ -49,24 +47,27 @@ STATS_MAP = {
     constants.STATS_RESPONSE_ERRORS: 'eresp'
 }
 
-ACTIVE = qconstants.ACTIVE
+ACTIVE_PENDING = qconstants.ACTIVE_PENDING
+INACTIVE = qconstants.INACTIVE
 
 
-def save_config(conf_path, logical_config, socket_path=None):
+def save_config(conf_path, logical_config, socket_path=None,
+                user_group='nogroup'):
     """Convert a logical configuration to the HAProxy version."""
     data = []
-    data.extend(_build_global(logical_config, socket_path=socket_path))
+    data.extend(_build_global(logical_config, socket_path=socket_path,
+                              user_group=user_group))
     data.extend(_build_defaults(logical_config))
     data.extend(_build_frontend(logical_config))
     data.extend(_build_backend(logical_config))
     utils.replace_file(conf_path, '\n'.join(data))
 
 
-def _build_global(config, socket_path=None):
+def _build_global(config, socket_path=None, user_group='nogroup'):
     opts = [
         'daemon',
         'user nobody',
-        'group %s' % cfg.CONF.user_group,
+        'group %s' % user_group,
         'log /dev/log local0',
         'log /dev/log local1 notice'
     ]
@@ -137,7 +138,9 @@ def _build_backend(config):
 
     # add the members
     for member in config['members']:
-        if member['status'] == ACTIVE and member['admin_state_up']:
+        if ((member['status'] in ACTIVE_PENDING or
+             member['status'] == INACTIVE)
+            and member['admin_state_up']):
             server = (('server %(id)s %(address)s:%(protocol_port)s '
                        'weight %(weight)s') % member) + server_addon
             if _has_http_cookie_persistence(config):

@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from eventlet import greenthread
+
 from oslo.config import cfg
 import sqlalchemy as sa
 from sqlalchemy.orm import exc
@@ -23,18 +25,27 @@ from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import agent as ext_agent
 from neutron import manager
+from neutron.openstack.common.db import exception as db_exc
+from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.register_opt(
-    cfg.IntOpt('agent_down_time', default=5,
-               help=_("Seconds to regard the agent is down.")))
+    cfg.IntOpt('agent_down_time', default=9,
+               help=_("Seconds to regard the agent is down; should be at "
+                      "least twice report_interval, to be sure the "
+                      "agent is down for good.")))
 
 
 class Agent(model_base.BASEV2, models_v2.HasId):
     """Represents agents running in neutron deployments."""
+
+    __table_args__ = (
+        sa.UniqueConstraint('agent_type', 'host',
+                            name='uniq_agents0agent_type0host'),
+    )
 
     # L3 agent, DHCP agent, OVS agent, LinuxBridge
     agent_type = sa.Column(sa.String(255), nullable=False)
@@ -55,6 +66,10 @@ class Agent(model_base.BASEV2, models_v2.HasId):
     description = sa.Column(sa.String(255))
     # configurations: a json dict string, I think 4095 is enough
     configurations = sa.Column(sa.String(4095), nullable=False)
+
+    @property
+    def is_active(self):
+        return not AgentDbMixin.is_agent_down(self.heartbeat_timestamp)
 
 
 class AgentDbMixin(ext_agent.AgentPluginBase):
@@ -131,8 +146,7 @@ class AgentDbMixin(ext_agent.AgentPluginBase):
         agent = self._get_agent(context, id)
         return self._make_agent_dict(agent, fields)
 
-    def create_or_update_agent(self, context, agent):
-        """Create or update agent according to report."""
+    def _create_or_update_agent(self, context, agent):
         with context.session.begin(subtransactions=True):
             res_keys = ['agent_type', 'binary', 'host', 'topic']
             res = dict((k, agent[k]) for k in res_keys)
@@ -146,14 +160,41 @@ class AgentDbMixin(ext_agent.AgentPluginBase):
                 res['heartbeat_timestamp'] = current_time
                 if agent.get('start_flag'):
                     res['started_at'] = current_time
+                greenthread.sleep(0)
                 agent_db.update(res)
             except ext_agent.AgentNotFoundByTypeHost:
+                greenthread.sleep(0)
                 res['created_at'] = current_time
                 res['started_at'] = current_time
                 res['heartbeat_timestamp'] = current_time
                 res['admin_state_up'] = True
                 agent_db = Agent(**res)
+                greenthread.sleep(0)
                 context.session.add(agent_db)
+            greenthread.sleep(0)
+
+    def create_or_update_agent(self, context, agent):
+        """Create or update agent according to report."""
+
+        try:
+            return self._create_or_update_agent(context, agent)
+        except db_exc.DBDuplicateEntry as e:
+            with excutils.save_and_reraise_exception() as ctxt:
+                if e.columns == ['agent_type', 'host']:
+                    # It might happen that two or more concurrent transactions
+                    # are trying to insert new rows having the same value of
+                    # (agent_type, host) pair at the same time (if there has
+                    # been no such entry in the table and multiple agent status
+                    # updates are being processed at the moment). In this case
+                    # having a unique constraint on (agent_type, host) columns
+                    # guarantees that only one transaction will succeed and
+                    # insert a new agent entry, others will fail and be rolled
+                    # back. That means we must retry them one more time: no
+                    # INSERTs will be issued, because
+                    # _get_agent_by_type_and_host() will return the existing
+                    # agent entry, which will be updated multiple times
+                    ctxt.reraise = False
+                    return self._create_or_update_agent(context, agent)
 
 
 class AgentExtRpcCallback(object):

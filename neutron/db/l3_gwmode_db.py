@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2013 Nicira Networks, Inc.  All rights reserved.
+# Copyright 2013 VMware, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Salvatore Orlando, Nicira, Inc
 #
 
 import sqlalchemy as sa
@@ -40,7 +36,7 @@ class L3_NAT_db_mixin(l3_db.L3_NAT_db_mixin):
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
         l3.ROUTERS, ['_extend_router_dict_gw_mode'])
 
-    def _extend_router_dict_gw_mode(seld, router_res, router_db):
+    def _extend_router_dict_gw_mode(self, router_res, router_db):
         if router_db.gw_port_id:
             nw_id = router_db.gw_port['network_id']
             router_res[EXTERNAL_GW_INFO] = {

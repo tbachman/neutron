@@ -1,4 +1,4 @@
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 
 from testtools import matchers
 
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron.db import api as db
 from neutron.plugins.mlnx.db import mlnx_db_v2 as mlnx_db
 from neutron.tests import base
@@ -35,7 +35,7 @@ TEST_NETWORK_ID = 'abcdefghijklmnopqrstuvwxyz'
 class SegmentationIdAllocationTest(base.BaseTestCase):
     def setUp(self):
         super(SegmentationIdAllocationTest, self).setUp()
-        mlnx_db.initialize()
+        db.configure_db()
         mlnx_db.sync_network_states(VLAN_RANGES)
         self.session = db.get_session()
         self.addCleanup(db.clear_db)
@@ -113,7 +113,7 @@ class SegmentationIdAllocationTest(base.BaseTestCase):
             self.assertThat(vlan_id, matchers.LessThan(VLAN_MAX + 1))
             vlan_ids.add(vlan_id)
 
-        self.assertRaises(q_exc.NoNetworkAvailable,
+        self.assertRaises(n_exc.NoNetworkAvailable,
                           mlnx_db.reserve_network,
                           self.session)
         for vlan_id in vlan_ids:
@@ -128,7 +128,7 @@ class SegmentationIdAllocationTest(base.BaseTestCase):
         self.assertTrue(mlnx_db.get_network_state(PHYS_NET,
                                                   vlan_id).allocated)
 
-        self.assertRaises(q_exc.VlanIdInUse,
+        self.assertRaises(n_exc.VlanIdInUse,
                           mlnx_db.reserve_specific_network,
                           self.session,
                           PHYS_NET,
@@ -145,7 +145,7 @@ class SegmentationIdAllocationTest(base.BaseTestCase):
         self.assertTrue(mlnx_db.get_network_state(PHYS_NET,
                                                   vlan_id).allocated)
 
-        self.assertRaises(q_exc.VlanIdInUse,
+        self.assertRaises(n_exc.VlanIdInUse,
                           mlnx_db.reserve_specific_network,
                           self.session,
                           PHYS_NET,
@@ -158,7 +158,7 @@ class SegmentationIdAllocationTest(base.BaseTestCase):
 class NetworkBindingsTest(test_plugin.NeutronDbPluginV2TestCase):
     def setUp(self):
         super(NetworkBindingsTest, self).setUp()
-        mlnx_db.initialize()
+        db.configure_db()
         self.session = db.get_session()
 
     def test_add_network_binding(self):

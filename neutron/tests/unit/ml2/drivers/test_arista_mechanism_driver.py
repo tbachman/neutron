@@ -1,5 +1,5 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 import mock
 from oslo.config import cfg
 
+from neutron.common import constants as n_const
 import neutron.db.api as ndb
 from neutron.plugins.ml2.drivers.mech_arista import db
 from neutron.plugins.ml2.drivers.mech_arista import exceptions as arista_exc
@@ -24,10 +25,10 @@ from neutron.plugins.ml2.drivers.mech_arista import mechanism_arista as arista
 from neutron.tests import base
 
 
-def setup_arista_wrapper_config(value=None):
+def setup_arista_wrapper_config(value=''):
     cfg.CONF.keystone_authtoken = fake_keystone_info_class()
-    for opt in arista.AristaRPCWrapper.required_options:
-        cfg.CONF.set_override(opt, value, "ml2_arista")
+    cfg.CONF.set_override('eapi_host', value, "ml2_arista")
+    cfg.CONF.set_override('eapi_username', value, "ml2_arista")
 
 
 def setup_valid_config():
@@ -38,8 +39,8 @@ def setup_valid_config():
 class AristaProvisionedVlansStorageTestCase(base.BaseTestCase):
     """Test storing and retriving functionality of Arista mechanism driver.
 
-    Tests all methods of this class by invoking them seperately as well
-    as a goup.
+    Tests all methods of this class by invoking them separately as well
+    as a group.
     """
 
     def setUp(self):
@@ -217,8 +218,11 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
         self.region = 'RegionOne'
         self.drv._server = mock.MagicMock()
 
+    def _get_exit_mode_cmds(self, modes):
+        return ['exit'] * len(modes)
+
     def test_no_exception_on_correct_configuration(self):
-        self.assertNotEqual(self.drv, None)
+        self.assertIsNotNone(self.drv)
 
     def test_plug_host_into_network(self):
         tenant_id = 'ten-1'
@@ -233,8 +237,26 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
         cmds = ['enable', 'configure', 'management openstack',
                 'region RegionOne',
                 'tenant ten-1', 'vm id vm-1 hostid host',
-                'port id 123 name 123-port network-id net-id',
+                'port id 123 name "123-port" network-id net-id',
                 'exit', 'exit', 'exit', 'exit']
+
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_plug_dhcp_port_into_network(self):
+        tenant_id = 'ten-1'
+        vm_id = 'vm-1'
+        port_id = 123
+        network_id = 'net-id'
+        host = 'host'
+        port_name = '123-port'
+
+        self.drv.plug_dhcp_port_into_network(vm_id, host, port_id,
+                                             network_id, tenant_id, port_name)
+        cmds = ['enable', 'configure', 'management openstack',
+                'region RegionOne',
+                'tenant ten-1', 'network id net-id',
+                'dhcp id vm-1 hostid host port-id 123 name "123-port"',
+                'exit', 'exit', 'exit']
 
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
@@ -248,22 +270,64 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
                                           network_id, tenant_id)
         cmds = ['enable', 'configure', 'management openstack',
                 'region RegionOne',
-                'tenant ten-1', 'vm id vm-1 host host',
-                'no port id 123 network-id net-id',
+                'tenant ten-1', 'vm id vm-1 hostid host',
+                'no port id 123',
                 'exit', 'exit', 'exit', 'exit']
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_unplug_dhcp_port_from_network(self):
+        tenant_id = 'ten-1'
+        vm_id = 'vm-1'
+        port_id = 123
+        network_id = 'net-id'
+        host = 'host'
+
+        self.drv.unplug_dhcp_port_from_network(vm_id, host, port_id,
+                                               network_id, tenant_id)
+        cmds = ['enable', 'configure', 'management openstack',
+                'region RegionOne',
+                'tenant ten-1', 'network id net-id',
+                'no dhcp id vm-1 port-id 123',
+                'exit', 'exit', 'exit']
+
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
     def test_create_network(self):
         tenant_id = 'ten-1'
-        network_id = 'net-id'
-        network_name = 'net-name'
-        vlan_id = 123
-        self.drv.create_network(tenant_id, network_id, network_name, vlan_id)
+        network = {
+            'network_id': 'net-id',
+            'network_name': 'net-name',
+            'segmentation_id': 123}
+        self.drv.create_network(tenant_id, network)
         cmds = ['enable', 'configure', 'management openstack',
                 'region RegionOne',
-                'tenant ten-1', 'network id net-id name net-name',
+                'tenant ten-1', 'network id net-id name "net-name"',
                 'segment 1 type vlan id 123',
                 'exit', 'exit', 'exit', 'exit', 'exit']
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_create_network_bulk(self):
+        tenant_id = 'ten-2'
+        num_networks = 10
+        networks = [{
+            'network_id': 'net-id-%d' % net_id,
+            'network_name': 'net-name-%d' % net_id,
+            'segmentation_id': net_id} for net_id in range(1, num_networks)
+        ]
+
+        self.drv.create_network_bulk(tenant_id, networks)
+        cmds = ['enable',
+                'configure',
+                'management openstack',
+                'region RegionOne',
+                'tenant ten-2']
+        for net_id in range(1, num_networks):
+            cmds.append('network id net-id-%d name "net-name-%d"' %
+                        (net_id, net_id))
+            cmds.append('segment 1 type vlan id %d' % net_id)
+
+        cmds.extend(self._get_exit_mode_cmds(['tenant', 'region', 'openstack',
+                                              'configure', 'enable']))
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
     def test_delete_network(self):
@@ -276,6 +340,29 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
                 'exit', 'exit', 'exit', 'exit']
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
+    def test_delete_network_bulk(self):
+        tenant_id = 'ten-2'
+        num_networks = 10
+        networks = [{
+            'network_id': 'net-id-%d' % net_id,
+            'network_name': 'net-name-%d' % net_id,
+            'segmentation_id': net_id} for net_id in range(1, num_networks)
+        ]
+
+        networks = ['net-id-%d' % net_id for net_id in range(1, num_networks)]
+        self.drv.delete_network_bulk(tenant_id, networks)
+        cmds = ['enable',
+                'configure',
+                'management openstack',
+                'region RegionOne',
+                'tenant ten-2']
+        for net_id in range(1, num_networks):
+            cmds.append('no network id net-id-%d' % net_id)
+
+        cmds.extend(self._get_exit_mode_cmds(['tenant', 'region', 'openstack',
+                                              'configure']))
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
     def test_delete_vm(self):
         tenant_id = 'ten-1'
         vm_id = 'vm-id'
@@ -286,12 +373,105 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
                 'exit', 'exit', 'exit', 'exit']
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
+    def test_delete_vm_bulk(self):
+        tenant_id = 'ten-2'
+        num_vms = 10
+        vm_ids = ['vm-id-%d' % vm_id for vm_id in range(1, num_vms)]
+        self.drv.delete_vm_bulk(tenant_id, vm_ids)
+
+        cmds = ['enable',
+                'configure',
+                'management openstack',
+                'region RegionOne',
+                'tenant ten-2']
+
+        for vm_id in range(1, num_vms):
+            cmds.append('no vm id vm-id-%d' % vm_id)
+
+        cmds.extend(self._get_exit_mode_cmds(['tenant', 'region', 'openstack',
+                                              'configure']))
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_create_vm_port_bulk(self):
+        tenant_id = 'ten-3'
+        num_vms = 10
+        num_ports_per_vm = 2
+
+        vms = dict(
+            ('vm-id-%d' % vm_id, {
+                'vmId': 'vm-id-%d' % vm_id,
+                'host': 'host_%d' % vm_id,
+            }
+            ) for vm_id in range(1, num_vms)
+        )
+
+        devices = [n_const.DEVICE_OWNER_DHCP, 'compute']
+        vm_port_list = []
+
+        net_count = 1
+        for vm_id in range(1, num_vms):
+            for port_id in range(1, num_ports_per_vm):
+                port = {
+                    'id': 'port-id-%d-%d' % (vm_id, port_id),
+                    'device_id': 'vm-id-%d' % vm_id,
+                    'device_owner': devices[(vm_id + port_id) % 2],
+                    'network_id': 'network-id-%d' % net_count,
+                    'name': 'port-%d-%d' % (vm_id, port_id)
+                }
+                vm_port_list.append(port)
+                net_count += 1
+
+        self.drv.create_vm_port_bulk(tenant_id, vm_port_list, vms)
+        cmds = ['enable',
+                'configure',
+                'management openstack',
+                'region RegionOne',
+                'tenant ten-3']
+
+        net_count = 1
+        for vm_count in range(1, num_vms):
+            host = 'host_%s' % vm_count
+            for port_count in range(1, num_ports_per_vm):
+                vm_id = 'vm-id-%d' % vm_count
+                device_owner = devices[(vm_count + port_count) % 2]
+                port_name = '"port-%d-%d"' % (vm_count, port_count)
+                network_id = 'network-id-%d' % net_count
+                port_id = 'port-id-%d-%d' % (vm_count, port_count)
+                if device_owner == 'network:dhcp':
+                    cmds.append('network id %s' % network_id)
+                    cmds.append('dhcp id %s hostid %s port-id %s name %s' % (
+                                vm_id, host, port_id, port_name))
+                elif device_owner == 'compute':
+                    cmds.append('vm id %s hostid %s' % (vm_id, host))
+                    cmds.append('port id %s name %s network-id %s' % (
+                                port_id, port_name, network_id))
+                net_count += 1
+
+        cmds.extend(self._get_exit_mode_cmds(['tenant', 'region',
+                                              'openstack']))
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
     def test_delete_tenant(self):
         tenant_id = 'ten-1'
         self.drv.delete_tenant(tenant_id)
         cmds = ['enable', 'configure', 'management openstack',
                 'region RegionOne', 'no tenant ten-1',
                 'exit', 'exit', 'exit']
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_delete_tenant_bulk(self):
+        num_tenants = 10
+        tenant_list = ['ten-%d' % t_id for t_id in range(1, num_tenants)]
+        self.drv.delete_tenant_bulk(tenant_list)
+        cmds = ['enable',
+                'configure',
+                'management openstack',
+                'region RegionOne']
+        for ten_id in range(1, num_tenants):
+            cmds.append('no tenant ten-%d' % ten_id)
+
+        cmds.extend(self._get_exit_mode_cmds(['region', 'openstack',
+                                              'configure']))
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
     def test_get_network_info_returns_none_when_no_such_net(self):
@@ -318,6 +498,11 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
         self.assertEqual(net_info, valid_net_info,
                          ('Must return network info for a valid net'))
 
+    def test_check_cli_commands(self):
+        self.drv.check_cli_commands()
+        cmds = ['show openstack config region RegionOne timestamp']
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
 
 class AristaRPCWrapperInvalidConfigTestCase(base.BaseTestCase):
     """Negative test cases to test the Arista Driver configuration."""
@@ -327,7 +512,7 @@ class AristaRPCWrapperInvalidConfigTestCase(base.BaseTestCase):
         self.setup_invalid_config()  # Invalid config, required options not set
 
     def setup_invalid_config(self):
-        setup_arista_wrapper_config(None)
+        setup_arista_wrapper_config('')
 
     def test_raises_exception_on_wrong_configuration(self):
         self.assertRaises(arista_exc.AristaConfigError,

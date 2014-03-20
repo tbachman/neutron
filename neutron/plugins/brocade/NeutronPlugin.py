@@ -225,6 +225,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         Specify switch address and db configuration.
         """
 
+        super(BrocadePluginV2, self).__init__()
         self.supported_extension_aliases = ["binding", "security-group",
                                             "external-net", "router",
                                             "extraroute", "agent",
@@ -235,7 +236,6 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                    physical_interface)
         self.base_binding_dict = self._get_base_binding_dict()
         portbindings_base.register_port_dict_function()
-        db.configure_db()
         self.ctxt = context.get_admin_context()
         self.ctxt.session = db.get_session()
         self._vlan_bitmap = vbm.VlanBitmap(self.ctxt)
@@ -295,10 +295,9 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                             switch['username'],
                                             switch['password'],
                                             vlan_id)
-            except Exception as e:
+            except Exception:
                 # Proper formatting
-                LOG.warning(_("Brocade NOS driver:"))
-                LOG.warning(_("%s"), e)
+                LOG.exception(_("Brocade NOS driver error"))
                 LOG.debug(_("Returning the allocated vlan (%d) to the pool"),
                           vlan_id)
                 self._vlan_bitmap.release_vlan(int(vlan_id))
@@ -338,11 +337,10 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 self._driver.delete_network(switch['address'],
                                             switch['username'],
                                             switch['password'],
-                                            net_id)
-            except Exception as e:
+                                            vlan_id)
+            except Exception:
                 # Proper formatting
-                LOG.warning(_("Brocade NOS driver:"))
-                LOG.warning(_("%s"), e)
+                LOG.exception(_("Brocade NOS driver error"))
                 raise Exception(_("Brocade plugin raised exception, "
                                   "check logs"))
 
@@ -393,10 +391,9 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                       switch['password'],
                                                       vlan_id,
                                                       mac)
-            except Exception as e:
+            except Exception:
                 # Proper formatting
-                LOG.warning(_("Brocade NOS driver:"))
-                LOG.warning(_("%s"), e)
+                LOG.exception(_("Brocade NOS driver error"))
                 raise Exception(_("Brocade plugin raised exception, "
                                   "check logs"))
 
@@ -410,6 +407,26 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     def delete_port(self, context, port_id):
         with context.session.begin(subtransactions=True):
+            neutron_port = self.get_port(context, port_id)
+            interface_mac = neutron_port['mac_address']
+            # convert mac format: xx:xx:xx:xx:xx:xx -> xxxx.xxxx.xxxx
+            mac = self.mac_reformat_62to34(interface_mac)
+
+            brocade_port = brocade_db.get_port(context, port_id)
+            vlan_id = brocade_port['vlan_id']
+
+            switch = self._switch
+            try:
+                self._driver.dissociate_mac_from_network(switch['address'],
+                                                         switch['username'],
+                                                         switch['password'],
+                                                         vlan_id,
+                                                         mac)
+            except Exception:
+                LOG.exception(_("Brocade NOS driver error"))
+                raise Exception(
+                    _("Brocade plugin raised exception, check logs"))
+
             super(BrocadePluginV2, self).delete_port(context, port_id)
             brocade_db.delete_port(context, port_id)
 
@@ -461,7 +478,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def _get_base_binding_dict(self):
         binding = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_BRIDGE,
-            portbindings.CAPABILITIES: {
+            portbindings.VIF_DETAILS: {
+                # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
         return binding

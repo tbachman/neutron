@@ -18,6 +18,7 @@
 import mock
 
 from neutron import context
+from neutron.db import api as db
 from neutron.openstack.common import uuidutils
 from neutron.plugins.nec.common import config
 from neutron.plugins.nec.db import api as ndb
@@ -44,15 +45,16 @@ class OFCManagerTestBase(base.BaseTestCase):
 
     def setUp(self):
         super(OFCManagerTestBase, self).setUp()
+        db.configure_db()
         driver = "neutron.tests.unit.nec.stub_ofc_driver.StubOFCDriver"
         config.CONF.set_override('driver', driver, 'OFC')
-        ndb.initialize()
         self.addCleanup(ndb.clear_db)
-        self.ofc = ofc_manager.OFCManager()
+        self.plugin = mock.Mock()
+        self.plugin.get_packet_filters_for_port.return_value = None
+        self.ofc = ofc_manager.OFCManager(self.plugin)
         # NOTE: enable_autocheck() is a feature of StubOFCDriver
         self.ofc.driver.enable_autocheck()
         self.ctx = context.get_admin_context()
-        self.addCleanup(mock.patch.stopall)
 
     def get_random_params(self):
         """create random parameters for portinfo test."""
@@ -123,19 +125,34 @@ class OFCManagerTest(OFCManagerTestBase):
         get_portinfo.return_value = fake_portinfo
         return get_portinfo
 
-    def testg_create_ofc_port(self):
-        """test create ofc_port."""
+    def _test_create_ofc_port(self, with_filter=False):
         t, n, p, f, none = self.get_random_params()
         self.ofc.create_ofc_tenant(self.ctx, t)
         self.ofc.create_ofc_network(self.ctx, t, n)
         self.assertFalse(ndb.get_ofc_item(self.ctx.session, 'ofc_port', p))
         get_portinfo = self._mock_get_portinfo(p)
         port = {'tenant_id': t, 'network_id': n}
+        if with_filter:
+            _filters = ['filter1', 'filter2']
+            self.plugin.get_packet_filters_for_port.return_value = _filters
         self.ofc.create_ofc_port(self.ctx, p, port)
         self.assertTrue(ndb.get_ofc_item(self.ctx.session, 'ofc_port', p))
         port = ndb.get_ofc_item(self.ctx.session, 'ofc_port', p)
         self.assertEqual(port.ofc_id, "ofc-" + p[:-4])
         get_portinfo.assert_called_once_with(mock.ANY, p)
+        portval = self.ofc.driver.ofc_port_dict[port.ofc_id]
+        if with_filter:
+            self.assertEqual(_filters, portval['filters'])
+        else:
+            self.assertFalse('filters' in portval)
+
+    def testg_create_ofc_port(self):
+        """test create ofc_port."""
+        self._test_create_ofc_port(with_filter=False)
+
+    def testg_create_ofc_port_with_filters(self):
+        """test create ofc_port."""
+        self._test_create_ofc_port(with_filter=True)
 
     def testh_exists_ofc_port(self):
         """test exists_ofc_port."""
@@ -278,108 +295,3 @@ class OFCManagerRouterTest(OFCManagerTestBase):
         routes = []
         self.ofc.update_ofc_router_route(self.ctx, r, routes)
         self.assertEqual(len(self.ofc.driver.ofc_router_route_dict), 0)
-
-
-class OFCManagerTestWithOldMapping(OFCManagerTestBase):
-
-    def setUp(self):
-        super(OFCManagerTestWithOldMapping, self).setUp()
-        # NOTE(amotoki): In OldMapping tests, DB entries are directly modified
-        # to create a case where the old mapping tables are used intentionally.
-        self.ofc.driver.disable_autocheck()
-
-    def test_exists_ofc_tenant(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_tenant(self.ctx, t))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_tenant', t, ofc_t, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_tenant(self.ctx, t))
-
-    def test_delete_ofc_tenant(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_tenant(self.ctx, t))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_tenant', t, ofc_t, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_tenant(self.ctx, t))
-
-        self.ofc.delete_ofc_tenant(self.ctx, t)
-        self.assertFalse(self.ofc.exists_ofc_tenant(self.ctx, t))
-
-    def test_exists_ofc_network(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_network(self.ctx, n))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_network', n, ofc_n, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_network(self.ctx, n))
-
-    def test_delete_ofc_network(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_network(self.ctx, n))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_network', n, ofc_n, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_network(self.ctx, n))
-
-        net = {'tenant_id': t}
-        self.ofc.delete_ofc_network(self.ctx, n, net)
-        self.assertFalse(self.ofc.exists_ofc_network(self.ctx, n))
-
-    def test_exists_ofc_port(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_port(self.ctx, p))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_port', p, ofc_p, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_port(self.ctx, p))
-
-    def test_delete_ofc_port(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_port(self.ctx, p))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_port', p, ofc_p, old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_port(self.ctx, p))
-
-        port = {'tenant_id': t, 'network_id': n}
-        self.ofc.delete_ofc_port(self.ctx, p, port)
-        self.assertFalse(self.ofc.exists_ofc_port(self.ctx, p))
-
-    def test_exists_ofc_packet_filter(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_packet_filter(self.ctx, f))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_packet_filter', f, ofc_f,
-                         old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_packet_filter(self.ctx, f))
-
-    def test_delete_ofc_packet_filter(self):
-        t, n, p, f, none = self.get_random_params()
-        ofc_t, ofc_n, ofc_p, ofc_f, ofc_none = self.get_random_params()
-
-        self.assertFalse(self.ofc.exists_ofc_packet_filter(self.ctx, f))
-
-        session = self.ctx.session
-        ndb.add_ofc_item(session, 'ofc_packet_filter', f, ofc_f,
-                         old_style=True)
-        self.assertTrue(self.ofc.exists_ofc_packet_filter(self.ctx, f))
-
-        self.ofc.delete_ofc_packet_filter(self.ctx, f)
-        self.assertFalse(self.ofc.exists_ofc_packet_filter(self.ctx, f))

@@ -18,7 +18,6 @@ from testtools import matchers
 
 from neutron.common import exceptions as exc
 import neutron.db.api as db
-from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_gre
 from neutron.tests import base
@@ -35,11 +34,12 @@ class GreTypeTest(base.BaseTestCase):
 
     def setUp(self):
         super(GreTypeTest, self).setUp()
-        ml2_db.initialize()
+        db.configure_db()
         self.driver = type_gre.GreTypeDriver()
         self.driver.gre_id_ranges = TUNNEL_RANGES
         self.driver._sync_gre_allocations()
         self.session = db.get_session()
+        self.addCleanup(db.clear_db)
 
     def test_validate_provider_segment(self):
         segment = {api.NETWORK_TYPE: 'gre',
@@ -133,7 +133,7 @@ class GreTypeTest(base.BaseTestCase):
         self.driver.release_segment(self.session, segment)
         alloc = self.driver.get_gre_allocation(self.session,
                                                segment[api.SEGMENTATION_ID])
-        self.assertEqual(None, alloc)
+        self.assertIsNone(alloc)
 
     def test_allocate_tenant_segment(self):
         tunnel_ids = set()
@@ -146,7 +146,7 @@ class GreTypeTest(base.BaseTestCase):
             tunnel_ids.add(segment[api.SEGMENTATION_ID])
 
         segment = self.driver.allocate_tenant_segment(self.session)
-        self.assertEqual(None, segment)
+        self.assertIsNone(segment)
 
         segment = {api.NETWORK_TYPE: 'gre',
                    api.PHYSICAL_NETWORK: 'None',
@@ -174,3 +174,34 @@ class GreTypeTest(base.BaseTestCase):
         for endpoint in endpoints:
             self.assertIn(endpoint['ip_address'],
                           [TUNNEL_IP_ONE, TUNNEL_IP_TWO])
+
+
+class GreTypeMultiRangeTest(base.BaseTestCase):
+
+    TUN_MIN0 = 100
+    TUN_MAX0 = 101
+    TUN_MIN1 = 200
+    TUN_MAX1 = 201
+    TUNNEL_MULTI_RANGES = [(TUN_MIN0, TUN_MAX0), (TUN_MIN1, TUN_MAX1)]
+
+    def setUp(self):
+        super(GreTypeMultiRangeTest, self).setUp()
+        db.configure_db()
+        self.driver = type_gre.GreTypeDriver()
+        self.driver.gre_id_ranges = self.TUNNEL_MULTI_RANGES
+        self.driver._sync_gre_allocations()
+        self.session = db.get_session()
+        self.addCleanup(db.clear_db)
+
+    def test_release_segment(self):
+        segments = [self.driver.allocate_tenant_segment(self.session)
+                    for i in range(4)]
+
+        # Release them in random order. No special meaning.
+        for i in (0, 2, 1, 3):
+            self.driver.release_segment(self.session, segments[i])
+
+        for key in (self.TUN_MIN0, self.TUN_MAX0,
+                    self.TUN_MIN1, self.TUN_MAX1):
+            alloc = self.driver.get_gre_allocation(self.session, key)
+            self.assertFalse(alloc.allocated)

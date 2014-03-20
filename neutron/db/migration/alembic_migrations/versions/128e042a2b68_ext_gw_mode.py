@@ -36,8 +36,15 @@ migration_for_plugins = [
     'neutron.plugins.ml2.plugin.Ml2Plugin',
     'neutron.plugins.nec.nec_plugin.NECPluginV2',
     'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
+    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
     'neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2',
-    'neutron.plugins.ryu.ryu_neutron_plugin.RyuNeutronPluginV2'
+    'neutron.plugins.ryu.ryu_neutron_plugin.RyuNeutronPluginV2',
+    'neutron.plugins.vmware.plugin.NsxPlugin',
+    'neutron.plugins.vmware.plugin.NsxServicePlugin',
+    'neutron.plugins.embrane.plugins.embrane_ovs_plugin.EmbraneOvsPlugin',
+    'neutron.plugins.ibm.sdnve_neutron_plugin.SdnvePluginV2',
+    'neutron.plugins.oneconvergence.plugin.OneConvergencePluginV2',
+    'neutron.plugins.cisco.network_plugin.PluginV2',
 ]
 
 from alembic import op

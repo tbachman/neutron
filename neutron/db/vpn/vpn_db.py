@@ -32,6 +32,7 @@ from neutron.db import models_v2
 from neutron.extensions import vpnaas
 from neutron.extensions.vpnaas import VPNPluginBase
 from neutron import manager
+from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -110,7 +111,7 @@ class IPsecSiteConnection(model_base.BASEV2,
     __tablename__ = 'ipsec_site_connections'
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(255))
-    peer_address = sa.Column(sa.String(64), nullable=False)
+    peer_address = sa.Column(sa.String(255), nullable=False)
     peer_id = sa.Column(sa.String(255), nullable=False)
     route_mode = sa.Column(sa.String(8), nullable=False)
     mtu = sa.Column(sa.Integer, nullable=False)
@@ -178,24 +179,24 @@ class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
         try:
             r = self._get_by_id(context, model, v_id)
         except exc.NoResultFound:
-            if issubclass(model, IPsecSiteConnection):
-                raise vpnaas.IPsecSiteConnectionNotFound(
-                    ipsec_site_conn_id=v_id
-                )
-            elif issubclass(model, IKEPolicy):
-                raise vpnaas.IKEPolicyNotFound(ikepolicy_id=v_id)
-            elif issubclass(model, IPsecPolicy):
-                raise vpnaas.IPsecPolicyNotFound(ipsecpolicy_id=v_id)
-            elif issubclass(model, VPNService):
-                raise vpnaas.VPNServiceNotFound(vpnservice_id=v_id)
-            else:
-                raise
+            with excutils.save_and_reraise_exception():
+                if issubclass(model, IPsecSiteConnection):
+                    raise vpnaas.IPsecSiteConnectionNotFound(
+                        ipsec_site_conn_id=v_id
+                    )
+                elif issubclass(model, IKEPolicy):
+                    raise vpnaas.IKEPolicyNotFound(ikepolicy_id=v_id)
+                elif issubclass(model, IPsecPolicy):
+                    raise vpnaas.IPsecPolicyNotFound(ipsecpolicy_id=v_id)
+                elif issubclass(model, VPNService):
+                    raise vpnaas.VPNServiceNotFound(vpnservice_id=v_id)
         return r
 
     def assert_update_allowed(self, obj):
         status = getattr(obj, 'status', None)
+        _id = getattr(obj, 'id', None)
         if utils.in_pending_status(status):
-            raise vpnaas.VPNStateInvalid(id=id, state=status)
+            raise vpnaas.VPNStateInvalidToUpdate(id=_id, state=status)
 
     def _make_ipsec_site_connection_dict(self, ipsec_site_conn, fields=None):
 
@@ -366,6 +367,25 @@ class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
                                     self._make_ipsec_site_connection_dict,
                                     filters=filters, fields=fields)
 
+    def update_ipsec_site_conn_status(self, context, conn_id, new_status):
+        with context.session.begin():
+            self._update_connection_status(context, conn_id, new_status, True)
+
+    def _update_connection_status(self, context, conn_id, new_status,
+                                  updated_pending):
+        """Update the connection status, if changed.
+
+        If the connection is not in a pending state, unconditionally update
+        the status. Likewise, if in a pending state, and have an indication
+        that the status has changed, then update the database.
+        """
+        try:
+            conn_db = self._get_ipsec_site_connection(context, conn_id)
+        except vpnaas.IPsecSiteConnectionNotFound:
+            return
+        if not utils.in_pending_status(conn_db.status) or updated_pending:
+            conn_db.status = new_status
+
     def _make_ikepolicy_dict(self, ikepolicy, fields=None):
         res = {'id': ikepolicy['id'],
                'tenant_id': ikepolicy['tenant_id'],
@@ -504,7 +524,7 @@ class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
                 if lifetime_info:
                     if lifetime_info.get('units'):
                         ipsecp['lifetime_units'] = lifetime_info['units']
-                    if lifetime_info('value'):
+                    if lifetime_info.get('value'):
                         ipsecp['lifetime_value'] = lifetime_info['value']
                 ipsecp_db.update(ipsecp)
         return self._make_ipsecpolicy_dict(ipsecp_db)
@@ -538,9 +558,30 @@ class VPNPluginDb(VPNPluginBase, base_db.CommonDbMixin):
                'status': vpnservice['status']}
         return self._fields(res, fields)
 
+    def _check_router(self, context, router_id):
+        l3_plugin = manager.NeutronManager.get_service_plugins().get(
+            constants.L3_ROUTER_NAT)
+        router = l3_plugin.get_router(context, router_id)
+        if not router.get(l3_db.EXTERNAL_GW_INFO):
+            raise vpnaas.RouterIsNotExternal(router_id=router_id)
+
+    def _check_subnet_id(self, context, router_id, subnet_id):
+        core_plugin = manager.NeutronManager.get_plugin()
+        ports = core_plugin.get_ports(
+            context,
+            filters={
+                'fixed_ips': {'subnet_id': [subnet_id]},
+                'device_id': [router_id]})
+        if not ports:
+            raise vpnaas.SubnetIsNotConnectedToRouter(
+                subnet_id=subnet_id,
+                router_id=router_id)
+
     def create_vpnservice(self, context, vpnservice):
         vpns = vpnservice['vpnservice']
         tenant_id = self._get_tenant_id_for_create(context, vpns)
+        self._check_router(context, vpns['router_id'])
+        self._check_subnet_id(context, vpns['router_id'], vpns['subnet_id'])
         with context.session.begin(subtransactions=True):
             vpnservice_db = VPNService(id=uuidutils.generate_uuid(),
                                        tenant_id=tenant_id,
@@ -645,11 +686,6 @@ class VPNPluginRpcDbMixin():
                     vpnservice_db.status = vpnservice['status']
                 for conn_id, conn in vpnservice[
                     'ipsec_site_connections'].items():
-                    try:
-                        conn_db = self._get_ipsec_site_connection(
-                            context, conn_id)
-                    except vpnaas.IPsecSiteConnectionNotFound:
-                        continue
-                    if (not utils.in_pending_status(conn_db.status)
-                        or conn['updated_pending_status']):
-                        conn_db.status = conn['status']
+                    self._update_connection_status(
+                        context, conn_id, conn['status'],
+                        conn['updated_pending_status'])

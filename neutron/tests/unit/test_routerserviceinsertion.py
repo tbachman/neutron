@@ -52,8 +52,8 @@ class RouterServiceInsertionTestPlugin(
     db_base_plugin_v2.NeutronDbPluginV2):
 
     supported_extension_aliases = [
-        "router", "router-service-type",
-        "routed-service-insertion", "service-type", "lbaas"
+        "router", "router-service-type", "routed-service-insertion",
+        "service-type", "lbaas"
     ]
 
     def create_router(self, context, router):
@@ -104,7 +104,7 @@ class RouterServiceInsertionTestPlugin(
         o = method(context, id, fields)
         if fields is None or rsi.ROUTER_ID in fields:
             rsbind = self._get_resource_router_id_binding(
-                context, id, model)
+                context, model, id)
             if rsbind:
                 o[rsi.ROUTER_ID] = rsbind['router_id']
         return o
@@ -116,7 +116,7 @@ class RouterServiceInsertionTestPlugin(
                              method_name)
             method(context, id)
             self._delete_resource_router_id_binding(context, id, model)
-        if self._get_resource_router_id_binding(context, id, model):
+        if self._get_resource_router_id_binding(context, model, id):
             raise Exception("{0}-router binding is not deleted".format(res))
 
     def create_pool(self, context, pool):
@@ -167,13 +167,10 @@ class RouterServiceInsertionTestCase(base.BaseTestCase):
         config.parse(args=args)
 
         #just stubbing core plugin with LoadBalancer plugin
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override('service_plugins', [])
         cfg.CONF.set_override('quota_router', -1, group='QUOTAS')
         self.addCleanup(cfg.CONF.reset)
-
-        # Ensure 'stale' patched copies of the plugin are never returned
-        neutron.manager.NeutronManager._instance = None
 
         # Ensure existing ExtensionManager is not used
 
@@ -269,7 +266,7 @@ class RouterServiceInsertionTestCase(base.BaseTestCase):
 
     def test_router_create_no_service_type_id(self):
         router = self._router_create()
-        self.assertEqual(router.get('service_type_id'), None)
+        self.assertIsNone(router.get('service_type_id'))
 
     def test_router_create_with_service_type_id(self):
         router = self._router_create(self._service_type_id)

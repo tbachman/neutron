@@ -23,9 +23,9 @@
 """
 Installation script for Neutron's development virtualenv
 """
+from __future__ import print_function
 
 import os
-import subprocess
 import sys
 
 import install_venv_common as install_venv
@@ -50,7 +50,7 @@ def print_help():
 
  Also, make test will automatically use the virtualenv.
     """
-    print help
+    print(help)
 
 
 def main(argv):
@@ -67,7 +67,6 @@ def main(argv):
     install.check_dependencies()
     install.create_virtualenv(no_site_packages=options.no_site_packages)
     install.install_dependencies()
-    install.post_process()
     print_help()
 
 

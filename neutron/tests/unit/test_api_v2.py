@@ -16,26 +16,29 @@
 #    under the License.
 
 import os
-import urlparse
 
 import mock
 from oslo.config import cfg
+import six.moves.urllib.parse as urlparse
 import webob
 from webob import exc
 import webtest
 
 from neutron.api import api_common
 from neutron.api.extensions import PluginAwareExtensionManager
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.api.v2 import base as v2_base
 from neutron.api.v2 import router
 from neutron.common import config
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.manager import NeutronManager
 from neutron.openstack.common.notifier import api as notifer_api
 from neutron.openstack.common import policy as common_policy
 from neutron.openstack.common import uuidutils
+from neutron import policy
+from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit import testlib_api
 
@@ -96,15 +99,13 @@ class APIv2TestBase(base.BaseTestCase):
         super(APIv2TestBase, self).setUp()
 
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
-        # Ensure 'stale' patched copies of the plugin are never returned
-        NeutronManager._instance = None
         # Ensure existing ExtensionManager is not used
         PluginAwareExtensionManager._instance = None
         # Create the default configurations
         args = ['--config-file', etcdir('neutron.conf.test')]
         config.parse(args=args)
         # Update the plugin
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override('allow_pagination', True)
         cfg.CONF.set_override('allow_sorting', True)
         self._plugin_patcher = mock.patch(plugin, autospec=True)
@@ -117,6 +118,10 @@ class APIv2TestBase(base.BaseTestCase):
 
         api = router.APIRouter()
         self.api = webtest.TestApp(api)
+
+        quota.QUOTAS._driver = None
+        cfg.CONF.set_override('quota_driver', 'neutron.quota.ConfDriver',
+                              group='QUOTAS')
 
 
 class _ArgMatcher(object):
@@ -500,7 +505,7 @@ class APIv2TestCase(APIv2TestBase):
     def test_native_pagination_without_native_sorting(self):
         instance = self.plugin.return_value
         instance._NeutronPluginBaseV2__native_sorting_support = False
-        self.assertRaises(q_exc.Invalid, router.APIRouter)
+        self.assertRaises(n_exc.Invalid, router.APIRouter)
 
     def test_native_pagination_without_allow_sorting(self):
         cfg.CONF.set_override('allow_sorting', False)
@@ -1055,6 +1060,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
     def test_get_keystone_strip_admin_only_attribute(self):
         tenant_id = _uuid()
         # Inject rule in policy engine
+        policy.init()
         common_policy._rules['get_network:name'] = common_policy.parse_rule(
             "rule:admin_only")
         res = self._test_get(tenant_id, tenant_id, 200)
@@ -1125,7 +1131,6 @@ class SubresourceTest(base.BaseTestCase):
         super(SubresourceTest, self).setUp()
 
         plugin = 'neutron.tests.unit.test_api_v2.TestSubresourcePlugin'
-        NeutronManager._instance = None
         PluginAwareExtensionManager._instance = None
 
         # Save the global RESOURCE_ATTRIBUTE_MAP
@@ -1135,7 +1140,7 @@ class SubresourceTest(base.BaseTestCase):
 
         args = ['--config-file', etcdir('neutron.conf.test')]
         config.parse(args=args)
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
 
         self._plugin_patcher = mock.patch(plugin, autospec=True)
         self.plugin = self._plugin_patcher.start()
@@ -1301,6 +1306,57 @@ class NotificationTest(APIv2TestBase):
                                    notification_level='DEBUG')
 
 
+class DHCPNotificationTest(APIv2TestBase):
+    def _test_dhcp_notifier(self, opname, resource, initial_input=None):
+        instance = self.plugin.return_value
+        instance.get_networks.return_value = initial_input
+        instance.get_networks_count.return_value = 0
+        expected_code = exc.HTTPCreated.code
+        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
+                               'notify') as dhcp_notifier:
+            if opname == 'create':
+                res = self.api.post_json(
+                    _get_path('networks'),
+                    initial_input)
+            if opname == 'update':
+                res = self.api.put_json(
+                    _get_path('networks', id=_uuid()),
+                    initial_input)
+                expected_code = exc.HTTPOk.code
+            if opname == 'delete':
+                res = self.api.delete(_get_path('networks', id=_uuid()))
+                expected_code = exc.HTTPNoContent.code
+            expected_item = mock.call(mock.ANY, mock.ANY,
+                                      resource + "." + opname + ".end")
+            if initial_input and resource not in initial_input:
+                resource += 's'
+            num = len(initial_input[resource]) if initial_input and isinstance(
+                initial_input[resource], list) else 1
+            expected = [expected_item for x in xrange(num)]
+            self.assertEqual(expected, dhcp_notifier.call_args_list)
+            self.assertEqual(num, dhcp_notifier.call_count)
+        self.assertEqual(expected_code, res.status_int)
+
+    def test_network_create_dhcp_notifer(self):
+        input = {'network': {'name': 'net',
+                             'tenant_id': _uuid()}}
+        self._test_dhcp_notifier('create', 'network', input)
+
+    def test_network_delete_dhcp_notifer(self):
+        self._test_dhcp_notifier('delete', 'network')
+
+    def test_network_update_dhcp_notifer(self):
+        input = {'network': {'name': 'net'}}
+        self._test_dhcp_notifier('update', 'network', input)
+
+    def test_networks_create_bulk_dhcp_notifer(self):
+        input = {'networks': [{'name': 'net1',
+                               'tenant_id': _uuid()},
+                              {'name': 'net2',
+                               'tenant_id': _uuid()}]}
+        self._test_dhcp_notifier('create', 'network', input)
+
+
 class QuotaTest(APIv2TestBase):
     def test_create_network_quota(self):
         cfg.CONF.set_override('quota_network', 1, group='QUOTAS')
@@ -1315,7 +1371,7 @@ class QuotaTest(APIv2TestBase):
         instance.get_networks_count.assert_called_with(mock.ANY,
                                                        filters=mock.ANY)
         self.assertIn("Quota exceeded for resources",
-                      res.json['NeutronError'])
+                      res.json['NeutronError']['message'])
 
     def test_create_network_quota_no_counts(self):
         cfg.CONF.set_override('quota_network', 1, group='QUOTAS')
@@ -1332,7 +1388,7 @@ class QuotaTest(APIv2TestBase):
         instance.get_networks_count.assert_called_with(mock.ANY,
                                                        filters=mock.ANY)
         self.assertIn("Quota exceeded for resources",
-                      res.json['NeutronError'])
+                      res.json['NeutronError']['message'])
 
     def test_create_network_quota_without_limit(self):
         cfg.CONF.set_override('quota_network', -1, group='QUOTAS')
@@ -1349,9 +1405,6 @@ class ExtensionTestCase(base.BaseTestCase):
         super(ExtensionTestCase, self).setUp()
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
 
-        # Ensure 'stale' patched copies of the plugin are never returned
-        NeutronManager._instance = None
-
         # Ensure existing ExtensionManager is not used
         PluginAwareExtensionManager._instance = None
 
@@ -1365,7 +1418,7 @@ class ExtensionTestCase(base.BaseTestCase):
         config.parse(args=args)
 
         # Update the plugin and extensions path
-        cfg.CONF.set_override('core_plugin', plugin)
+        self.setup_coreplugin(plugin)
         cfg.CONF.set_override('api_extensions_path', EXTDIR)
 
         self._plugin_patcher = mock.patch(plugin, autospec=True)
@@ -1376,6 +1429,10 @@ class ExtensionTestCase(base.BaseTestCase):
 
         api = router.APIRouter()
         self.api = webtest.TestApp(api)
+
+        quota.QUOTAS._driver = None
+        cfg.CONF.set_override('quota_driver', 'neutron.quota.ConfDriver',
+                              group='QUOTAS')
 
     def tearDown(self):
         super(ExtensionTestCase, self).tearDown()

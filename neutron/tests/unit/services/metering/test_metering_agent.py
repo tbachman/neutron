@@ -70,8 +70,6 @@ class TestMeteringOperations(base.BaseTestCase):
         self.agent = metering_agent.MeteringAgent('my agent', cfg.CONF)
         self.driver = self.agent.metering_driver
 
-        self.addCleanup(mock.patch.stopall)
-
     def tearDown(self):
         test_notifier.NOTIFICATIONS = []
         super(TestMeteringOperations, self).tearDown()
@@ -132,3 +130,37 @@ class TestMeteringOperations(base.BaseTestCase):
         self.assertEqual(self.driver.remove_router.call_count, 1)
 
         self.agent._add_metering_info.assert_called_with(label_id, 44, 222)
+
+
+class TestMeteringDriver(base.BaseTestCase):
+    def setUp(self):
+        super(TestMeteringDriver, self).setUp()
+        cfg.CONF.register_opts(metering_agent.MeteringAgent.Opts)
+        config.register_root_helper(cfg.CONF)
+
+        self.noop_driver = ('neutron.services.metering.drivers.noop.'
+                            'noop_driver.NoopMeteringDriver')
+        cfg.CONF.set_override('driver', self.noop_driver)
+
+        self.agent = metering_agent.MeteringAgent('my agent', cfg.CONF)
+        self.driver = mock.Mock()
+        self.agent.metering_driver = self.driver
+
+    def test_add_metering_label_with_bad_driver_impl(self):
+        del self.driver.add_metering_label
+
+        with mock.patch.object(metering_agent, 'LOG') as log:
+            self.agent.add_metering_label(None, ROUTERS)
+            log.exception.assert_called_with(mock.ANY,
+                                             {'driver': self.noop_driver,
+                                              'func': 'add_metering_label'})
+
+    def test_add_metering_label_runtime_error(self):
+        self.driver.add_metering_label.side_effect = RuntimeError
+
+        with mock.patch.object(metering_agent, 'LOG') as log:
+            self.agent.add_metering_label(None, ROUTERS)
+            log.exception.assert_called_with(mock.ANY,
+                                             {'driver': self.noop_driver,
+                                              'func':
+                                              'add_metering_label'})

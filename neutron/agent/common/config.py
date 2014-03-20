@@ -32,8 +32,20 @@ ROOT_HELPER_OPTS = [
 ]
 
 AGENT_STATE_OPTS = [
-    cfg.IntOpt('report_interval', default=4,
-               help=_('Seconds between nodes reporting state to server')),
+    cfg.FloatOpt('report_interval', default=4,
+                 help=_('Seconds between nodes reporting state to server; '
+                        'should be less than agent_down_time, best if it '
+                        'is half or less than agent_down_time.')),
+]
+
+INTERFACE_DRIVER_OPTS = [
+    cfg.StrOpt('interface_driver',
+               help=_("The driver used to manage the virtual interface.")),
+]
+
+USE_NAMESPACES_OPTS = [
+    cfg.BoolOpt('use_namespaces', default=True,
+                help=_("Allow overlapping IP.")),
 ]
 
 
@@ -74,13 +86,21 @@ def register_agent_state_opts_helper(conf):
     conf.register_opts(AGENT_STATE_OPTS, 'AGENT')
 
 
+def register_interface_driver_opts_helper(conf):
+    conf.register_opts(INTERFACE_DRIVER_OPTS)
+
+
+def register_use_namespaces_opts_helper(conf):
+    conf.register_opts(USE_NAMESPACES_OPTS)
+
+
 def get_root_helper(conf):
     root_helper = conf.AGENT.root_helper
-    if root_helper is not 'sudo':
+    if root_helper != 'sudo':
         return root_helper
 
     root_helper = conf.root_helper
-    if root_helper is not 'sudo':
+    if root_helper != 'sudo':
         LOG.deprecated(_('DEFAULT.root_helper is deprecated! Please move '
                          'root_helper configuration to [AGENT] section.'))
         return root_helper

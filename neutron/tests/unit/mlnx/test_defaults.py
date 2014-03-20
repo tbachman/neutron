@@ -1,4 +1,4 @@
-# Copyright (c) 2013 OpenStack, LLC.
+# Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,12 +25,15 @@ class ConfigurationTest(base.BaseTestCase):
     def test_defaults(self):
         self.assertEqual(2,
                          cfg.CONF.AGENT.polling_interval)
-        self.assertEqual('sudo',
-                         cfg.CONF.AGENT.root_helper)
         self.assertEqual('vlan',
                          cfg.CONF.MLNX.tenant_network_type)
         self.assertEqual(1,
                          len(cfg.CONF.MLNX.network_vlan_ranges))
+        self.assertEqual('eth',
+                         cfg.CONF.MLNX.physical_network_type)
+        self.assertFalse(cfg.CONF.MLNX.physical_network_type_mappings)
         self.assertEqual(0,
                          len(cfg.CONF.ESWITCH.
                              physical_interface_mappings))
+        self.assertEqual('tcp://127.0.0.1:60001',
+                         cfg.CONF.ESWITCH.daemon_endpoint)

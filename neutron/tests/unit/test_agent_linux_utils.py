@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2012, Nicira, Inc.
+# Copyright 2012, VMware, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,10 +11,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Dan Wendlandt, Nicira, Inc.
 
 import fixtures
 import mock
+import testtools
 
 from neutron.agent.linux import utils
 from neutron.tests import base
@@ -29,9 +27,9 @@ class AgentUtilsExecuteTest(base.BaseTestCase):
         self.test_file = self.useFixture(
             fixtures.TempDir()).join("test_execute.tmp")
         open(self.test_file, 'w').close()
-        instance = mock.patch("subprocess.Popen.communicate")
-        self.mock_popen = instance.start()
-        self.addCleanup(self.mock_popen.stop)
+        self.mock_popen_p = mock.patch("subprocess.Popen.communicate")
+        self.mock_popen = self.mock_popen_p.start()
+        self.addCleanup(self.mock_popen_p.stop)
 
     def test_without_helper(self):
         expected = "%s\n" % self.test_file
@@ -106,3 +104,25 @@ class AgentUtilsReplaceFile(base.BaseTestCase):
                     ntf.assert_has_calls(expected)
                     chmod.assert_called_once_with('/baz', 0o644)
                     rename.assert_called_once_with('/baz', '/foo')
+
+
+class TestFindChildPids(base.BaseTestCase):
+
+    def test_returns_empty_list_for_exit_code_1(self):
+        with mock.patch.object(utils, 'execute',
+                               side_effect=RuntimeError('Exit code: 1')):
+            self.assertEqual(utils.find_child_pids(-1), [])
+
+    def test_returns_empty_list_for_no_output(self):
+        with mock.patch.object(utils, 'execute', return_value=''):
+            self.assertEqual(utils.find_child_pids(-1), [])
+
+    def test_returns_list_of_child_process_ids_for_good_ouput(self):
+        with mock.patch.object(utils, 'execute', return_value=' 123 \n 185\n'):
+            self.assertEqual(utils.find_child_pids(-1), ['123', '185'])
+
+    def test_raises_unknown_exception(self):
+        with testtools.ExpectedException(RuntimeError):
+            with mock.patch.object(utils, 'execute',
+                                   side_effect=RuntimeError()):
+                utils.find_child_pids(-1)
