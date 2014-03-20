@@ -1262,27 +1262,29 @@ class NetworkProfile_db_mixin(object):
          :param network_profile: network profile object
          """
          try:
-             LOG.debug("multicast_ip_range %s",
-                       network_profile['multicast_ip_range'])
-             min_ip, max_ip = network_profile['multicast_ip_range'].split('-')
-             LOG.debug("min_ip %s, max_ip %s", min_ip, max_ip)
-             if not netaddr.IPAddress(min_ip).is_multicast():
-                 msg = (_("'%s' is not a valid multicast ip") % min_ip)
-                 LOG.exception(msg)
-                 raise q_exc.InvalidInput(error_message=msg)
-             if not netaddr.IPAddress(max_ip).is_multicast():
-                 msg = (_("'%s' is not a valid multicast ip") % max_ip)
-                 LOG.exception(msg)
-                 raise q_exc.InvalidInput(error_message=msg)
-         except q_exc.InvalidInput:
-             LOG.exception(msg)
-             raise q_exc.InvalidInput(error_message=msg)
-         except Exception:
-             msg = _("invalid multicast ip address range. "
+            min_ip, max_ip = (network_profile
+                              ['multicast_ip_range'].split('-', 1))
+         except ValueError:
+             msg = _("Invalid multicast ip address range. "
                      "example range: 224.1.1.1-224.1.1.10")
-             LOG.exception(msg)
-             raise q_exc.InvalidInput(error_message=msg)
- 
+             LOG.error(msg)
+             raise n_exc.InvalidInput(error_message=msg)
+         for ip in [min_ip, max_ip]:
+             try:
+                 if not netaddr.IPAddress(ip).is_multicast():
+                     msg = _("%s is not a valid multicast ip address") % ip
+                     LOG.error(msg)
+                     raise n_exc.InvalidInput(error_message=msg)
+             except netaddr.AddrFormatError:
+                 msg = _("%s is not a valid ip address") % ip
+                 LOG.error(msg)
+                 raise n_exc.InvalidInput(error_message=msg)
+         if netaddr.IPAddress(min_ip) > netaddr.IPAddress(max_ip):
+             msg = (_("Invalid multicast IP range '%(min_ip)s-%(max_ip)s':"
+                      " Range should be from low address to high address") %
+                    {'min_ip': min_ip, 'max_ip': max_ip})
+             LOG.error(msg)
+             raise n_exc.InvalidInput(error_message=msg) 
 
     def _validate_segment_range(self, network_profile):
         """
