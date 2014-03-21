@@ -98,6 +98,7 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
                                 hosting_device_ids=hd_ids),
                   topic=self.topic)
 
+#ToDo: Placeholder for PluginAPI for other services
 
 class CiscoCfgAgent(manager.Manager):
     """Cisco Cfg Agent.
@@ -136,14 +137,17 @@ class CiscoCfgAgent(manager.Manager):
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
         self.context = context.get_admin_context_without_session()
+        #Flags
         self.fullsync = True
         self.sync_progress = False
         self.admin_status_up = True
-
+        # Routing service data structures
         self.router_info = {}
         self.updated_routers = set()
         self.removed_routers = set()
-        ## Place holder Data structures for VPNs, FWs etc
+        #ToDo: Place holder for data structures of other services
+
+        #Other references held by the cfg agent
         self._hdm = HostingDevicesManager()
         self._initialize_service_helpers()
         self._initialize_plugin_rpc(host)
@@ -343,12 +347,16 @@ class CiscoCfgAgent(manager.Manager):
         return hosting_devices
 
     ## Main orchestrator ##
-        #ToDo(Hareesh)
     def process_services(self, hosting_device_id, resources):
-        """
+        """Process services associated with a hosting device.
 
-        :param resources:
-        :return:
+        This method dictates the order of processing of services.
+        Any cross dependencies should be solved here, thus making it a
+        single point of change for interaction among services.
+
+        :param resources: dict of resources. Valid keys now are 'routers',
+        'removed_routers' and 'all_routers'(flag)
+        :return: None
         """
         LOG.debug(_("Processing hosting device: %d"), hosting_device_id)
         # First we process routing service
@@ -380,7 +388,6 @@ class CiscoCfgAgent(manager.Manager):
         :param all_routers: Flag for specifying a partial list of routers
         :return: None
         """
-        pool = eventlet.GreenPool()
         if (self.conf.external_network_bridge and
                 not (ip_lib.device_exists(self.conf.external_network_bridge))):
             LOG.error(_("The external network bridge '%s' does not exist"),
@@ -418,11 +425,10 @@ class CiscoCfgAgent(manager.Manager):
                 self._router_added(r['id'], r)
             ri = self.router_info[r['id']]
             ri.router = r
-            pool.spawn_n(self.process_router, ri)
+            self.process_router(ri)
             # identify and remove routers that no longer exist
         for router_id in prev_router_ids - cur_router_ids:
-            pool.spawn_n(self._router_removed, router_id)
-        pool.waitall()
+            self._router_removed(router_id)
 
     def process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
@@ -563,6 +569,8 @@ class CiscoCfgAgent(manager.Manager):
                 context, hd_ids=res['dead'])
 
 
+#ToDo(Hareesh): Note this class will be moved to a service_helpers.py file.
+# Also the stiching between this and the agent is not complete yet.
 class RoutingServiceHelper(object):
 
     def __init__(self, cfg_agent):
@@ -625,12 +633,11 @@ class RoutingServiceHelper(object):
             # end up there too if exception was thrown inside `process_router`
             self.agent.updated_routers.discard(router_id)
 
-    def _process_router_delete(self):
+    def _process_router_delete(self, removed_routers):
         """Process routers in the `removed_routers` set."""
-        current_removed_routers = list(self.agent.removed_routers)
-        for router_id in current_removed_routers:
-            self._router_removed(router_id)
-            self.agent.removed_routers.remove(router_id)
+        for router in removed_routers:
+            self._router_removed(router['id'])
+            self.agent.removed_routers.remove(router['id'])
 
     def internal_network_added(self, ri, port, ex_gw_port):
         driver = self._hdm.get_driver(ri)
