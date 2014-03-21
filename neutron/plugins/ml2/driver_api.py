@@ -64,20 +64,26 @@ class TypeDriver(object):
         """
         pass
 
-    @abstractmethod
     def create_network(self, context):
         pass
 
-    @abstractmethod
+    def delete_network(self, context):
+        pass
+
     def create_subnet(self, context):
         pass
 
-    @abstractmethod
+    def delete_subnet(self, context):
+        pass
+
     def create_port(self, context):
         pass
 
+    def delete_port(self, context):
+        pass
+
     @abstractmethod
-    def get_segment(self, context):
+    def get_segment(self, context, network_id):
         pass
 
 

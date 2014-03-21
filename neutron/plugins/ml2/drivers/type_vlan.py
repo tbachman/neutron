@@ -18,6 +18,7 @@ import sys
 from oslo.config import cfg
 import sqlalchemy as sa
 
+from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
 from neutron.common import exceptions as exc
 from neutron.common import utils
@@ -27,6 +28,7 @@ from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.common import utils as plugin_utils
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers.type_driver_common import TypeDriverMixin
 
 LOG = log.getLogger(__name__)
 
@@ -64,9 +66,10 @@ class VlanAllocation(model_base.BASEV2):
     vlan_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
                         autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False)
+    network_id = sa.Column(sa.String(255), nullable=True)
 
 
-class VlanTypeDriver(api.TypeDriver):
+class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
     """Manage state for VLAN networks with ML2.
 
     The VlanTypeDriver implements the 'vlan' network_type. VLAN
@@ -159,6 +162,34 @@ class VlanTypeDriver(api.TypeDriver):
         self._sync_vlan_allocations()
         LOG.info(_("VlanTypeDriver initialization complete"))
 
+    def create_network(self, session, context):
+        net_data = context._network
+        segments = self._process_provider_create(net_data)
+        net_id = net_data.get('id')
+
+        if segments:
+            all_segments = []
+            for segment in segments:
+                one_seg = self.reserve_provider_segment(session, segment)
+                all_segments.append(one_seg)
+            return all_segments
+        else:
+            return self.allocate_tenant_segment(session, net_id)
+
+    def delete_network(self, session, context):
+        net_data = context._network
+        net_id = net_data.get('id')
+        self.release_segment(session, net_id)
+
+    def get_segment(self, context, network_id):
+        LOG.debug(_("Returning segments for network %s") % network_id)
+        alloc = (context.session.query(VlanAllocation).
+                 filter_by(network_id=network_id).one())
+
+        return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                api.PHYSICAL_NETWORK: alloc.physical_network,
+                api.SEGMENTATION_ID: alloc.vlan_id}
+        
     def validate_provider_segment(self, segment):
         physical_network = segment.get(api.PHYSICAL_NETWORK)
         if not physical_network:
@@ -205,6 +236,9 @@ class VlanTypeDriver(api.TypeDriver):
                           {'vlan_id': vlan_id,
                            'physical_network': physical_network})
                 alloc.allocated = True
+                return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                        api.PHYSICAL_NETWORK: alloc.physical_network,
+                        api.SEGMENTATION_ID: alloc.vlan_id}
             except sa.orm.exc.NoResultFound:
                 LOG.debug(_("Reserving specific vlan %(vlan_id)s on physical "
                             "network %(physical_network)s outside pool"),
@@ -214,8 +248,11 @@ class VlanTypeDriver(api.TypeDriver):
                                        vlan_id=vlan_id,
                                        allocated=True)
                 session.add(alloc)
+                return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                        api.PHYSICAL_NETWORK: alloc.physical_network,
+                        api.SEGMENTATION_ID: alloc.vlan_id}
 
-    def allocate_tenant_segment(self, session):
+    def allocate_tenant_segment(self, session, network_id):
         with session.begin(subtransactions=True):
             alloc = (session.query(VlanAllocation).
                      filter_by(allocated=False).
@@ -223,26 +260,29 @@ class VlanTypeDriver(api.TypeDriver):
                      first())
             if alloc:
                 LOG.debug(_("Allocating vlan %(vlan_id)s on physical network "
-                            "%(physical_network)s from pool"),
+                            "%(physical_network)s from pool"
+                            "for network %(network_id)s"),
                           {'vlan_id': alloc.vlan_id,
-                           'physical_network': alloc.physical_network})
+                           'physical_network': alloc.physical_network,
+                           'network_id': network_id})
                 alloc.allocated = True
-                return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                alloc.network_id = network_id
+                return ({api.NETWORK_TYPE: p_const.TYPE_VLAN,
                         api.PHYSICAL_NETWORK: alloc.physical_network,
-                        api.SEGMENTATION_ID: alloc.vlan_id}
+                        api.SEGMENTATION_ID: alloc.vlan_id})
 
-    def release_segment(self, session, segment):
-        physical_network = segment[api.PHYSICAL_NETWORK]
-        vlan_id = segment[api.SEGMENTATION_ID]
+    def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):
             try:
                 alloc = (session.query(VlanAllocation).
-                         filter_by(physical_network=physical_network,
-                                   vlan_id=vlan_id).
+                         filter_by(network_id=network_id).
                          with_lockmode('update').
                          one())
                 alloc.allocated = False
+                alloc.network_id = None
                 inside = False
+                vlan_id = alloc.vlan_id
+                physical_network = alloc.physical_network
                 for vlan_min, vlan_max in self.network_vlan_ranges.get(
                     physical_network, []):
                     if vlan_min <= vlan_id <= vlan_max:

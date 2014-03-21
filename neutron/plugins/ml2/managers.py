@@ -73,34 +73,46 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             LOG.info(_("Initializing driver for type '%s'"), network_type)
             driver.obj.initialize()
 
-    def create_network(self, context):
+    def create_network(self, session, context):
+        segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segment = driver.obj.create_network(context)
+            segments.append(driver.obj.create_network(session, context))
 
-    def create_subnet(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.create_subnet(context)
+        return segments
 
-    def create_port(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.create_port(context)
+    def create_subnet(self, session, context):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.create_subnet(session, context)
 
-    def get_segment(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.get_segment(context)
+    def create_port(self, session, context):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.create_port(session, context)
 
-    def delete_network(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.delete_network(context)
+    def get_segments(self, session, network_id):
+        segments = []
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            segments.append(driver.obj.get_segment(session, network_id))
 
-    def delete_subnet(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.delete_subnet(context)
+        return segments
 
-    def delete_port(self, context):
-        driver = self.drivers.get(network_type)
-        driver.obj.delete_port(context)
+    def delete_network(self, session, context):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.delete_network(session, context)
+
+    def delete_subnet(self, session, context):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.delete_subnet(session, context)
+
+    def delete_port(self, session, context):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.delete_port(session, context)
 
 
 class MechanismManager(stevedore.named.NamedExtensionManager):

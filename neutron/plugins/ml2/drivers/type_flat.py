@@ -21,6 +21,11 @@ from neutron.db import model_base
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
+from neutron.extensions import multiprovidernet as mpnet
+from neutron.extensions import portbindings
+from neutron.extensions import providernet as provider
+from neutron import manager
+from neutron.api.v2 import attributes
 
 LOG = log.getLogger(__name__)
 
@@ -79,9 +84,14 @@ class FlatTypeDriver(api.TypeDriver):
     def initialize(self):
         LOG.info(_("ML2 FlatTypeDriver initialization complete"))
 
-    def create_network(self, context):
-        print "\n\n\n\n\n%s\n\n\n\n" % context.__dict__
+    def create_network(self, session, context):
+        net_data = context._network
         segments = self._process_provider_create(net_data)
+        if segments:
+            for segment in segments:
+                self.reserve_provider_segment(session, segment)
+        else:
+            self.allocate_tenant_segment(session)
 
     def create_subnet(self, context):
         pass
@@ -91,6 +101,49 @@ class FlatTypeDriver(api.TypeDriver):
 
     def get_segment(self, context):
         pass
+
+    def _process_provider_segment(self, segment):
+        network_type = self._get_attribute(segment, provider.NETWORK_TYPE)
+        physical_network = self._get_attribute(segment,
+                                               provider.PHYSICAL_NETWORK)
+        segmentation_id = self._get_attribute(segment,
+                                              provider.SEGMENTATION_ID)
+
+        if attributes.is_attr_set(network_type):
+            segment = {api.NETWORK_TYPE: network_type,
+                       api.PHYSICAL_NETWORK: physical_network,
+                       api.SEGMENTATION_ID: segmentation_id}
+            self.type_manager.validate_provider_segment(segment)
+            return segment
+
+        msg = _("network_type required")
+        raise exc.InvalidInput(error_message=msg)
+
+    def _process_provider_create(self, network):
+        segments = []
+
+        if any(attributes.is_attr_set(network.get(f))
+               for f in (provider.NETWORK_TYPE, provider.PHYSICAL_NETWORK,
+                         provider.SEGMENTATION_ID)):
+            # Verify that multiprovider and provider attributes are not set
+            # at the same time.
+            if attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+                raise mpnet.SegmentsSetInConjunctionWithProviders()
+
+            network_type = self._get_attribute(network, provider.NETWORK_TYPE)
+            physical_network = self._get_attribute(network,
+                                                   provider.PHYSICAL_NETWORK)
+            segmentation_id = self._get_attribute(network,
+                                                  provider.SEGMENTATION_ID)
+            segments = [{provider.NETWORK_TYPE: network_type,
+                         provider.PHYSICAL_NETWORK: physical_network,
+                         provider.SEGMENTATION_ID: segmentation_id}]
+        elif attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+            segments = network[mpnet.SEGMENTS]
+        else:
+            return
+
+        return [self._process_provider_segment(s) for s in segments]
 
     def validate_provider_segment(self, segment):
         physical_network = segment.get(api.PHYSICAL_NETWORK)
