@@ -91,8 +91,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     credentials = orm.relationship(DeviceCredential)
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
-    # number of allocated slots in this hosting device
-    allocated_slots = sa.Column(sa.Integer, autoincrement=False)
+#    # number of allocated slots in this hosting device
+#    allocated_slots = sa.Column(sa.Integer, autoincrement=False)
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
     # 'ip_address' is address of hosting device's management interface
     ip_address = sa.Column(sa.String(64), nullable=False)
@@ -113,6 +113,22 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # own/place resources on this hosting device
     tenant_bound = sa.Column(sa.String(36))
     auto_delete_on_fail = sa.Column(sa.Boolean, default=True, nullable=False)
+
+
+class SlotAllocation(model_base.BASEV2):
+    """Tracks allocation of slots in hosting devices."""
+    template_id = sa.Column(sa.String(36),
+                            sa.ForeignKey('hostingdevicetemplates.id'),
+                            nullable=False)
+    hosting_device_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey('hostingdevices.id'),
+                                  nullable=False)
+    logical_resource_id = sa.Column(sa.String(36), primary_key=True,
+                                    nullable=False)
+    # id of tenant owning logical resource
+    logical_resource_owner = sa.Column(sa.String(36), nullable=False)
+    num_allocated = sa.Column(sa.Integer, autoincrement=False, nullable=False)
+    tenant_bound = sa.Column(sa.String(36))
 
 
 class RouterType(model_base.BASEV2, models_v2.HasId):

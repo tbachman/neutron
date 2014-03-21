@@ -26,7 +26,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 
-
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron import context as neutron_context
@@ -40,6 +39,7 @@ from neutron.plugins.cisco.l3.common import service_vm_lib
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
+from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
 
 LOG = logging.getLogger(__name__)
 
@@ -104,17 +104,17 @@ class HostingDeviceManager(object):
     _plugging_drivers = {}
     _hosting_device_drivers = {}
 
-    # Dictionary of slot counter (dictionaries) for resource management:
-    #  { <template_id1>: {
-    #      'lock': threading.RLock(),
-    #      'available': <int>,   # 'available' only count tenant unbound slots
-    #      'desired': <int> # number of tenant unbound slots to keep available
-    #    },
-    #    <template_id2>: ...}
-    _slots = {}
+#    # Dictionary of slot counter (dictionaries) for resource management:
+#    #  { <template_id1>: {
+#    #      'lock': threading.RLock(),
+#    #      'available': <int>,   # 'available' only count tenant unbound slots
+#    #      'desired': <int> # number of tenant unbound slots to keep available
+#    #    },
+#    #    <template_id2>: ...}
+#    _slots = {}
 
-    # Dictionary of hosting device capacity
-    _capacity = {}
+#    # Dictionary of hosting device capacity
+#    _capacity = {}
 
     def __init__(self):
         auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
@@ -280,91 +280,197 @@ class HostingDeviceManager(object):
         # safety net: synchronize counters to ensure correct values
 #        if host_type == cl3_const.CSR1KV_HOST:
 #        self._sync_hosting_device_pool_counters(context, host_type)
-        self._sync_hosting_device_pool_counters(context, template)
+#        self._sync_hosting_device_pool_counters(context, template)
         mgr_context = neutron_context.get_admin_context()
         self._gt_pool.spawn_n(self._maintain_hosting_device_pool, mgr_context,
                               template)
 #                              mgr_context, host_type, category)
 
-#    def acquire_hosting_device_slots(self, context, hosting_device, id, num):
-#    """Allocates <num> slots in <hosting_device> to logical resource <id>."""
-    def acquire_hosting_device_slot(self, context, router, hosting_device):
-        with context.session.begin(subtransactions=True):
-            if hosting_device is None:
+    def acquire_hosting_device_slots(self, context, hosting_device, resource,
+                                     num, exclusive=False):
+        """Assign <num> slots in <hosting_device> to logical <resource>.
+
+        If exclusive is True the hosting device is bound to the resource's
+        tenant. Otherwise it is not bound to any tenant.
+
+        Returns True if allocation was granted, False otherwise.
+        """
+        if ((hosting_device['tenant_bound'] is not None and
+             hosting_device['tenant_bound'] != resource['id']) or
+            (exclusive and not self.exclusively_used(hosting_device,
+                                                     resource['tenant_id']))):
+            LOG.info(_('Rejecting allocation of %(num)d slots in hosting '
+                       'device %(device)s to logical resource %(id)s due to '
+                       'conflict of exclusive usage.'),
+                     {'num': num, 'device': hosting_device['id'],
+                      'id': resource['id']})
+            return False
+        with context.session.begin(subtransations=True):
+            try:
+                slot_info = context.session.query(SlotAllocation).filter_by(
+                    logical_resource_id=logical_resource_id,
+                    hosting_device_id=hosting_device['id']).one()
+            except exc.MultipleResultsFound:
+                # this should not happen
+                LOG.error(_('DB inconsistency: Multiple slot allocation '
+                            'entries for logical resource %(res)s in hosting '
+                            'device %(device)s. Rejecting slot allocation!'),
+                          {'res': resource['id'],
+                           'device': hosting_device['id']})
                 return False
-            host_type = hosting_device['host_type']
-            category = hosting_device['host_category']
-            slots = self._get_slots_counters(host_type)
-            if slots is None:
+            except exc.NoResultFound:
+                slot_info = SlotAllocation(
+                    template_id=hosting_device['template_id'],
+                    hosting_device_id=hosting_device['id'],
+                    logical_resource_id=resource['id'],
+                    logical_resource_owner=resource['tenant_id'],
+                    allocated=0,
+                    tenant_bound=None)
+            new_allocation = num + slot_info.allocated
+            if hosting_device['template']['slot_capacity'] < new_allocation:
+                LOG.info(_('Rejecting allocation of %(num)d slots in '
+                           'hosting device %(device)s to logical resource '
+                           '%(id)s due to insufficent slot availability.'),
+                         {'num': num, 'device': hosting_device['id'],
+                          'id': resource['id']})
                 return False
-            with slots['lock']:
-                if slots['available'] < 0:
-                    self._sync_hosting_device_pool_counters(context, host_type)
-                if router['share_host']:
-                    # For tenant unbound hosting devices we allocate a
-                    # single slot available immediately
-                    reduce_by = 1
-                elif hosting_device['tenant_bound'] is None:
-                    # Make hosting device tenant bound and remove all of
-                    # its slots from the available pool
-                    reduce_by = self.get_hosting_device_capacity(
-                        context, host_type)
-                    hosting_device[0]['tenant_bound'] = router['id']
-                    context.session.add(hosting_device[0])
-                else:
-                    # Tenant bound slots are all allocated when a
-                    # hosting device becomes tenant bound
-                    reduce_by = 0
-                slots['available'] -= reduce_by
-                mgr_context = neutron_context.get_admin_context()
-                self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
-                                      mgr_context, host_type, category)
+            # handle any changes to exclusive usage by tenant
+            if exclusive and hosting_device['tenant_bound'] is None:
+                self._update_hosting_device_exclusivity(
+                    context, hosting_device, resource['tenant_id'])
+            elif not exclusive and hosting_device['tenant_bound'] is not None:
+                self._update_hosting_device_exclusivity(
+                    context, hosting_device, None)
+            slot_info.allocated = new_allocation
+            context.session.add(slot_info)
+        # report success
         return True
 
-#    def release_hosting_device_slots(self, context, hosting_device, id, num):
-#    """Returns <num> slots in <hosting_device> from logical resource <id>."""
-    def release_hosting_device_slot(self, context, hosting_device):
+    # def acquire_hosting_device_slot_old(self, context, router,
+    #                                     hosting_device):
+    #     with context.session.begin(subtransactions=True):
+    #         if hosting_device is None:
+    #             return False
+    #         host_type = hosting_device['host_type']
+    #         category = hosting_device['host_category']
+    #         slots = self._get_slots_counters(host_type)
+    #         if slots is None:
+    #             return False
+    #         with slots['lock']:
+    #             if slots['available'] < 0:
+    #                 self._sync_hosting_device_pool_counters(context, host_type)
+    #             if router['share_host']:
+    #                 # For tenant unbound hosting devices we allocate a
+    #                 # single slot available immediately
+    #                 reduce_by = 1
+    #             elif hosting_device['tenant_bound'] is None:
+    #                 # Make hosting device tenant bound and remove all of
+    #                 # its slots from the available pool
+    #                 reduce_by = self.get_hosting_device_capacity(
+    #                     context, host_type)
+    #                 hosting_device[0]['tenant_bound'] = router['id']
+    #                 context.session.add(hosting_device[0])
+    #             else:
+    #                 # Tenant bound slots are all allocated when a
+    #                 # hosting device becomes tenant bound
+    #                 reduce_by = 0
+    #             slots['available'] -= reduce_by
+    #             mgr_context = neutron_context.get_admin_context()
+    #             self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
+    #                                   mgr_context, host_type, category)
+    #     return True
+
+    def release_hosting_device_slots(self, context, hosting_device, resource,
+                                     num):
+        """Free <num> slots in <hosting_device> from logical resource <id>.
+
+        Returns True if deallocation was successful. False otherwise."""
         with context.session.begin(subtransactions=True):
-            if hosting_device is None:
+            try:
+                query = context.session.query(SlotAllocation).filter_by(
+                    logical_resource_id=resource['id'],
+                    hosting_device_id=hosting_device['id'])
+                slot_info = query.one()
+            except exc.MultipleResultsFound:
+                # this should not happen
+                LOG.error(_('DB inconsistency: Multiple slot allocation '
+                            'entries for logical resource %(res)s in hosting '
+                            'device %(dev)s. Rejecting slot deallocation!'),
+                          {'res': resource['id'], 'dev': hosting_device['id']})
                 return False
-            host_type = hosting_device['host_type']
-            category = hosting_device['host_category']
-            slots = self._get_slots_counters(host_type)
-            if slots is None:
+            except exc.NoResultFound:
+                LOG.error(_('Logical resource %(res)s does not have '
+                            'allocated any slots in hosting device %(dev)s. '
+                            'Rejecting slot deallocation!'),
+                          {'res': resource['id'], 'dev': hosting_device['id']})
                 return False
-            with slots['lock']:
-                if slots['available'] < 0:
-                    self._sync_hosting_device_pool_counters(context, host_type)
-                    # Sync calculation includes the unscheduled router so
-                    # we must subtract it here to avoid counting it twice.
-                    slots['available'] = max(0, slots['available'] - 1)
-                if hosting_device['tenant_bound'] is not None:
-                    query = context.session.query(RouterHostingDeviceBinding)
-                    query = query.filter(
-                        RouterHostingDeviceBinding.hosting_device_id ==
-                        hosting_device['id'])
-                    # Have we removed the last Neutron router hosted on
-                    # this (tenant bound) hosting device?
-                    if query.count() == 0:
-                        # Make hosting device tenant unbound again and
-                        # return all its slots to available pool
-                        inc_by = self.get_hosting_device_capacity(
-                            context, host_type)
-                        hosting_device['tenant_bound'] = None
-                        context.session.add(hosting_device)
-                    else:
-                        # We return all slots to available pool when
-                        # hosting device becomes tenant unbound
-                        inc_by = 0
-                else:
-                    # For tenant unbound hosting devices we can make
-                    # the slot available immediately
-                    inc_by = 1
-                slots['available'] += inc_by
-                mgr_context = neutron_context.get_admin_context()
-                self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
-                                      mgr_context, host_type, category)
+            new_allocation = slot_info.num_allocated - num
+            if new_allocation < 0:
+                LOG.info(_('Rejecting deallocation of %(num)d slots in '
+                           'hosting device %(device)s for logical resource '
+                           '%(id)s since only %(alloc)d slots are allocated.'),
+                         {'num': num, 'device': hosting_device['id'],
+                          'id': resource['id'],
+                          'alloc': slot_info.num_allocated})
+                return False
+            elif new_allocation == 0:
+                result = query.delete()
+                if (hosting_device['tenant_bound'] is not None and
+                    context.session.query(SlotAllocation).filter_by(
+                        hosting_device_id=hosting_device['id']).first() is
+                        None):
+                    # make hosting device tenant unbound if no logical
+                    # resource use it anymore
+                    hosting_device['tenant_bound'] = None
+                    context.session.add(hosting_device)
+                return result == 1
+            slot_info.num_allocated = new_allocation
+            context.session.add(slot_info)
+        # report success
         return True
+
+    # def release_hosting_device_slot_old(self, context, hosting_device):
+    #     with context.session.begin(subtransactions=True):
+    #         if hosting_device is None:
+    #             return False
+    #         host_type = hosting_device['host_type']
+    #         category = hosting_device['host_category']
+    #         slots = self._get_slots_counters(host_type)
+    #         if slots is None:
+    #             return False
+    #         with slots['lock']:
+    #             if slots['available'] < 0:
+    #                 self._sync_hosting_device_pool_counters(context, host_type)
+    #                 # Sync calculation includes the unscheduled router so
+    #                 # we must subtract it here to avoid counting it twice.
+    #                 slots['available'] = max(0, slots['available'] - 1)
+    #             if hosting_device['tenant_bound'] is not None:
+    #                 query = context.session.query(RouterHostingDeviceBinding)
+    #                 query = query.filter(
+    #                     RouterHostingDeviceBinding.hosting_device_id ==
+    #                     hosting_device['id'])
+    #                 # Have we removed the last Neutron router hosted on
+    #                 # this (tenant bound) hosting device?
+    #                 if query.count() == 0:
+    #                     # Make hosting device tenant unbound again and
+    #                     # return all its slots to available pool
+    #                     inc_by = self.get_hosting_device_capacity(
+    #                         context, host_type)
+    #                     hosting_device['tenant_bound'] = None
+    #                     context.session.add(hosting_device)
+    #                 else:
+    #                     # We return all slots to available pool when
+    #                     # hosting device becomes tenant unbound
+    #                     inc_by = 0
+    #             else:
+    #                 # For tenant unbound hosting devices we can make
+    #                 # the slot available immediately
+    #                 inc_by = 1
+    #             slots['available'] += inc_by
+    #             mgr_context = neutron_context.get_admin_context()
+    #             self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
+    #                                   mgr_context, host_type, category)
+    #     return True
 
     def get_hosting_devices(self, context, hosting_device_ids):
         """Returns hosting devices with <hosting_device_ids>."""
@@ -439,9 +545,12 @@ class HostingDeviceManager(object):
                     context, hd.id, hosting_device_drv, self.mgmt_nw_id())
                 plugging_drv.delete_hosting_device_resources(
                     context, self.l3_tenant_id(), **res)
+                # remove all allocations in this hosting device
+                context.session.query(SlotAllocation).filter_by(
+                    hosting_device_id=hd['id']).delete()
                 context.session.delete(hd)
-            # Adjust pool counters, easiest is to just re-sync.
-            self._sync_hosting_device_pool_counters(context, template)
+#            # Adjust pool counters, easiest is to just re-sync.
+#            self._sync_hosting_device_pool_counters(context, template)
 
     def process_non_responsive_hosting_device(self, context, hosting_device,
                                               logical_resource_ids):
@@ -467,43 +576,43 @@ class HostingDeviceManager(object):
         if cls._instance is None:
             cls._instance = cls()
 
-    def _get_slots_counters(self, template_id):
-        try:
-            return self._slots[template_id]
-        except KeyError:
-            try:
-                t = self.get_hosting_device_template(
-                    neutron_context.get_admin_context(), template_id)
-                self._slots[template_id] = {
-                    'lock': threading.RLock(),
-                    'available': -1,
-                    'desired': t['desired_slots_free']}
-            except:
-                LOG.debug(_('Slot counter request for non-existent '
-                            'hosting device template %s ignored.'),
-                          template_id)
-                return
-        return self._slots[template_id]
+    # def _get_slots_counters(self, template_id):
+    #     try:
+    #         return self._slots[template_id]
+    #     except KeyError:
+    #         try:
+    #             t = self.get_hosting_device_template(
+    #                 neutron_context.get_admin_context(), template_id)
+    #             self._slots[template_id] = {
+    #                 'lock': threading.RLock(),
+    #                 'available': -1,
+    #                 'desired': t['desired_slots_free']}
+    #         except:
+    #             LOG.debug(_('Slot counter request for non-existent '
+    #                         'hosting device template %s ignored.'),
+    #                       template_id)
+    #             return
+    #     return self._slots[template_id]
 
-    def _sync_hosting_device_pool_counters(self, context, template):
-        """Synchronize pool counters for <template> with database."""
-        slots = self._get_slots_counters(template['id'])
-        if slots is None:
-            return
-        with slots['lock']:
-            # mysql> SELECT SUM(allocated_slots), COUNT(id) FROM
-            # hostingdevices WHERE template_id=<id> AND
-            # admin_state_up = TRUE AND tenant_bound IS NULL;
-            query = context.session.query(
-                func.sum(HostingDevice.allocated_slots),
-                func.count(HostingDevice.id))
-            query = query.filter(HostingDevice.template_id == template['id'],
-                                 HostingDevice.admin_state_up == True,
-                                 HostingDevice.tenant_bound == None)
-            (allocated, num_devices) = query.one()
-            slots['available'] = (template['slot_capacity'] * num_devices -
-                                  (allocated or 0))
-            slots['desired'] = template['desired_slots_free']
+    # def _sync_hosting_device_pool_counters(self, context, template):
+    #     """Synchronize pool counters for <template> with database."""
+    #     slots = self._get_slots_counters(template['id'])
+    #     if slots is None:
+    #         return
+    #     with slots['lock']:
+    #         # mysql> SELECT SUM(allocated_slots), COUNT(id) FROM
+    #         # hostingdevices WHERE template_id=<id> AND
+    #         # admin_state_up = TRUE AND tenant_bound IS NULL;
+    #         query = context.session.query(
+    #             func.sum(HostingDevice.allocated_slots),
+    #             func.count(HostingDevice.id))
+    #         query = query.filter(HostingDevice.template_id == template['id'],
+    #                              HostingDevice.admin_state_up == True,
+    #                              HostingDevice.tenant_bound == None)
+    #         (allocated, num_devices) = query.one()
+    #         slots['available'] = (template['slot_capacity'] * num_devices -
+    #                               (allocated or 0))
+    #         slots['desired'] = template['desired_slots_free']
 
     def _maintain_hosting_device_pool(self, context, template):
         """Maintains the pool of hosting devices that are based on <template>.
@@ -528,31 +637,35 @@ class HostingDeviceManager(object):
         # Delete VM condition: _service_vm_slots < _desired_svc_vm_slots
         # Resulting reduction of available slots:
         #     _avail_svc_vm_slots - capacity
-        slots = self._get_slots_counters(template['id'])
+#        slots = self._get_slots_counters(template['id'])
         capacity = template['slot_capacity']
-        if slots is None or slots['desired'] is None or capacity is None:
-            return
-        with slots['lock']:
-            if slots['available'] <= max(0, slots['desired'] - capacity):
-                num_req = int(math.ceil((
-                    slots['desired'] - slots['available']) / (1.0 * capacity)))
-                num_created = len(self._create_svc_vm_hosting_devices(
-                    context, num_req, template))
-                if num_created < num_req:
-                    LOG.warn(_('Requested %(requested)d service VMs but only'
-                               ' %(created)d could be created'),
-                             {'requested': num_req, 'created': num_created})
-                slots['available'] += (num_created * capacity)
-            elif slots['available'] >= slots['desired'] + capacity:
-                num_req = int(math.ceil((
-                    slots['available'] - slots['desired']) / (1.0 * capacity)))
-                num_deleted = self._delete_unused_service_vm_hosting_devices(
-                    context, num_req, template)
-                if num_deleted < num_req:
-                    LOG.warn(_('Tried to delete %(requested)d service VMs '
-                               'but only %(deleted)d could be deleted'),
-                             {'requested': num_req, 'deleted': num_deleted})
-                slots['available'] -= (num_deleted * capacity)
+        desired = template['desired_slots_free']
+        available = self._get_total_available_slots(context, template['id'],
+                                                    capacity)
+#        if slots is None or slots['desired'] is None or capacity is None:
+#            return
+#        with slots['lock']:
+        if available <= max(0, desired - capacity):
+            num_req = int(math.ceil((desired - available) / (1.0 * capacity)))
+            num_created = len(self._create_svc_vm_hosting_devices(
+                context, num_req, template))
+            if num_created < num_req:
+                LOG.warn(_('Requested %(requested)d instances based on '
+                           'hosting device template %(template)s but could'
+                           'only create %(created)d instances'),
+                         {'requested': num_req, 'template': template['id'],
+                          'created': num_created})
+#            slots['available'] += (num_created * capacity)
+        elif available >= desired + capacity:
+            num_req = int(math.ceil((available - desired) / (1.0 * capacity)))
+            num_deleted = self._delete_unused_service_vm_hosting_devices(
+                context, num_req, template)
+            if num_deleted < num_req:
+                LOG.warn(_('Tried to delete %(requested)d instances based on '
+                           'hosting device template %(template)s but could '
+                           'only delete %(deleted)d instances'),
+                         {'requested': num_req, 'deleted': num_deleted})
+#            slots['available'] -= (num_deleted * capacity)
 
     def _create_svc_vm_hosting_devices(self, context, num, template,
                                        tenant_bound=None):
@@ -612,14 +725,14 @@ class HostingDeviceManager(object):
                     return hosting_devices
         return hosting_devices
 
-    def _delete_unused_service_vm_hosting_devices(
-            self, context, num, template, tenant_bound=None):
+    def _delete_unused_service_vm_hosting_devices(self, context, num,
+                                                  template, tenant_bound=None):
         """Deletes <num> or less unused <template>-based service VM instances.
 
         The number of deleted service vm instances is returned.
         """
-        # Delete the "youngest" hosting devices since they are
-        # more likely to not have finished booting
+        # Delete the "youngest" hosting devices since they are more likely
+        # not to have finished booting
         num_deleted = 0
         plugging_drv = self.get_hosting_device_plugging_driver(context,
                                                                template['id'])
@@ -629,17 +742,16 @@ class HostingDeviceManager(object):
             return num_deleted
         query = context.session.query(HostingDevice)
         query = query.outerjoin(
-            RouterHostingDeviceBinding,
-            HostingDevice.id == RouterHostingDeviceBinding.hosting_device_id)
+            SlotAllocation,
+            HostingDevice.id == SlotAllocation.hosting_device_id)
         query = query.filter(HostingDevice.template_id == template['id'],
                              HostingDevice.admin_state_up == True,
-                             HostingDevice.tenant_bound == None)
-        query = query.group_by(HostingDevice.id)
-        query = query.having(
-            func.count(RouterHostingDeviceBinding.router_id) == 0)
+                             HostingDevice.tenant_bound == expr.null)
+        query = query.group_by(HostingDevice.id).having(
+            func.count(SlotAllocation.logical_resource_id) == 0)
         query = query.order_by(
             HostingDevice.created_at.desc(),
-            func.count(RouterHostingDeviceBinding.router_id))
+            func.count(SlotAllocation.logical_resource_id))
         hd_candidates = query.all()
         num_possible_to_delete = min(len(hd_candidates), num)
         with context.session.begin(subtransactions=True):
@@ -655,6 +767,50 @@ class HostingDeviceManager(object):
                         context, self.l3_tenant_id(), **res)
                     num_deleted += 1
         return num_deleted
+
+    # def _delete_unused_service_vm_hosting_devices_old(
+    #         self, context, num, template, tenant_bound=None):
+    #     """Deletes <num> or less unused <template>-based service VM instances.
+    #
+    #     The number of deleted service vm instances is returned.
+    #     """
+    #     # Delete the "youngest" hosting devices since they are more likely
+    #     # not to have finished booting
+    #     num_deleted = 0
+    #     plugging_drv = self.get_hosting_device_plugging_driver(context,
+    #                                                            template['id'])
+    #     hosting_device_drv = self.get_hosting_device_driver(context,
+    #                                                         template['id'])
+    #     if plugging_drv is None or hosting_device_drv is None:
+    #         return num_deleted
+    #     query = context.session.query(HostingDevice)
+    #     query = query.outerjoin(
+    #         RouterHostingDeviceBinding,
+    #         HostingDevice.id == RouterHostingDeviceBinding.hosting_device_id)
+    #     query = query.filter(HostingDevice.template_id == template['id'],
+    #                          HostingDevice.admin_state_up == True,
+    #                          HostingDevice.tenant_bound == None)
+    #     query = query.group_by(HostingDevice.id)
+    #     query = query.having(
+    #         func.count(RouterHostingDeviceBinding.router_id) == 0)
+    #     query = query.order_by(
+    #         HostingDevice.created_at.desc(),
+    #         func.count(RouterHostingDeviceBinding.router_id))
+    #     hd_candidates = query.all()
+    #     num_possible_to_delete = min(len(hd_candidates), num)
+    #     with context.session.begin(subtransactions=True):
+    #         for i in xrange(num_possible_to_delete):
+    #             res = plugging_drv.get_hosting_device_resources(
+    #                 context, hd_candidates[i]['id'], self.l3_tenant_id(),
+    #                 self.mgmt_nw_id())
+    #             if self._svc_vm_mgr.delete_service_vm(
+    #                     context, hd_candidates[i]['id'], hosting_device_drv,
+    #                     self.mgmt_nw_id()):
+    #                 context.session.delete(hd_candidates[i])
+    #                 plugging_drv.delete_hosting_device_resources(
+    #                     context, self.l3_tenant_id(), **res)
+    #                 num_deleted += 1
+    #     return num_deleted
 
     def _delete_dead_service_vm_hosting_device(self, context, hosting_device,
                                                logical_resource_ids):
@@ -704,3 +860,35 @@ class HostingDeviceManager(object):
             mgr_context = neutron_context.get_admin_context()
             self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
                                   mgr_context, host_type, category)
+
+    def _get_total_available_slots(self, context, template_id, capacity):
+        """Returns available slots sum for devices based on <template_id>."""
+        query = context.session.query(func.sum(SlotAllocation.num_allocated))
+        total_allocated = query.filter_by(template_id=template_id,
+                                          tenant_bound=expr.null).one()
+        query = context.session.query(func.count(HostingDevice.id))
+        num_devices = query.filter_by(template_id=template_id,
+                                      admin_state_up=True,
+                                      tenant_bound=expr.null).one()
+        return num_devices * capacity - total_allocated
+
+    def _exclusively_used(self, hosting_device, tenant_id):
+        """Checks if only <tenant_id>'s resources use <hosting_device>."""
+        return context.session.query(SlotAllocation).filter(
+            SlotAllocation.hosting_device_id == hosting_device['id'],
+            SlotAllocation.local_resource_owner != tenant_id).first() is None
+
+    def _update_hosting_device_exclusivity(self, context, hosting_device,
+                                           tenant_id):
+        """Make <hosting device> bound or unbound to <tenant_id>.
+
+        If <tenant_id> is None the device is unbound, otherwise it gets bound
+        to that <tenant_id>
+        """
+        with context.session.begin(subtransactions=True):
+            hosting_device['tenant_bound'] = tenant_id
+            context.session.add(hosting_device)
+            for item in context.session.query(SlotAllocation).filter_by(
+                    hosting_device_id=hosting_device['id']):
+                item['tenant_bound'] = tenant_id
+                context.session.add(item)
