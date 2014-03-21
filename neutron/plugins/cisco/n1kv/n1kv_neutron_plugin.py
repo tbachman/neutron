@@ -848,34 +848,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                 network
         """
         LOG.debug(_('_send_create_port_request: %s'), port)
-        try:
-            vm_network = n1kv_db_v2.get_vm_network(
-                context.session,
-                port[n1kv.PROFILE_ID],
-                port['network_id'])
-        except cisco_exceptions.VMNetworkNotFound:
-            policy_profile = n1kv_db_v2.get_policy_profile(
-                context.session, port[n1kv.PROFILE_ID])
-            vm_network_name = (c_const.VM_NETWORK_NAME_PREFIX +
-                               str(port[n1kv.PROFILE_ID]) +
-                               "_" + str(port['network_id']))
-            port_count = 1
-            n1kv_db_v2.add_vm_network(context.session,
-                                      vm_network_name,
-                                      port[n1kv.PROFILE_ID],
-                                      port['network_id'],
-                                      port_count)
+        if port_count == 1:
             self.pool.spawn(self.n1kvclient.create_vm_network,
                             port,
                             vm_network_name,
-                            policy_profile).wait()
+                            policy_profile)
         else:
-            vm_network_name = vm_network['name']
             self.pool.spawn(self.n1kvclient.create_n1kv_port,
-                            port, vm_network_name).wait()
-            vm_network['port_count'] += 1
-            n1kv_db_v2.update_vm_network_port_count(
-                context.session, vm_network_name, vm_network['port_count'])
+                            port, vm_network_name)
 
     def _send_update_port_request(self, port_id, mac_address, vm_network_name):
         """
@@ -898,24 +878,13 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         Delete the port on the VSM. If it is the last port on the VM Network,
         delete the VM Network.
         :param context: neutron api request context
-        :param id: UUID of the port to be deleted
         """
-        LOG.debug(_('_send_delete_port_request: %s'), id)
-        port = self.get_port(context, id)
-        vm_network = n1kv_db_v2.get_vm_network(context.session,
-                                               port[n1kv.PROFILE_ID],
-                                               port['network_id'])
-        vm_network['port_count'] -= 1
-        n1kv_db_v2.update_vm_network_port_count(
-            context.session, vm_network['name'], vm_network['port_count'])
+        LOG.debug(_('_send_delete_port_request: %s'), port['id'])
         self.pool.spawn(self.n1kvclient.delete_n1kv_port,
-                        vm_network['name'], id).wait()
+                        vm_network['name'], port['id'])
         if vm_network['port_count'] == 0:
-            n1kv_db_v2.delete_vm_network(context.session,
-                                         port[n1kv.PROFILE_ID],
-                                         port['network_id'])
             self.pool.spawn(self.n1kvclient.delete_vm_network,
-                            vm_network['name']).wait()
+                            vm_network['name'])
 
     def _get_segmentation_id(self, context, id):
         """
@@ -1097,6 +1066,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             elif binding.network_type == c_const.NETWORK_TYPE_VLAN:
                 n1kv_db_v2.release_vlan(session, binding.physical_network,
                                         binding.segmentation_id)
+            self._process_l3_delete(context, id)
             super(N1kvNeutronPluginV2, self).delete_network(context, id)
             # the network_binding record is deleted via cascade from
             # the network record, so explicit removal is not necessary
@@ -1469,8 +1439,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                      update_network_profile(context,
                                             net_profile_id,
                                             network_profile))
-            self._send_update_network_profile_request(net_p)
-            return net_p
+        self._send_update_network_profile_request(net_p)
+        return net_p
 
     def create_router(self, context, router):
         """
