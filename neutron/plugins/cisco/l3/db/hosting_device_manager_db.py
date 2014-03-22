@@ -21,10 +21,10 @@ import threading
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from oslo.config import cfg
-from sqlalchemy import and_
 from sqlalchemy import func
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
+from sqlalchemy.sql import expression as expr
 
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
@@ -826,40 +826,42 @@ class HostingDeviceManager(object):
             context, hosting_device['template_id'])
         hosting_device_drv = self.get_hosting_device_driver(
             context, hosting_device['template_id'])
-        slots = self._get_slots_counters(host_type)
+#        slots = self._get_slots_counters(host_type)
         if (plugging_drv is None or hosting_device_drv is None or
                 slots is None):
             return
-        with slots['lock']:
-            if slots['available'] < 0:
-                self._sync_hosting_device_pool_counters(context, host_type)
-            if hosting_device['tenant_bound'] is not None:
-                # The slots of a tenant bound hosting device have already
-                # been subtracted from available slots so no need to subtract
-                # again when that dead hosting device is deleted.
-                reduce_by = 0
-            else:
-                # For an unbound (dead) hosting device all its slots (used
-                # and unused) should be counted when reducing the number of
-                # available slots.
-                reduce_by = hosting_device['template']['slot_capacity']
-            res = plugging_drv.get_hosting_device_resources(
-                context, hosting_device['id'], self.l3_tenant_id(),
-                self.mgmt_nw_id())
-            if not self._svc_vm_mgr.delete_service_vm(
-                    context, hosting_device['id'], hosting_device_drv,
-                    self.mgmt_nw_id()):
-                LOG.error(_('Failed to delete hosting device %s service VM. '
-                            'Will un-register it anyway.'),
-                          hosting_device['id'])
-            plugging_drv.delete_hosting_device_resources(
-                context, self.l3_tenant_id(), **res)
-            with context.session.begin(subtransactions=True):
-                context.session.delete(hosting_device)
-            slots['available'] = (max(0, slots['available'] - reduce_by))
-            mgr_context = neutron_context.get_admin_context()
-            self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
-                                  mgr_context, host_type, category)
+#        with slots['lock']:
+#            if slots['available'] < 0:
+#                self._sync_hosting_device_pool_counters(context, host_type)
+#        if hosting_device['tenant_bound'] is not None:
+#            # The slots of a tenant bound hosting device have already
+#            # been subtracted from available slots so no need to subtract
+#            # again when that dead hosting device is deleted.
+#            reduce_by = 0
+#        else:
+#            # For an unbound (dead) hosting device all its slots (used
+#            # and unused) should be counted when reducing the number of
+#            # available slots.
+#            reduce_by = hosting_device['template']['slot_capacity']
+        res = plugging_drv.get_hosting_device_resources(
+            context, hosting_device['id'], self.l3_tenant_id(),
+            self.mgmt_nw_id())
+        if not self._svc_vm_mgr.delete_service_vm(
+                context, hosting_device['id'], hosting_device_drv,
+                self.mgmt_nw_id()):
+            LOG.error(_('Failed to delete hosting device %s service VM. '
+                        'Will un-register it anyway.'),
+                      hosting_device['id'])
+        plugging_drv.delete_hosting_device_resources(
+            context, self.l3_tenant_id(), **res)
+        template = hosting_device['template']
+        with context.session.begin(subtransactions=True):
+            context.session.delete(hosting_device)
+ #       slots['available'] = (max(0, slots['available'] - reduce_by))
+        mgr_context = neutron_context.get_admin_context()
+        self._gt_pool.spawn_n(self._maintain_hosting_device_pool, mgr_context,
+                              template)
+#                              mgr_context, host_type, category)
 
     def _get_total_available_slots(self, context, template_id, capacity):
         """Returns available slots sum for devices based on <template_id>."""

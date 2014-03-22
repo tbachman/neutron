@@ -27,16 +27,15 @@ LOG = logging.getLogger(__name__)
 
 
 class L3RouterHostingDeviceScheduler(object):
-    """Slot-aware scheduler of Neutron routers on hosting devices
-    ."""
+    """Slot-aware scheduler of Neutron routers on hosting devices."""
 
-    def _schedule(self, context, router, host_type=cl3_const.CSR1KV_HOST):
+    def schedule_router_on_hosting_device(self, plugin, context, r_hd_binding):
+#    def _schedule(self, context, router, host_type=cl3_const.CSR1KV_HOST):
         """Schedules a Neutron router on a hosting device.
 
         Returns a tuple with selected hosting device and the number of
         routers it hosts, i.e., the number of slots that are occupied.
         """
-
         # mysql> SELECT *, COUNT(router_id) as num_alloc
         # FROM hostingdevices AS he
         # LEFT OUTER JOIN routerhostingentitybindings AS rhe
@@ -92,42 +91,11 @@ class L3RouterHostingDeviceScheduler(object):
             # with the least occupied slots.
             return candidate_hosting_devices[0]
 
-    def schedule_router_on_hosting_device(self, plugin, context, router,
-                                          r_hd_binding):
-        with context.session.begin(subtransactions=True):
-            selected_hd = self._schedule(context, router)
-            if selected_hd is None:
-                # No running CSR1kv VM is able to host this router
-                # so backlog it for another scheduling attempt later.
-                #TODO(bobmel): Ensure that this one is re-entrant
-                plugin.backlog_router(router)
-                return False
-            else:
-                #TODO(bobmel): Allocate slots correctly
-                acquired = self._dev_mgr.acquire_hosting_device_slot(
-                    context.elevated(), router, selected_hd[0])
-                if acquired:
-                    r_hd_binding.hosting_device_id = selected_hd[0]['id']
-                    #TODO(bobmel): Ensure that this one is re-entrant
-                    plugin.remove_router_from_backlog(router['id'])
-                else:
-                    # we got not slot so backlog it for another scheduling
-                    # attempt later.
-                    #TODO(bobmel): Ensure that this one is re-entrant
-                    plugin.backlog_router(router)
-                    return False
-            if r_hd_binding.hosting_device_id is not None:
-                context.session.add(r_hd_binding)
-        return True
+    def unschedule_router_from_hosting_device(self, plugin, context,
+                                              r_hd_binding):
+        pass
 
-    def unschedule_router_from_hosting_device(self, plugin, context, router,
-                                              hosting_device_db):
-        if hosting_device_db is None:
-            return
-        #TODO(bobmel): Deallocate slots correctly
-        self._dev_mgr.release_hosting_device_slot(context.elevated(),
-                                                  hosting_device_db)
-
+    #TODO(bobmel): change to get Device-aaS service plugin instead
     @property
     def _dev_mgr(self):
         return hosting_device_manager_db.HostingDeviceManager.get_instance()

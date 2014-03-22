@@ -26,10 +26,8 @@ from neutron.plugins.common import constants as plugin_constants
 LOG = logging.getLogger(__name__)
 
 
-class L3CfgRpcCallbackMixin(object):
-    """A mix-in that enable Cisco cfg agent rpc support in
-    plugin implementations.
-    """
+class L3RouterCfgRpcCallbackMixin(object):
+    """Mixin for Cisco cfg agent rpc support in L3 routing service plugin."""
 
     def cfg_sync_routers(self, context, **kwargs):
         """Sync routers according to filters to a specific Cisco cfg agent.
@@ -84,7 +82,6 @@ class L3CfgRpcCallbackMixin(object):
             plugin.update_port(context, port['id'],
                                {'port': {portbindings.HOST_ID: host}})
 
-
     def get_external_network_id(self, context, **kwargs):
         """Get one external network id for cfg agent.
 
@@ -97,19 +94,3 @@ class L3CfgRpcCallbackMixin(object):
         LOG.debug(_("External network ID returned to cfg agent: %s"),
                   net_id)
         return net_id
-
-    #TODO(bobmel): This callback should be handled by hosting device mgr
-    def report_non_responding_hosting_devices(self, context, **kwargs):
-        """Report that a hosting device cannot be contacted.
-
-        @param: context: contains user information
-        @param: kwargs: hosting_device_ids: list of non-responding
-                                            hosting devices
-        @return: -
-        """
-        hosting_device_ids = kwargs.get('hosting_device_ids', [])
-        cfg_agent = kwargs.get('host', None)
-        plugin = manager.NeutronManager.get_service_plugins()[
-            plugin_constants.L3_ROUTER_NAT]
-        plugin.handle_non_responding_hosting_devices(context, cfg_agent,
-                                                     hosting_device_ids)
