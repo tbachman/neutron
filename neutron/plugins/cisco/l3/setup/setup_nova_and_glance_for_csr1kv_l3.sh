@@ -207,7 +207,7 @@ if [ "$hasRouterType" != "Yes" ]; then
    ('22221111-2222-3333-4444-555555555555',
     'CSR1kv_router','Neutron Router implemented in Cisco CSR1kv',
     '11111111-2222-3333-4444-555555555555', 6,
-    'neutron.plugins.cisco.l3.scheduler.l3_hosting_device_scheduler.L3RouterHostingDeviceScheduler',
+    'neutron.plugins.cisco.l3.scheduler.l3_router_hosting_device_scheduler.L3RouterHostingDeviceScheduler',
     'neutron.plugins.cisco.l3.gent.csr1000v.cisco_csr_network_driver.CiscoCSRDriver')"
     mysql -e "use $db; $sql_statement"
 else
@@ -215,7 +215,7 @@ else
 fi
 
 
-echo -n "Checking if 'Namespace_router' is registered as router type in $osn ..."
+echo -n "Checking if 'NetworkNamespace_router' is registered as router type in $osn ..."
 sql_statement="SELECT id FROM routertypes where id='22221112-2222-3333-4444-555555555555'"
 hasRouterType=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
@@ -224,7 +224,7 @@ if [ "$hasRouterType" != "Yes" ]; then
 
    # Columns: id, name, description, template_id, slot_need, scheduler, cfg_agent_driver
    sql_statement="INSERT INTO routertypes VALUES
-   ('22221112-2222-3333-4444-555555555555', 'Namespace_router',
+   ('22221112-2222-3333-4444-555555555555', 'NetworkNamespace_router',
     'Neutron router implemented in Linux network namespace',
     '11111110-2222-3333-4444-555555555555', 6,
     '', '')"

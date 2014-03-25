@@ -26,10 +26,9 @@ from neutron.plugins.common import constants as plugin_constants
 LOG = logging.getLogger(__name__)
 
 
-class DevicesCfgRpcCallbackMixin(object):
-    """Mixin for Cisco cfg agent rpc support in Device-aaS service plugin."""
+class DeviceMgrCfgRpcCallbackMixin(object):
+    """Mixin for Cisco cfg agent rpc support in Device mgr service plugin."""
 
-    #TODO(bobmel): This callback should be handled by hosting device mgr
     def report_non_responding_hosting_devices(self, context, **kwargs):
         """Report that a hosting device cannot be contacted.
 
@@ -40,7 +39,11 @@ class DevicesCfgRpcCallbackMixin(object):
         """
         hosting_device_ids = kwargs.get('hosting_device_ids', [])
         cfg_agent = kwargs.get('host', None)
-        plugin = manager.NeutronManager.get_service_plugins()[
-            plugin_constants.L3_ROUTER_NAT]
-        plugin.handle_non_responding_hosting_devices(context, cfg_agent,
-                                                     hosting_device_ids)
+        plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_constants.DEVICE_MANAGER)
+        if plugin is None:
+            LOG.error(_('No Device manager service plugin registered!'
+                        'Cannot handle non-responding hosting device report'))
+        else:
+            plugin.handle_non_responding_hosting_devices(context, cfg_agent,
+                                                         hosting_device_ids)

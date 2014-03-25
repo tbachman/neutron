@@ -14,88 +14,118 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
+from datetime import timedelta
+from operator import itemgetter
 from sqlalchemy import and_
 from sqlalchemy import func
 from sqlalchemy import or_
+from sqlalchemy.sql import expression as expr
 
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db
-from neutron.plugins.cisco.l3.db import l3_models
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
+from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
+from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
 
 LOG = logging.getLogger(__name__)
+
+
+# Maximum allowed minute difference in creation time
+# for hosting devices to be considered equal
+EQUIVALENCE_TIME_DIFF = 7
 
 
 class L3RouterHostingDeviceScheduler(object):
     """Slot-aware scheduler of Neutron routers on hosting devices."""
 
-    def schedule_router_on_hosting_device(self, plugin, context, r_hd_binding):
-#    def _schedule(self, context, router, host_type=cl3_const.CSR1KV_HOST):
+    def schedule_router(self, plugin, context, r_hd_binding):
         """Schedules a Neutron router on a hosting device.
 
-        Returns a tuple with selected hosting device and the number of
-        routers it hosts, i.e., the number of slots that are occupied.
+        Selection criteria: The longest running hosting device that...
+            ... is based on the template required by router's type
+            AND
+            ... is administratively up
+            AND
+            ... is bound to tenant owning router OR is unbound
+            AND
+            ... has enough slots available to host the router
+
+            Hosting devices with creation date/time less than
+            EQUIVALENCE_TIME_DIFF are considered equally old.
+
+            Among hosting devices meeting these criteria and
+            that are of same age the device with less allocated
+            slots is preferred.
         """
-        # mysql> SELECT *, COUNT(router_id) as num_alloc
-        # FROM hostingdevices AS he
-        # LEFT OUTER JOIN routerhostingentitybindings AS rhe
-        # ON he.id=rhe.hosting_device_id
-        # WHERE host_type='CSR1kv' AND admin_state_up=TRUE AND
-        # (tenant_bound='t2' OR tenant_bound IS NULL)
-        # GROUP BY id HAVING (num_alloc < 4)
-        # ORDER BY created_at, num_alloc;
-        max_routers = (self._dev_mgr.get_hosting_device_capacity(
-            context, host_type) or {}).get('num_routers', 0)
-        stmt = context.session.query(
-            l3_models.HostingDevice,
-            func.count(l3_models.RouterHostingDeviceBinding.router_id).
-            label('num_alloc'))
-        stmt = stmt.outerjoin(
-            l3_models.RouterHostingDeviceBinding,
-            l3_models.HostingDevice.id ==
-            l3_models.RouterHostingDeviceBinding.hosting_device_id)
-        stmt = stmt.filter(l3_models.HostingDevice.host_type == host_type,
-                           l3_models.HostingDevice.admin_state_up == True)
-        stmt = stmt.filter(
-            or_(l3_models.HostingDevice.tenant_bound == None,
-                l3_models.HostingDevice.tenant_bound == router['tenant_id']))
-        stmt = stmt.group_by(l3_models.HostingDevice.id)
-        if router.get('share_host', True):
-            query = stmt.having(func.count(
-                l3_models.RouterHostingDeviceBinding.router_id) < max_routers)
-            query = query.order_by(
-                l3_models.HostingDevice.created_at,
-                func.count(l3_models.RouterHostingDeviceBinding.router_id))
+        # SELECT hosting_device_id, created_at, sum(num_allocated)
+        # FROM hostingdevices AS hd
+        # LEFT OUTER JOIN slotallocations AS sa ON hd.id=sa.hosting_device_id
+        # WHERE
+        #    hd.template_id='11111111-2222-3333-4444-555555555555' AND
+        #    hd.admin_state_up=TRUE AND
+        # <<<sharing case:>>>
+        #    (hd.tenant_bound IS NULL OR hd.tenant_bound='t10')
+        # <<<non-sharing case:>>>
+        #    (sa.tenant_bound='t10' OR
+        #     (sa.tenant_bound IS NULL AND sa.logical_resource_owner='t10') OR
+        #     hd.tenant_bound='t10' OR
+        #     (hd.tenant_bound IS NULL AND sa.hosting_device_id IS NULL))
+        # GROUP BY hosting_device_id
+        # HAVING sum(num_allocated) <= 8
+        # ORDER BY created_at;
+        router = r_hd_binding['router']
+        tenant_id = router['tenant_id']
+        router_type = r_hd_binding['router_type']
+        template_id = router_type['template_id']
+        template = router_type['template']
+        slot_threshold = template['slot_capacity'] - router_type['slot_need']
+
+        query = context.session.query(HostingDevice.id,
+                                      HostingDevice.created_at,
+                                      func.sum(SlotAllocation.num_allocated))
+        query = query.outerjoin(
+            SlotAllocation,
+            HostingDevice.id == SlotAllocation.hosting_device_id)
+        query = query.filter(
+            HostingDevice.template_id == template_id,
+            HostingDevice.admin_state_up == expr.true())
+        if r_hd_binding['share_hosting_device']:
+            query = query.filter(
+                or_(HostingDevice.tenant_bound == expr.null(),
+                    HostingDevice.tenant_bound == tenant_id))
         else:
-            # TODO(bobmel): enhance so that tenant unbound hosting devices
-            # that only host routers for this tenant are also included
-            stmt = stmt.subquery()
-            query = context.session.query(stmt)
-            query = query.filter(or_(and_(stmt.c.tenant_bound == None,
-                                          stmt.c.num_alloc == 0),
-                                     and_(stmt.c.tenant_bound ==
-                                          router['tenant_id'],
-                                          stmt.c.num_alloc < max_routers)))
-            query = query.order_by(stmt.c.created_at, stmt.c.num_alloc)
-        candidate_hosting_devices = query.all()
-        if len(candidate_hosting_devices) == 0:
-            # Inform device manager that no suitable hosting device was found
-            # so that it can take appropriate measures, e.g., spin up more
-            # hosting device VMs.
-            self._dev_mgr.report_hosting_device_shortage(
-                context.elevated(), host_type, cl3_const.VM_CATEGORY)
+            query = query.filter(
+                or_(SlotAllocation.tenant_bound == tenant_id,
+                    and_(SlotAllocation.tenant_bound == expr.null(),
+                         SlotAllocation.logical_resource_owner == tenant_id),
+                    HostingDevice.tenant_bound == tenant_id,
+                    and_(HostingDevice.tenant_bound == expr.null(),
+                         SlotAllocation.hosting_device_id == expr.null())))
+        query = query.group_by(HostingDevice.id)
+        query = query.having(
+            func.sum(SlotAllocation.num_allocated) <= slot_threshold)
+        query = query.order_by(HostingDevice.created_at)
+        candidates = query.all()
+        if len(candidates) == 0:
+            # report unsuccessful scheduling
             return
         else:
-            # Choose the hosting device that has been running for the
-            # longest time. If more than one exists, then pick the one
-            # with the least occupied slots.
-            return candidate_hosting_devices[0]
+            # determine oldest candidates considered equally old
+            oldest_candidates = []
+            minute_limit = timedelta(minutes=EQUIVALENCE_TIME_DIFF)
+            for candidate in candidates:
+                if candidate[1] - candidates[0][1] < minute_limit:
+                    oldest_candidates.append(candidate)
+                else:
+                    # we're only interested in the longest running devices
+                    break
+            # sort on least number of used slots
+            sorted_candidates = sorted(oldest_candidates, key=itemgetter(2))
+            return sorted_candidates[0]
 
-    def unschedule_router_from_hosting_device(self, plugin, context,
-                                              r_hd_binding):
-        pass
+    def unschedule_router_(self, plugin, context, r_hd_binding):
+        return True
 
-    #TODO(bobmel): change to get Device-aaS service plugin instead
+    #TODO(bobmel): change to get Device Manager service plugin instead
     @property
     def _dev_mgr(self):
-        return hosting_device_manager_db.HostingDeviceManager.get_instance()
+        return dev_mgr_db.HostingDeviceManagerMixin.get_instance()

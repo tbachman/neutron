@@ -15,26 +15,32 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-N1KV_PLUGIN = 1
-OVS_PLUGIN = 2
-ML2_PLUGIN = 3
-
 # Hosting device belong to one of the following categories:
 VM_CATEGORY = 'VM'
 HARDWARE_CATEGORY = 'Hardware'
 
-# Hosting device is of one of the following types.
-NETWORK_NODE_HOST = 'NetworkNamespaceNode'
-CSR1KV_HOST = 'CSR1kv_template'
-NEXUS3K_HOST = 'Nexus_3k'
+# Default name of hosting device template for network nodes
+# hosting Linux network namespace-based Neutron routers.
+NETWORK_NODE_TEMPLATE = 'NetworkNode_template'
 
-# Router type is a new attribute for OsN Router
-# It can be set in Create operation then just Read.
-# Router type is instead changed by moving the
-# router to a hosting device of another type.
-CSR_ROUTER_TYPE = 'CSR1kv_router'
-NAMESPACE_ROUTER_TYPE = 'NetworkNamespace'
-HARDWARE_ROUTER_TYPE = 'Hardware'
+# Default name of router type for Neutron routers implemented
+# as Linux network namespaces in network nodes.
+NAMESPACE_ROUTER_TYPE = 'NetworkNamespace_router'
+
+# Router status
+# =============
+# Created but not scheduled nor deployed
+ROUTER_CREATED = 'Created'
+#  Scheduling in progress
+ROUTER_SCHEDULING = 'Scheduling'
+# Backlogged due to unsuccessful scheduling attempt
+ROUTER_BACKLOGGED = 'Backlogged'
+# Backlogged due to non-ready hosting device (e.g., still booting)
+ROUTER_WAITING_HOST = 'Awaiting host'
+# Deployed and configured
+ROUTER_ACTIVE = 'Active'
+# Deletion in progress (by cfg agent)
+ROUTER_DELETING = 'Deleting'
 
 AGENT_TYPE_CFG = 'Cisco cfg agent'
 CSR1kv_SSH_NETCONF_PORT = 22

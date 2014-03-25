@@ -29,12 +29,12 @@ AGENT_TYPE = {topics.L3_AGENT: " ",
               cl3_constants.CFG_AGENT: " cfg "}
 
 
-class L3JointAgentNotifyAPI(proxy.RpcProxy):
+class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
     """API for plugin to notify Cisco cfg agent and L3 agent."""
     BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, topic=topics.L3_AGENT):
-        super(L3JointAgentNotifyAPI, self).__init__(
+        super(L3RouterJointAgentNotifyAPI, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
 
     def _notification_host(self, context, method, payload, host,
@@ -113,7 +113,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
 
     def agent_updated(self, context, admin_state_up, host):
         """Updates agent on host to enable or disable it."""
-        #TODO(bobmel): Ensure correct topic is used for Cisco cfg agent
+        #TODO(bobmel): Ensure only used for l3agent
         self._notification_host(context, 'agent_updated',
                                 {'admin_state_up': admin_state_up},
                                 host)
@@ -169,17 +169,5 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                                 routers, host,
                                 topic=cl3_constants.CFG_AGENT)
 
-    def hosting_device_removed(self, context, hosting_data, deconfigure,
-                               cfg_agent):
-        """Notification that a hosting device has been removed.
 
-        A Cisco configuration agent is the receiver of these notifications.
-        """
-        if hosting_data:
-            self._notification_host(context, 'hosting_device_removed',
-                                    {'hosting_data': hosting_data,
-                                     'deconfigure': deconfigure}, cfg_agent,
-                                    topic=cl3_constants.CFG_AGENT)
-
-
-L3JointAgentNotify = L3JointAgentNotifyAPI()
+L3JointAgentNotify = L3RouterJointAgentNotifyAPI()

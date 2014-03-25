@@ -29,7 +29,7 @@ from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.extensions import n1kv
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_const
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.db.l3_router_appliance_db import (
     HostedHostingPortBinding)
 import neutron.plugins.cisco.l3.plugging_drivers as plug
@@ -79,13 +79,13 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     @property
     def _dev_mgr(self):
-        return hosting_device_manager_db.HostingDeviceManager.get_instance()
+        return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
 
     @classmethod
     def _get_profile_id(cls, p_type, resource, name):
         try:
-            tenant_id = (hosting_device_manager_db.HostingDeviceManager.
-                         get_instance().l3_tenant_id())
+            tenant_id = (dev_mgr_db.HostingDeviceManagerMixin.get_instance().
+                         l3_tenant_id())
         except AttributeError:
             return
         if tenant_id is None:

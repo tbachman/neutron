@@ -65,7 +65,7 @@ from neutron.openstack.common.rpc import proxy
 import neutron.plugins
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
-from neutron.plugins.cisco.l3.common import l3_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.db import composite_agentschedulers_db as agt_sch_db
 from neutron.plugins.cisco.l3.db import l3_cfg_rpc_base
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
@@ -427,7 +427,7 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         )
         # Bob: setup l3 cfg agent notifiers
         self.agent_notifiers[cl3_constants.AGENT_TYPE_CFG] = (
-            l3_rpc_joint_agent_api.L3JointAgentNotify
+            l3_router_rpc_joint_agent_api.L3JointAgentNotify
         )
         # Bob: Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp

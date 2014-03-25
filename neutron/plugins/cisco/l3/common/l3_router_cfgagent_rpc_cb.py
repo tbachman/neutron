@@ -42,13 +42,13 @@ class L3RouterCfgRpcCallbackMixin(object):
         #TODO(bobmel): Add functionality to process specific HE's
         hd_ids = kwargs.get('hosting_device_ids', [])
         context = neutron_context.get_admin_context()
-        l3plugin = manager.NeutronManager.get_service_plugins()[
-            plugin_constants.L3_ROUTER_NAT]
-        if not l3plugin:
+        l3plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_constants.L3_ROUTER_NAT)
+        if l3plugin is None:
             routers = {}
             LOG.error(_('No plugin for L3 routing registered! Will reply '
                         'to l3 agent with empty router dictionary.'))
-        if utils.is_extension_supported(
+        elif utils.is_extension_supported(
                 l3plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
             l3plugin.auto_schedule_hosting_devices_on_cfg_agent(context, host,
                                                                 router_ids)
@@ -58,7 +58,7 @@ class L3RouterCfgRpcCallbackMixin(object):
             routers = {}
         plugin = manager.NeutronManager.get_plugin()
         if utils.is_extension_supported(
-            plugin, constants.PORT_BINDING_EXT_ALIAS):
+                plugin, constants.PORT_BINDING_EXT_ALIAS):
             self._ensure_host_set_on_ports(context, plugin, host, routers)
         LOG.debug(_("Routers returned to cfg agent:\n %s"),
                   jsonutils.dumps(routers, indent=5))

@@ -36,10 +36,13 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import service_vm_lib
+from neutron.plugins.cisco.l3.common import (devmgr_rpc_cfgagent_api as
+                                             devmgr_rpc)
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
+from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -86,14 +89,17 @@ class MultipleHostingDeviceTemplates(n_exc.NeutronException):
     message = _("Multiple hosting device templates with same name %(name)s. "
                 "exist. Id must be used to.")
 
-
-class HostingDeviceManager(object):
+#TODO(bobmel): Make device manager a mixin
+class HostingDeviceManagerMixin(object):
     """A class implementing a resource manager for hosting devices.
 
-    The caller should make sure that HostingDeviceManager is a singleton.
+    The caller should make sure that HostingDeviceManagerMixin is a singleton.
     """
+
+    #TODO(bobmel): Remove when made a mixin class
     # The one and only instance
     _instance = None
+
     # The all-mighty tenant owning all hosting devices
     _l3_tenant_uuid = None
     # The management network for hosting devices
@@ -103,6 +109,12 @@ class HostingDeviceManager(object):
     # Dictionaries with loaded driver modules for different host types
     _plugging_drivers = {}
     _hosting_device_drivers = {}
+
+    # Scheduler of hosting devices to configuration agent
+    _cfgagent_scheduler = None
+
+    # Service VM manager object that interacts with Nova
+    _svc_vm_mgr = None
 
 #    # Dictionary of slot counter (dictionaries) for resource management:
 #    #  { <template_id1>: {
@@ -116,21 +128,11 @@ class HostingDeviceManager(object):
 #    # Dictionary of hosting device capacity
 #    _capacity = {}
 
+    #TODO(bobmel): Remove when made a mixin class
     def __init__(self):
-        auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
-                    cfg.CONF.keystone_authtoken.auth_host + ":" +
-                    str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
-        u_name = cfg.CONF.keystone_authtoken.admin_user
-        pw = cfg.CONF.keystone_authtoken.admin_password
-        tenant = cfg.CONF.l3_admin_tenant
-        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
-            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
-        self._gt_pool = eventlet.GreenPool()
-        # initialize hosting device pools
-        ctx = neutron_context.get_admin_context()
-        for template in ctx.session.query(HostingDeviceTemplate):
-            self.report_hosting_device_shortage(ctx, template)
+        self._setup_device_manager()
 
+    #TODO(bobmel): Remove when made a mixin class
     @classmethod
     def get_instance(cls):
         # double checked locking
@@ -297,8 +299,8 @@ class HostingDeviceManager(object):
         """
         if ((hosting_device['tenant_bound'] is not None and
              hosting_device['tenant_bound'] != resource['id']) or
-            (exclusive and not self.exclusively_used(hosting_device,
-                                                     resource['tenant_id']))):
+            (exclusive and not self._exclusively_used(context, hosting_device,
+                                                      resource['tenant_id']))):
             LOG.info(_('Rejecting allocation of %(num)d slots in hosting '
                        'device %(device)s to logical resource %(id)s due to '
                        'conflict of exclusive usage.'),
@@ -378,7 +380,7 @@ class HostingDeviceManager(object):
     #             mgr_context = neutron_context.get_admin_context()
     #             self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
     #                                   mgr_context, host_type, category)
-    #     return True
+    #     return Tnrue
 
     def release_hosting_device_slots(self, context, hosting_device, resource,
                                      num):
@@ -552,19 +554,62 @@ class HostingDeviceManager(object):
 #            # Adjust pool counters, easiest is to just re-sync.
 #            self._sync_hosting_device_pool_counters(context, template)
 
-    def process_non_responsive_hosting_device(self, context, hosting_device,
-                                              logical_resource_ids):
+    def handle_non_responding_hosting_devices(self, context, cfg_agent,
+                                              hosting_device_ids):
+        hosting_devices = self.get_hosting_devices(context.elevated(),
+                                                   hosting_device_ids)
+        # 'hosting_info' is dictionary with ids of removed hosting
+        # devices and the affected logical resources for each
+        # removed hosting device:
+        #    {'hd_id1': {'routers': [id1, id2, ...],
+        #                'fw': [id1, ...],
+        #                 ...},
+        #     'hd_id2': {'routers': [id3, id4, ...]},
+        #                'fw': [id1, ...],
+        #                ...},
+        #     ...}
+        hosting_info = {}
+        with context.session.begin(subtransactions=True):
+            #TODO(bobmel): Modify so service plugins register themselves
+            try:
+                l3plugin = manager.NeutronManager.get_service_plugins().get(
+                    svc_constants.L3_ROUTER_NAT)
+                l3plugin.handle_non_responding_hosting_devices(
+                    context, hosting_devices, hosting_info)
+            except AttributeError:
+                pass
+            e_context = context.elevated()
+            for hd in hosting_devices:
+                if self._process_non_responsive_hosting_device(e_context, hd):
+                    devmgr_rpc.DeviceMgrCfgAgentNotify.hosting_device_removed(
+                        context, hosting_info, False, cfg_agent)
+
+    def _process_non_responsive_hosting_device(self, context, hosting_device):
         """Host type specific processing of non responsive hosting devices.
 
         :param hosting_device: db object for hosting device
-        :param logical_resource_ids: dict{'routers': [id1, id2, ...]}
         :return: True if hosting_device has been deleted, otherwise False
         """
         if hosting_device['host_category'] == cl3_const.VM_CATEGORY:
             self._delete_dead_service_vm_hosting_device(
-                context, hosting_device, logical_resource_ids)
+                context, hosting_device)
             return True
         return False
+
+    def _setup_device_manager(self):
+        auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
+                    cfg.CONF.keystone_authtoken.auth_host + ":" +
+                    str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
+        u_name = cfg.CONF.keystone_authtoken.admin_user
+        pw = cfg.CONF.keystone_authtoken.admin_password
+        tenant = cfg.CONF.l3_admin_tenant
+        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
+            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
+        self._gt_pool = eventlet.GreenPool()
+        # initialize hosting device pools
+        ctx = neutron_context.get_admin_context()
+        for template in ctx.session.query(HostingDeviceTemplate):
+            self.report_hosting_device_shortage(ctx, template)
 
     @property
     def _core_plugin(self):
@@ -706,7 +751,6 @@ class HostingDeviceManager(object):
                         template_id=template['id'],
                         credential_id=None,
                         device_id=None,
-                        allocated_slots=0,
                         admin_state_up=True,
                         ip_address=mgmt_port['fixed_ips'][0]['ip_address'],
                         transport_port=template['transport_port'],
@@ -746,7 +790,7 @@ class HostingDeviceManager(object):
             HostingDevice.id == SlotAllocation.hosting_device_id)
         query = query.filter(HostingDevice.template_id == template['id'],
                              HostingDevice.admin_state_up == True,
-                             HostingDevice.tenant_bound == expr.null)
+                             HostingDevice.tenant_bound == expr.null())
         query = query.group_by(HostingDevice.id).having(
             func.count(SlotAllocation.logical_resource_id) == 0)
         query = query.order_by(
@@ -812,16 +856,16 @@ class HostingDeviceManager(object):
     #                 num_deleted += 1
     #     return num_deleted
 
-    def _delete_dead_service_vm_hosting_device(self, context, hosting_device,
-                                               logical_resource_ids):
+    def _delete_dead_service_vm_hosting_device(self, context, hosting_device):
+#        , logical_resource_ids):
         """Deletes a presumably dead <hosting_device> service VM.
 
         This will indirectly make all of its hosted resources unscheduled.
         """
         if hosting_device is None:
             return
-        host_type = hosting_device['host_type']
-        category = hosting_device['host_category']
+#        host_type = hosting_device['host_type']
+#        category = hosting_device['host_category']
         plugging_drv = self.get_hosting_device_plugging_driver(
             context, hosting_device['template_id'])
         hosting_device_drv = self.get_hosting_device_driver(
@@ -866,15 +910,16 @@ class HostingDeviceManager(object):
     def _get_total_available_slots(self, context, template_id, capacity):
         """Returns available slots sum for devices based on <template_id>."""
         query = context.session.query(func.sum(SlotAllocation.num_allocated))
-        total_allocated = query.filter_by(template_id=template_id,
-                                          tenant_bound=expr.null).one()
+        total_allocated = query.filter_by(
+            template_id=template_id,
+            tenant_bound=expr.null()).one()[0] or 0
         query = context.session.query(func.count(HostingDevice.id))
         num_devices = query.filter_by(template_id=template_id,
                                       admin_state_up=True,
-                                      tenant_bound=expr.null).one()
+                                      tenant_bound=expr.null()).one()[0] or 0
         return num_devices * capacity - total_allocated
 
-    def _exclusively_used(self, hosting_device, tenant_id):
+    def _exclusively_used(self, context, hosting_device, tenant_id):
         """Checks if only <tenant_id>'s resources use <hosting_device>."""
         return context.session.query(SlotAllocation).filter(
             SlotAllocation.hosting_device_id == hosting_device['id'],

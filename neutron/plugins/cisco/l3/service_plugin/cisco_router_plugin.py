@@ -29,10 +29,10 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.common import l3_router_cfg_rpc as l3_router_rpc
-from neutron.plugins.cisco.l3.common import devices_cfg_rpc as devices_rpc
+from neutron.plugins.cisco.l3.common import l3_router_cfgagent_rpc_cb as l3_router_rpc
+from neutron.plugins.cisco.l3.common import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
-from neutron.plugins.cisco.l3.common import l3_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.db import (composite_agentschedulers_db as
                                          agt_sch_db)
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
@@ -40,8 +40,7 @@ from neutron.plugins.common import constants
 
 
 class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
-                                    l3_router_rpc.L3RouterCfgRpcCallbackMixin,
-                                    devices_rpc.DevicesCfgRpcCallbackMixin):
+                                    l3_router_rpc.L3RouterCfgRpcCallbackMixin):
     # Set RPC API version to 1.0 by default.
     RPC_API_VERSION = '1.0'
 
@@ -85,10 +84,10 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                               'neutron.plugins.cisco.l3.scheduler.'
                               'l3_agent_composite_scheduler.'
                               'L3AgentCompositeScheduler')
-        self.router_scheduler = importutils.import_object(
-            cfg.CONF.router_scheduler_driver)
-        self.hosting_scheduler = importutils.import_object(
-            cfg.CONF.hosting_scheduler_driver)
+#        self.router_scheduler = importutils.import_object(
+#            cfg.CONF.router_scheduler_driver)
+#        self.hosting_scheduler = importutils.import_object(
+#            cfg.CONF.hosting_scheduler_driver)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
 
@@ -99,7 +98,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         self.agent_notifiers.update(
             {q_const.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotify,
              cl3_constants.AGENT_TYPE_CFG:
-             l3_rpc_joint_agent_api.L3JointAgentNotify})
+             l3_router_rpc_joint_agent_api.L3JointAgentNotify})
         # Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
         self.callbacks = CiscoRouterPluginRpcCallbacks()

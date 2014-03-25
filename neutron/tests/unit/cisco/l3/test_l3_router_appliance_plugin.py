@@ -156,8 +156,8 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
         cfg.CONF.set_default('max_routes', 3)
         ext_mgr = test_ext_extraroute.ExtraRouteTestExtensionManager()
 
-        hosting_device_manager_db.HostingDeviceManager._instance = None
-        hosting_device_manager_db.HostingDeviceManager._mgmt_nw_uuid = None
+        hosting_device_manager_db.HostingDeviceManagerMixin._instance = None
+        hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = None
         hosting_device_manager_db.HostingDeviceTemplate._mgmt_sec_grp_id = None
 
         super(test_l3_plugin.L3BaseForSepTests, self).setUp(
@@ -182,7 +182,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
         # Mock l3 admin tenant
         self.tenant_id_fcn_p = mock.patch(
             'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
-            'HostingDeviceManager.l3_tenant_id')
+            'HostingDeviceManagerMixin.l3_tenant_id')
         self.tenant_id_fcn = self.tenant_id_fcn_p.start()
         self.tenant_id_fcn.return_value = "L3AdminTenantId"
 
@@ -199,7 +199,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
 
         self.get_hosting_device_template_fcn_p = mock.patch(
             'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
-            'HostingDeviceManager.get_hosting_device_template',
+            'HostingDeviceManagerMixin.get_hosting_device_template',
             get_hosting_device_template_mock)
         self.get_hosting_device_template_fcn_p.start()
 
@@ -223,7 +223,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
                                              ip_version=4)
 
     def tearDown(self):
-        dev_mgr = hosting_device_manager_db.HostingDeviceManager.get_instance()
+        dev_mgr = hosting_device_manager_db.HostingDeviceManagerMixin.get_instance()
         dev_mgr.delete_all_service_vm_hosting_devices(
             context.get_admin_context(), cl3_const.CSR1KV_HOST)
         q_p = "network_id=%s" % self.mgmt_nw['network']['id']
@@ -237,7 +237,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
 
     def test_get_network_succeeds_without_filter(self):
         plugin = NeutronManager.get_plugin()
-        dev_mgr = hosting_device_manager_db.HostingDeviceManager.get_instance()
+        dev_mgr = hosting_device_manager_db.HostingDeviceManagerMixin.get_instance()
         ctx = context.Context(None, None, is_admin=True)
         nets = plugin.get_networks(ctx, filters=None)
         # Remove mgmt network from list
