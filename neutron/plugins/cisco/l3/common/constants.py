@@ -15,9 +15,7 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-# Hosting device belong to one of the following categories:
-VM_CATEGORY = 'VM'
-HARDWARE_CATEGORY = 'Hardware'
+from neutron.plugins.common import constants as const
 
 # Default name of hosting device template for network nodes
 # hosting Linux network namespace-based Neutron routers.
@@ -30,17 +28,17 @@ NAMESPACE_ROUTER_TYPE = 'NetworkNamespace_router'
 # Router status
 # =============
 # Created but not scheduled nor deployed
-ROUTER_CREATED = 'Created'
+ROUTER_PENDING_CREATE = const.PENDING_CREATE
 #  Scheduling in progress
-ROUTER_SCHEDULING = 'Scheduling'
+ROUTER_SCHEDULING = 'SCHEDULING'
 # Backlogged due to unsuccessful scheduling attempt
-ROUTER_BACKLOGGED = 'Backlogged'
+ROUTER_BACKLOGGED = 'BACKLOGGED'
 # Backlogged due to non-ready hosting device (e.g., still booting)
-ROUTER_WAITING_HOST = 'Awaiting host'
+ROUTER_WAITING_HOST = 'AWAITING_HOST'
 # Deployed and configured
-ROUTER_ACTIVE = 'Active'
+ROUTER_ACTIVE = const.ACTIVE
 # Deletion in progress (by cfg agent)
-ROUTER_DELETING = 'Deleting'
+ROUTER_PENDING_DELETE = const.PENDING_DELETE
 
 AGENT_TYPE_CFG = 'Cisco cfg agent'
 CSR1kv_SSH_NETCONF_PORT = 22

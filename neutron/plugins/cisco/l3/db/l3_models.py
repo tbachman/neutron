@@ -35,8 +35,6 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     enabled = sa.Column(sa.Boolean, nullable=False, default=True)
     # 'host_category' can be 'VM', 'Hardware'
     host_category = sa.Column(sa.String(255), nullable=False)
-    # 'host_type' can be 'NetworkNamespaceNode', 'CSR1kv', ...
-    host_type = sa.Column(sa.String(255), nullable=False)
     # list of service types hosting devices based on this template support
     service_types = sa.Column(sa.String(255))
     # the image name or uuid in Glance
@@ -45,8 +43,8 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     flavor = sa.Column(sa.String(255))
     # 'configuration_mechanism' indicates how configurations are made
     configuration_mechanism = sa.Column(sa.String(255))
-    # 'transport_port' is udp/tcp port of hosting device. May be empty.
-    transport_port = sa.Column(sa.Integer)
+    # 'protocol_port' is udp/tcp port of hosting device. May be empty.
+    protocol_port = sa.Column(sa.Integer)
     # Typical time (in seconds) needed for hosting device (created
     # from this template) to boot into operational state.
     booting_time = sa.Column(sa.Integer, default=0)
@@ -55,9 +53,10 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # desired number of slots to keep available at all times
     desired_slots_free = sa.Column(sa.Integer, nullable=False, default=0,
                                    autoincrement=False)
-    # 'tenant_bound' is empty or is a list ids of the only tenants allowed
-    #  to own/place resources on hosting devices created using this template
-    tenant_bound = sa.Column(sa.String(255))
+    # 'tenant_bound' is a (possibly empty) list of tenant ids representing
+    # the only tenants allowed to own/place resources on hosting devices
+    # created using this template. If list is empty all tenants are allowed.
+    tenant_bound = sa.Column(sa.String(512))
     # module to be used as plugging driver for logical resources
     # hosted inside hosting devices created using this template
     device_driver = sa.Column(sa.String(255), nullable=False)
@@ -86,7 +85,7 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                             sa.ForeignKey('hostingdevicetemplates.id'))
     template = orm.relationship(HostingDeviceTemplate)
     # id of credentials for this hosting device
-    credential_id = sa.Column(sa.String(36),
+    credentials_id = sa.Column(sa.String(36),
                               sa.ForeignKey('devicecredentials.id'))
     credentials = orm.relationship(DeviceCredential)
     # manufacturer id of the device, e.g., its serial number
@@ -96,8 +95,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
     # 'ip_address' is address of hosting device's management interface
     ip_address = sa.Column(sa.String(64), nullable=False)
-    # 'transport_port' is udp/tcp port of hosting device. May be empty.
-    transport_port = sa.Column(sa.Integer)
+    # 'protocol_port' is udp/tcp port of hosting device. May be empty.
+    protocol_port = sa.Column(sa.Integer)
     cfg_agent_id = sa.Column(sa.String(36),
                              sa.ForeignKey('agents.id'),
                              nullable=True)

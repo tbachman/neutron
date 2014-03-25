@@ -577,7 +577,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 'id': binding_info.hosting_device.id,
                 'host_type': binding_info.hosting_device.host_type,
                 'ip_address': binding_info.hosting_device.ip_address,
-                'port': binding_info.hosting_device.transport_port,
+                'port': binding_info.hosting_device.protocol_port,
                 'created_at': str(binding_info.hosting_device.created_at),
                 'booting_time': binding_info.hosting_device.booting_time}
 

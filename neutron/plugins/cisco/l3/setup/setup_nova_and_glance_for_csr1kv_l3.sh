@@ -160,10 +160,10 @@ hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: tenant_id, id, name, enabled, host_category, host_type, service_types, image, flavor, configurations_mechanism, transport_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
+   # Columns: tenant_id, id, name, enabled, host_category, service_types, image, flavor, configurations_mechanism, protocol_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
    sql_statement="INSERT INTO hostingdevicetemplates VALUES
    ('$tenantId', '11111111-2222-3333-4444-555555555555',
-    '$csr1kvHostingDeviceTemplateName', TRUE, 'VM', 'CSR1kv', 'router',
+    '$csr1kvHostingDeviceTemplateName', TRUE, 'VM', 'router',
     '$csr1kvImageName', '$csr1kvFlavorId', 'Netconf', 22, 420, 10, 5, NULL,
     '$hd_driver', '$plugging_driver')"
    mysql -e "use $db; $sql_statement"
@@ -184,10 +184,10 @@ hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: tenant_id, id, name, enabled, host_category, host_type, service_types, image, flavor, configurations_mechanism, transport_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
+   # Columns: tenant_id, id, name, enabled, host_category, service_types, image, flavor, configurations_mechanism, protocol_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
    sql_statement="INSERT INTO hostingdevicetemplates VALUES
    ('$tenantId', '11111110-2222-3333-4444-555555555555',
-    'Network_Node_template', TRUE, 'Hardware', 'NetworkNode', 'router:VPN:FW',
+    'Network_Node_template', TRUE, 'Hardware', 'router:VPN:FW',
     NULL, NULL, 'CLI', NULL, NULL, 200, 0, NULL, '', '')"
    mysql -e "use $db; $sql_statement"
 else

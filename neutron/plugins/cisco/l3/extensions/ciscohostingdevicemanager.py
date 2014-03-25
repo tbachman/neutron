@@ -28,6 +28,7 @@ from neutron.api.v2 import resource_helper
 from neutron.common import constants as const
 from neutron.common import exceptions as qexception
 from neutron import manager
+from neutron.openstack.common import importutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 
@@ -45,16 +46,20 @@ class HostingDeviceMgmtPortNotFound(qexception.InUse):
     message = _("Specified management port %(id)s does not exist.")
 
 
-class HostingDeviceTemplateInUse(qexception.InUse):
-    message = _("Hosting device template %(id)s in use.")
-
-
 class HostingDeviceNotFound(qexception.NotFound):
     message = _("Hosting device %(id)s does not exist")
 
 
 class HostingDeviceTemplateNotFound(qexception.NotFound):
     message = _("Hosting device template %(id)s does not exist")
+
+
+class HostingDeviceTemplateInUse(qexception.InUse):
+    message = _("Hosting device template %(id)s in use.")
+
+
+class DriverNotFound(qexception.NetworkNotFound):
+    message = _("Driver %(driver)s does not exist")
 
 
 def convert_validate_port_value(port):
@@ -64,12 +69,24 @@ def convert_validate_port_value(port):
         val = int(port)
     except (ValueError, TypeError):
         raise HostingDeviceInvalidPortValue(port=port)
-
     if val >= 0 and val <= 65535:
         return val
     else:
         raise HostingDeviceInvalidPortValue(port=port)
 
+
+def convert_validate_driver(driver):
+    if driver is None:
+        raise DriverNotFound(driver=driver)
+    try:
+        importutils.import_object(driver)
+    except (ImportError, TypeError, n_exc.NeutronException):
+        raise DriverNotFound(driver=driver)
+
+
+# Hosting device belong to one of the following categories:
+VM_CATEGORY = 'VM'
+HARDWARE_CATEGORY = 'Hardware'
 
 HOSTING_DEVICE_MANAGER_ALIAS = 'cisco-hosting-device-manager'
 DEVICE = 'hosting_device'
@@ -80,8 +97,7 @@ DEVICE_TEMPLATES = DEVICE_TEMPLATE + 's'
 # Attribute Map
 RESOURCE_ATTRIBUTE_MAP = {
     DEVICES: {
-        'tenant_id': {'allow_post': True, 'allow_put': False,
-                      'required_by_policy': True,
+        'tenant_id': {'allow_post': False, 'allow_put': False,
                       'is_visible': True},
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None},
@@ -89,10 +105,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                'primary_key': True},
         'template_id': {'allow_post': True, 'allow_put': False,
                         'is_visible': True, 'required_by_policy': True},
-        'credential_id': {'allow_post': True, 'allow_put': True,
-                          'default': None, 'is_visible': True},
+        'credentials_id': {'allow_post': True, 'allow_put': True,
+                           'default': None, 'is_visible': True},
         'device_id': {'allow_post': True, 'allow_put': True,
-                      'is_visible': True, 'default': ''},
+                      'is_visible': True, 'default': None},
         'admin_state_up': {'allow_post': True, 'allow_put': True,
                            'default': True,
                            'convert_to': attr.convert_to_boolean,
@@ -100,11 +116,11 @@ RESOURCE_ATTRIBUTE_MAP = {
         'mgmt_port_id': {'allow_post': True, 'allow_put': False,
                          'validate': {'type:uuid': None}, 'is_visible': True,
                          'required_by_policy': True},
-        'transport_port': {'allow_post': True, 'allow_put': False,
-                           'convert_to': convert_validate_port_value,
-                           'default': None, 'is_visible': True},
+        'protocol_port': {'allow_post': True, 'allow_put': False,
+                          'convert_to': convert_validate_port_value,
+                          'default': None, 'is_visible': True},
         'cfg_agent_id': {'allow_post': True, 'allow_put': False,
-                         'is_visible': True},
+                         'default': None, 'is_visible': True},
         'created_at': {'allow_post': False, 'allow_put': False,
                        'is_visible': True},
         'booting_time': {'allow_post': True, 'allow_put': True,
@@ -130,38 +146,47 @@ RESOURCE_ATTRIBUTE_MAP = {
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
                  'is_visible': True, 'default': ''},
-        'enabled': {'allow_post': True, 'allow_put': True, 'default': True,
-                    'convert_to': attr.convert_to_boolean},
+        'enabled': {'allow_post': True, 'allow_put': True,
+                    'default': True, 'convert_to': attr.convert_to_boolean},
         'host_category': {'allow_post': True, 'allow_put': False,
-                          'convert_to': convert_validate_host_category,
+                          'validate': {'type:values': [VM_CATEGORY,
+                                                       HARDWARE_CATEGORY]},
                           'required_by_policy': True, 'is_visible': True},
-
-
-        'template_id': {'allow_post': True, 'allow_put': False,
-                        'is_visible': True, 'required_by_policy': True},
-        'credential_id': {'allow_post': True, 'allow_put': False,
+        #TODO(bobmel): validate service_types
+        'service_types': {'allow_post': True, 'allow_put': True,
+                          'is_visible': True, 'default': ''},
+        'image': {'allow_post': True, 'allow_put': True,
+                  'default': None, 'is_visible': True},
+        'flavor': {'allow_post': True, 'allow_put': True,
+                   'default': None, 'is_visible': True},
+        'configuration_mechanism': {'allow_post': True, 'allow_put': True,
+                                    'is_visible': True},
+        'protocol_port': {'allow_post': True, 'allow_put': True,
+                          'convert_to': convert_validate_port_value,
                           'default': None, 'is_visible': True},
-        'direction': {'allow_post': True, 'allow_put': True,
-                      'is_visible': True,
-                      'validate': {'type:values': ['ingress', 'egress']}},
-        'protocol': {'allow_post': True, 'allow_put': False,
-                     'is_visible': True, 'default': None,
-                     'convert_to': convert_protocol},
-        'port_range_min': {'allow_post': True, 'allow_put': False,
-                           'convert_to': convert_validate_port_value,
-                           'default': None, 'is_visible': True},
-        'port_range_max': {'allow_post': True, 'allow_put': False,
-                           'convert_to': convert_validate_port_value,
-                           'default': None, 'is_visible': True},
-        'ethertype': {'allow_post': True, 'allow_put': False,
-                      'is_visible': True, 'default': 'IPv4',
-                      'convert_to': convert_ethertype_to_case_insensitive,
-                      'validate': {'type:values': sg_supported_ethertypes}},
-        'remote_ip_prefix': {'allow_post': True, 'allow_put': False,
-                             'default': None, 'is_visible': True},
-        'tenant_id': {'allow_post': True, 'allow_put': False,
-                      'required_by_policy': True,
-                      'is_visible': True},
+        'booting_time': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:non_negative': 0},
+                         'convert_to': attr.convert_to_int,
+                         'default': None, 'is_visible': True},
+        'slot_capacity': {'allow_post': True, 'allow_put': False,
+                          'validate': {'type:non_negative': 0},
+                          'convert_to': attr.convert_to_int,
+                          'default': 0, 'is_visible': True},
+        'desired_slots_free': {'allow_post': True, 'allow_put': False,
+                               'validate': {'type:non_negative': 0},
+                               'convert_to': attr.convert_to_int,
+                               'default': 0, 'is_visible': True},
+        'tenant_bound': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:uuid_list': []},
+                         'default': None, 'is_visible': True},
+        'device_driver': {'allow_post': True, 'allow_put': False,
+                          'convert_to': convert_validate_driver,
+                          'required_by_policy': True,
+                          'is_visible': True},
+        'plugging_driver': {'allow_post': True, 'allow_put': False,
+                            'convert_to': convert_validate_driver,
+                            'required_by_policy': True,
+                            'is_visible': True},
     }
 }
 
@@ -209,7 +234,7 @@ class Ciscohostingdevice(extensions.ExtensionDescriptor):
 
 
 @six.add_metaclass(ABCMeta)
-class HostingDevicePluginBase(object):
+class CiscoHostingDevicePluginBase(object):
 
     @abstractmethod
     def create_hosting_device(self, context, hosting_device):
@@ -224,13 +249,13 @@ class HostingDevicePluginBase(object):
         pass
 
     @abstractmethod
-    def get_hosting_devices(self, context, filters=None, fields=None,
-                            sorts=None, limit=None, marker=None,
-                            page_reverse=False):
+    def get_hosting_device(self, context, id, fields=None):
         pass
 
     @abstractmethod
-    def get_hosting_device(self, context, id, fields=None):
+    def get_hosting_devices(self, context, filters=None, fields=None,
+                            sorts=None, limit=None, marker=None,
+                            page_reverse=False):
         pass
 
     @abstractmethod
@@ -248,11 +273,11 @@ class HostingDevicePluginBase(object):
         pass
 
     @abstractmethod
-    def get_hosting_device_templates(self, context, filters=None, fields=None,
-                                     sorts=None, limit=None, marker=None,
-                                     page_reverse=False):
+    def get_hosting_device_template(self, context, id, fields=None):
         pass
 
     @abstractmethod
-    def get_hosting_device_template(self, context, id, fields=None):
+    def get_hosting_device_templates(self, context, filters=None, fields=None,
+                                     sorts=None, limit=None, marker=None,
+                                     page_reverse=False):
         pass
