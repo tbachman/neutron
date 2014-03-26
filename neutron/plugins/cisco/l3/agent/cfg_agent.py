@@ -146,7 +146,8 @@ class CiscoCfgAgent(manager.Manager):
         self.updated_routers = set()
         self.removed_routers = set()
         #ToDo: Place holder for data structures of other services
-
+        # { 'fw-id1':{<fw_data>}, 'fw-id12':{<fw_data>}, ......}
+        self.created_fws = []
         #Other references held by the cfg agent
         self._hdm = HostingDevicesManager()
         self._initialize_service_helpers()
@@ -156,6 +157,7 @@ class CiscoCfgAgent(manager.Manager):
 
     def _initialize_service_helpers(self):
         self.routing_service_helper = RoutingServiceHelper(self)
+        self.firewall_service_helper = FirewallServiceHelper(self)
 
     def _initialize_plugin_rpc(self, host):
         self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
@@ -210,6 +212,8 @@ class CiscoCfgAgent(manager.Manager):
             resources['all_routers'] = False
 
             # ToDo: Add fetching of info for other plugins here
+            if self.created_fws:
+                resources['created_fws'] = self.created_fws
 
             # Sort on hosting device
             hosting_devices = self._sort_resources_per_hosting_device(
@@ -312,6 +316,11 @@ class CiscoCfgAgent(manager.Manager):
 
     #ToDo: Add new notifications for VPN, FW here
 
+    # FW notifications
+    def create_firewall(self, context, firewall, host):
+        """Handle Rpc from plugin to create a firewall."""
+        self.created_fws.append(firewall)
+
     ####   Serializing on Hosting device  ###
     def _sort_resources_per_hosting_device(self, resources):
         """ This function will sort the resources on hosting device.
@@ -320,7 +329,7 @@ class CiscoCfgAgent(manager.Manager):
 
         hosting_devices = {
                             'hd_id1' : {'routers':[routers], 'vpns':[vpns],
-                             'fws': fws, 'removed_routers':[routers] }
+                             'created_fws': fws, 'removed_routers':[routers] }
                             'hd_id2' : {'routers':[routers], 'vpns':[vpns],
                              'fws': fws }
                             .......
@@ -341,8 +350,10 @@ class CiscoCfgAgent(manager.Manager):
         for vpn in resources.get('vpns'):
             pass
 
-        for fw in resources.get('fws'):
-            pass
+        for fw in resources.get('created_fws'):
+            hd_id = fw['hosting_device']['id']
+            hosting_devices.setdefault(hd_id, {})
+            hosting_devices[hd_id].setdefault('created_fws', []).append(fw)
 
         return hosting_devices
 
@@ -370,6 +381,12 @@ class CiscoCfgAgent(manager.Manager):
                 removed_routers)
         LOG.debug(_("Processing for hosting device: %d completed"),
                   hosting_device_id)
+
+        created_fws = resources.get('created_fws')
+        if created_fws:
+            self.firewall_service_helper.process_created_fws(created_fws)
+
+
 
     ## Sub orchestrator ##
     def _process_routers(self, routers, all_routers=False):
@@ -734,6 +751,19 @@ class RoutingServiceHelper(object):
                       port['id'])
         prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
         port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
+
+
+class FirewallServiceHelper(object):
+    def __init__(self, cfg_agent):
+        self.agent = cfg_agent
+        # Short cut for attributes in agent
+        self._hdm = self.agent._hdm
+
+    def process_created_fws(self, fws):
+        for fw in fws:
+            fw_driver = self._hdm.get_driver(fw['hosting_device'],
+                                             service_type='FIREWALL')
+            fw_driver.create_firewall(fw)
 
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
