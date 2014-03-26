@@ -326,4 +326,6 @@ class InvalidCIDR(BadRequest):
 
 
 class NoValidHost(NeutronException):
-    message = _("No valid host was found. %(reason)s")
+    message = _("No valid host was found. %(reason)s")class DeviceIDNotOwnedByTenant(Conflict):
+    message = _("The following device_id %(device_id)s is not owned by your "
+                "tenant or matches another tenants router.")
