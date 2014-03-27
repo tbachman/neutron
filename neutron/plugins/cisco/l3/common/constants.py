@@ -45,6 +45,7 @@ CFG_AGENT = 'cisco_cfg_agent'
 # Service Types : Used for loading the Hosting device manager to load the right
 # driver class for a particular service
 SERVICE_ROUTING = "routing"
+SERVICE_FIREWALL = "firewall"
 
 # Device Configuration Protocol
 DEV_CFG_PROTO_NETCONF = "NETCONF"

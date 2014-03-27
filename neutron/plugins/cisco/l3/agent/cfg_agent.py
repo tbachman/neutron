@@ -762,7 +762,8 @@ class FirewallServiceHelper(object):
     def process_created_fws(self, fws):
         for fw in fws:
             fw_driver = self._hdm.get_driver(fw['hosting_device'],
-                                             service_type='FIREWALL')
+                                             cl3_constants.SERVICE_FIREWALL,
+                                             cl3_constants.DEV_CFG_PROTO_NETCONF)
             fw_driver.create_firewall(fw)
 
 

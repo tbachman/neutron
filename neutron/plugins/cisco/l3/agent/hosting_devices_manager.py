@@ -89,13 +89,23 @@ class HostingDevicesManager(object):
             driver = self._set_driver(router_info)
         return driver
 
-    def _set_driver(self, router_info):
+    def get_driver(self, hosting_device, service_type, config_protocol):
+        hd_id = hosting_device['id']
+        hd_type = hosting_device['host_type']
+
+        search_tuple = (hd_id, hd_type, service_type, config_protocol)
+        driver = self._drivers.get(search_tuple, None)
+        if driver is None:
+            driver = self._set_driver(hosting_device)
+        return driver
+
+    def _set_driver(self, hosting_device):
         try:
             _driver = None
-            router_id = router_info.router_id
-            router = router_info.router
+            # router_id = router_info.router_id
+            # router = router_info.router
 
-            hosting_device = router['hosting_device']
+            # hosting_device = router['hosting_device']
             _hd_id = hosting_device['id']
             _hd_type = hosting_device['host_type']
             # Note: We are setting  service as 'Routing' and configuration
@@ -129,8 +139,9 @@ class HostingDevicesManager(object):
                               {'driver': driver_class,
                                'host_type': _hd_type})
                 raise
-            self.router_id_hosting_devices[router_id] = hosting_device
-            self._drivers[_hd_id] = _driver
+            # self.router_id_hosting_devices[router_id] = hosting_device
+            driver_key = (_hd_id, _hd_id, _service_type, _config_protocol)
+            self._drivers[driver_key] = _driver
         except (AttributeError, KeyError) as e:
             LOG.error(_("Cannot set driver for router. Reason: %s"), e)
         return _driver
