@@ -32,12 +32,12 @@ def initialize():
     db_api.configure_db()
 
 
-def add_network_segment(session, network_id, segment):
+def add_network_segment(session, network_id, segment_type):
     with session.begin(subtransactions=True):
         record = models.NetworkSegment(
             id=uuidutils.generate_uuid(),
             network_id=network_id,
-            segment_type=segment.get(api.NETWORK_TYPE),
+            segment_type=segment_type,
         )
         session.add(record)
     LOG.info(_("Added segment %(id)s of type %(segment_type)s for network"
@@ -46,6 +46,13 @@ def add_network_segment(session, network_id, segment):
               'segment_type': record.segment_type,
               'network_id': record.network_id})
 
+
+def get_network_segments(session, network_id):
+    with session.begin(subtransactions=True):
+        records = models.NetworkSegment(
+            network_id=network_id
+        )
+        return records
 
 def ensure_port_binding(session, port_id):
     with session.begin(subtransactions=True):

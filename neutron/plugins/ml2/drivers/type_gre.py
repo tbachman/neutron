@@ -24,6 +24,7 @@ from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_tunnel
+from neutron.plugins.ml2.drivers.type_driver_common import TypeDriverMixin
 
 LOG = log.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class GreAllocation(model_base.BASEV2):
     gre_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
                        autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False, default=False)
+    network_id = sa.Column(sa.String(36),
+                           sa.ForeignKey('networks.id', ondelete="CASCADE"),
+                           nullable=True)
 
 
 class GreEndpoints(model_base.BASEV2):
@@ -57,7 +61,7 @@ class GreEndpoints(model_base.BASEV2):
         return "<GreTunnelEndpoint(%s)>" % self.ip_address
 
 
-class GreTypeDriver(type_tunnel.TunnelTypeDriver):
+class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
 
     def get_type(self):
         return p_const.TYPE_GRE
@@ -70,6 +74,34 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
             p_const.TYPE_GRE
         )
         self._sync_gre_allocations()
+
+    def create_network(self, session, context):
+        net_data = context._network
+        segments = self._process_provider_create(net_data)
+        net_id = net_data.get('id')
+
+        if segments:
+            all_segments = []
+            for segment in segments:
+                one_seg = self.reserve_provider_segment(session, segment)
+                all_segments.append(one_seg)
+            return all_segments
+        else:
+            return self.allocate_tenant_segment(session, net_id)
+
+    def delete_network(self, session, context):
+        net_data = context._network
+        net_id = net_data.get('id')
+        self.release_segment(session, net_id)
+
+    def get_segment(self, context, network_id):
+        LOG.debug(_("Returning segments for network %s") % network_id)
+        alloc = (context.session.query(GreAllocation).
+                 filter_by(network_id=network_id).one())
+
+        return {api.NETWORK_TYPE: p_const.TYPE_GRE,
+                api.PHYSICAL_NETWORK: alloc.physical_network,
+                api.SEGMENTATION_ID: alloc.gre_id}
 
     def reserve_provider_segment(self, session, segment):
         segmentation_id = segment.get(api.SEGMENTATION_ID)
@@ -91,7 +123,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
                 alloc.allocated = True
                 session.add(alloc)
 
-    def allocate_tenant_segment(self, session):
+    def allocate_tenant_segment(self, session, network_id):
         with session.begin(subtransactions=True):
             alloc = (session.query(GreAllocation).
                      filter_by(allocated=False).
@@ -101,16 +133,17 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
                 LOG.debug(_("Allocating gre tunnel id  %(gre_id)s"),
                           {'gre_id': alloc.gre_id})
                 alloc.allocated = True
-                return {api.NETWORK_TYPE: p_const.TYPE_GRE,
+                alloc.network_id = network_id
+                return ({api.NETWORK_TYPE: p_const.TYPE_GRE,
                         api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.gre_id}
+                        api.SEGMENTATION_ID: alloc.gre_id})
 
-    def release_segment(self, session, segment):
+    def release_segment(self, session, network_id):
         gre_id = segment[api.SEGMENTATION_ID]
         with session.begin(subtransactions=True):
             try:
                 alloc = (session.query(GreAllocation).
-                         filter_by(gre_id=gre_id).
+                         filter_by(network_id=network_id).
                          with_lockmode('update').
                          one())
                 alloc.allocated = False
@@ -160,9 +193,6 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
             for gre_id in sorted(gre_ids):
                 alloc = GreAllocation(gre_id=gre_id)
                 session.add(alloc)
-
-    def get_gre_allocation(self, session, gre_id):
-        return session.query(GreAllocation).filter_by(gre_id=gre_id).first()
 
     def get_endpoints(self):
         """Get every gre endpoints from database."""

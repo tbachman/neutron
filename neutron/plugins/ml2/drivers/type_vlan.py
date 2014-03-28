@@ -260,7 +260,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                      first())
             if alloc:
                 LOG.debug(_("Allocating vlan %(vlan_id)s on physical network "
-                            "%(physical_network)s from pool"
+                            "%(physical_network)s from pool "
                             "for network %(network_id)s"),
                           {'vlan_id': alloc.vlan_id,
                            'physical_network': alloc.physical_network,

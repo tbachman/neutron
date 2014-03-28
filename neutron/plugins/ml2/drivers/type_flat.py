@@ -16,16 +16,17 @@
 from oslo.config import cfg
 import sqlalchemy as sa
 
+from neutron import manager
+from neutron.api.v2 import attributes
 from neutron.common import exceptions as exc
 from neutron.db import model_base
-from neutron.openstack.common import log
-from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2 import driver_api as api
 from neutron.extensions import multiprovidernet as mpnet
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
-from neutron import manager
-from neutron.api.v2 import attributes
+from neutron.openstack.common import log
+from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2 import driver_api as ap
+from neutron.plugins.ml2.drivers.type_driver_common import TypeDriverMixin
 
 LOG = log.getLogger(__name__)
 
@@ -51,9 +52,10 @@ class FlatAllocation(model_base.BASEV2):
 
     physical_network = sa.Column(sa.String(64), nullable=False,
                                  primary_key=True)
+    network_id = sa.Column(sa.String(255), nullable=True)
 
 
-class FlatTypeDriver(api.TypeDriver):
+class FlatTypeDriver(api.TypeDriver, TypeDriverMixin):
     """Manage state for flat networks with ML2.
 
     The FlatTypeDriver implements the 'flat' network_type. Flat
@@ -93,14 +95,13 @@ class FlatTypeDriver(api.TypeDriver):
         else:
             self.allocate_tenant_segment(session)
 
-    def create_subnet(self, context):
-        pass
+    def get_segment(self, context, network_id):
+        LOG.debug(_("Returning segments for network %s") % network_id)
+        alloc = (context.session.query(FlatAllocation).
+                 filter_by(network_id=network_id).one())
 
-    def create_port(self, context):
-        pass
-
-    def get_segment(self, context):
-        pass
+        return {api.NETWORK_TYPE: p_const.TYPE_FLAT,
+                api.PHYSICAL_NETWORK: alloc.physical_network}
 
     def _process_provider_segment(self, segment):
         network_type = self._get_attribute(segment, provider.NETWORK_TYPE)
