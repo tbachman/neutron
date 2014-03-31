@@ -28,6 +28,8 @@ from neutron.plugins.ml2.drivers.cisco.apic import exceptions as cexc
 
 LOG = logging.getLogger(__name__)
 
+APIC_CODE_FORBIDDEN = str(requests.codes.forbidden)
+
 
 # Info about a Managed Object's relative name (RN) and container.
 class ManagedObjectName(namedtuple('MoPath',
@@ -203,16 +205,20 @@ class ApicSession(object):
         if time.time() > self.session_deadline:
             self.refresh()
 
-    def _extract_data(self, url, data, response):
-        """Extract the data from a request, after checking for errors."""
+    def _send(self, request, url, data=None, refreshed=None):
+        """Send a request and process the response."""
+        if data is None:
+            response = request(url, cookies=self.cookie)
+        else:
+            response = request(url, data=data, cookies=self.cookie)
         if response is None:
             raise cexc.ApicHostNoResponse(url=url)
         # Every request refreshes the timeout
         self.session_deadline = time.time() + self.session_timeout
         if data is None:
-            request = url
+            request_str = url
         else:
-            request = '%s, data=%s' % (url, data)
+            request_str = '%s, data=%s' % (url, data)
             LOG.debug(_("data = %s"), data)
         # imdata is where the APIC returns the useful information
         imdata = response.json().get('imdata')
@@ -224,7 +230,12 @@ class ApicSession(object):
             except (IndexError, KeyError):
                 err_code = '[code for APIC error not found]'
                 err_text = '[text for APIC error not found]'
-            raise cexc.ApicResponseNotOk(request=request,
+            # If invalid token then re-login and retry once
+            if (not refreshed and err_code == APIC_CODE_FORBIDDEN and
+                    err_text.lower().startswith('token was invalid')):
+                self.login()
+                return self._send(request, url, data=data, refreshed=True)
+            raise cexc.ApicResponseNotOk(request=request_str,
                                          status=response.status_code,
                                          reason=response.reason,
                                          err_text=err_text, err_code=err_code)
@@ -236,37 +247,32 @@ class ApicSession(object):
         """Retrieve generic data from the server."""
         self._check_session()
         url = self._api_url(request)
-        response = self.session.get(url, cookies=self.cookie)
-        return self._extract_data(url, None, response)
+        return self._send(self.session.get, url)
 
     def get_mo(self, mo, *args):
         """Retrieve a managed object by its distinguished name."""
         self._check_session()
         url = self._mo_url(mo, *args) + '?query-target=self'
-        response = self.session.get(url, cookies=self.cookie)
-        return self._extract_data(url, None, response)
+        return self._send(self.session.get, url)
 
     def list_mo(self, mo):
         """Retrieve the list of managed objects for a class."""
         self._check_session()
         url = self._qry_url(mo)
-        response = self.session.get(url, cookies=self.cookie)
-        return self._extract_data(url, None, response)
+        return self._send(self.session.get, url)
 
     def post_data(self, request, data):
         """Post generic data to the server."""
         self._check_session()
         url = self._api_url(request)
-        response = self.session.post(url, data=data, cookies=self.cookie)
-        return self._extract_data(url, data, response)
+        return self._send(self.session.post, url, data=data)
 
     def post_mo(self, mo, *args, **data):
         """Post data for a managed object to the server."""
         self._check_session()
         url = self._mo_url(mo, *args)
         data = self._make_data(mo.klass_name, **data)
-        response = self.session.post(url, data=data, cookies=self.cookie)
-        return self._extract_data(url, data, response)
+        return self._send(self.session.post, url, data=data)
 
     # Session management
 
@@ -287,8 +293,10 @@ class ApicSession(object):
             attributes = imdata[0]['error']['attributes']
         return attributes
 
-    def login(self, usr, pwd):
+    def login(self, usr=None, pwd=None):
         """Log in to controller. Save user name and authentication."""
+        usr = usr or self.username
+        pwd = pwd or self.password
         name_pwd = self._make_data('aaaUser', name=usr, pwd=pwd)
         url = self._api_url('aaaLogin')
         try:
@@ -308,8 +316,6 @@ class ApicSession(object):
                                          err_text=attributes['text'],
                                          err_code=attributes['code'])
 
-        return self.authentication
-
     def refresh(self):
         """Called when a session has timed out or almost timed out."""
         url = self._api_url('aaaRefresh')
@@ -321,11 +327,11 @@ class ApicSession(object):
         else:
             err_code = attributes['code']
             err_text = attributes['text']
-            if (err_code == '403' and
+            if (err_code == APIC_CODE_FORBIDDEN and
                     err_text.lower().startswith('token was invalid')):
                 # This means the token timed out, so log in again.
                 LOG.debug(_("APIC session timed-out, logging in again."))
-                self.authentication = self.login(self.username, self.password)
+                self.login()
             else:
                 self.authentication = None
                 raise cexc.ApicResponseNotOk(request=url,

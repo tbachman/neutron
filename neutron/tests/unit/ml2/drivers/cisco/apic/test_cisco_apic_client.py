@@ -38,14 +38,12 @@ class TestCiscoApicClient(base.BaseTestCase, mocked.ControllerMixin):
         if timeout is None:
             timeout = 300
         self.reset_reponses()
-        self.mock_response_for_post('aaaLogin', userName=mocked.APIC_USR,
-                                    token='X', refreshTimeoutSeconds=timeout)
+        self.mock_apic_manager_login_responses(timeout=timeout)
         self.apic.login(mocked.APIC_USR, mocked.APIC_PWD)
 
     def test_login_by_instantiation(self):
         self.reset_reponses()
-        self.mock_response_for_post('aaaLogin', userName=mocked.APIC_USR,
-                                    token='X', refreshTimeoutSeconds='300')
+        self.mock_apic_manager_login_responses()
         apic2 = apic.RestClient(mocked.APIC_HOST,
                                 usr=mocked.APIC_USR, pwd=mocked.APIC_PWD)
         self.assertIsNotNone(apic2.authentication)
@@ -143,9 +141,21 @@ class TestCiscoApicClient(base.BaseTestCase, mocked.ControllerMixin):
                                      code='403',
                                      text=u'Token was invalid. Expired.')
         # Client will then try to re-login.
-        self.mock_response_for_post('aaaLogin', userName=mocked.APIC_USR,
-                                    token='ok', refreshTimeoutSeconds=300)
+        self.mock_apic_manager_login_responses()
         # Finally the client will try to get the tenant.
+        self.mock_response_for_get('fvTenant', name=mocked.APIC_TENANT)
+        tenant = self.apic.fvTenant.get(mocked.APIC_TENANT)
+        self.assertEqual(tenant['name'], mocked.APIC_TENANT)
+
+    def test_lookup_mo_bad_token_retry(self):
+        self._mock_authenticate()
+        # For the first get request we mock a bad token.
+        self.mock_error_get_response(requests.codes.bad_request,
+                                     code='403',
+                                     text=u'Token was invalid. Expired.')
+        # Client will then try to re-login.
+        self.mock_apic_manager_login_responses()
+        # Then the client will retry to get the tenant.
         self.mock_response_for_get('fvTenant', name=mocked.APIC_TENANT)
         tenant = self.apic.fvTenant.get(mocked.APIC_TENANT)
         self.assertEqual(tenant['name'], mocked.APIC_TENANT)

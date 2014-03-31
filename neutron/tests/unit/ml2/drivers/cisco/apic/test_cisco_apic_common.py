@@ -140,10 +140,10 @@ class ControllerMixin(object):
                 name = '-'.join([obj, 'name'])  # useful for debugging
                 self._stage_mocked_response('post', OK, obj, debug_name=name)
 
-    def mock_apic_manager_login_responses(self):
+    def mock_apic_manager_login_responses(self, timeout=300):
         # APIC Manager tests are based on authenticated session
         self.mock_response_for_post('aaaLogin', userName=APIC_USR,
-                                    token='ok', refreshTimeoutSeconds=300)
+                                    token='ok', refreshTimeoutSeconds=timeout)
 
     def assert_responses_drained(self, req=None):
         """Fail if all the expected responses have not been consumed."""
