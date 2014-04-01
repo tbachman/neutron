@@ -42,16 +42,11 @@ class BaseMonitorTest(base_agent.BaseLinuxTestCase):
     def setUp(self):
         super(BaseMonitorTest, self).setUp()
 
-        self._check_test_requirements()
-
-        # Emulate using a rootwrap script with sudo
         self.root_helper = 'sudo sudo'
+        self._check_test_requirements()
         self.ovs = ovs_lib.BaseOVS(self.root_helper)
-        self.bridge = self.create_ovs_resource('test-br-', self.ovs.add_bridge)
-
-        def cleanup_bridge():
-            self.bridge.destroy()
-        self.addCleanup(cleanup_bridge)
+        self.br = self.create_ovs_bridge(self.ovs, 'test-br')
+        self.addCleanup(self.cleanup_bridge(self.ovs))
 
     def _check_test_requirements(self):
         if not self.check_sudo():
@@ -111,7 +106,7 @@ class TestSimpleInterfaceMonitor(BaseMonitorTest):
                         'Initial call should always be true')
         self.assertFalse(self.monitor.has_updates,
                          'has_updates without port addition should be False')
-        self.create_ovs_resource('test-port-', self.bridge.add_port)
+        self.create_ovs_resource('test-port-', self.br.add_port)
         with self.assert_max_execution_time():
             # has_updates after port addition should become True
             while not self.monitor.has_updates:

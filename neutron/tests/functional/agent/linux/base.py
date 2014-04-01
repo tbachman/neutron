@@ -21,6 +21,12 @@ from neutron.tests import base
 
 class BaseLinuxTestCase(base.BaseTestCase):
 
+    def create_ovs_bridge(self, ovsbridge, br_prefix='br-'):
+        return self.create_ovs_resource(br_prefix, ovsbridge.add_bridge)
+
+    def cleanup_bridge(self, ovs):
+        ovs.destroy()
+
     def check_command(self, cmd, error_text, skip_msg):
         try:
             utils.execute(cmd)
@@ -39,7 +45,7 @@ class BaseLinuxTestCase(base.BaseTestCase):
     def create_ovs_resource(self, name_prefix, creation_func):
         """Create a new ovs resource that does not already exist.
 
-        :param name_prefix: The prefix for a randomly generated name
+        :param name_prefix: The prefix for a randomly generated name.
         :param creation_func: A function taking the name of the resource
                to be created.  An error is assumed to indicate a name
                collision.
@@ -48,6 +54,29 @@ class BaseLinuxTestCase(base.BaseTestCase):
             name = self.get_rand_name(name_prefix)
             try:
                 return creation_func(name)
+            except RuntimeError:
+                continue
+            break
+
+    def create_ovs_tunnel_port(self, name_prefix, creation_func,
+                               remote_ip, local_ip, tunnel_type):
+        """Create an OVS tunnel port that does not already exist.
+
+        This method returns the ofport ID of the created tunnel port.
+
+        :param name_prefix: The prefix for a randomly generated name.
+        :param creation_func: A function taking the name of the resource
+               to be created. An error is assumed to indicate a name
+               collision.
+        :param remote_ip: The remote IP address of the tunnel port.
+        :param local_ip: The local IP address of the tunnel port.
+        :param tunnel_type: The type of tunnel, currently either GRE or VXLAN.
+        """
+        while True:
+            name = self.get_rand_name(name_prefix)
+            try:
+                return name, creation_func(name, remote_ip, local_ip,
+                                           tunnel_type)
             except RuntimeError:
                 continue
             break
