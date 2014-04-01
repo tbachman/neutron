@@ -230,7 +230,7 @@ class HostingDeviceManagerMixin(object):
             return self._hosting_device_drivers[id]
         except KeyError:
             try:
-                template = self.get_hosting_device_template(context, id)
+                template = self._get_hosting_device_template(context, id)
                 self._hosting_device_drivers[id] = importutils.import_object(
                     template['device_driver'])
             except (ImportError, TypeError, n_exc.NeutronException):
@@ -244,7 +244,7 @@ class HostingDeviceManagerMixin(object):
             return self._plugging_drivers[id]
         except KeyError:
             try:
-                template = self.get_hosting_device_template(context, id)
+                template = self._get_hosting_device_template(context, id)
                 self._plugging_drivers[id] = importutils.import_object(
                     template['plugging_driver'])
             except (ImportError, TypeError, n_exc.NeutronException):
@@ -474,7 +474,7 @@ class HostingDeviceManagerMixin(object):
     #                                   mgr_context, host_type, category)
     #     return True
 
-    def get_hosting_devices(self, context, hosting_device_ids):
+    def get_hosting_devices_db(self, context, hosting_device_ids):
         """Returns hosting devices with <hosting_device_ids>."""
         query = context.session.query(HostingDevice)
         if len(hosting_device_ids) > 1:
@@ -500,7 +500,7 @@ class HostingDeviceManagerMixin(object):
     #                     'found.'), host_type)
     #         return
 
-    def get_hosting_device_template(self, context, id_or_name):
+    def _get_hosting_device_template(self, context, id_or_name):
         """Returns hosting device template with specified <id_or_name>."""
         query = context.session.query(HostingDeviceTemplate)
         query = query.filter(HostingDeviceTemplate.id == id_or_name)
@@ -556,8 +556,8 @@ class HostingDeviceManagerMixin(object):
 
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
                                               hosting_device_ids):
-        hosting_devices = self.get_hosting_devices(context.elevated(),
-                                                   hosting_device_ids)
+        hosting_devices = self.get_hosting_devices_db(context.elevated(),
+                                                    hosting_device_ids)
         # 'hosting_info' is dictionary with ids of removed hosting
         # devices and the affected logical resources for each
         # removed hosting device:

@@ -69,7 +69,7 @@ class HostingDeviceCfgAgentScheduler(object):
     def schedule_hosting_devices_on_cfg_agent(self, plugin, context, id):
         """Selects Cisco cfg agent that will configure hosting device."""
         with context.session.begin(subtransactions=True):
-            hd_db = self._dev_mgr.get_hosting_devices(context, [id])
+            hd_db = self._dev_mgr.get_hosting_devices_db(context, [id])
             if not hd_db:
                 LOG.debug(_('DB inconsistency: Hosting device %s could '
                             'not be found'), id)
