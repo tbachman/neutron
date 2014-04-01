@@ -79,9 +79,13 @@ def convert_validate_driver(driver):
     if driver is None:
         raise DriverNotFound(driver=driver)
     try:
+        # yes, this is a coarse-grained check...
         importutils.import_object(driver)
-    except (ImportError, TypeError, n_exc.NeutronException):
+        return driver
+    except ImportError:
         raise DriverNotFound(driver=driver)
+    except:
+        return driver
 
 
 # Hosting device belong to one of the following categories:

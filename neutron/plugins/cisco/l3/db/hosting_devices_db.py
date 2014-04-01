@@ -46,45 +46,6 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
                            base_db.CommonDbMixin):
     """A class implementing DB functionality for hosting devices."""
 
-    def get_hosting_devices(self, context, hosting_device_ids):
-        """Returns hosting devices with <hosting_device_ids>."""
-        query = context.session.query(HostingDevice)
-        if len(hosting_device_ids) > 1:
-            query = query.options(joinedload('cfg_agent')).filter(
-                HostingDevice.id.in_(hosting_device_ids))
-        else:
-            query = query.options(joinedload('cfg_agent')).filter(
-                HostingDevice.id == hosting_device_ids[0])
-        return query.all()
-
-    def get_hosting_device_template(self, context, id_or_name):
-        """Returns hosting device template with specified <id_or_name>."""
-        query = context.session.query(HostingDeviceTemplate)
-        query = query.filter(HostingDeviceTemplate.id == id_or_name)
-        try:
-            return query.one()
-        except exc.MultipleResultsFound:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Database inconsistency: Multiple hosting device '
-                            'templates with same id %s'), id_or_name)
-                raise HostingDeviceTemplateNotFound(template=id_or_name)
-        except exc.NoResultFound:
-            query = context.session.query(HostingDeviceTemplate)
-            query = query.filter(HostingDeviceTemplate.name == id_or_name)
-            try:
-                return query.one()
-            except exc.MultipleResultsFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.debug(_('Multiple hosting device templates with name '
-                                '%s found. Id must be specified to allow '
-                                'arbitration.'), id_or_name)
-                    raise MultipleHostingDeviceTemplates(name=id_or_name)
-            except exc.NoResultFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.error(_('No hosting device template with name %s '
-                                'found.'), id_or_name)
-                    raise HostingDeviceTemplateNotFound(template=id_or_name)
-
     def create_hosting_device(self, context, hosting_device):
         LOG.debug(_("create_hosting_device() called"))
         hd = hosting_device['hosting_device']
@@ -145,6 +106,17 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
                                     self._make_hosting_device_dict,
                                     filters=filters, fields=fields)
 
+    def get_hosting_devices(self, context, hosting_device_ids):
+        """Returns hosting devices with <hosting_device_ids>."""
+        query = context.session.query(HostingDevice)
+        if len(hosting_device_ids) > 1:
+            query = query.options(joinedload('cfg_agent')).filter(
+                HostingDevice.id.in_(hosting_device_ids))
+        else:
+            query = query.options(joinedload('cfg_agent')).filter(
+                HostingDevice.id == hosting_device_ids[0])
+        return query.all()
+
     def create_hosting_device_template(self, context, hosting_device_template):
         LOG.debug(_("create_hosting_device_template() called"))
         hdt = hosting_device_template['hosting_device_template']
@@ -167,7 +139,7 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
                 desired_slots_free=hdt['desired_slots_free'],
                 tenant_bound=hdt['tenant_bound'],
                 device_driver=hdt['device_driver'],
-                plugging_driver=hdt['plugging_driver']
+                plugging_driver=hdt['plugging_driver'])
             context.session.add(hdt_db)
         return self._make_hosting_device_template_dict(hdt_db)
 
@@ -184,20 +156,55 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
     def delete_hosting_device_template(self, context, id):
         LOG.debug(_("delete_hosting_device_template() called"))
         with context.session.begin(subtransactions=True):
+            hd_query = context.session.query(HostingDevice)
+            if hd_query.filter_by(id=id).first() is not None:
+                raise ciscohostingdevicemanager.HostingDeviceTemplateInUse(
+                    id=id)
             hdt_query = context.session.query(
                 HostingDeviceTemplate).with_lockmode('update')
             hdt_db = hdt_query.filter_by(id=id).one()
-             #TODO(bobmel): ensure no hosting_devices of this type exists
             context.session.delete(hdt_db)
-        pass
 
     def get_hosting_device_template(self, context, id, fields=None):
-        pass
+        LOG.debug(_("get_hosting_device_template() called"))
+        hdt_db = self._get_hosting_device_template(context, id)
+        return self._make_hosting_device_template_dict(hdt_db)
+
+    def get_hosting_device_template(self, context, id_or_name):
+        """Returns hosting device template with specified <id_or_name>."""
+        query = context.session.query(HostingDeviceTemplate)
+        query = query.filter(HostingDeviceTemplate.id == id_or_name)
+        try:
+            return query.one()
+        except exc.MultipleResultsFound:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_('Database inconsistency: Multiple hosting device '
+                            'templates with same id %s'), id_or_name)
+                raise HostingDeviceTemplateNotFound(template=id_or_name)
+        except exc.NoResultFound:
+            query = context.session.query(HostingDeviceTemplate)
+            query = query.filter(HostingDeviceTemplate.name == id_or_name)
+            try:
+                return query.one()
+            except exc.MultipleResultsFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.debug(_('Multiple hosting device templates with name '
+                                '%s found. Id must be specified to allow '
+                                'arbitration.'), id_or_name)
+                    raise MultipleHostingDeviceTemplates(name=id_or_name)
+            except exc.NoResultFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('No hosting device template with name %s '
+                                'found.'), id_or_name)
+                    raise HostingDeviceTemplateNotFound(template=id_or_name)
 
     def get_hosting_device_templates(self, context, filters=None, fields=None,
                                      sorts=None, limit=None, marker=None,
                                      page_reverse=False):
-        pass
+        LOG.debug(_("get_hosting_device_templates() called"))
+        return self._get_collection(context, HostingDeviceTemplate,
+                                    self._make_hosting_device_template_dict,
+                                    filters=filters, fields=fields)
 
     def _get_hosting_device(self, context, id):
         try:
