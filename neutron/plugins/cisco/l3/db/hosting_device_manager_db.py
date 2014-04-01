@@ -38,6 +38,7 @@ from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import service_vm_lib
 from neutron.plugins.cisco.l3.common import (devmgr_rpc_cfgagent_api as
                                              devmgr_rpc)
+from neutron.plugins.cisco.l3.db import hosting_devices_db
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
@@ -90,7 +91,7 @@ class MultipleHostingDeviceTemplates(n_exc.NeutronException):
                 "exist. Id must be used to.")
 
 #TODO(bobmel): Make device manager a mixin
-class HostingDeviceManagerMixin(object):
+class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     """A class implementing a resource manager for hosting devices.
 
     The caller should make sure that HostingDeviceManagerMixin is a singleton.
