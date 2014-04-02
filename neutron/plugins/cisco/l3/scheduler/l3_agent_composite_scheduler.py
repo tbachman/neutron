@@ -20,6 +20,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.sql import exists
 
 from neutron.common import constants
+from neutron.common import exceptions as n_exc
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
@@ -27,11 +28,12 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db
 from neutron.plugins.cisco.l3.db import l3_models
+from neutron.scheduler import l3_agent_scheduler
 
 LOG = logging.getLogger(__name__)
 
 
-class L3AgentCompositeScheduler(object):
+class L3AgentCompositeScheduler(l3_agent_scheduler.L3Scheduler):
     """A composite scheduler for Cisco router service plugin.
 
     It schedules a) network namespace based routers to l3 agents, as
@@ -39,54 +41,12 @@ class L3AgentCompositeScheduler(object):
     scheduling is a simple random selection among qualified candidates.
     """
 
-    def auto_schedule_hosting_devices_on_cfg_agent(self, context, agent_host,
-                                                   router_id):
-        """Schedules unassociated hosting devices to l3 cfg agent.
+    def auto_schedule_routers(self, plugin, context, host, router_ids):
+        """Schedule non-hosted network namespace-based routers to L3 agent.
 
-        Schedules hosting device to agent running on <agent_host>.
-        If <router_id> is given, then only hosting device hosting the router
-        with that id is scheduled (if it is unassociated). If no <router_id>
-        is given, then all unassociated hosting devices are scheduled.
-        """
-        with context.session.begin(subtransactions=True):
-            # Check if there is a valid l3 cfg agent on the host
-            query = context.session.query(agents_db.Agent)
-            query = query.filter(agents_db.Agent.agent_type ==
-                                 cl3_constants.AGENT_TYPE_CFG,
-                                 agents_db.Agent.host == agent_host,
-                                 agents_db.Agent.admin_state_up == True)
-            try:
-                cfg_agent = query.one()
-            except (exc.MultipleResultsFound, exc.NoResultFound):
-                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
-                          agent_host)
-                return False
-            if agents_db.AgentDbMixin.is_agent_down(
-                cfg_agent.heartbeat_timestamp):
-                LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
-
-            #mysql> SELECT * FROM hostingdevices
-            # JOIN routerhostingentitybindings ON id=hosting_device_id
-            # WHERE cfg_agent_id is NULL AND
-            # routerhostingentitybindings.router_id = 'r_id3';
-
-            query = context.session.query(l3_models.HostingDevice)
-            if router_id:
-                query = query.join(l3_models.RouterHostingDeviceBinding)
-                query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.router_id ==
-                    router_id)
-            query = query.filter(
-                l3_models.HostingDevice.cfg_agent_id == None)
-            for hd in query:
-                hd.cfg_agent = cfg_agent
-                context.session.add(hd)
-            return True
-
-    def auto_schedule_routers(self, plugin, context, host, router_id):
-        """Schedule non-hosted network namespace-based routers to L3 Agent
-        running on host. If router_id is given, only this router is scheduled
-        if it is not hosted yet. Don't schedule the routers which are hosted
+        If router_ids is given, each router in router_ids is scheduled
+        if it is not hosted yet. Otherwise all unscheduled routers
+        are scheduled. Don't schedule the routers which are hosted
         already by active l3 agents.
         """
         with context.session.begin(subtransactions=True):
@@ -103,31 +63,36 @@ class L3AgentCompositeScheduler(object):
                           host)
                 return False
             if agents_db.AgentDbMixin.is_agent_down(
-                l3_agent.heartbeat_timestamp):
+                    l3_agent.heartbeat_timestamp):
                 LOG.warn(_('L3 agent %s is not active'), l3_agent.id)
-            # Only network namespace based routers should be scheduled here
-            router_type = (cl3_constants.NAMESPACE_ROUTER_TYPE
-                           if router_id is None
-                           else plugin.get_router_type(context, router_id))
-            if router_type != cl3_constants.NAMESPACE_ROUTER_TYPE:
-                LOG.debug(_('Router %(router_id)s is of type %(router_type)s'
-                            ' which is not hosted by l3 agents'),
-                          {'router_id': router_id, 'router_type': router_type})
-                return False
-            # check if the specified router is hosted
-            if router_id:
-                l3_agents = plugin.get_l3_agents_hosting_routers(
-                    context, [router_id], admin_state_up=True)
-                if l3_agents:
-                    LOG.debug(_('Router %(router_id)s has already been hosted'
-                                ' by L3 agent %(agent_id)s'),
-                              {'router_id': router_id,
-                               'agent_id': l3_agents[0]['id']})
+            # check if each of the specified routers is hosted
+            if router_ids:
+                # Only network namespace based routers should be scheduled here
+                ns_routertype_id = plugin.get_namespace_router_type_id(context)
+                unscheduled_router_ids = []
+                for router_id in router_ids:
+                    try:
+                        router_type_id = plugin.get_router_type(
+                            context, router_id)['id']
+                    except KeyError, n_exc.NeutronException:
+                        router_type_id = None
+                    if router_type_id != ns_routertype_id:
+                        LOG.debug(_('Router %(r_id)s is of type %(t_id)s '
+                                    'which is not hosted by l3 agents'),
+                                  {'r_id': router_id, 't_id': router_type_id})
+                    else:
+                        l3_agents = plugin.get_l3_agents_hosting_routers(
+                            context, [router_id], admin_state_up=True)
+                        if l3_agents:
+                            LOG.debug(_('Router %(router_id)s has already been'
+                                        ' hosted by L3 agent %(agent_id)s'),
+                                      {'router_id': router_id,
+                                       'agent_id': l3_agents[0]['id']})
+                        else:
+                            unscheduled_router_ids.append(router_id)
+                if not unscheduled_router_ids:
+                    # all (specified) routers are already scheduled
                     return False
-
-            # get the router ids
-            if router_id:
-                router_ids = [(router_id,)]
             else:
                 # get all routers that are not hosted
                 #TODO(gongysh) consider the disabled agent's router
@@ -137,36 +102,32 @@ class L3AgentCompositeScheduler(object):
                 # Modified to only include routers of network namespace type
                 query = context.session.query(l3_db.Router.id)
                 query = query.join(l3_models.RouterHostingDeviceBinding)
-                router_ids = query.filter(
+                query = query.filter(
                     l3_models.RouterHostingDeviceBinding.router_type ==
-                    cl3_constants.NAMESPACE_ROUTER_TYPE,
-                    stmt).all()
-            if not router_ids:
+                    ns_routertype_id, stmt)
+                unscheduled_router_ids = [router_id_[0] for router_id_ in
+                                          query]
+            if not unscheduled_router_ids:
                 LOG.debug(_('No non-hosted routers'))
                 return False
 
             # check if the configuration of l3 agent is compatible
             # with the router
-            router_ids = [router_id_[0] for router_id_ in router_ids]
-            routers = plugin.get_routers(context, filters={'id': router_ids})
+            routers = plugin.get_routers(
+                context, filters={'id': unscheduled_router_ids})
             to_removed_ids = []
             for router in routers:
                 candidates = plugin.get_l3_agent_candidates(router, [l3_agent])
                 if not candidates:
                     to_removed_ids.append(router['id'])
-            router_ids = list(set(router_ids) - set(to_removed_ids))
+            router_ids = list([r['id'] for r in routers]) - set(to_removed_ids)
             if not router_ids:
                 LOG.warn(_('No routers compatible with L3 agent configuration'
                            ' on host %s'), host)
                 return False
 
-            # binding
             for router_id in router_ids:
-                binding = l3_agentschedulers_db.RouterL3AgentBinding()
-                binding.l3_agent = l3_agent
-                binding.router_id = router_id
-                binding.default = True
-                context.session.add(binding)
+                self.bind_router(context, router_id, l3_agent)
         return True
 
     def schedule(self, plugin, context, sync_router):
@@ -180,37 +141,8 @@ class L3AgentCompositeScheduler(object):
             return self.schedule_hosting_devices_on_cfg_agent(
                 plugin, context, sync_router['hosting_device']['id'])
 
-    def schedule_hosting_devices_on_cfg_agent(self, plugin, context, id):
-        """Selects Cisco cfg agent that will configure hosting device."""
-        with context.session.begin(subtransactions=True):
-            hd_db = self._dev_mgr.get_hosting_devices(context, [id])
-            if not hd_db:
-                LOG.debug(_('DB inconsistency: Hosting device %s could '
-                            'not be found'), id)
-                return
-            if hd_db[0].cfg_agent:
-                LOG.debug(_('Hosting device %(hd_id)s has already been '
-                            'assigned to Cisco cfg agent %(agent_id)s'),
-                          {'hd_id': id,
-                           'agent_id': hd_db[0].cfg_agent['id']})
-                return
-
-            active_cfg_agents = plugin.get_cfg_agents(context, active=True)
-            if not active_cfg_agents:
-                LOG.warn(_('There are no active Cisco cfg agents'))
-                # No worries, once a Cisco cfg agent is started and
-                # announces itself any "dangling" hosting devices
-                # will be scheduled to it.
-                return
-            chosen_agent = random.choice(active_cfg_agents)
-            hd_db[0].cfg_agent = chosen_agent
-            context.session.add(hd_db[0])
-            return chosen_agent
-
     def schedule_namespace_router(self, plugin, context, sync_router):
-        """Schedule the router to an active L3 agent if there
-        is no enable L3 agent hosting it.
-        """
+        """Schedule router to L3 agent if no L3 agent already hosts it."""
         with context.session.begin(subtransactions=True):
             # allow one router is hosted by just
             # one enabled l3 agent hosting since active is just a
@@ -249,4 +181,6 @@ class L3AgentCompositeScheduler(object):
 
     @property
     def _dev_mgr(self):
-        return hosting_device_manager_db.HostingDeviceManager.get_instance()
+        return manager.NeutronManager.get_service_plugins().get(
+            svc_constants.DEVICE_MANAGER)
+        #return hosting_device_manager_db.HostingDeviceManager.get_instance()

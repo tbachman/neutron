@@ -18,6 +18,7 @@ from oslo.config import cfg
 from sqlalchemy.orm import joinedload
 
 from neutron.db import agents_db
+from neutron.db import agentschedulers_db
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
@@ -31,28 +32,33 @@ COMPOSITE_AGENTS_SCHEDULER_OPTS = [
     cfg.IntOpt('cfg_agent_down_time', default=15,
                help=_('Seconds of no status update until a cfg agent '
                       'is considered down.')),
+    cfg.StrOpt('configuration_agent_scheduler_driver',
+               default='neutron.plugins.cisco.l3.scheduler.'
+                       'hosting_device_cfg_agent_scheduler.'
+                       'HostingDeviceCfgAgentScheduler',
+               help=_('Driver to use for scheduling hosting device to a Cisco '
+                      'configuration agent')),
 ]
+
 cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS)
 
 
 class CfgAgentSchedulerDbMixin(
-    ciscocfgagentscheduler.CfgAgentSchedulerPluginBase):
+        ciscocfgagentscheduler.CfgAgentSchedulerPluginBase,
+        agentschedulers_db.AgentSchedulerDbMixin,):
     """Mixin class to add cfg agent scheduler extension."""
+
+    cfg_agent_scheduler = None
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
                       timeout=cfg.CONF.cfg_agent_down_time):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
-    def auto_schedule_hosting_devices_on_cfg_agent(self, context, host,
-                                                   router_id):
-        # There may be routers that have not been scheduled
-        # on a hosting device so we try to do that now
-        self.host_router(context, router_id)
-        if self.router_scheduler:
-            return (self.router_scheduler.
-                    auto_schedule_hosting_devices_on_cfg_agent(context, host,
-                                                               router_id))
+    def auto_schedule_hosting_devices_on_cfg_agent(self, context, host):
+        if self.cfg_agent_scheduler:
+            return (self.cfg_agent_scheduler.
+                    auto_schedule_hosting_devices_on_cfg_agent(context, host))
 
     def assign_hosting_device_to_cfg_agent(self, context, id,
                                            hosting_device_id):

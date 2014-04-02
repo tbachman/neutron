@@ -21,7 +21,7 @@ from neutron.extensions import portbindings
 from neutron import manager
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
-from neutron.plugins.common import constants as plugin_constants
+from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -39,29 +39,31 @@ class L3RouterCfgRpcCallbackMixin(object):
         """
         router_ids = kwargs.get('router_ids')
         host = kwargs.get('host')
-        #TODO(bobmel): Add functionality to process specific HE's
         hd_ids = kwargs.get('hosting_device_ids', [])
         context = neutron_context.get_admin_context()
         l3plugin = manager.NeutronManager.get_service_plugins().get(
-            plugin_constants.L3_ROUTER_NAT)
+            svc_constants.L3_ROUTER_NAT)
         if l3plugin is None:
             routers = {}
-            LOG.error(_('No plugin for L3 routing registered! Will reply '
-                        'to l3 agent with empty router dictionary.'))
+            LOG.error(_('No L3 router service plugin registered! '
+                        'Will return empty router dictionary to Cisco '
+                        'cfg agent@%s.'), host)
         elif utils.is_extension_supported(
                 l3plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
-            l3plugin.auto_schedule_hosting_devices_on_cfg_agent(context, host,
-                                                                router_ids)
-            routers = l3plugin.list_active_sync_routers_on_active_cfg_agent(
-                context, host, router_ids, hd_ids)
+            try:
+                routers = l3plugin.list_active_sync_routers_on_hosting_devices(
+                    context, host, router_ids, hd_ids)
+            except AttributeError:
+                routers = {}
         else:
             routers = {}
         plugin = manager.NeutronManager.get_plugin()
         if utils.is_extension_supported(
                 plugin, constants.PORT_BINDING_EXT_ALIAS):
             self._ensure_host_set_on_ports(context, plugin, host, routers)
-        LOG.debug(_("Routers returned to cfg agent:\n %s"),
-                  jsonutils.dumps(routers, indent=5))
+        LOG.debug(_("Routers returned to Cisco cfg agent@%(agt)s:\n "
+                    "%(routers)%s"),
+                  {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
     def _ensure_host_set_on_ports(self, context, plugin, host, routers):

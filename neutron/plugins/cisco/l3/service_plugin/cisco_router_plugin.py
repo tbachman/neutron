@@ -29,12 +29,12 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.common import l3_router_cfgagent_rpc_cb as l3_router_rpc
-from neutron.plugins.cisco.l3.common import devices_cfgagent_rpc_cb as devices_rpc
+from neutron.plugins.cisco.l3.common import (l3_router_cfgagent_rpc_cb as
+                                             l3_router_rpc)
 from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import (composite_agentschedulers_db as
-                                         agt_sch_db)
+from neutron.plugins.cisco.l3.db import (l3_router_hybrid_schedulers_db as
+                                         hybrid_sch_db)
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
 from neutron.plugins.common import constants
 
@@ -54,10 +54,9 @@ class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
-                        l3_router_appliance_db.
-                        L3RouterApplianceDBMixin,
+                        l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,
-                        agt_sch_db.CompositeAgentSchedulerDbMixin):
+                        hybrid_sch_db.RouterHybridSchedulerDbMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
@@ -74,20 +73,23 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         basepath = neutron.plugins.__path__[0]
-        ext_path = (basepath + '/cisco/extensions:' +
-                    basepath + '/cisco/l3/extensions:' +
-                    basepath + '/csr1kv_openvswitch/extensions')
-        cfg.CONF.set_override('api_extensions_path', ext_path)
-        #TODO(bobmel): Remove this over-ride of router scheduler default
-        #TODO(bobmel): setting and make it part of installer instead.
+        ext_paths = [basepath + '/cisco/extensions',
+                     basepath + '/cisco/l3/extensions']
+        cp = cfg.CONF.api_extensions_path
+        to_add = ""
+        for ext_path in ext_paths:
+            if cp.find(ext_path) == -1:
+                to_add += ':' + ext_path
+        if to_add != "":
+            cfg.CONF.set_override('api_extensions_path', cp + to_add)
+        #TODO(bobmel): Remove this over-ride of default router scheduler
+        # and make it part of installer instead.
         cfg.CONF.set_override('router_scheduler_driver',
                               'neutron.plugins.cisco.l3.scheduler.'
-                              'l3_agent_composite_scheduler.'
+                              'l3_composite_scheduler.'
                               'L3AgentCompositeScheduler')
-#        self.router_scheduler = importutils.import_object(
-#            cfg.CONF.router_scheduler_driver)
-#        self.hosting_scheduler = importutils.import_object(
-#            cfg.CONF.hosting_scheduler_driver)
+        self.router_scheduler = importutils.import_object(
+            cfg.CONF.router_scheduler_driver)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
 
@@ -115,3 +117,5 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         return ("Cisco Router Service Plugin for basic L3 forwarding"
                 " between (L2) Neutron networks and access to external"
                 " networks via a NAT gateway.")
+
+

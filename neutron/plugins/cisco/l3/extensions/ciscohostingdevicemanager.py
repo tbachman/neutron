@@ -163,6 +163,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                   'default': None, 'is_visible': True},
         'flavor': {'allow_post': True, 'allow_put': True,
                    'default': None, 'is_visible': True},
+        'default_credentials_id': {'allow_post': True, 'allow_put': True,
+                                   'default': None, 'is_visible': True},
         'configuration_mechanism': {'allow_post': True, 'allow_put': True,
                                     'is_visible': True},
         'protocol_port': {'allow_post': True, 'allow_put': True,
@@ -195,7 +197,7 @@ RESOURCE_ATTRIBUTE_MAP = {
 }
 
 
-class Ciscohostingdevice(extensions.ExtensionDescriptor):
+class Ciscohostingdevicemanager(extensions.ExtensionDescriptor):
     """Hosting device and template extension."""
 
     @classmethod

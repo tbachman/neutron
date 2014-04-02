@@ -160,12 +160,15 @@ hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: tenant_id, id, name, enabled, host_category, service_types, image, flavor, configurations_mechanism, protocol_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
+   # Columns: tenant_id, id, name, enabled, host_category, service_types,
+   # image, flavor, default_credentials_id, configurations_mechanism,
+   # protocol_port, booting_time, slot_capacity, desired_slots_free,
+   # tenant_bound, device_driver, plugging_driver
    sql_statement="INSERT INTO hostingdevicetemplates VALUES
    ('$tenantId', '11111111-2222-3333-4444-555555555555',
     '$csr1kvHostingDeviceTemplateName', TRUE, 'VM', 'router',
-    '$csr1kvImageName', '$csr1kvFlavorId', 'Netconf', 22, 420, 10, 5, NULL,
-    '$hd_driver', '$plugging_driver')"
+    '$csr1kvImageName', '$csr1kvFlavorId', 'Csr1kvCredId', 'Netconf', 22, 420,
+    10, 5, NULL, '$hd_driver', '$plugging_driver')"
    mysql -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
@@ -184,11 +187,16 @@ hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: tenant_id, id, name, enabled, host_category, service_types, image, flavor, configurations_mechanism, protocol_port, booting_time, slot_capacity, desired_slots_free, tenant_bound, device_driver, plugging_driver
+   # Columns: tenant_id, id, name, enabled, host_category, service_types,
+   # image, flavor, default_credentials_id, configurations_mechanism,
+   # protocol_port, booting_time, slot_capacity, desired_slots_free,
+   # tenant_bound, device_driver, plugging_driver
    sql_statement="INSERT INTO hostingdevicetemplates VALUES
    ('$tenantId', '11111110-2222-3333-4444-555555555555',
     'Network_Node_template', TRUE, 'Hardware', 'router:VPN:FW',
-    NULL, NULL, 'CLI', NULL, NULL, 200, 0, NULL, '', '')"
+    NULL, NULL, NULL, 'CLI', NULL, NULL, 200, 0, NULL,
+    'neutron.plugins.cisco.l3.hosting_device_drivers.noop_hd_driver.NoopHostingDeviceDriver',
+    'neutron.plugins.cisco.l3.plugging_drivers.noop_plugging_driver.NoopPluggingDriver')"
    mysql -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
@@ -202,13 +210,14 @@ hasRouterType=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasRouterType" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: id, name, description, template_id, slot_need, scheduler, cfg_agent_driver
+   # Columns: id, name, description, template_id, slot_need, scheduler,
+   # cfg_agent_driver
    sql_statement="INSERT INTO routertypes VALUES
    ('22221111-2222-3333-4444-555555555555',
     'CSR1kv_router','Neutron Router implemented in Cisco CSR1kv',
     '11111111-2222-3333-4444-555555555555', 6,
     'neutron.plugins.cisco.l3.scheduler.l3_router_hosting_device_scheduler.L3RouterHostingDeviceScheduler',
-    'neutron.plugins.cisco.l3.gent.csr1000v.cisco_csr_network_driver.CiscoCSRDriver')"
+    'neutron.plugins.cisco.l3.agent.csr1000v.cisco_csr_network_driver.CiscoCSRDriver')"
     mysql -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
@@ -222,7 +231,8 @@ hasRouterType=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasRouterType" != "Yes" ]; then
    echo " No, it is not. Registering it."
 
-   # Columns: id, name, description, template_id, slot_need, scheduler, cfg_agent_driver
+   # Columns: id, name, description, template_id, slot_need, scheduler,
+   # cfg_agent_driver
    sql_statement="INSERT INTO routertypes VALUES
    ('22221112-2222-3333-4444-555555555555', 'NetworkNamespace_router',
     'Neutron router implemented in Linux network namespace',

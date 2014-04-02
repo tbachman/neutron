@@ -29,6 +29,7 @@ from sqlalchemy.sql import expression as expr
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron import context as neutron_context
+from neutron.db import db_base_plugin_v2 as base_db
 from neutron import manager
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
@@ -36,13 +37,14 @@ from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
-from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
+from neutron.plugins.cisco.l3.extensions import (ciscohostingdevicemanager
+                                                 as ciscodevicemanager)
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
-class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
+class HostingDeviceDBMixin(ciscodevicemanager.CiscoHostingDevicePluginBase,
                            base_db.CommonDbMixin):
     """A class implementing DB functionality for hosting devices."""
 
@@ -50,23 +52,22 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
         LOG.debug(_("create_hosting_device() called"))
         hd = hosting_device['hosting_device']
         tenant_id = self._get_tenant_id_for_create(context, hd)
-        birth_date = hd.get('created_at', timeutils.utcnow())
         with context.session.begin(subtransactions=True):
             hd_db = HostingDevice(
-                id=uuidutils.generate_uuid(),
-                tenant_id=tenant,
+                id=hd.get('id') or uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
                 template_id=hd['template_id'],
-                credentials_id=hd['credentials_id'],
-                device_id=hd['device_id'],
-                admin_state_up=hd['admin_state_up'],
-                mgmt_port_id=hd['mgmt_port_id'],
-                protocol_port=hd['protocol_port'],
-                cfg_agent_id=hd['cfg_agent_id'],
-                created_at=birth_date,
-                booting_time=hd['booting_time'],
-                status=svc_constants.ACTIVE,
-                tenant_bound=hd['tenant_bound'],
-                auto_delete_on_fail=hd['auto_delete_on_fail'])
+                credentials_id=hd.get('credentials_id'),
+                device_id=hd.get('device_id'),
+                admin_state_up=hd.get('admin_state_up', True),
+                management_port_id=hd['management_port_id'],
+                protocol_port=hd.get('protocol_port'),
+                cfg_agent_id=hd.get('cfg_agent_id'),
+                created_at=hd.get('created_at', timeutils.utcnow()),
+                booting_time=hd.get('booting_time'),
+                status=hd.get('status', svc_constants.ACTIVE),
+                tenant_bound=hd.get('tenant_bound'),
+                auto_delete_on_fail=hd.get('auto_delete_on_fail'), True)
             context.session.add(hd_db)
         return self._make_hosting_device_dict(hd_db)
 
@@ -114,19 +115,20 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
         with context.session.begin(subtransactions=True):
             hdt_db = HostingDeviceTemplate(
                 id=uuidutils.generate_uuid(),
-                tenant_id=tenant,
-                name=hdt['name'],
-                enabled=hdt['enabled'],
+                tenant_id=tenant_id,
+                name=hdt.get('name'),
+                enabled=hdt.get('enabled', True),
                 host_category=hdt['host_category'],
-                service_types=hdt['service_types'],
-                image=hdt['image'],
-                flavor=hdt['flavor'],
-                configuration_mechanism=hdt['configuration_mechanism'],
-                protocol_port=hdt['protocol_port'],
-                booting_time=hdt['booting_time'],
+                service_types=hdt.get('service_types'),
+                image=hdt.get('image'),
+                flavor=hdt.get('flavor'),
+                default_credentials_id=hd.get('default_credentials_id'),
+                configuration_mechanism=hdt.get('configuration_mechanism'),
+                protocol_port=hdt.get('protocol_port'),
+                booting_time=hdt.get('booting_time'),
                 slot_capacity=hdt['slot_capacity'],
                 desired_slots_free=hdt['desired_slots_free'],
-                tenant_bound=hdt['tenant_bound'],
+                tenant_bound=hdt.get('tenant_bound'),
                 device_driver=hdt['device_driver'],
                 plugging_driver=hdt['plugging_driver'])
             context.session.add(hdt_db)
@@ -205,6 +207,7 @@ class HostingDeviceDBMixin(CiscoHostingDevicePluginBase,
                'service_types': hdt['service_types'],
                'image': hdt['image'],
                'flavor': hdt['flavor'],
+               'default_credentials_id': hdt['default_credentials_id'],
                'configuration_mechanism': hdt['configuration_mechanism'],
                'protocol_port': hdt['protocol_port'],
                'booting_time': hdt['booting_time'],

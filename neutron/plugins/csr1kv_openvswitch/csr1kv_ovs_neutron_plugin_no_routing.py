@@ -372,10 +372,13 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # Bob: Extension path change
         # If no api_extensions_path is provided set the following
         basepath = neutron.plugins.__path__[0]
-        ext_path = (basepath + '/cisco/extensions:' +
-                    basepath + '/cisco/l3/extensions:' +
-                    basepath + '/csr1kv_openvswitch/extensions')
-        cfg.CONF.set_override('api_extensions_path', ext_path)
+        ext_path = basepath + '/csr1kv_openvswitch/extensions'
+        cp = cfg.CONF.api_extensions_path
+        if cp == "":
+            cfg.CONF.set_override('api_extensions_path', ext_path)
+        elif cp.find(ext_path) == -1:
+            to_add = cp + ':' + ext_path
+            cfg.CONF.set_override('api_extensions_path', to_add)
         #TODO(bobmel): Remove this over-ride of router scheduler default
         #TODO(bobmel): setting and make it part of installer instead.
         self.network_scheduler = importutils.import_object(

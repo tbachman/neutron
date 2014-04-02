@@ -36,10 +36,11 @@ COMPOSITE_AGENTS_SCHEDULER_OPTS = [
 cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS)
 
 
-class CompositeAgentSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
-    """Mixin class to add agent scheduler extension to db_plugin_base_v2.
+class RouterHybridSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
+    """Mixin class to add L3 router scheduler capability.
 
-    This class also supports Cisco configuration agents.
+    This class can schedule Neutron routers to hosting devices
+    and to (traditional Neutron) network nodes.
     """
 
     @classmethod
@@ -47,19 +48,9 @@ class CompositeAgentSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
                       timeout=cfg.CONF.cfg_agent_down_time):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
-    def auto_schedule_hosting_devices_on_cfg_agent(self, context, host,
-                                                   router_id):
-        # There may be routers that have not been scheduled
-        # on a hosting device so we try to do that now
-        self.host_router(context, router_id)
-        if self.router_scheduler:
-            return (self.router_scheduler.
-                    auto_schedule_hosting_devices_on_cfg_agent(context, host,
-                                                               router_id))
-
-    def list_active_sync_routers_on_active_cfg_agent(self, context, host,
-                                                     router_id,
-                                                     hosting_device_ids=[]):
+    def list_active_sync_routers_on_hosting_devices(self, context, host,
+                                                    router_id,
+                                                    hosting_device_ids=[]):
         agent = self._get_agent_by_type_and_host(
             context, cl3_constants.AGENT_TYPE_CFG, host)
 

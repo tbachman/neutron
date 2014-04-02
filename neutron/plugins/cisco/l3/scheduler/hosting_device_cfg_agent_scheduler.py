@@ -19,7 +19,6 @@ import random
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import exists
 
-from neutron.common import constants
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
@@ -27,6 +26,7 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.db import l3_models
+from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
 
@@ -44,8 +44,7 @@ class HostingDeviceCfgAgentScheduler(object):
         Schedules hosting device to agent running on <agent_host>.
         """
         with context.session.begin(subtransactions=True):
-            #TODO(bobmel): Consider change implementation so that ALL active
-            # agents are considered during auto-scheduling.
+            #TODO(bobmel): Perhaps consider ALL active agents
             # Check if there is a valid Cisco cfg agent on the host
             query = context.session.query(agents_db.Agent)
             query = query.filter_by(agent_type=cl3_constants.AGENT_TYPE_CFG,
@@ -94,4 +93,6 @@ class HostingDeviceCfgAgentScheduler(object):
 
     @property
     def _dev_mgr(self):
-        return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
+        return manager.NeutronManager.get_service_plugins().get(
+            constants.DEVICE_MANAGER)
+        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()

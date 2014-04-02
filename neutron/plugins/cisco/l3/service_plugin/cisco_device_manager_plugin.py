@@ -49,8 +49,7 @@ class CiscoDevMgrPluginRpcCallbacks(devices_rpc.DeviceMgrCfgRpcCallbackMixin):
         return q_rpc.PluginRpcDispatcher([self])
 
 
-class CiscoDeviceManagerPlugin(db_base_plugin_v2.CommonDbMixin,
-                               dev_mgr_db.HostingDeviceManagerMixin,
+class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
                                agt_sched_db.CfgAgentSchedulerDbMixin):
     """Implementation of Cisco Device Manager Service Plugin for Neutron.
 
@@ -67,11 +66,18 @@ class CiscoDeviceManagerPlugin(db_base_plugin_v2.CommonDbMixin,
         qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         basepath = neutron.plugins.__path__[0]
-        ext_path = (basepath + '/cisco/extensions:' +
-                    basepath + '/cisco/l3/extensions:')
-        cfg.CONF.set_override('api_extensions_path', ext_path)
+        ext_paths = [basepath + '/cisco/extensions',
+                     basepath + '/cisco/l3/extensions']
+        cp = cfg.CONF.api_extensions_path
+        to_add = ""
+        for ext_path in ext_paths:
+            if cp.find(ext_path) == -1:
+                to_add += ':' + ext_path
+        if to_add != "":
+            cfg.CONF.set_override('api_extensions_path', cp + to_add)
         self.cfg_agent_scheduler = importutils.import_object(
             cfg.CONF.configuration_agent_scheduler_driver)
+        self._setup_device_manager()
 
     def setup_rpc(self):
         # RPC support

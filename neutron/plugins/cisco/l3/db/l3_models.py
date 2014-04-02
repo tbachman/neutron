@@ -41,6 +41,9 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     image = sa.Column(sa.String(255))
     # the VM flavor or uuid in Nova
     flavor = sa.Column(sa.String(255))
+    # id of default credentials (if any) for devices created from this template
+    default_credentials_id = sa.Column(sa.String(36),
+                                       sa.ForeignKey('devicecredentials.id'))
     # 'configuration_mechanism' indicates how configurations are made
     configuration_mechanism = sa.Column(sa.String(255))
     # 'protocol_port' is udp/tcp port of hosting device. May be empty.
@@ -82,19 +85,21 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """
     # id of hosting device template used to create the hosting device
     template_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('hostingdevicetemplates.id'))
+                            sa.ForeignKey('hostingdevicetemplates.id'),
+                            nullable=False)
     template = orm.relationship(HostingDeviceTemplate)
     # id of credentials for this hosting device
     credentials_id = sa.Column(sa.String(36),
-                              sa.ForeignKey('devicecredentials.id'))
+                               sa.ForeignKey('devicecredentials.id'))
     credentials = orm.relationship(DeviceCredential)
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
-#    # number of allocated slots in this hosting device
-#    allocated_slots = sa.Column(sa.Integer, autoincrement=False)
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
-    # 'ip_address' is address of hosting device's management interface
-    ip_address = sa.Column(sa.String(64), nullable=False)
+    # 'management_port_id' is the Neutron Port used for management interface
+    management_port_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('ports.id'),
+                                   primary_key=True, nullable=False)
+    management_port = orm.relationship(models_v2.Port)
     # 'protocol_port' is udp/tcp port of hosting device. May be empty.
     protocol_port = sa.Column(sa.Integer)
     cfg_agent_id = sa.Column(sa.String(36),

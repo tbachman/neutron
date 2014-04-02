@@ -21,10 +21,12 @@ from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.sql import expression as expr
 
+from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
+from neutron.plugins.common import constants
+
 
 LOG = logging.getLogger(__name__)
 
@@ -125,7 +127,8 @@ class L3RouterHostingDeviceScheduler(object):
     def unschedule_router_(self, plugin, context, r_hd_binding):
         return True
 
-    #TODO(bobmel): change to get Device Manager service plugin instead
     @property
     def _dev_mgr(self):
-        return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
+        return manager.NeutronManager.get_service_plugins().get(
+            constants.DEVICE_MANAGER)
+        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()

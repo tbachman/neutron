@@ -34,13 +34,15 @@ class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
 
     def _notification_host(self, context, method, payload, host,
-                           topic=self.topic):
+                           topic=None):
         """Notify the agent that is handling the hosting device."""
+
         LOG.debug(_('Notify Cisco cfg agent at %(host)s the message '
                     '%(method)s'), {'host': host, 'method': method})
         self.cast(context,
                   self.make_msg(method, payload=payload),
-                  topic='%s.%s' % (topic, host))
+                  topic='%s.%s' % (self.topic if topic is None else topic,
+                                   host))
 
     def _agent_notification(self, context, method, hosting_devices,
                             operation, data):
