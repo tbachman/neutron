@@ -14,27 +14,12 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import eventlet
-import math
-import threading
-
-from keystoneclient import exceptions as k_exceptions
-from keystoneclient.v2_0 import client as k_client
-from oslo.config import cfg
-from sqlalchemy import func
 from sqlalchemy.orm import exc
-from sqlalchemy.orm import joinedload
-from sqlalchemy.sql import expression as expr
 
-from neutron.common import exceptions as n_exc
-from neutron.common import utils
-from neutron import context as neutron_context
 from neutron.db import db_base_plugin_v2 as base_db
-from neutron import manager
-from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
-from neutron.plugins.cisco.l3.common import constants as cl3_const
+from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
@@ -71,7 +56,7 @@ class HostingDeviceDBMixin(
                 booting_time=hd.get('booting_time'),
                 status=hd.get('status', svc_constants.ACTIVE),
                 tenant_bound=hd.get('tenant_bound'),
-                auto_delete_on_fail=hd.get('auto_delete_on_fail'), True)
+                auto_delete_on_fail=hd.get('auto_delete_on_fail', True))
             context.session.add(hd_db)
         return self._make_hosting_device_dict(hd_db)
 
@@ -126,7 +111,7 @@ class HostingDeviceDBMixin(
                 service_types=hdt.get('service_types'),
                 image=hdt.get('image'),
                 flavor=hdt.get('flavor'),
-                default_credentials_id=hd.get('default_credentials_id'),
+                default_credentials_id=hdt.get('default_credentials_id'),
                 configuration_mechanism=hdt.get('configuration_mechanism'),
                 protocol_port=hdt.get('protocol_port'),
                 booting_time=hdt.get('booting_time'),
@@ -145,7 +130,7 @@ class HostingDeviceDBMixin(
             hdt_query = context.session.query(
                 HostingDeviceTemplate).with_lockmode('update')
             hdt_db = hdt_query.filter_by(id=id).one()
-            hdt_db.update(hd)
+            hdt_db.update(hdt)
         return self._make_hosting_device_template_dict(hdt_db)
 
     def delete_hosting_device_template(self, context, id):

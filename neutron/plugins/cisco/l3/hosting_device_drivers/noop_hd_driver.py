@@ -14,16 +14,7 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import netaddr
-import os
-
-from oslo.config import cfg
-
-from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.hosting_device_drivers import HostingDeviceDriver
-
-LOG = logging.getLogger(__name__)
 
 
 class NoopHostingDeviceDriver(HostingDeviceDriver):

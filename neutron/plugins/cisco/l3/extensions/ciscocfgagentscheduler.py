@@ -1,7 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2013 OpenStack Foundation.
-# All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,6 +11,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# @author: Bob Melander, Cisco Systems, Inc.
 
 from abc import abstractmethod
 
@@ -22,13 +21,12 @@ import webob.exc
 from neutron.api import extensions
 from neutron.api.v2 import base
 from neutron.api.v2 import resource
-from neutron.common import constants
 from neutron.common import exceptions
 from neutron.extensions import agent
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.plugins.common import constants as service_constants
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
+from neutron.plugins.common import constants as svc_constants
 from neutron import policy
 from neutron import wsgi
 
@@ -64,7 +62,7 @@ CFG_AGENTS = CFG_AGENT + 's'
 class HostingDeviceSchedulerController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.DEVICE_MANAGER)
+            svc_constants.DEVICE_MANAGER)
         if not plugin:
             LOG.error(_('No Device manager service plugin registered to '
                         'handle hosting device scheduling'))
@@ -94,7 +92,7 @@ class HostingDeviceSchedulerController(wsgi.Controller):
 class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.DEVICE_MANAGER)
+            svc_constants.DEVICE_MANAGER)
         if not plugin:
             LOG.error(_('No Device manager service plugin registered to '
                         'handle hosting device scheduling'))

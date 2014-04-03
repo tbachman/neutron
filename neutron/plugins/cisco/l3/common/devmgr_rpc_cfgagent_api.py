@@ -13,7 +13,6 @@
 #    under the License.
 #
 
-from neutron.common import topics
 from neutron.common import utils
 from neutron import manager
 from neutron.openstack.common import log as logging
@@ -67,7 +66,7 @@ class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
                            'host': agent.host,
                            'method': method})
                 self.cast(context,
-                          self.make_msg(method, routers=[router['id']]),
+                          self.make_msg(method),
                           topic='%s.%s' % (agent.topic, agent.host),
                           version='1.0')
 

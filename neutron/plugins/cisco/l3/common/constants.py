@@ -25,6 +25,10 @@ NETWORK_NODE_TEMPLATE = 'NetworkNode_template'
 # as Linux network namespaces in network nodes.
 NAMESPACE_ROUTER_TYPE = 'NetworkNamespace_router'
 
+# Default name of router type for Neutron routers implemented
+# as Linux network namespaces in network nodes.
+CSR1KV_ROUTER_TYPE = 'CSR1kv_router'
+
 # Router status
 # =============
 # Created but not scheduled nor deployed

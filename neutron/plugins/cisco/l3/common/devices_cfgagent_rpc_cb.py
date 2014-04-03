@@ -14,14 +14,9 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from neutron.common import constants
-from neutron.common import utils
-from neutron import context as neutron_context
-from neutron.extensions import portbindings
 from neutron import manager
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
-from neutron.plugins.common import constants as plugin_constants
+from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -40,7 +35,7 @@ class DeviceMgrCfgRpcCallbackMixin(object):
         hosting_device_ids = kwargs.get('hosting_device_ids', [])
         cfg_agent = kwargs.get('host', None)
         plugin = manager.NeutronManager.get_service_plugins().get(
-            plugin_constants.DEVICE_MANAGER)
+            svc_constants.DEVICE_MANAGER)
         if plugin is None:
             LOG.error(_('No Device manager service plugin registered!'
                         'Cannot handle non-responding hosting device report'))

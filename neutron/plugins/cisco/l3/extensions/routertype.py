@@ -23,6 +23,7 @@ from neutron.api.v2 import attributes
 from neutron.api.v2 import base
 from neutron.api.v2 import resource
 from neutron.common import exceptions
+from neutron.common import utils
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
@@ -32,8 +33,8 @@ LOG = logging.getLogger(__name__)
 
 ROUTER_TYPE_ALIAS = 'routertype'
 NAME = 'router_type'
-TYPE = NAME + ':id'
-ROUTER_TYPES = TYPE + 's'
+ROUTER_TYPE = NAME + ':id'
+ROUTER_TYPES = ROUTER_TYPE + 's'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     ROUTER_TYPES: {
@@ -64,10 +65,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
                              'is_visible': True},
     },
     'routers': {
-        TYPE: {'allow_post': True, 'allow_put': True,
-               'validate': {'type:string': None},
-               'default': attributes.ATTR_NOT_SPECIFIED,
-               'is_visible': True},
+        ROUTER_TYPE: {'allow_post': True, 'allow_put': True,
+                      'validate': {'type:string': None},
+                      'default': attributes.ATTR_NOT_SPECIFIED,
+                      'is_visible': True},
     }
 }
 
@@ -76,7 +77,8 @@ class RouterTypeController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
-        if not plugin or not utils.is_extension_supported(plugin, NAME):
+        if not plugin or not utils.is_extension_supported(plugin,
+                                                          ROUTER_TYPE_ALIAS):
             LOG.error(_('No plugin for L3 routing registered to handle '
                         'router type resources'))
             msg = _('The resource could not be found.')

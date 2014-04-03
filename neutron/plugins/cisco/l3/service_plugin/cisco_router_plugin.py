@@ -28,11 +28,11 @@ from neutron.db import model_base
 from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
-from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import (l3_router_cfgagent_rpc_cb as
                                              l3_router_rpc)
-from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
+from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
                                          router_sch_db)
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
@@ -109,9 +109,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         return constants.L3_ROUTER_NAT
 
     def get_plugin_description(self):
-        """returns string description of the plugin."""
         return ("Cisco Router Service Plugin for basic L3 forwarding"
                 " between (L2) Neutron networks and access to external"
                 " networks via a NAT gateway.")
-
-

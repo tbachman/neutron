@@ -15,12 +15,9 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
-from sqlalchemy.orm import joinedload
 
-from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db as l3agentsched_db
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import l3_models
 

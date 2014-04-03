@@ -22,11 +22,11 @@ class NoopPluggingDriver(plug.PluginSidePluggingDriver):
 
     def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
-        return {'mgmt_port':  None,
+        return {'mgmt_port': None,
                 'ports': []}
 
     def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
-        return {'mgmt_port':  None,
+        return {'mgmt_port': None,
                 'ports': []}
 
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,

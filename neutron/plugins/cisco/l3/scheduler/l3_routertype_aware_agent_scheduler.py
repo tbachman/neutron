@@ -12,8 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import random
-
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import exists
 
@@ -23,8 +21,6 @@ from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db
 from neutron.plugins.cisco.l3.db import l3_models
 from neutron.scheduler import l3_agent_scheduler
 
@@ -71,7 +67,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                     try:
                         router_type_id = plugin.get_router_type(
                             context, router_id)['id']
-                    except KeyError, n_exc.NeutronException:
+                    except (KeyError, n_exc.NeutronException):
                         router_type_id = None
                     if router_type_id != ns_routertype_id:
                         LOG.debug(_('Router %(r_id)s is of type %(t_id)s '

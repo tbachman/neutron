@@ -1,7 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2012 OpenStack Foundation.
-# All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,22 +11,19 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# @author: Bob Melander, Cisco Systems, Inc.
 
 from abc import ABCMeta
 from abc import abstractmethod
 
-from oslo.config import cfg
 import six
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
-from neutron.api.v2 import base
 from neutron.api.v2 import resource_helper
-from neutron.common import constants as const
 from neutron.common import exceptions as qexception
-from neutron import manager
 from neutron.openstack.common import importutils
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
 
 
@@ -84,7 +78,7 @@ def convert_validate_driver(driver):
         return driver
     except ImportError:
         raise DriverNotFound(driver=driver)
-    except:
+    except Exception:
         return driver
 
 

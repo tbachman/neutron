@@ -19,18 +19,17 @@ from oslo.config import cfg
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import api as qdbapi
-from neutron.db import db_base_plugin_v2
 
 from neutron.db import model_base
 from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
-from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import (devices_cfgagent_rpc_cb as
                                              devices_rpc)
+from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.db import cfg_agent_schedulers_db as agt_sched_db
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
@@ -98,6 +97,5 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
         return constants.DEVICE_MANAGER
 
     def get_plugin_description(self):
-        """Returns string description of the plugin."""
         return ("Cisco Device Manager Service Plugin for management of "
                 "hosting devices and their templates.")

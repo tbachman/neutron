@@ -17,15 +17,12 @@
 import random
 
 from sqlalchemy.orm import exc
-from sqlalchemy.sql import exists
 
 from neutron.db import agents_db
-from neutron.db import l3_agentschedulers_db
-from neutron.db import l3_db
+from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
-from neutron.plugins.cisco.l3.db import l3_models
+from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
@@ -95,4 +92,3 @@ class HostingDeviceCfgAgentScheduler(object):
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
             constants.DEVICE_MANAGER)
-

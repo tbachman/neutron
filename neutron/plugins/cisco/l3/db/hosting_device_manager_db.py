@@ -16,7 +16,6 @@
 
 import eventlet
 import math
-import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
@@ -30,18 +29,16 @@ from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron import context as neutron_context
 from neutron import manager
-from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
-from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.common import service_vm_lib
 from neutron.plugins.cisco.l3.common import (devmgr_rpc_cfgagent_api as
                                              devmgr_rpc)
+from neutron.plugins.cisco.l3.common import constants as cl3_const
+from neutron.plugins.cisco.l3.common import service_vm_lib
 from neutron.plugins.cisco.l3.db import hosting_devices_db
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
-from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
 from neutron.plugins.common import constants as svc_constants
 
@@ -57,26 +54,6 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
                       "Default value is mgmt_sec_grp")),
-    cfg.IntOpt('standby_pool_size', default=1,
-               help=_("The number of running service VMs to maintain "
-                      "as a pool of standby hosting devices. Default "
-                      "value is 1")),
-    cfg.IntOpt('csr1kv_flavor', default=621,
-               help=_("Name or UUID of Nova flavor used for CSR1kv VM. "
-                      "Default value is 621")),
-    cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
-               help=_("Name or UUID of Glance image used for CSR1kv VM. "
-                      "Default value is csr1kv_openstack_img")),
-    cfg.IntOpt('max_routers_per_csr1kv', default=1,
-               help=_("The maximum number of logical routers a CSR1kv VM. "
-                      "instance should host. Default value is 1")),
-    cfg.IntOpt('csr1kv_slot_capacity', default=1,
-               help=_("The number of slots a CSR1kv VM instance has. Default "
-                      "value is 10")),
-    cfg.IntOpt('csr1kv_booting_time', default=420,
-               help=_("The time in seconds it typically takes to boot a "
-                      "CSR1kv VM into operational state. Default value "
-                      "is 420.")),
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
@@ -253,7 +230,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         with context.session.begin(subtransations=True):
             try:
                 slot_info = context.session.query(SlotAllocation).filter_by(
-                    logical_resource_id=logical_resource_id,
+                    logical_resource_id=resource['id'],
                     hosting_device_id=hosting_device['id']).one()
             except exc.MultipleResultsFound:
                 # this should not happen
@@ -295,7 +272,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                      num):
         """Free <num> slots in <hosting_device> from logical resource <id>.
 
-        Returns True if deallocation was successful. False otherwise."""
+        Returns True if deallocation was successful. False otherwise.
+        """
         with context.session.begin(subtransactions=True):
             try:
                 query = context.session.query(SlotAllocation).filter_by(
@@ -377,7 +355,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
                                               hosting_device_ids):
         hosting_devices = self.get_hosting_devices_db(context.elevated(),
-                                                    hosting_device_ids)
+                                                      hosting_device_ids)
         # 'hosting_info' is dictionary with ids of removed hosting
         # devices and the affected logical resources for each
         # removed hosting device:
@@ -491,12 +469,12 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     'credentials_id': template['default_credentials_id'],
                     'admin_state_up': True,
                     'protocol_port': template['protocol_port'],
-                    'created_at':  timeutils.utcnow(),
+                    'created_at': timeutils.utcnow(),
                     'booting_time': template['booting_time'],
                     'tenant_bound': template['tenant_bound'],
                     'auto_delete_on_fail': True}
         #TODO(bobmel): Determine value for max_hosted properly
-        max_hosted = 1#template['slot_capacity']
+        max_hosted = 1  # template['slot_capacity']
         for i in xrange(num):
             res = plugging_drv.create_hosting_device_resources(
                 context, self.l3_tenant_id(), self.mgmt_nw_id(),
@@ -577,8 +555,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             context, hosting_device['template_id'])
         hosting_device_drv = self.get_hosting_device_driver(
             context, hosting_device['template_id'])
-        if (plugging_drv is None or hosting_device_drv is None or
-                slots is None):
+        if (plugging_drv is None or hosting_device_drv is None):
             return
         res = plugging_drv.get_hosting_device_resources(
             context, hosting_device['id'], self.l3_tenant_id(),

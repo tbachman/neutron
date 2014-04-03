@@ -34,19 +34,21 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import (l3_router_rpc_joint_agent_api
                                              as l3_router_rpc_api)
+from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db.l3_models import HostedHostingPortBinding
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.l3.db.l3_models import RouterType
+from neutron.plugins.cisco.l3.extensions import routertype
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
 ROUTER_APPLIANCE_OPTS = [
-    cfg.StrOpt('default_router_type', default='CSR1kv_router',
+    cfg.StrOpt('default_router_type',
+               default=cl3_const.CSR1KV_ROUTER_TYPE,
                help=_("Default type of router to create")),
     cfg.StrOpt('namespace_router_type_name',
                default=cl3_const.NAMESPACE_ROUTER_TYPE,
@@ -101,20 +103,22 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        # Bob: Hard coding router type to shared CSR1kv for now
-        router_type = cfg.CONF.default_router_type
+        router_type_name = r.get(routertype.ROUTER_TYPE,
+                                 cfg.CONF.default_router_type)
+        # bobmel: Hard coding to shared host for now
         share_host = True
-        auto_schedule = cfg.CONF.router_auto_schedule
-        if (router_type != cfg.CONF.namespace_router_type_name and
-                self._dev_mgr.mgmt_nw_id() is None):
-            raise RouterCreateInternalError()
         with context.session.begin(subtransactions=True):
+            router_type_id = self.get_router_type(context,
+                                                  router_type_name)['id']
+            auto_schedule = cfg.CONF.router_auto_schedule
+            if (router_type_id != self.get_namespace_router_type_id(context)
+                    and self._dev_mgr.mgmt_nw_id() is None):
+                raise RouterCreateInternalError()
             router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
-            rt = self.get_router_type(context, router_type)
             r_hd_b_db = RouterHostingDeviceBinding(
                 router_id=router_created['id'],
-                router_type_id=rt['id'],
+                router_type_id=router_type_id,
                 auto_schedule=auto_schedule,
                 share_hosting_device=share_host,
                 hosting_device_id=None)
