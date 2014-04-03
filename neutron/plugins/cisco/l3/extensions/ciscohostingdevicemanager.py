@@ -25,6 +25,7 @@ from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as qexception
 from neutron.openstack.common import importutils
 from neutron.plugins.common import constants
+from neutron.services.service_base import ServicePluginBase
 
 
 # Hosting device and hosting device template exceptions
@@ -95,25 +96,25 @@ DEVICE_TEMPLATES = DEVICE_TEMPLATE + 's'
 # Attribute Map
 RESOURCE_ATTRIBUTE_MAP = {
     DEVICES: {
-        'tenant_id': {'allow_post': False, 'allow_put': False,
+        'tenant_id': {'allow_post': True, 'allow_put': False,
                       'is_visible': True},
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None},
                'is_visible': True,
                'primary_key': True},
         'template_id': {'allow_post': True, 'allow_put': False,
-                        'is_visible': True, 'required_by_policy': True},
+                        'required_by_policy': True,  'is_visible': True},
         'credentials_id': {'allow_post': True, 'allow_put': True,
                            'default': None, 'is_visible': True},
         'device_id': {'allow_post': True, 'allow_put': True,
-                      'is_visible': True, 'default': None},
+                      'default': None, 'is_visible': True},
         'admin_state_up': {'allow_post': True, 'allow_put': True,
-                           'default': True,
                            'convert_to': attr.convert_to_boolean,
-                           'is_visible': True},
-        'mgmt_port_id': {'allow_post': True, 'allow_put': False,
-                         'validate': {'type:uuid': None}, 'is_visible': True,
-                         'required_by_policy': True},
+                           'default': True, 'is_visible': True},
+        'management_port_id': {'allow_post': True, 'allow_put': False,
+                               'required_by_policy': True,
+                               'validate': {'type:uuid': None},
+                               'is_visible': True},
         'protocol_port': {'allow_post': True, 'allow_put': False,
                           'convert_to': convert_validate_port_value,
                           'default': None, 'is_visible': True},
@@ -131,28 +132,27 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
         'auto_delete_on_fail': {'allow_post': True, 'allow_put': True,
-                                'default': True,
-                                'convert_to': attr.convert_to_boolean},
+                                'convert_to': attr.convert_to_boolean,
+                                'default': True, 'is_visible': True},
     },
     DEVICE_TEMPLATES: {
         'tenant_id': {'allow_post': True, 'allow_put': False,
-                      'required_by_policy': True,
-                      'is_visible': True},
+                      'required_by_policy': True, 'is_visible': True},
         'id': {'allow_post': False, 'allow_put': False,
-               'validate': {'type:uuid': None},
-               'is_visible': True,
+               'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
-                 'is_visible': True, 'default': ''},
+                 'default': '', 'is_visible': True},
         'enabled': {'allow_post': True, 'allow_put': True,
-                    'default': True, 'convert_to': attr.convert_to_boolean},
+                    'convert_to': attr.convert_to_boolean,
+                    'default': True, 'is_visible': True},
         'host_category': {'allow_post': True, 'allow_put': False,
                           'validate': {'type:values': [VM_CATEGORY,
                                                        HARDWARE_CATEGORY]},
                           'required_by_policy': True, 'is_visible': True},
         #TODO(bobmel): validate service_types
         'service_types': {'allow_post': True, 'allow_put': True,
-                          'is_visible': True, 'default': ''},
+                          'default': '', 'is_visible': True},
         'image': {'allow_post': True, 'allow_put': True,
                   'default': None, 'is_visible': True},
         'flavor': {'allow_post': True, 'allow_put': True,
@@ -181,12 +181,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'default': None, 'is_visible': True},
         'device_driver': {'allow_post': True, 'allow_put': False,
                           'convert_to': convert_validate_driver,
-                          'required_by_policy': True,
-                          'is_visible': True},
+                          'required_by_policy': True, 'is_visible': True},
         'plugging_driver': {'allow_post': True, 'allow_put': False,
                             'convert_to': convert_validate_driver,
-                            'required_by_policy': True,
-                            'is_visible': True},
+                            'required_by_policy': True, 'is_visible': True},
     }
 }
 
@@ -234,7 +232,7 @@ class Ciscohostingdevicemanager(extensions.ExtensionDescriptor):
 
 
 @six.add_metaclass(ABCMeta)
-class CiscoHostingDevicePluginBase(object):
+class CiscoHostingDevicePluginBase(ServicePluginBase):
 
     @abstractmethod
     def create_hosting_device(self, context, hosting_device):
@@ -264,7 +262,7 @@ class CiscoHostingDevicePluginBase(object):
         pass
 
     @abstractmethod
-    def update_hosting_device_template(self, context,
+    def update_hosting_device_template(self, context, id,
                                        hosting_device_template):
         pass
 

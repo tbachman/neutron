@@ -19,7 +19,8 @@ from oslo.config import cfg
 from neutron.db import l3_agentschedulers_db as l3agentsched_db
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db import l3_models
+from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
+from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 
 LOG = logging.getLogger(__name__)
 
@@ -53,21 +54,19 @@ class L3RouterTypeAwareSchedulerDbMixin(
             context, cl3_constants.AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []
-        query = context.session.query(
-            l3_models.RouterHostingDeviceBinding.router_id)
-        query = query.join(l3_models.HostingDevice)
-        query = query.filter(
-            l3_models.HostingDevice.cfg_agent_id == agent.id)
+        query = context.session.query(RouterHostingDeviceBinding.router_id)
+        query = query.join(HostingDevice)
+        query = query.filter(HostingDevice.cfg_agent_id == agent.id)
         if router_id:
             query = query.filter(
-                l3_models.RouterHostingDeviceBinding.router_id == router_id)
+                RouterHostingDeviceBinding.router_id == router_id)
         if len(hosting_device_ids) == 1:
             query = query.filter(
-                l3_models.RouterHostingDeviceBinding.hosting_device_id ==
+                RouterHostingDeviceBinding.hosting_device_id ==
                 hosting_device_ids[0])
         elif len(hosting_device_ids) > 1:
             query = query.filter(
-                l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
+                RouterHostingDeviceBinding.hosting_device_id.in_(
                     hosting_device_ids))
         router_ids = [item[0] for item in query]
         if router_ids:

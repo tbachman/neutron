@@ -37,7 +37,7 @@ from neutron.openstack.common import loopingcall
 from neutron.plugins.cisco.l3.common import (l3_router_rpc_joint_agent_api
                                              as l3_router_rpc_api)
 from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.db.l3_models import HostedHostingPortBinding
+from neutron.plugins.cisco.l3.db.hd_models import HostedHostingPortBinding
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.l3.db.l3_models import RouterType
 from neutron.plugins.cisco.l3.extensions import routertype

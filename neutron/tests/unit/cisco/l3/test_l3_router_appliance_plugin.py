@@ -29,7 +29,7 @@ from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hd_mgr_db
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
 from neutron.plugins.common import constants
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
@@ -156,9 +156,9 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
         cfg.CONF.set_default('max_routes', 3)
         ext_mgr = test_ext_extraroute.ExtraRouteTestExtensionManager()
 
-        hosting_device_manager_db.HostingDeviceManagerMixin._instance = None
-        hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = None
-        hosting_device_manager_db.HostingDeviceTemplate._mgmt_sec_grp_id = None
+        hd_mgr_db.HostingDeviceManagerMixin._instance = None
+        hd_mgr_db.HostingDeviceManagerMixin._mgmt_nw_uuid = None
+        hd_mgr_db.HostingDeviceTemplate._mgmt_sec_grp_id = None
 
         super(test_l3_plugin.L3BaseForSepTests, self).setUp(
             plugin=plugin, ext_mgr=ext_mgr,
@@ -223,7 +223,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
                                              ip_version=4)
 
     def tearDown(self):
-        dev_mgr = hosting_device_manager_db.HostingDeviceManagerMixin.get_instance()
+        dev_mgr = hd_mgr_db.HostingDeviceManagerMixin.get_instance()
         dev_mgr.delete_all_service_vm_hosting_devices(
             context.get_admin_context(), cl3_const.CSR1KV_HOST)
         q_p = "network_id=%s" % self.mgmt_nw['network']['id']
@@ -237,7 +237,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
 
     def test_get_network_succeeds_without_filter(self):
         plugin = NeutronManager.get_plugin()
-        dev_mgr = hosting_device_manager_db.HostingDeviceManagerMixin.get_instance()
+        dev_mgr = hd_mgr_db.HostingDeviceManagerMixin.get_instance()
         ctx = context.Context(None, None, is_admin=True)
         nets = plugin.get_networks(ctx, filters=None)
         # Remove mgmt network from list

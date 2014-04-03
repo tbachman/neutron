@@ -15,14 +15,12 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
-from sqlalchemy.orm import joinedload
 
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db import l3_models
 from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
 
 LOG = logging.getLogger(__name__)
@@ -55,10 +53,11 @@ class CfgAgentSchedulerDbMixin(
                       timeout=cfg.CONF.cfg_agent_down_time):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
-    def auto_schedule_hosting_devices_on_cfg_agent(self, context, host):
+    def auto_schedule_hosting_devices(self, context, host):
         if self.cfg_agent_scheduler:
-            return (self.cfg_agent_scheduler.
-                    auto_schedule_hosting_devices_on_cfg_agent(context, host))
+            return self.cfg_agent_scheduler.auto_schedule_hosting_devices(
+                self, context, host)
+        return
 
     def assign_hosting_device_to_cfg_agent(self, context, id,
                                            hosting_device_id):
@@ -98,21 +97,25 @@ class CfgAgentSchedulerDbMixin(
         return cfg_agents
 
     def get_cfg_agents_for_hosting_devices(self, context, hosting_device_ids,
-                                           admin_state_up=None, active=None):
+                                           admin_state_up=None, active=None,
+                                           schedule=False):
         if not hosting_device_ids:
             return []
-        query = context.session.query(l3_models.HostingDevice)
-        if len(hosting_device_ids) > 1:
-            query = query.options(joinedload('cfg_agent')).filter(
-                l3_models.HostingDevice.id.in_(hosting_device_ids))
-        else:
-            query = query.options(joinedload('cfg_agent')).filter(
-                l3_models.HostingDevice.id == hosting_device_ids[0])
+        query = self.get_hosting_devices_qry(context, hosting_device_ids)
         if admin_state_up is not None:
-            query = (query.filter(agents_db.Agent.admin_state_up ==
-                                  admin_state_up))
-        agents = [hosting_device.cfg_agent for hosting_device in query
-                  if hosting_device.cfg_agent is not None]
+            query = query.filter(
+                agents_db.Agent.admin_state_up == admin_state_up)
+        if schedule:
+            agents = []
+            for hosting_device in query:
+                if hosting_device.cfg_agent is None:
+                    agent = self.cfg_agent_scheduler.schedule_hosting_device(
+                        self, context, hosting_device)
+                    if agent is not None:
+                        agents.append(agent)
+        else:
+            agents = [hosting_device.cfg_agent for hosting_device in query
+                      if hosting_device.cfg_agent is not None]
         if active is not None:
             agents = [agent for agent in agents if not
                       self.is_agent_down(agent['heartbeat_timestamp'])]

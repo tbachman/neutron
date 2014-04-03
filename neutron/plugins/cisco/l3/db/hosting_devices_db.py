@@ -20,8 +20,8 @@ from neutron.db import db_base_plugin_v2 as base_db
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
-from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
+from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
+from neutron.plugins.cisco.l3.db.hd_models import HostingDeviceTemplate
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 

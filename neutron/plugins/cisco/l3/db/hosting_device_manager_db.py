@@ -36,10 +36,10 @@ from neutron.plugins.cisco.l3.common import (devmgr_rpc_cfgagent_api as
                                              devmgr_rpc)
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import service_vm_lib
+from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
+from neutron.plugins.cisco.l3.db.hd_models import HostingDeviceTemplate
+from neutron.plugins.cisco.l3.db.hd_models import SlotAllocation
 from neutron.plugins.cisco.l3.db import hosting_devices_db
-from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
-from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
-from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
@@ -318,7 +318,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # report success
         return True
 
-    def get_hosting_devices_db(self, context, hosting_device_ids):
+    def get_hosting_devices_qry(self, context, hosting_device_ids):
         """Returns hosting devices with <hosting_device_ids>."""
         query = context.session.query(HostingDevice)
         if len(hosting_device_ids) > 1:
@@ -327,7 +327,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         else:
             query = query.options(joinedload('cfg_agent')).filter(
                 HostingDevice.id == hosting_device_ids[0])
-        return query.all()
+        return query
 
     def delete_all_service_vm_hosting_devices(self, context, template):
         """Deletes all hosting devices based on <template>."""
@@ -354,8 +354,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
                                               hosting_device_ids):
-        hosting_devices = self.get_hosting_devices_db(context.elevated(),
-                                                      hosting_device_ids)
+        query = self.get_hosting_devices_qry(context.elevated(),
+                                             hosting_device_ids)
+        hosting_devices = query.all()
         # 'hosting_info' is dictionary with ids of removed hosting
         # devices and the affected logical resources for each
         # removed hosting device:

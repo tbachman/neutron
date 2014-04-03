@@ -28,7 +28,7 @@ from neutron.plugins.cisco.l3.common import (devices_cfgagent_rpc_cb as
                                              devices_rpc)
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import cfg_agent_schedulers_db as agt_sched_db
+from neutron.plugins.cisco.l3.db import cfg_agentschedulers_db as agt_sched_db
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager

@@ -27,18 +27,48 @@ class DeviceMgrCfgRpcCallbackMixin(object):
     def report_non_responding_hosting_devices(self, context, **kwargs):
         """Report that a hosting device cannot be contacted.
 
-        @param: context: contains user information
-        @param: kwargs: hosting_device_ids: list of non-responding
-                                            hosting devices
+        @param: context - contains user information
+        @param: kwargs - hosting_device_ids: list of non-responding
+                                             hosting devices
+                         host: originator of callback
         @return: -
         """
         hosting_device_ids = kwargs.get('hosting_device_ids', [])
-        cfg_agent = kwargs.get('host', None)
+        cfg_agent_host = kwargs.get('host', None)
         plugin = manager.NeutronManager.get_service_plugins().get(
             svc_constants.DEVICE_MANAGER)
         if plugin is None:
             LOG.error(_('No Device manager service plugin registered!'
-                        'Cannot handle non-responding hosting device report'))
+                        'Cannot handle non-responding hosting device '
+                        'callback'))
         else:
-            plugin.handle_non_responding_hosting_devices(context, cfg_agent,
-                                                         hosting_device_ids)
+            plugin.handle_non_responding_hosting_devices(
+                context, cfg_agent_host, hosting_device_ids)
+
+    def register_for_duty(self, context, **kwargs):
+        """Report that Cisco cfg agent is ready for duty.
+
+        This function is supposed to be called when the agent has started,
+        is ready to take on assignments and before any callbacks to fetch
+        logical resources are issued.
+
+        @param: context - contains user information
+        @param: kwargs - hosting_device_ids: list of non-responding
+                                             hosting devices
+                         host: originator of callback
+        @return: True if succesfully registered, False if not successfully
+                 registered, None if no handler found
+                 If unsuccessful the agent should retry registration a few
+                 seconds later
+        """
+        agent_host = kwargs.get('host', None)
+        plugin = manager.NeutronManager.get_service_plugins().get(
+            svc_constants.DEVICE_MANAGER)
+        if plugin is None:
+            LOG.error(_('No Device manager service plugin registered!'
+                        'Cannot handle Cisco configuration agent duty '
+                        'readiness callback'))
+            return
+        else:
+            # schedule any non-handled hosting devices
+            return plugin.auto_schedule_hosting_devices(context, agent_host)

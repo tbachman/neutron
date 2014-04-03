@@ -19,11 +19,9 @@ import random
 from sqlalchemy.orm import exc
 
 from neutron.db import agents_db
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
-from neutron.plugins.common import constants
+from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
 
 LOG = logging.getLogger(__name__)
 
@@ -35,13 +33,12 @@ class HostingDeviceCfgAgentScheduler(object):
     simple random selection among qualified candidates.
     """
 
-    def auto_schedule_hosting_devices_on_cfg_agent(self, context, agent_host):
+    def auto_schedule_hosting_devices(self, plugin, context, agent_host):
         """Schedules unassociated hosting devices to Cisco cfg agent.
 
-        Schedules hosting device to agent running on <agent_host>.
+        Schedules hosting devices to agent running on <agent_host>.
         """
         with context.session.begin(subtransactions=True):
-            #TODO(bobmel): Perhaps consider ALL active agents
             # Check if there is a valid Cisco cfg agent on the host
             query = context.session.query(agents_db.Agent)
             query = query.filter_by(agent_type=cl3_constants.AGENT_TYPE_CFG,
@@ -62,19 +59,17 @@ class HostingDeviceCfgAgentScheduler(object):
                 context.session.add(hd)
             return True
 
-    def schedule_hosting_devices_on_cfg_agent(self, plugin, context, id):
-        """Selects Cisco cfg agent that will configure hosting device."""
+    def schedule_hosting_device(self, plugin, context, hosting_device):
+        """Selects Cisco cfg agent that will configure <hosting_device>."""
         with context.session.begin(subtransactions=True):
-            hd_db = self._dev_mgr.get_hosting_devices_db(context, [id])
-            if not hd_db:
-                LOG.debug(_('DB inconsistency: Hosting device %s could '
-                            'not be found'), id)
+            if not hosting_device:
+                LOG.debug(_('Hosting device to schedule not specified'))
                 return
-            if hd_db[0].cfg_agent:
+            elif hosting_device.cfg_agent:
                 LOG.debug(_('Hosting device %(hd_id)s has already been '
                             'assigned to Cisco cfg agent %(agent_id)s'),
                           {'hd_id': id,
-                           'agent_id': hd_db[0].cfg_agent['id']})
+                           'agent_id': hosting_device.cfg_agent.id})
                 return
             active_cfg_agents = plugin.get_cfg_agents(context, active=True)
             if not active_cfg_agents:
@@ -84,11 +79,6 @@ class HostingDeviceCfgAgentScheduler(object):
                 # will be scheduled to it.
                 return
             chosen_agent = random.choice(active_cfg_agents)
-            hd_db[0].cfg_agent = chosen_agent
-            context.session.add(hd_db[0])
+            hosting_device.cfg_agent = chosen_agent
+            context.session.add(hosting_device)
             return chosen_agent
-
-    @property
-    def _dev_mgr(self):
-        return manager.NeutronManager.get_service_plugins().get(
-            constants.DEVICE_MANAGER)

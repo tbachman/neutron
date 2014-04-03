@@ -56,7 +56,7 @@ class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
             if (utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
                 agents = dmplugin.get_cfg_agents_for_hosting_devices(
                     adminContext, hosting_device['id'], admin_state_up=True,
-                    active=True)
+                    active=True, schedule=True)
             else:
                 agents = []
             for agent in agents:
