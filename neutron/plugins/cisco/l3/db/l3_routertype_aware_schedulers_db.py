@@ -27,33 +27,33 @@ from neutron.plugins.cisco.l3.db import l3_models
 LOG = logging.getLogger(__name__)
 
 
-COMPOSITE_AGENTS_SCHEDULER_OPTS = [
-    cfg.IntOpt('cfg_agent_down_time', default=15,
-               help=_('Seconds of no status update until a cfg agent '
-                      'is considered down.')),
+ROUTER_TYPE_AWARE_SCHEDULER_OPTS = [
+    cfg.StrOpt('router_type_aware_scheduler_driver',
+               default='neutron.plugins.cisco.l3.scheduler.'
+                       'l3_routertype_aware_agent_scheduler.'
+                       'L3RouterTypeAwareScheduler',
+               help=_('Driver to use for router type-aware scheduling of '
+                      'router to a default L3 agent')),
 ]
 
-cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS)
+cfg.CONF.register_opts(ROUTER_TYPE_AWARE_SCHEDULER_OPTS)
 
 
-class RouterHybridSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
-    """Mixin class to add L3 router scheduler capability.
+class L3RouterTypeAwareSchedulerDbMixin(
+        l3agentsched_db.L3AgentSchedulerDbMixin):
+    """Mixin class to add L3 router type-aware scheduler capability.
 
     This class can schedule Neutron routers to hosting devices
-    and to (traditional Neutron) network nodes.
+    and to L3 agents on network nodes.
     """
-
-    @classmethod
-    def is_agent_down(cls, heart_beat_time,
-                      timeout=cfg.CONF.cfg_agent_down_time):
-        return timeutils.is_older_than(heart_beat_time, timeout)
 
     def list_active_sync_routers_on_hosting_devices(self, context, host,
                                                     router_id,
-                                                    hosting_device_ids=[]):
+                                                    hosting_device_ids=None):
+        if hosting_device_ids is None:
+            hosting_device_ids = []
         agent = self._get_agent_by_type_and_host(
             context, cl3_constants.AGENT_TYPE_CFG, host)
-
         if not agent.admin_state_up:
             return []
         query = context.session.query(

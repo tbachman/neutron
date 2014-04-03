@@ -30,7 +30,7 @@ from neutron import wsgi
 
 LOG = logging.getLogger(__name__)
 
-
+ROUTER_TYPE_ALIAS = 'routertype'
 NAME = 'router_type'
 TYPE = NAME + ':id'
 ROUTER_TYPES = TYPE + 's'
@@ -88,7 +88,7 @@ class RouterTypeController(wsgi.Controller):
         return plugin.get_router_types(request.context, **kwargs)
 
 
-class Router_type(extensions.ExtensionDescriptor):
+class Routertype(extensions.ExtensionDescriptor):
     """Extension class to define different types of Neutron routers.
 
     This class is used by Neutron's extension framework to support
@@ -111,7 +111,7 @@ class Router_type(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_alias(cls):
-        return NAME
+        return ROUTER_TYPE_ALIAS
 
     @classmethod
     def get_description(cls):

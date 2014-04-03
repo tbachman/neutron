@@ -66,7 +66,7 @@ import neutron.plugins
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import l3_router_hybrid_schedulers_db as agt_sch_db
+from neutron.plugins.cisco.l3.db import l3_routertype_aware_schedulers_db as agt_sch_db
 from neutron.plugins.cisco.l3.db import l3_cfg_rpc_base
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
 from neutron.plugins.common import constants as svc_constants

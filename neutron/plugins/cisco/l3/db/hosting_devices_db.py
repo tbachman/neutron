@@ -37,15 +37,15 @@ from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import HostingDeviceTemplate
-from neutron.plugins.cisco.l3.extensions import (ciscohostingdevicemanager
-                                                 as ciscodevicemanager)
+from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
-class HostingDeviceDBMixin(ciscodevicemanager.CiscoHostingDevicePluginBase,
-                           base_db.CommonDbMixin):
+class HostingDeviceDBMixin(
+        ciscohostingdevicemanager.CiscoHostingDevicePluginBase,
+        base_db.CommonDbMixin):
     """A class implementing DB functionality for hosting devices."""
 
     def create_hosting_device(self, context, hosting_device):
@@ -53,11 +53,15 @@ class HostingDeviceDBMixin(ciscodevicemanager.CiscoHostingDevicePluginBase,
         hd = hosting_device['hosting_device']
         tenant_id = self._get_tenant_id_for_create(context, hd)
         with context.session.begin(subtransactions=True):
+            credentials_id = hd.get('credentials_id')
+            if credentials_id is None:
+                hdt_db = self._get_hosting_device_template(context, id)
+                credentials_id = hdt_db['default_credentials_id']
             hd_db = HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
                 template_id=hd['template_id'],
-                credentials_id=hd.get('credentials_id'),
+                credentials_id=credentials_id,
                 device_id=hd.get('device_id'),
                 admin_state_up=hd.get('admin_state_up', True),
                 management_port_id=hd['management_port_id'],

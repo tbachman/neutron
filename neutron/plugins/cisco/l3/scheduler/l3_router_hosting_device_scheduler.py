@@ -27,7 +27,6 @@ from neutron.plugins.cisco.l3.db.l3_models import HostingDevice
 from neutron.plugins.cisco.l3.db.l3_models import SlotAllocation
 from neutron.plugins.common import constants
 
-
 LOG = logging.getLogger(__name__)
 
 
@@ -124,11 +123,10 @@ class L3RouterHostingDeviceScheduler(object):
             sorted_candidates = sorted(oldest_candidates, key=itemgetter(2))
             return sorted_candidates[0]
 
-    def unschedule_router_(self, plugin, context, r_hd_binding):
+    def unschedule_router(self, plugin, context, r_hd_binding):
         return True
 
     @property
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
             constants.DEVICE_MANAGER)
-        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()

@@ -95,4 +95,4 @@ class HostingDeviceCfgAgentScheduler(object):
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
             constants.DEVICE_MANAGER)
-        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
+

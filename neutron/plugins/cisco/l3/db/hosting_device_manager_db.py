@@ -57,6 +57,10 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
                       "Default value is mgmt_sec_grp")),
+    cfg.IntOpt('standby_pool_size', default=1,
+               help=_("The number of running service VMs to maintain "
+                      "as a pool of standby hosting devices. Default "
+                      "value is 1")),
     cfg.IntOpt('csr1kv_flavor', default=621,
                help=_("Name or UUID of Nova flavor used for CSR1kv VM. "
                       "Default value is 621")),
@@ -73,10 +77,6 @@ HOSTING_DEVICE_MANAGER_OPTS = [
                help=_("The time in seconds it typically takes to boot a "
                       "CSR1kv VM into operational state. Default value "
                       "is 420.")),
-    cfg.IntOpt('standby_pool_size', default=1,
-               help=_("The number of running service VMs to maintain "
-                      "as a pool of standby hosting devices. Default "
-                      "value is 1")),
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
@@ -351,34 +351,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 HostingDevice.id == hosting_device_ids[0])
         return query.all()
 
-    def _get_hosting_device_template(self, context, id_or_name):
-        """Returns hosting device template with specified <id_or_name>."""
-        query = context.session.query(HostingDeviceTemplate)
-        query = query.filter(HostingDeviceTemplate.id == id_or_name)
-        try:
-            return query.one()
-        except exc.MultipleResultsFound:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Database inconsistency: Multiple hosting device '
-                            'templates with same id %s'), id_or_name)
-                raise HostingDeviceTemplateNotFound(template=id_or_name)
-        except exc.NoResultFound:
-            query = context.session.query(HostingDeviceTemplate)
-            query = query.filter(HostingDeviceTemplate.name == id_or_name)
-            try:
-                return query.one()
-            except exc.MultipleResultsFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.debug(_('Multiple hosting device templates with name '
-                                '%s found. Id must be specified to allow '
-                                'arbitration.'), id_or_name)
-                    raise MultipleHostingDeviceTemplates(name=id_or_name)
-            except exc.NoResultFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.error(_('No hosting device template with name %s '
-                                'found.'), id_or_name)
-                    raise HostingDeviceTemplateNotFound(template=id_or_name)
-
     def delete_all_service_vm_hosting_devices(self, context, template):
         """Deletes all hosting devices based on <template>."""
         with context.session.begin(subtransactions=True):
@@ -473,19 +445,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # For now the pool size is only elastic for service VMs.
         if template['host_category'] == cl3_const.HARDWARE_CATEGORY:
             return
-        # Maintain a pool of approximately _desired_svc_vm_slots =
-        #     capacity * standby_pool_size
-        # slots available for use.
-        # Approximately means _avail_svc_vm_slots =
-        #         [ max(0, _desired_svc_vm_slots - capacity),
-        #           _desired_svc_vm_slots + capacity ]
-        #
-        # Spin-up VM condition: _service_vm_slots < _desired_svc_vm_slots
-        # Resulting increase of available slots:
-        #     _avail_svc_vm_slots + capacity
-        # Delete VM condition: _service_vm_slots < _desired_svc_vm_slots
-        # Resulting reduction of available slots:
-        #     _avail_svc_vm_slots - capacity
+        # Maintain a pool of approximately 'desired_slots_free' available
+        # for allocation. Approximately means:
+        # max(0, desired_slots_free - capacity) <= available_slots <=
+        #                                         desired_slots_free + capacity
         capacity = template['slot_capacity']
         desired = template['desired_slots_free']
         available = self._get_total_available_slots(context, template['id'],
@@ -502,7 +465,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                           'created': num_created})
         elif available >= desired + capacity:
             num_req = int(math.ceil((available - desired) / (1.0 * capacity)))
-            num_deleted = self._delete_unused_service_vm_hosting_devices(
+            num_deleted = self._delete_idle_service_vm_hosting_devices(
                 context, num_req, template)
             if num_deleted < num_req:
                 LOG.warn(_('Tried to delete %(requested)d instances based on '
@@ -510,8 +473,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                            'only delete %(deleted)d instances'),
                          {'requested': num_req, 'deleted': num_deleted})
 
-    def _create_svc_vm_hosting_devices(self, context, num, template,
-                                       tenant_bound=None):
+    def _create_svc_vm_hosting_devices(self, context, num, template):
         """Creates <num> or less service VM instances based on <template>.
 
         These hosting devices can be bound to a certain tenant or for shared
@@ -562,8 +524,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     return hosting_devices
         return hosting_devices
 
-    def _delete_unused_service_vm_hosting_devices(self, context, num,
-                                                  template, tenant_bound=None):
+    def _delete_idle_service_vm_hosting_devices(self, context, num, template):
         """Deletes <num> or less unused <template>-based service VM instances.
 
         The number of deleted service vm instances is returned.

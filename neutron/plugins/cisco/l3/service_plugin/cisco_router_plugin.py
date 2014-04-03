@@ -33,8 +33,8 @@ from neutron.plugins.cisco.l3.common import (l3_router_cfgagent_rpc_cb as
                                              l3_router_rpc)
 from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import (l3_router_hybrid_schedulers_db as
-                                         hybrid_sch_db)
+from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
+                                         router_sch_db)
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
 from neutron.plugins.common import constants
 
@@ -56,7 +56,7 @@ class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,
-                        hybrid_sch_db.RouterHybridSchedulerDbMixin):
+                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
@@ -82,13 +82,9 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                 to_add += ':' + ext_path
         if to_add != "":
             cfg.CONF.set_override('api_extensions_path', cp + to_add)
-        #TODO(bobmel): Remove this over-ride of default router scheduler
-        # and make it part of installer instead.
-        cfg.CONF.set_override('router_scheduler_driver',
-                              'neutron.plugins.cisco.l3.scheduler.'
-                              'l3_composite_scheduler.'
-                              'L3AgentCompositeScheduler')
         self.router_scheduler = importutils.import_object(
+            cfg.CONF.router_type_aware_scheduler_driver)
+        self.l3agent_scheduler = importutils.import_object(
             cfg.CONF.router_scheduler_driver)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()

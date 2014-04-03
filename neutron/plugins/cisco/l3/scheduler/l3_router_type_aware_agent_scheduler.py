@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# Based on Neutron L3 Agent scheduler.
 
 import random
 
@@ -33,12 +31,11 @@ from neutron.scheduler import l3_agent_scheduler
 LOG = logging.getLogger(__name__)
 
 
-class L3AgentCompositeScheduler(l3_agent_scheduler.L3Scheduler):
-    """A composite scheduler for Cisco router service plugin.
+class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
+    """A router type aware l3 agent scheduler for Cisco router service plugin.
 
-    It schedules a) network namespace based routers to l3 agents, as
-    well as, b) hosting devices to Cisco cfg agents. In both cases the
-    scheduling is a simple random selection among qualified candidates.
+    It schedules Neutron routers with router type representing network
+    namespace based routers to l3 agents.
     """
 
     def auto_schedule_routers(self, plugin, context, host, router_ids):
@@ -130,57 +127,12 @@ class L3AgentCompositeScheduler(l3_agent_scheduler.L3Scheduler):
                 self.bind_router(context, router_id, l3_agent)
         return True
 
-    def schedule(self, plugin, context, sync_router):
-        if sync_router['router_type'] == cl3_constants.NAMESPACE_ROUTER_TYPE:
+    def schedule(self, plugin, context, router):
+        # Only network namespace based routers should be scheduled here
+        ns_routertype_id = plugin.get_namespace_router_type_id(context)
+        if router['router_type_id'] == ns_routertype_id:
             # Do the traditional Neutron router scheduling
-            return self.schedule_namespace_router(plugin, context, sync_router)
+            return plugin.l3agent_scheduler.schedule(plugin, context,
+                                                     router['id'])
         else:
-            if sync_router.get('hosting_device') is None:
-                return
-            # Schedule the hosting device to a Cisco cfg agent
-            return self.schedule_hosting_devices_on_cfg_agent(
-                plugin, context, sync_router['hosting_device']['id'])
-
-    def schedule_namespace_router(self, plugin, context, sync_router):
-        """Schedule router to L3 agent if no L3 agent already hosts it."""
-        with context.session.begin(subtransactions=True):
-            # allow one router is hosted by just
-            # one enabled l3 agent hosting since active is just a
-            # timing problem. Non-active l3 agent can return to
-            # active any time
-            l3_agents = plugin.get_l3_agents_hosting_routers(
-                context, [sync_router['id']], admin_state_up=True)
-            if l3_agents:
-                LOG.debug(_('Router %(router_id)s has already been hosted'
-                            ' by L3 agent %(agent_id)s'),
-                          {'router_id': sync_router['id'],
-                           'agent_id': l3_agents[0]['id']})
-                return
-
-            active_l3_agents = plugin.get_l3_agents(context, active=True)
-            if not active_l3_agents:
-                LOG.warn(_('No active L3 agents'))
-                return
-            candidates = plugin.get_l3_agent_candidates(sync_router,
-                                                        active_l3_agents)
-            if not candidates:
-                LOG.warn(_('No L3 agents can host the router %s'),
-                         sync_router['id'])
-                return
-
-            chosen_agent = random.choice(candidates)
-            binding = l3_agentschedulers_db.RouterL3AgentBinding()
-            binding.l3_agent = chosen_agent
-            binding.router_id = sync_router['id']
-            context.session.add(binding)
-            LOG.debug(_('Router %(router_id)s is scheduled to '
-                        'L3 agent %(agent_id)s'),
-                      {'router_id': sync_router['id'],
-                       'agent_id': chosen_agent['id']})
-            return chosen_agent
-
-    @property
-    def _dev_mgr(self):
-        return manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
-        #return hosting_device_manager_db.HostingDeviceManager.get_instance()
+            return

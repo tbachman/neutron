@@ -20,13 +20,16 @@ from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.rpc import proxy
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
+from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
-AGENT_TYPE = {topics.L3_AGENT: " ",
-              cl3_constants.CFG_AGENT: " cfg "}
+AGENT_TYPE = {topics.L3_AGENT: "l3 agent",
+              cl3_constants.CFG_AGENT: "Cisco cfg agent"}
+L3AGENT_SCHED = constants.L3_AGENT_SCHEDULER_EXT_ALIAS
+CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
 
 class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
@@ -47,32 +50,33 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
                   self.make_msg(method, payload=payload),
                   topic='%s.%s' % (topic, host))
 
-    def _agent_notification(self, context, method, routers,
-                            operation, data):
+    def _agent_notification(self, context, method, routers, operation, data):
         """Notify individual L3 agents and Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()
-        plugin = manager.NeutronManager.get_service_plugins().get(
+        l3plugin = manager.NeutronManager.get_service_plugins().get(
             svc_constants.L3_ROUTER_NAT)
-        namespace_routertype_id = plugin.get_namespace_router_type_id(context)
+        dmplugin = manager.NeutronManager.get_service_plugins().get(
+            svc_constants.DEVICE_MANAGER)
+        ns_routertype_id = l3plugin.get_namespace_router_type_id(context)
         for router in routers:
-            if router['router_type_id'] == namespace_routertype_id:
-                agents = plugin.get_l3_agents_hosting_routers(
+            if (router['router_type_id'] == ns_routertype_id and
+                    utils.is_extension_supported(l3plugin, L3AGENT_SCHED)):
+                agents = l3plugin.get_l3_agents_hosting_routers(
                     admin_context, [router['id']],
                     admin_state_up=True,
                     active=True)
             elif (router['hosting_device'] is not None and
-                  utils.is_extension_supported(
-                    plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS)):
-                agents = plugin.get_cfg_agents_for_hosting_devices(
+                  utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
+                agents = dmplugin.get_cfg_agents_for_hosting_devices(
                     admin_context, [router['hosting_device']['id']],
                     admin_state_up=True,
                     active=True)
             else:
                 agents = []
             for agent in agents:
-                LOG.debug(_('Notify l3%(type)sagent at %(topic)s.%(host)s the '
+                LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
                             'message %(method)s'),
-                          {'type': AGENT_TYPE[agent.topic],
+                          {'agent_type': AGENT_TYPE[agent.topic],
                            'topic': agent.topic,
                            'host': agent.host,
                            'method': method})
@@ -85,8 +89,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
         """Notify all or individual L3 agents and Cisco cfg agents."""
         plugin = manager.NeutronManager.get_service_plugins().get(
             svc_constants.L3_ROUTER_NAT)
-        if utils.is_extension_supported(
-                plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
+        if utils.is_extension_supported(plugin, L3AGENT_SCHED):
             adm_context = (context.is_admin and context or context.elevated())
             # This is where a hosting device gets scheduled to a
             # Cisco cfg agent and where network namespace-based

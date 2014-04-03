@@ -53,11 +53,6 @@ ROUTER_APPLIANCE_OPTS = [
                help=_("Name of router type used for Linux network namespace "
                       "routers (i.e., Neutron's legacy routers in Network "
                       "nodes).")),
-    cfg.StrOpt('hosting_scheduler_driver',
-               default='neutron.plugins.cisco.l3.scheduler.'
-                       'l3_hosting_device_scheduler.L3HostingDeviceScheduler',
-               help=_('Driver to use for scheduling router to a hosting '
-                      'device')),
     cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
@@ -93,8 +88,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     # Dictionary with loaded scheduler modules for different router types
     _router_schedulers = {}
-
-#    hosting_scheduler = None
 
     # Id of router type used to represent Neutron's "legacy" Linux network
     # namespace routers
@@ -331,9 +324,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     except KeyError:
                         affected_resources[hd['id']] = {'routers': router_ids}
 
-    # Make parent's call to get_sync_data(...) a noop
-    def get_sync_data(self, context, router_ids=None, active=None):
-        return []
+#    # Make parent's call to get_sync_data(...) a noop
+#    def get_sync_data(self, context, router_ids=None, active=None):
+#        return []
 
     def get_sync_data_ext(self, context, router_ids=None, active=None):
         """Query routers and their related floating_ips, interfaces.
@@ -429,34 +422,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 r_hd_binding['router'],
                 r_hd_binding['router_type']['slot_need'])
 
-    # TODO(bobmel): Retire this function as we now do backlogging
-    # def host_router(self, context, router_id):
-    #     """Schedules non-hosted auto-schedulable router(s) on hosting devices.
-    #
-    #     If <router_id> is given, then only the router with that id is
-    #     scheduled (if it is non-hosted). If no <router_id> is given,
-    #     then all non-hosted routers are scheduled.
-    #     """
-    #     type_to_exclude = self.get_namespace_router_type_id(context)
-    #     query = context.session.query(RouterHostingDeviceBinding)
-    #     query = query.filter(
-    #         RouterHostingDeviceBinding.router_type_id != type_to_exclude,
-    #         RouterHostingDeviceBinding.auto_schedule == expr.true(),
-    #         RouterHostingDeviceBinding.hosting_device == expr.null())
-    #     if router_id:
-    #         query = query.filter(
-    #             RouterHostingDeviceBinding.router_id == router_id)
-    #     for r_hd_binding in query:
-    #         scheduler = self._get_router_type_scheduler(
-    #             context, r_hd_binding['router_type_id'])
-    #         if scheduler is None:
-    #             continue
-    #         router = self._make_router_dict(r_hd_binding.router)
-    #         router['router_type_id'] = r_hd_binding['router_type_id']
-    #         router['share_host'] = r_hd_binding['share_hosting_device']
-    #         scheduler._schedule_router_on_hosting_device(context,
-    #                                                      r_hd_binding)
-
     def get_namespace_router_type_id(self, context):
         if self._namespace_router_type_id is None:
             try:
@@ -524,7 +489,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
             svc_constants.DEVICE_MANAGER)
-        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
         query = context.session.query(RouterHostingDeviceBinding)

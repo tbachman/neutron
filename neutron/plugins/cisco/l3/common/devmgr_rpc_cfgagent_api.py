@@ -25,6 +25,9 @@ from neutron.plugins.common import constants as service_constants
 LOG = logging.getLogger(__name__)
 
 
+CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
+
+
 class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
     """API for Device manager service plugin to notify Cisco cfg agent."""
     BASE_RPC_API_VERSION = '1.0'
@@ -48,12 +51,11 @@ class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
                             operation, data):
         """Notify individual Cisco cfg agents."""
         adminContext = context.is_admin and context or context.elevated()
-        plugin = manager.NeutronManager.get_service_plugins().get(
+        dmplugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.DEVICE_MANAGER)
         for hosting_device in hosting_devices:
-            if (utils.is_extension_supported(
-                    plugin, ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS)):
-                agents = plugin.get_cfg_agents_for_hosting_devices(
+            if (utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
+                agents = dmplugin.get_cfg_agents_for_hosting_devices(
                     adminContext, hosting_device['id'], admin_state_up=True,
                     active=True)
             else:

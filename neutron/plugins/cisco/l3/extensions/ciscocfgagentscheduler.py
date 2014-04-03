@@ -140,15 +140,14 @@ class Ciscocfgagentscheduler(extensions.ExtensionDescriptor):
                       collection_name="agents")
         controller = resource.Resource(HostingDeviceSchedulerController(),
                                        base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(
-            HOSTING_DEVICES, controller, parent))
-
+        exts.append(extensions.ResourceExtension(HOSTING_DEVICES, controller,
+                                                 parent))
         parent = dict(member_name=HOSTING_DEVICE,
                       collection_name=HOSTING_DEVICES)
         controller = resource.Resource(
             CfgAgentsHandlingHostingDeviceController(), base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(
-            CFG_AGENTS, controller, parent))
+        exts.append(extensions.ResourceExtension(CFG_AGENTS, controller,
+                                                 parent))
         return exts
 
     def get_extended_resources(self, version):

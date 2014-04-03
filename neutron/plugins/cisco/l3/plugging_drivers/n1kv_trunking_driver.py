@@ -80,15 +80,12 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
             constants.DEVICE_MANAGER)
-        #return dev_mgr_db.HostingDeviceManagerMixin.get_instance()
 
     @classmethod
     def _get_profile_id(cls, p_type, resource, name):
         try:
             tenant_id = manager.NeutronManager.get_service_plugins().get[
                 constants.DEVICE_MANAGER].l3_tenant_id()
-            #tenant_id = (dev_mgr_db.HostingDeviceManagerMixin.get_instance().
-            #             l3_tenant_id())
         except AttributeError:
             return
         if tenant_id is None:
