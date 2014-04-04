@@ -19,7 +19,6 @@ import copy
 from oslo.config import cfg
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
-
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
@@ -400,6 +399,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             router = self._make_router_dict(r_hd_binding.router)
             router['router_type'] = r_hd_binding['router_type']
             router['share_host'] = r_hd_binding['share_hosting_device']
+        #NALLE - MODIFY THIS CODE, POINT TO FILTER SCHEDULER
             self.hosting_scheduler.schedule_router_on_hosting_device(
                 self, context, router, r_hd_binding)
 
