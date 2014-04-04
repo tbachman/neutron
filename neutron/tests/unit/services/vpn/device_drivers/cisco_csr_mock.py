@@ -28,11 +28,6 @@ from neutron.openstack.common import log as logging
 # now, uncomment and include httmock source to UT
 from neutron.tests.unit.services.vpn.device_drivers import httmock
 
-# TODO(pcm) Remove, once verified these have been fixed
-FIXED_CSCum35484 = False
-FIXED_CSCul82396 = False
-FIXED_CSCum10324 = False
-
 LOG = logging.getLogger(__name__)
 
 
@@ -174,7 +169,7 @@ def normal_get(url, request):
                    u'priority-id': u'2',
                    u'version': u'v1',
                    u'local-auth-method': u'pre-share',
-                   u'encryption': u'aes',
+                   u'encryption': u'aes256',
                    u'hash': u'sha',
                    u'dhGroup': 5,
                    u'lifetime': 3600}
@@ -194,11 +189,11 @@ def normal_get(url, request):
                    u'mode': u'tunnel',
                    u'policy-id': u'%s' % ipsec_policy_id,
                    u'protection-suite': {
-                       u'esp-encryption': u'esp-aes',
+                       u'esp-encryption': u'esp-256-aes',
                        u'esp-authentication': u'esp-sha-hmac',
                        u'ah': u'ah-sha-hmac',
                    },
-                   u'anti-replay-window-size': u'128',
+                   u'anti-replay-window-size': u'Disable',
                    u'lifetime-sec': 120,
                    u'pfs': u'group5',
                    u'lifetime-kb': 4608000,
@@ -493,6 +488,15 @@ def post_bad_mtu(url, request):
 @httmock.urlmatch(netloc=r'localhost')
 def post_bad_lifetime(url, request):
     LOG.debug("DEBUG: POST bad lifetime mock for %s", url)
+    if not request.headers.get('X-auth-token', None):
+        return {'status_code': requests.codes.UNAUTHORIZED}
+    return {'status_code': requests.codes.BAD_REQUEST}
+
+
+@filter_request(['post'], 'vpn-svc/ipsec/policies')
+@httmock.urlmatch(netloc=r'localhost')
+def post_bad_name(url, request):
+    LOG.debug("DEBUG: POST bad IPSec policy name for %s", url)
     if not request.headers.get('X-auth-token', None):
         return {'status_code': requests.codes.UNAUTHORIZED}
     return {'status_code': requests.codes.BAD_REQUEST}
