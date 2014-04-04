@@ -15,6 +15,8 @@
 
 import random
 
+from sqlalchemy.orm import exc
+
 from neutron.common import constants
 from neutron.common import exceptions
 from neutron import context
@@ -227,17 +229,6 @@ class NvpSynchronizer():
     def _get_tag_dict(self, tags):
         return dict((tag.get('scope'), tag['tag']) for tag in tags)
 
-    def _update_neutron_object(self, context, neutron_data, status):
-        if status == neutron_data['status']:
-            # do nothing
-            return
-        with context.session.begin(subtransactions=True):
-            LOG.debug(_("Updating status for neutron resource %(q_id)s to: "
-                        "%(status)s"), {'q_id': neutron_data['id'],
-                                        'status': status})
-            neutron_data['status'] = status
-            context.session.add(neutron_data)
-
     def synchronize_network(self, context, neutron_network_data,
                             lswitches=None):
         """Synchronize a Neutron network with its NVP counterpart.
@@ -277,7 +268,22 @@ class NvpSynchronizer():
             if lswitches:
                 status = constants.NET_STATUS_ACTIVE
         # Update db object
-        self._update_neutron_object(context, neutron_network_data, status)
+        if status == neutron_network_data['status']:
+            # do nothing
+            return
+
+        with context.session.begin(subtransactions=True):
+            try:
+                network = self._plugin._get_network(context,
+                                                    neutron_network_data['id'])
+            except exc.NoResultFound:
+                pass
+            else:
+                network.status = status
+                LOG.debug(_("Updating status for neutron resource %(q_id)s to:"
+                            " %(status)s"),
+                          {'q_id': neutron_network_data['id'],
+                           'status': status})
 
     def _synchronize_lswitches(self, ctx, ls_uuids, scan_missing=False):
         if not ls_uuids and not scan_missing:
@@ -296,17 +302,19 @@ class NvpSynchronizer():
             neutron_nvp_mappings[neutron_id] = (
                 neutron_nvp_mappings.get(neutron_id, []) +
                 [self._nvp_cache[ls_uuid]])
-        with ctx.session.begin(subtransactions=True):
-            # Fetch neutron networks from database
-            filters = {'router:external': [False]}
-            if not scan_missing:
-                filters['id'] = neutron_net_ids
-            # TODO(salv-orlando): Filter out external networks
-            for network in self._plugin._get_collection_query(
-                ctx, models_v2.Network, filters=filters):
-                lswitches = neutron_nvp_mappings.get(network['id'], [])
-                lswitches = [lswitch.get('data') for lswitch in lswitches]
-                self.synchronize_network(ctx, network, lswitches)
+        # Fetch neutron networks from database
+        filters = {'router:external': [False]}
+        if not scan_missing:
+            filters['id'] = neutron_net_ids
+
+        networks = self._plugin._get_collection(
+            ctx, models_v2.Network, self._plugin._make_network_dict,
+            filters=filters)
+
+        for network in networks:
+            lswitches = neutron_nvp_mappings.get(network['id'], [])
+            lswitches = [lswitch.get('data') for lswitch in lswitches]
+            self.synchronize_network(ctx, network, lswitches)
 
     def synchronize_router(self, context, neutron_router_data,
                            lrouter=None):
@@ -340,22 +348,38 @@ class NvpSynchronizer():
                       constants.NET_STATUS_ACTIVE
                       or constants.NET_STATUS_DOWN)
         # Update db object
-        self._update_neutron_object(context, neutron_router_data, status)
+        if status == neutron_router_data['status']:
+            # do nothing
+            return
+
+        with context.session.begin(subtransactions=True):
+            try:
+                router = self._plugin._get_router(context,
+                                                  neutron_router_data['id'])
+            except exc.NoResultFound:
+                pass
+            else:
+                router.status = status
+                LOG.debug(_("Updating status for neutron resource %(q_id)s to:"
+                            " %(status)s"),
+                          {'q_id': neutron_router_data['id'],
+                           'status': status})
 
     def _synchronize_lrouters(self, ctx, lr_uuids, scan_missing=False):
         if not lr_uuids and not scan_missing:
             return
         neutron_router_mappings = (
             dict((lr_uuid, self._nvp_cache[lr_uuid]) for lr_uuid in lr_uuids))
-        with ctx.session.begin(subtransactions=True):
-            # Fetch neutron routers from database
-            filters = ({} if scan_missing else
-                       {'id': neutron_router_mappings.keys()})
-            for router in self._plugin._get_collection_query(
-                ctx, l3_db.Router, filters=filters):
-                lrouter = neutron_router_mappings.get(router['id'])
-                self.synchronize_router(
-                    ctx, router, lrouter and lrouter.get('data'))
+        # Fetch neutron routers from database
+        filters = ({} if scan_missing else
+                   {'id': neutron_router_mappings.keys()})
+        routers = self._plugin._get_collection(
+            ctx, l3_db.Router, self._plugin._make_router_dict,
+            filters=filters)
+        for router in routers:
+            lrouter = neutron_router_mappings.get(router['id'])
+            self.synchronize_router(
+                ctx, router, lrouter and lrouter.get('data'))
 
     def synchronize_port(self, context, neutron_port_data,
                          lswitchport=None, ext_networks=None):
@@ -405,8 +429,24 @@ class NvpSynchronizer():
             status = (lp_status and
                       constants.PORT_STATUS_ACTIVE
                       or constants.PORT_STATUS_DOWN)
+
         # Update db object
-        self._update_neutron_object(context, neutron_port_data, status)
+        if status == neutron_port_data['status']:
+            # do nothing
+            return
+
+        with context.session.begin(subtransactions=True):
+            try:
+                port = self._plugin._get_port(context,
+                                              neutron_port_data['id'])
+            except exc.NoResultFound:
+                pass
+            else:
+                port.status = status
+                LOG.debug(_("Updating status for neutron resource %(q_id)s to:"
+                            " %(status)s"),
+                          {'q_id': neutron_port_data['id'],
+                           'status': status})
 
     def _synchronize_lswitchports(self, ctx, lp_uuids, scan_missing=False):
         if not lp_uuids and not scan_missing:
@@ -424,24 +464,25 @@ class NvpSynchronizer():
             if neutron_port_id:
                 neutron_port_mappings[neutron_port_id] = (
                     self._nvp_cache[lp_uuid])
-        with ctx.session.begin(subtransactions=True):
-            # Fetch neutron ports from database
-            # At the first sync we need to fetch all ports
-            filters = ({} if scan_missing else
-                       {'id': neutron_port_mappings.keys()})
-            # TODO(salv-orlando): Work out a solution for avoiding
-            # this query
-            ext_nets = [net['id'] for net in ctx.session.query(
-                models_v2.Network).join(
-                    external_net_db.ExternalNetwork,
-                    (models_v2.Network.id ==
-                     external_net_db.ExternalNetwork.network_id))]
-            for port in self._plugin._get_collection_query(
-                ctx, models_v2.Port, filters=filters):
-                lswitchport = neutron_port_mappings.get(port['id'])
-                self.synchronize_port(
-                    ctx, port, lswitchport and lswitchport.get('data'),
-                    ext_networks=ext_nets)
+        # Fetch neutron ports from database
+        # At the first sync we need to fetch all ports
+        filters = ({} if scan_missing else
+                   {'id': neutron_port_mappings.keys()})
+        # TODO(salv-orlando): Work out a solution for avoiding
+        # this query
+        ext_nets = [net['id'] for net in ctx.session.query(
+            models_v2.Network).join(
+                external_net_db.ExternalNetwork,
+                (models_v2.Network.id ==
+                 external_net_db.ExternalNetwork.network_id))]
+        ports = self._plugin._get_collection(
+            ctx, models_v2.Port, self._plugin._make_port_dict,
+            filters=filters)
+        for port in ports:
+            lswitchport = neutron_port_mappings.get(port['id'])
+            self.synchronize_port(
+                ctx, port, lswitchport and lswitchport.get('data'),
+                ext_networks=ext_nets)
 
     def _get_chunk_size(self, sp):
         # NOTE(salv-orlando): Try to use __future__ for this routine only?
@@ -577,13 +618,12 @@ class NvpSynchronizer():
         # Get an admin context
         ctx = context.get_admin_context()
         # Synchronize with database
-        with ctx.session.begin(subtransactions=True):
-            self._synchronize_lswitches(ctx, ls_uuids,
-                                        scan_missing=scan_missing)
-            self._synchronize_lrouters(ctx, lr_uuids,
+        self._synchronize_lswitches(ctx, ls_uuids,
+                                    scan_missing=scan_missing)
+        self._synchronize_lrouters(ctx, lr_uuids,
+                                   scan_missing=scan_missing)
+        self._synchronize_lswitchports(ctx, lp_uuids,
                                        scan_missing=scan_missing)
-            self._synchronize_lswitchports(ctx, lp_uuids,
-                                           scan_missing=scan_missing)
         # Increase chunk counter
         LOG.info(_("Synchronization for chunk %(chunk_num)d of "
                    "%(total_chunks)d performed"),

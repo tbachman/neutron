@@ -74,6 +74,12 @@ class HyperVUtilsV2(utils.HyperVUtils):
             ResourceSettings=[res_setting_data.path_()])
         self._check_job_status(ret_val, job)
 
+    def _add_virt_feature(self, element, res_setting_data):
+        vs_man_svc = self._conn.Msvm_VirtualSystemManagementService()[0]
+        (job_path, out_set_data, ret_val) = vs_man_svc.AddFeatureSettings(
+            element.path_(), [res_setting_data.GetText_(1)])
+        self._check_job_status(ret_val, job_path)
+
     def disconnect_switch_port(
             self, vswitch_name, switch_port_name, delete_port):
         """Disconnects the switch port."""
@@ -177,16 +183,25 @@ class HyperVUtilsV2(utils.HyperVUtils):
         acls = port.associators(wmi_result_class=self._PORT_ALLOC_ACL_SET_DATA)
         for acl_type in [self._ACL_TYPE_IPV4, self._ACL_TYPE_IPV6]:
             for acl_dir in [self._ACL_DIR_IN, self._ACL_DIR_OUT]:
-                acls = [v for v in acls
-                        if v.Action == self._ACL_ACTION_METER and
-                        v.Applicability == self._ACL_APPLICABILITY_LOCAL and
-                        v.Direction == acl_dir and
-                        v.AclType == acl_type]
-                if not acls:
-                    acl = self._get_default_setting_data(
-                        self._PORT_ALLOC_ACL_SET_DATA)
-                    acl.AclType = acl_type
-                    acl.Direction = acl_dir
-                    acl.Action = self._ACL_ACTION_METER
-                    acl.Applicability = self._ACL_APPLICABILITY_LOCAL
+                _acls = self._filter_acls(
+                    acls, self._ACL_ACTION_METER, acl_dir, acl_type)
+
+                if not _acls:
+                    acl = self._create_acl(
+                        acl_dir, acl_type, self._ACL_ACTION_METER)
                     self._add_virt_feature(port, acl)
+
+    def _create_acl(self, direction, acl_type, action):
+        acl = self._get_default_setting_data(self._PORT_ALLOC_ACL_SET_DATA)
+        acl.set(Direction=direction,
+                AclType=acl_type,
+                Action=action,
+                Applicability=self._ACL_APPLICABILITY_LOCAL)
+        return acl
+
+    def _filter_acls(self, acls, action, direction, acl_type, remote_addr=""):
+        return [v for v in acls
+                if v.Action == action and
+                v.Direction == direction and
+                v.AclType == acl_type and
+                v.RemoteAddress == remote_addr]
