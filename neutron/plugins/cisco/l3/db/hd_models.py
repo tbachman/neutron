@@ -55,9 +55,10 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # desired number of slots to keep available at all times
     desired_slots_free = sa.Column(sa.Integer, nullable=False, default=0,
                                    autoincrement=False)
-    # 'tenant_bound' is a (possibly empty) list of tenant ids representing
-    # the only tenants allowed to own/place resources on hosting devices
-    # created using this template. If list is empty all tenants are allowed.
+    # 'tenant_bound' is a (possibly empty) string of ':'-separated tenant ids
+    # representing the only tenants allowed to own/place resources on
+    # hosting devices created using this template. If string is empty all
+    # tenants are allowed.
     tenant_bound = sa.Column(sa.String(512))
     # module to be used as plugging driver for logical resources
     # hosted inside hosting devices created using this template
@@ -97,7 +98,7 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # 'management_port_id' is the Neutron Port used for management interface
     management_port_id = sa.Column(sa.String(36),
                                    sa.ForeignKey('ports.id'),
-                                   primary_key=True, nullable=False)
+                                   nullable=False)
     management_port = orm.relationship(models_v2.Port)
     # 'protocol_port' is udp/tcp port of hosting device. May be empty.
     protocol_port = sa.Column(sa.Integer)

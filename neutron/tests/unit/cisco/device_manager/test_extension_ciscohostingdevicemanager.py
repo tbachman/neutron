@@ -150,7 +150,7 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
             'booting_time': 10,
             'slot_capacity': 5000,
             'desired_slots_free': 300,
-            'tenant_bound': [],
+            'tenant_bound': [_uuid(), _uuid(), _uuid()],
             'device_driver': device_driver,
             'plugging_driver': plugging_driver}}
 

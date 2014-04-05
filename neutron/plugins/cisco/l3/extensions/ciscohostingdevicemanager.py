@@ -57,6 +57,10 @@ class DriverNotFound(qexception.NetworkNotFound):
     message = _("Driver %(driver)s does not exist")
 
 
+class TenantBoundNotUUIDListOrNone(qexception.NetworkNotFound):
+    message = _("Attribute tenant_bound must be a list of tenant ids or None")
+
+
 def convert_validate_port_value(port):
     if port is None:
         return port
@@ -86,6 +90,7 @@ def convert_validate_driver(driver):
 # Hosting device belong to one of the following categories:
 VM_CATEGORY = 'VM'
 HARDWARE_CATEGORY = 'Hardware'
+NETWORK_NODE_CATEGORY = 'Network_Node'
 
 HOSTING_DEVICE_MANAGER_ALIAS = 'cisco-hosting-device-manager'
 DEVICE = 'hosting_device'
@@ -133,7 +138,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'default': None, 'is_visible': True},
         'auto_delete_on_fail': {'allow_post': True, 'allow_put': True,
                                 'convert_to': attr.convert_to_boolean,
-                                'default': True, 'is_visible': True},
+                                'default': False, 'is_visible': True},
     },
     DEVICE_TEMPLATES: {
         'tenant_id': {'allow_post': True, 'allow_put': False,
@@ -148,7 +153,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                     'default': True, 'is_visible': True},
         'host_category': {'allow_post': True, 'allow_put': False,
                           'validate': {'type:values': [VM_CATEGORY,
-                                                       HARDWARE_CATEGORY]},
+                                                       HARDWARE_CATEGORY,
+                                                       NETWORK_NODE_CATEGORY]},
                           'required_by_policy': True, 'is_visible': True},
         #TODO(bobmel): validate service_types
         'service_types': {'allow_post': True, 'allow_put': True,
@@ -233,6 +239,16 @@ class Ciscohostingdevicemanager(extensions.ExtensionDescriptor):
 
 @six.add_metaclass(ABCMeta)
 class CiscoHostingDevicePluginBase(ServicePluginBase):
+
+    def get_plugin_name(self):
+        return constants.DEVICE_MANAGER
+
+    def get_plugin_type(self):
+        return constants.DEVICE_MANAGER
+
+    def get_plugin_description(self):
+        return ("Cisco Device Manager Service Plugin for management of "
+                "hosting devices and their templates.")
 
     @abstractmethod
     def create_hosting_device(self, context, hosting_device):

@@ -89,13 +89,3 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
         self.dispatcher = self.callbacks.create_rpc_dispatcher()
         self.conn.create_consumer(self.topic, self.dispatcher, fanout=False)
         self.conn.consume_in_thread()
-
-    def get_plugin_name(self):
-        return constants.DEVICE_MANAGER
-
-    def get_plugin_type(self):
-        return constants.DEVICE_MANAGER
-
-    def get_plugin_description(self):
-        return ("Cisco Device Manager Service Plugin for management of "
-                "hosting devices and their templates.")

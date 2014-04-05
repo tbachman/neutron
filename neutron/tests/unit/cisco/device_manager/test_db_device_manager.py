@@ -18,88 +18,148 @@ import contextlib
 import logging
 
 import mock
+from oslo.config import cfg
 import webob.exc
 
 from neutron.api import extensions as api_ext
 from neutron.common import config
 from neutron import context
-from neutron.db.firewall import firewall_db as fdb
 import neutron.extensions
 from neutron.extensions import firewall
-from neutron import manager
 from neutron.openstack.common import importutils
+from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
-from neutron.services.firewall import fwaas_plugin
+from neutron.plugins.cisco.l3.common import constants as cl3_constants
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hdm_db
+from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.tests.unit import test_db_plugin
 
 
 LOG = logging.getLogger(__name__)
-DB_FW_PLUGIN_KLASS = (
-    "neutron.db.firewall.firewall_db.Firewall_db_mixin"
-)
-FWAAS_PLUGIN = 'neutron.services.firewall.fwaas_plugin'
-DELETEFW_PATH = FWAAS_PLUGIN + '.FirewallAgentApi.delete_firewall'
-extensions_path = ':'.join(neutron.extensions.__path__)
+DB_DM_PLUGIN_KLASS = (
+    "neutron.plugins.cisco.l3.db.hosting_device_manager_db."
+    "HostingDeviceManagerMixin")
+extensions_path = ':' + neutron.plugins.__path__[0] + '/cisco/l3/extensions'
+NN_TEMPLATE_NAME = cl3_constants.NETWORK_NODE_TEMPLATE
+NN_CATEGORY = ciscohostingdevicemanager.NETWORK_NODE_CATEGORY
+VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
+HW_CATEGORY = ciscohostingdevicemanager.HARDWARE_CATEGORY
+DEFAULT_SERVICE_TYPES = 'router'
+NETWORK_NODE_SERVICE_TYPES = 'router:fwaas:vpn'
+NOOP_DEVICE_DRIVER = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
+                      'noop_hd_driver.NoopHostingDeviceDriver')
+NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.l3.plugging_drivers.'
+                        'noop_plugging_driver.NoopPluggingDriver')
 DESCRIPTION = 'default description'
 SHARED = True
-PROTOCOL = 'tcp'
-IP_VERSION = 4
-SOURCE_IP_ADDRESS_RAW = '1.1.1.1'
-DESTINATION_IP_ADDRESS_RAW = '2.2.2.2'
-SOURCE_PORT = '55000:56000'
-DESTINATION_PORT = '56000:57000'
 ACTION = 'allow'
-AUDITED = True
 ENABLED = True
 ADMIN_STATE_UP = True
 
 
-class FakeAgentApi(fwaas_plugin.FirewallCallbacks):
-    """
-    This class used to mock the AgentAPI delete method inherits from
-    FirewallCallbacks because it needs access to the firewall_deleted method.
-    The delete_firewall method belongs to the FirewallAgentApi, which has
-    no access to the firewall_deleted method normally because it's not
-    responsible for deleting the firewall from the DB. However, it needs
-    to in the unit tests since there is no agent to call back.
-    """
-    def __init__(self):
-        pass
-
-    def delete_firewall(self, context, firewall, **kwargs):
-        self.plugin = manager.NeutronManager.get_service_plugins()['FIREWALL']
-        self.firewall_deleted(context, firewall['id'], **kwargs)
+timestamp = timeutils.utcnow
 
 
-class FirewallPluginDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
-    resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.FIREWALL])
-        for k in firewall.RESOURCE_ATTRIBUTE_MAP.keys()
-    )
+class DeviceManagerTestCaseMixin(object):
 
-    def setUp(self, core_plugin=None, fw_plugin=None, ext_mgr=None):
-        self.agentapi_delf_p = mock.patch(DELETEFW_PATH, create=True,
-                                          new=FakeAgentApi().delete_firewall)
-        self.agentapi_delf_p.start()
-        if not fw_plugin:
-            fw_plugin = DB_FW_PLUGIN_KLASS
-        service_plugins = {'fw_plugin_name': fw_plugin}
+    def _create_hosting_device(self, fmt, template_id, management_port_id,
+                               admin_state_up, expected_res_status=None, **kwargs):
+        data = {'hosting_device': self._get_test_hosting_device_attr(
+            template_id=template_id, management_port_id=management_port_id,
+            admin_state_up=admin_state_up, **kwargs)}
+        hd_req = self.new_create_request('hosting_devices', data, fmt)
+        hd_res = hd_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(hd_res.status_int, expected_res_status)
+        return hd_res
 
-        fdb.Firewall_db_mixin.supported_extension_aliases = ["fwaas"]
-        super(FirewallPluginDbTestCase, self).setUp(
-            ext_mgr=ext_mgr,
-            service_plugins=service_plugins
-        )
+    @contextlib.contextmanager
+    def hosting_device(self, template_id, management_port_id, fmt=None,
+                       admin_state_up=True, no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+        res = self._create_hosting_device(fmt, template_id, management_port_id,
+                                          admin_state_up, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        hosting_device = self.deserialize(fmt or self.fmt, res)
+        yield hosting_device
+        if not no_delete:
+            self._delete('hosting_devices',
+                         hosting_device['hosting_device']['id'])
 
-        if not ext_mgr:
-            self.plugin = importutils.import_object(fw_plugin)
-            ext_mgr = api_ext.PluginAwareExtensionManager(
-                extensions_path,
-                {constants.FIREWALL: self.plugin}
-            )
-            app = config.load_paste_app('extensions_test_app')
-            self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)
+    def _create_hosting_device_template(self, fmt, name, enabled,
+                                        host_category,
+                                        expected_res_status=None, **kwargs):
+        data = {'hosting_device_template':
+                    self._get_test_hosting_device_template_attr(
+                        name=name, enabled=enabled,
+                        host_category=host_category, **kwargs)}
+        hdt_req = self.new_create_request('hosting_device_templates', data,
+                                          fmt)
+
+        hdt_res = hdt_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(hdt_res.status_int, expected_res_status)
+        return hdt_res
+
+    @contextlib.contextmanager
+    def hosting_device_template(self, fmt=None, name='device_template_1',
+                                enabled=True, host_category=VM_CATEGORY,
+                                no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+        res = self._create_hosting_device_template(fmt, name, enabled,
+                                                   host_category, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        hd_template = self.deserialize(fmt or self.fmt, res)
+        yield hd_template
+        if not no_delete:
+            self._delete('hosting_device_templates',
+                         hd_template['hosting_device_template']['id'])
+
+    def _get_test_hosting_device_attr(self, template_id, management_port_id,
+                                      admin_state_up=True, **kwargs):
+        data = {
+            'tenant_id': kwargs.get('tenant_id', self._tenant_id),
+            'template_id': template_id,
+            'credentials_id': kwargs.get('credentials_id'),
+            'device_id': kwargs.get('device_id', 'mfc_device_id'),
+            'admin_state_up': admin_state_up,
+            'management_port_id': management_port_id,
+            'protocol_port': kwargs.get('protocol_port', 22),
+            'cfg_agent_id': kwargs.get('cfg_agent_id'),
+            'booting_time': kwargs.get('booting_time', 0),
+            'tenant_bound': kwargs.get('tenant_bound'),
+            'auto_delete_on_fail': kwargs.get('auto_delete_on_fail', False)}
+        return data
+
+    def _get_test_hosting_device_template_attr(self, name='device_template_1',
+                                               enabled=True,
+                                               host_category=VM_CATEGORY,
+                                               **kwargs):
+        data = {
+            'tenant_id': kwargs.get('tenant_id', self._tenant_id),
+            'name': name,
+            'enabled': enabled,
+            'host_category': host_category,
+            'service_types': kwargs.get('service_types',
+                                        DEFAULT_SERVICE_TYPES),
+            'image': kwargs.get('image'),
+            'flavor': kwargs.get('flavor'),
+            'default_credentials_id': kwargs.get('default_credentials_id'),
+            'configuration_mechanism': kwargs.get('configuration_mechanism'),
+            'protocol_port': kwargs.get('protocol_port', 22),
+            'booting_time': kwargs.get('booting_time', 0),
+            'slot_capacity': kwargs.get('slot_capacity', 0),
+            'desired_slots_free': kwargs.get('desired_slots_free', 0),
+            'tenant_bound': kwargs.get('tenant_bound', []),
+            'device_driver': kwargs.get('device_driver', NOOP_DEVICE_DRIVER),
+            'plugging_driver': kwargs.get('plugging_driver',
+                                          NOOP_PLUGGING_DRIVER)}
+        return data
 
     def _test_list_resources(self, resource, items,
                              neutron_context=None,
@@ -116,198 +176,136 @@ class FirewallPluginDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
 
-    def _get_test_firewall_rule_attrs(self, name='firewall_rule1'):
-        attrs = {'name': name,
-                 'tenant_id': self._tenant_id,
-                 'shared': SHARED,
-                 'protocol': PROTOCOL,
-                 'ip_version': IP_VERSION,
-                 'source_ip_address': SOURCE_IP_ADDRESS_RAW,
-                 'destination_ip_address': DESTINATION_IP_ADDRESS_RAW,
-                 'source_port': SOURCE_PORT,
-                 'destination_port': DESTINATION_PORT,
-                 'action': ACTION,
-                 'enabled': ENABLED}
-        return attrs
-
-    def _get_test_firewall_policy_attrs(self, name='firewall_policy1'):
-        attrs = {'name': name,
-                 'description': DESCRIPTION,
-                 'tenant_id': self._tenant_id,
-                 'shared': SHARED,
-                 'firewall_rules': [],
-                 'audited': AUDITED}
-        return attrs
-
-    def _get_test_firewall_attrs(self, name='firewall_1'):
-        attrs = {'name': name,
-                 'tenant_id': self._tenant_id,
-                 'admin_state_up': ADMIN_STATE_UP,
-                 'status': 'PENDING_CREATE'}
-
-        return attrs
-
-    def _create_firewall_policy(self, fmt, name, description, shared,
-                                firewall_rules, audited,
-                                expected_res_status=None, **kwargs):
-        tenant_id = kwargs.get('tenant_id', self._tenant_id)
-        data = {'firewall_policy': {'name': name,
-                                    'description': description,
-                                    'tenant_id': tenant_id,
-                                    'shared': shared,
-                                    'firewall_rules': firewall_rules,
-                                    'audited': audited}}
-
-        fw_policy_req = self.new_create_request('firewall_policies', data, fmt)
-        fw_policy_res = fw_policy_req.get_response(self.ext_api)
-        if expected_res_status:
-            self.assertEqual(fw_policy_res.status_int, expected_res_status)
-
-        return fw_policy_res
-
-    def _replace_firewall_status(self, attrs, old_status, new_status):
+    def _replace_hosting_device_status(self, attrs, old_status, new_status):
         if attrs['status'] is old_status:
             attrs['status'] = new_status
         return attrs
 
-    @contextlib.contextmanager
-    def firewall_policy(self, fmt=None, name='firewall_policy1',
-                        description=DESCRIPTION, shared=True,
-                        firewall_rules=None, audited=True,
-                        no_delete=False, **kwargs):
-        if firewall_rules is None:
-            firewall_rules = []
-        if not fmt:
-            fmt = self.fmt
-        res = self._create_firewall_policy(fmt, name, description, shared,
-                                           firewall_rules, audited,
-                                           **kwargs)
-        if res.status_int >= 400:
-            raise webob.exc.HTTPClientError(code=res.status_int)
-        firewall_policy = self.deserialize(fmt or self.fmt, res)
-        yield firewall_policy
-        if not no_delete:
-            self._delete('firewall_policies',
-                         firewall_policy['firewall_policy']['id'])
+    def _create_mgmt_nw_for_tests(self, fmt):
+        self.mgmt_nw = self._make_network(fmt, cfg.CONF.management_network,
+                                          True, tenant_id="L3AdminTenantId",
+                                          shared=False)
+        self.mgmt_subnet = self._make_subnet(fmt, self.mgmt_nw,
+                                             "10.0.100.1", "10.0.100.0/24",
+                                             ip_version=4)
 
-    def _create_firewall_rule(self, fmt, name, shared, protocol,
-                              ip_version, source_ip_address,
-                              destination_ip_address, source_port,
-                              destination_port, action, enabled,
-                              expected_res_status=None, **kwargs):
-        tenant_id = kwargs.get('tenant_id', self._tenant_id)
-        data = {'firewall_rule': {'name': name,
-                                  'tenant_id': tenant_id,
-                                  'shared': shared,
-                                  'protocol': protocol,
-                                  'ip_version': ip_version,
-                                  'source_ip_address': source_ip_address,
-                                  'destination_ip_address':
-                                  destination_ip_address,
-                                  'source_port': source_port,
-                                  'destination_port': destination_port,
-                                  'action': action,
-                                  'enabled': enabled}}
-
-        fw_rule_req = self.new_create_request('firewall_rules', data, fmt)
-        fw_rule_res = fw_rule_req.get_response(self.ext_api)
-        if expected_res_status:
-            self.assertEqual(fw_rule_res.status_int, expected_res_status)
-
-        return fw_rule_res
-
-    @contextlib.contextmanager
-    def firewall_rule(self, fmt=None, name='firewall_rule1',
-                      shared=SHARED, protocol=PROTOCOL, ip_version=IP_VERSION,
-                      source_ip_address=SOURCE_IP_ADDRESS_RAW,
-                      destination_ip_address=DESTINATION_IP_ADDRESS_RAW,
-                      source_port=SOURCE_PORT,
-                      destination_port=DESTINATION_PORT,
-                      action=ACTION, enabled=ENABLED,
-                      no_delete=False, **kwargs):
-        if not fmt:
-            fmt = self.fmt
-        res = self._create_firewall_rule(fmt, name, shared, protocol,
-                                         ip_version, source_ip_address,
-                                         destination_ip_address,
-                                         source_port, destination_port,
-                                         action, enabled, **kwargs)
-        if res.status_int >= 400:
-            raise webob.exc.HTTPClientError(code=res.status_int)
-        firewall_rule = self.deserialize(fmt or self.fmt, res)
-        yield firewall_rule
-        if not no_delete:
-            self._delete('firewall_rules',
-                         firewall_rule['firewall_rule']['id'])
-
-    def _create_firewall(self, fmt, name, description, firewall_policy_id,
-                         admin_state_up=True, expected_res_status=None,
-                         **kwargs):
-        tenant_id = kwargs.get('tenant_id', self._tenant_id)
-        data = {'firewall': {'name': name,
-                             'description': description,
-                             'firewall_policy_id': firewall_policy_id,
-                             'admin_state_up': admin_state_up,
-                             'tenant_id': tenant_id}}
-
-        firewall_req = self.new_create_request('firewalls', data, fmt)
-        firewall_res = firewall_req.get_response(self.ext_api)
-        if expected_res_status:
-            self.assertEqual(firewall_res.status_int, expected_res_status)
-
-        return firewall_res
-
-    @contextlib.contextmanager
-    def firewall(self, fmt=None, name='firewall_1', description=DESCRIPTION,
-                 firewall_policy_id=None, admin_state_up=True,
-                 no_delete=False, **kwargs):
-        if not fmt:
-            fmt = self.fmt
-        res = self._create_firewall(fmt, name, description, firewall_policy_id,
-                                    admin_state_up, **kwargs)
-        if res.status_int >= 400:
-            raise webob.exc.HTTPClientError(code=res.status_int)
-        firewall = self.deserialize(fmt or self.fmt, res)
-        yield firewall
-        if not no_delete:
-            self._delete('firewalls', firewall['firewall']['id'])
-
-    def _rule_action(self, action, id, firewall_rule_id, insert_before=None,
-                     insert_after=None, expected_code=webob.exc.HTTPOk.code,
-                     expected_body=None, body_data=None):
-        # We intentionally do this check for None since we want to distinguish
-        # from empty dictionary
-        if body_data is None:
-            if action == 'insert':
-                body_data = {'firewall_rule_id': firewall_rule_id,
-                             'insert_before': insert_before,
-                             'insert_after': insert_after}
-            else:
-                body_data = {'firewall_rule_id': firewall_rule_id}
-
-        req = self.new_action_request('firewall_policies',
-                                      body_data, id,
-                                      "%s_rule" % action)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, expected_code)
-        response = self.deserialize(self.fmt, res)
-        if expected_body:
-            self.assertEqual(response, expected_body)
-        return response
-
-    def _compare_firewall_rule_lists(self, firewall_policy_id,
-                                     list1, list2):
-        position = 0
-        for r1, r2 in zip(list1, list2):
-            rule = r1['firewall_rule']
-            rule['firewall_policy_id'] = firewall_policy_id
-            position += 1
-            rule['position'] = position
-            for k in rule:
-                self.assertEqual(rule[k], r2[k])
+    def _remove_mgmt_nw_for_tests(self):
+        q_p = "network_id=%s" % self.mgmt_nw['network']['id']
+        subnets = self._list('subnets', query_params=q_p)
+        if subnets:
+            for p in self._list('ports', query_params=q_p).get('ports'):
+                self._delete('ports', p['id'])
+            self._delete('subnets', self.mgmt_subnet['subnet']['id'])
+            self._delete('networks', self.mgmt_nw['network']['id'])
 
 
-class TestFirewallDBPlugin(FirewallPluginDbTestCase):
+class TestDeviceManagerDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
+                                DeviceManagerTestCaseMixin):
+    resource_prefix_map = dict(
+        (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
+        for k in ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP.keys())
+
+    def setUp(self, core_plugin=None, dm_plugin=None, ext_mgr=None):
+        if dm_plugin is None:
+            dm_plugin = DB_DM_PLUGIN_KLASS
+        service_plugins = {'dm_plugin_name': dm_plugin}
+        cfg.CONF.set_override('api_extensions_path', extensions_path)
+        hdm_db.HostingDeviceManagerMixin.supported_extension_aliases = (
+            [ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS])
+        super(TestDeviceManagerDBPlugin, self).setUp(
+            ext_mgr=ext_mgr, service_plugins=service_plugins)
+
+        if not ext_mgr:
+            self.plugin = importutils.import_object(dm_plugin)
+            ext_mgr = api_ext.PluginAwareExtensionManager(
+                extensions_path, {constants.DEVICE_MANAGER: self.plugin})
+            app = config.load_paste_app('extensions_test_app')
+            self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)
+
+        self._create_mgmt_nw_for_tests(self.fmt)
+
+    def tearDown(self):
+        self._remove_mgmt_nw_for_tests()
+        super(TestDeviceManagerDBPlugin, self).tearDown()
+
+    def test_create_vm_hosting_device(self):
+        with self.hosting_device_template() as hdt:
+            with self.port(subnet=self.mgmt_subnet) as mgmt_port:
+                attrs = self._get_test_hosting_device_attr(
+                    template_id=hdt['hosting_device_template']['id'],
+                    management_port_id=mgmt_port['port']['id'],
+                    auto_delete_on_fail=True)
+                with self.hosting_device(
+                        template_id=hdt['hosting_device_template']['id'],
+                        management_port_id=mgmt_port['port']['id'],
+                        auto_delete_on_fail=True) as hd:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(hd['hosting_device'][k], v)
+
+    def test_create_hw_hosting_device(self):
+        with self.hosting_device_template(host_category=HW_CATEGORY) as hdt:
+            with self.port(subnet=self.mgmt_subnet) as mgmt_port:
+                attrs = self._get_test_hosting_device_attr(
+                    template_id=hdt['hosting_device_template']['id'],
+                    management_port_id=mgmt_port['port']['id'])
+                with self.hosting_device(
+                        template_id=hdt['hosting_device_template']['id'],
+                        management_port_id=mgmt_port['port']['id']) as hd:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(hd['hosting_device'][k], v)
+
+    def _test_delete_hosting_device_in_use(self):
+        pass
+
+
+
+    def test_create_vm_hosting_device_template(self):
+        attrs = self._get_test_hosting_device_template_attr()
+
+        with self.hosting_device_template() as hdt:
+            for k, v in attrs.iteritems():
+                self.assertEqual(hdt['hosting_device_template'][k], v)
+
+    def test_create_hw_hosting_device_template(self):
+        attrs = self._get_test_hosting_device_template_attr(
+            host_category=HW_CATEGORY)
+
+        with self.hosting_device_template(host_category=HW_CATEGORY) as hdt:
+            for k, v in attrs.iteritems():
+                self.assertEqual(hdt['hosting_device_template'][k], v)
+
+    def test_create_nn_hosting_device_template(self):
+        attrs = self._get_test_hosting_device_template_attr(
+            host_category=NN_CATEGORY)
+
+        with self.hosting_device_template(host_category=NN_CATEGORY) as hdt:
+            for k, v in attrs.iteritems():
+                self.assertEqual(hdt['hosting_device_template'][k], v)
+
+        pass
+
+    def _test_show_hosting_device_template(self):
+        pass
+
+    def _test_list_hosting_device_templates(self):
+        pass
+
+    def _test_update_hosting_device_template(self):
+        pass
+
+    def _test_delete_hosting_device_template(self):
+        pass
+
+    def _test_delete_hosting_device_template_in_use(self):
+        pass
+
+
+
+
+
+
+
+class TestDeviceManagerDBPlugin_copy_from(DeviceManagerTestCaseMixin):
 
     def test_create_firewall_policy(self):
         name = "firewall_policy1"
@@ -727,6 +725,8 @@ class TestFirewallDBPlugin(FirewallPluginDbTestCase):
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, 409)
 
+    #TODO(bobmel): Start copying here!!!
+
     def test_create_firewall(self):
         name = "firewall1"
         attrs = self._get_test_firewall_attrs(name)
@@ -1030,5 +1030,5 @@ class TestFirewallDBPlugin(FirewallPluginDbTestCase):
                                   body_data={'firewall_rule_id': None})
 
 
-class TestFirewallDBPluginXML(TestFirewallDBPlugin):
+class TestDeviceManagerDBPluginXML(TestDeviceManagerDBPlugin):
     fmt = 'xml'

@@ -40,7 +40,8 @@ class HostingDeviceDBMixin(
         with context.session.begin(subtransactions=True):
             credentials_id = hd.get('credentials_id')
             if credentials_id is None:
-                hdt_db = self._get_hosting_device_template(context, id)
+                hdt_db = self._get_hosting_device_template(context,
+                                                           hd['template_id'])
                 credentials_id = hdt_db['default_credentials_id']
             hd_db = HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
@@ -81,7 +82,6 @@ class HostingDeviceDBMixin(
             hd_db = hd_query.filter_by(id=id).one()
              #TODO(bobmel): ensure no slots are allocated
             context.session.delete(hd_db)
-        pass
 
     def get_hosting_device(self, context, id, fields=None):
         LOG.debug(_("get_hosting_device() called"))
@@ -100,6 +100,7 @@ class HostingDeviceDBMixin(
         LOG.debug(_("create_hosting_device_template() called"))
         hdt = hosting_device_template['hosting_device_template']
         tenant_id = self._get_tenant_id_for_create(context, hdt)
+
         #TODO(bobmel): check service types
         with context.session.begin(subtransactions=True):
             hdt_db = HostingDeviceTemplate(
@@ -117,13 +118,14 @@ class HostingDeviceDBMixin(
                 booting_time=hdt.get('booting_time'),
                 slot_capacity=hdt['slot_capacity'],
                 desired_slots_free=hdt['desired_slots_free'],
-                tenant_bound=hdt.get('tenant_bound'),
+                tenant_bound=':'.join(hdt['tenant_bound']),
                 device_driver=hdt['device_driver'],
                 plugging_driver=hdt['plugging_driver'])
             context.session.add(hdt_db)
         return self._make_hosting_device_template_dict(hdt_db)
 
-    def update_hosting_device_template(self, context, hosting_device_template):
+    def update_hosting_device_template(self, context,
+                                       id, hosting_device_template):
         LOG.debug(_("update_hosting_device_template() called"))
         hdt = hosting_device_template['hosting_device_template']
         with context.session.begin(subtransactions=True):
@@ -189,8 +191,10 @@ class HostingDeviceDBMixin(
                 id=id)
 
     def _make_hosting_device_template_dict(self, hdt, fields=None):
+        tb = hdt['tenant_bound'].split(':') if len(hdt['tenant_bound']) else []
         res = {'id': hdt['id'],
                'tenant_id': hdt['tenant_id'],
+               'name': hdt['name'],
                'enabled': hdt['enabled'],
                'host_category': hdt['host_category'],
                'service_types': hdt['service_types'],
@@ -202,7 +206,7 @@ class HostingDeviceDBMixin(
                'booting_time': hdt['booting_time'],
                'slot_capacity': hdt['slot_capacity'],
                'desired_slots_free': hdt['desired_slots_free'],
-               'tenant_bound': hdt['tenant_bound'],
+               'tenant_bound': tb,
                'device_driver': hdt['device_driver'],
                'plugging_driver': hdt['plugging_driver']}
         return self._fields(res, fields)
