@@ -14,83 +14,95 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import mock
 from oslo.config import cfg
 
+from neutron.common import constants
 from neutron import context as q_context
-from neutron.db import agents_db
 from neutron import manager
-from neutron.openstack.common import uuidutils
+from neutron.openstack.common import importutils
+from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
                                          router_sch_db)
-from neutron.tests.unit import test_l3_plugin
+from neutron.plugins.cisco.l3.extensions import routertype
+from neutron.tests.unit.cisco.device_manager import device_manager_convenience
+from neutron.tests.unit.cisco.device_manager import test_db_device_manager
+from neutron.tests.unit.cisco.l3 import l3_router_convenience
+from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_l3_schedulers
 
+LOG = logging.getLogger(__name__)
 
-_uuid = uuidutils.generate_uuid
+
+CORE_PLUGIN_KLASS = device_manager_convenience.CORE_PLUGIN_KLASS
+L3_PLUGIN_KLASS = (
+    "neutron.tests.unit.cisco.l3.test_l3_routertype_aware_schedulers."
+    "TestL3RouterServicePlugin")
 
 
-class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
-                        agents_db.AgentDbMixin):
-    supported_extension_aliases = ["external-net", "agent"]
+# A scheduler-enabled routertype capable L3 routing service plugin class
+class TestL3RouterServicePlugin(
+    l3_router_convenience.TestL3RouterServicePlugin,
+        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
+
+    supported_extension_aliases = ["router", routertype.ROUTERTYPE_ALIAS,
+                                   constants.L3_AGENT_SCHEDULER_EXT_ALIAS]
+
+    def __init__(self):
+        self.router_scheduler = importutils.import_object(
+            cfg.CONF.router_type_aware_scheduler_driver)
+        self.l3agent_scheduler = importutils.import_object(
+            cfg.CONF.router_scheduler_driver)
 
 
 class L3RoutertypeAwareSchedulerTestCase(
     test_l3_schedulers.L3SchedulerTestCase,
-        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
+        router_sch_db.L3RouterTypeAwareSchedulerDbMixin,
+        test_db_routertype.RoutertypeTestCaseMixin,
+        test_db_device_manager.DeviceManagerTestCaseMixin,
+        l3_router_convenience.L3RouterConvenienceMixin,
+        device_manager_convenience.DeviceManagerConvenienceMixin):
 
-    def setUp(self):
-        # the plugin without L3 support
-        plugin = ('neutron.tests.unit.cisco.l3.'
-                  'test_l3_routertype_aware_schedulers.TestNoL3NatPlugin')
-        # the L3 service plugin
-        l3_plugin = (
-            'neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.'
-            'TestL3RouterAppliancePlugin')
+    resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
+                           .resource_prefix_map)
+
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        if not core_plugin:
+            core_plugin = CORE_PLUGIN_KLASS
+        if l3_plugin is None:
+            l3_plugin = L3_PLUGIN_KLASS
         service_plugins = {'l3_plugin_name': l3_plugin}
 
-        ext_mgr = test_l3_schedulers.L3SchedulerTestExtensionManager()
+        cfg.CONF.set_override('api_extensions_path',
+                              l3_router_convenience.extensions_path)
+        ext_mgr = test_db_routertype.L3TestRoutertypeExtensionManager()
         # call grandparent's setUp() to avoid that wrong plugin and
         # extensions are used.
         super(test_l3_schedulers.L3SchedulerTestCase, self).setUp(
-            plugin=plugin, ext_mgr=ext_mgr, service_plugins=service_plugins)
+            plugin=core_plugin, service_plugins=service_plugins,
+            ext_mgr=ext_mgr)
 
         cfg.CONF.set_override('default_router_type',
                               cl3_const.NAMESPACE_ROUTER_TYPE)
 
-        #TODO(bobmel): use contextmanager to create router types etc
-        self._register_hosting_device_templates()
-        self._register_routertypes()
-
-        #TODO(bobmel): BEGIN OF remove code
-        self.ns_router_type = {
-            'id': _uuid(),
-            'name': cl3_const.NAMESPACE_ROUTER_TYPE,
-            'description': '',
-            'template_id': '',
-            'slot_need': 0,
-            'scheduler': mock.Mock(),
-            'cfg_agent_driver': mock.Mock()}
-
-        # Mock router type
-        self.mock1 = mock.patch(
-            'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
-            'L3RouterApplianceDBMixin.get_router_type',
-            mock.Mock(return_value=self.ns_router_type))
-        self.mock1.start()
-
-        # Mock router type
-        self.mock2 = mock.patch(
-            'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
-            'L3RouterApplianceDBMixin.get_namespace_router_type_id',
-            mock.Mock(return_value=self.ns_router_type['id']))
-        self.mock2.start()
-        #TODO(bobmel): END OF remove code
-
         self.adminContext = q_context.get_admin_context()
         self.plugin = manager.NeutronManager.get_plugin()
         self._register_l3_agents()
+
+        templates = self._test_create_hosting_device_templates()
+        self._test_create_routertypes(
+            templates['network_node']['hosting_device_template']['id'])
+        self._create_mgmt_nw_for_tests(self.fmt)
+
+        self._mock_l3_admin_tenant()
+        self._mock_svc_vm_create_delete()
+
+    def tearDown(self):
+        self._remove_mgmt_nw_for_tests()
+        self._test_remove_routertypes()
+        self._test_remove_hosting_device_templates()
+        super(L3RoutertypeAwareSchedulerTestCase, self).tearDown()
 
 
 class L3RoutertypeAwareChanceSchedulerTestCase(
@@ -108,4 +120,3 @@ class L3RoutertypeAwareLeastRoutersSchedulerTestCase(
                               'neutron.scheduler.l3_agent_scheduler.'
                               'LeastRoutersScheduler')
         super(L3RoutertypeAwareLeastRoutersSchedulerTestCase, self).setUp()
-

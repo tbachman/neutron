@@ -103,7 +103,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        router_type_name = r.get(routertype.ROUTER_TYPE,
+        router_type_name = r.get(routertype.ROUTERTYPE,
                                  cfg.CONF.default_router_type)
         # bobmel: Hard coding to shared host for now
         share_host = True
@@ -430,7 +430,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         if self._namespace_router_type_id is None:
             try:
                 self._namespace_router_type_id = self.get_router_type(
-                    context, cfg.CONF.namespace_router_type_name)
+                    context, cfg.CONF.namespace_router_type_name)['id']
             except n_exc.NeutronException:
                 return None
         return self._namespace_router_type_id

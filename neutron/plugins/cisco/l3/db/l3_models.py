@@ -32,14 +32,13 @@ class RouterType(model_base.BASEV2, models_v2.HasId):
     Only 'id', 'name', 'description' are visible in non-admin context.
     """
     # name of router type, should preferably be unique
-    name = sa.Column(sa.String(255), nullable=False, primary_key=True)
+    name = sa.Column(sa.String(255), nullable=False)
     # description of this router type
     description = sa.Column(sa.String(255))
     # template to use to create hosting devices for this router type
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('hostingdevicetemplates.id',
-                                          ondelete='CASCADE'),
-                            primary_key=True)
+                                          ondelete='CASCADE'))
     template = orm.relationship(hd_models.HostingDeviceTemplate)
     # The number of slots this router type consume in hosting device
     slot_need = sa.Column(sa.Integer, autoincrement=False)

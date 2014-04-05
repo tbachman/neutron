@@ -65,8 +65,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                  'validate': {'type:string': None},
                  'is_visible': True, 'default': ''},
         'description': {'allow_post': True, 'allow_put': True,
-                        'validate': {'type:string': None},
-                        'is_visible': True, 'default': ''},
+                        'validate': {'type:string_or_none': None},
+                        'is_visible': True, 'default': None},
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
                       'is_visible': True},
@@ -143,23 +143,6 @@ class Routertype(extensions.ExtensionDescriptor):
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.L3_ROUTER_NAT)
-        # """Returns Ext Resources."""
-        # exts = []
-        # my_plurals = [(key, key[:-1]) for key in RESOURCE_ATTRIBUTE_MAP.keys()]
-        # attributes.PLURALS.update(dict(my_plurals))
-        # plugin = manager.NeutronManager.get_plugin()
-        # collection_name = ROUTER_TYPES
-        # params = RESOURCE_ATTRIBUTE_MAP.get(ROUTER_TYPES, dict())
-        # controller = base.create_resource(collection_name,
-        #                                   ROUTERTYPE,
-        #                                   plugin, params, allow_bulk=True,
-        #                                   allow_pagination=True,
-        #                                   allow_sorting=True)
-        # ex = extensions.ResourceExtension(collection_name,
-        #                                   controller,
-        #                                   attr_map=params)
-        # exts.append(ex)
-        # return exts
 
     def get_extended_resources(self, version):
         if version == "2.0":
@@ -195,7 +178,7 @@ class RouterTypeNotFound(exceptions.NotFound):
     message = _("RouterType %(router_type_id)s could not be found.")
 
 
-class RouterTypePluginBase(object):
+class RoutertypePluginBase(object):
     """REST API to manage router types.
 
     All methods except listing require admin context.

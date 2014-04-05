@@ -13,16 +13,3 @@
 #    under the License.
 #
 # @author: Bob Melander, Cisco Systems, Inc.
-
-import mock
-from oslo.config import cfg
-
-from neutron.common import exceptions as n_exc
-from neutron import context
-from neutron.db import api as qdbapi
-from neutron.db import db_base_plugin_v2
-from neutron.db import model_base
-from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
-
-LOG = logging.getLogger(__name__)
-

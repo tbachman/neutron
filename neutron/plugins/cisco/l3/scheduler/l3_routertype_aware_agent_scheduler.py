@@ -58,10 +58,10 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
             if agents_db.AgentDbMixin.is_agent_down(
                     l3_agent.heartbeat_timestamp):
                 LOG.warn(_('L3 agent %s is not active'), l3_agent.id)
+            # Only network namespace based routers should be scheduled here
+            ns_routertype_id = plugin.get_namespace_router_type_id(context)
             # check if each of the specified routers is hosted
             if router_ids:
-                # Only network namespace based routers should be scheduled here
-                ns_routertype_id = plugin.get_namespace_router_type_id(context)
                 unscheduled_router_ids = []
                 for router_id in router_ids:
                     try:

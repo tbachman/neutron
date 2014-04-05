@@ -19,9 +19,8 @@ import copy
 import mock
 from webob import exc
 
-from neutron.plugins.cisco.l3.extensions import routertype
-from neutron.plugins.common import constants
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.l3.extensions import routertype
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
 
@@ -35,10 +34,16 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
 
     def setUp(self):
         super(RouterTypeTestCase, self).setUp()
+        # NOTE(bobmel): The routertype extension is for the router service. We
+        # therefore add 'router' to supported extensions of the core plugin
+        # used in these test. That way, NeutronManager will return that plugin
+        # as the l3 router service plugin.
         self._setUpExtension(
             'neutron.plugins.cisco.l3.extensions.routertype.'
-            'RouterTypePluginBase', None, routertype.RESOURCE_ATTRIBUTE_MAP,
-            routertype.Routertype, '')
+            'RoutertypePluginBase', None,
+            routertype.RESOURCE_ATTRIBUTE_MAP, routertype.Routertype, '',
+            supported_extension_aliases=['router',
+                                         routertype.ROUTERTYPE_ALIAS])
 
     def test_create_routertype(self):
         dummy = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
@@ -62,7 +67,7 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
         instance.create_routertype.assert_called_with(mock.ANY,
-                                                          routertype=data)
+                                                      routertype=data)
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
         res = self.deserialize(res)
         self.assertIn('routertype', res)
@@ -78,9 +83,8 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
 
         res = self.api.get(_get_path('routertypes', fmt=self.fmt))
 
-        instance.get_routertypes.assert_called_with(mock.ANY,
-                                                        fields=mock.ANY,
-                                                        filters=mock.ANY)
+        instance.get_routertypes.assert_called_with(mock.ANY, fields=mock.ANY,
+                                                    filters=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
 
     def test_routertype_get(self):
@@ -94,9 +98,8 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
         res = self.api.get(_get_path('routertypes',
                                      id=rt_id, fmt=self.fmt))
 
-        instance.get_routertype.assert_called_with(mock.ANY,
-                                                       rt_id,
-                                                       fields=mock.ANY)
+        instance.get_routertype.assert_called_with(mock.ANY, rt_id,
+                                                   fields=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
         self.assertIn('routertype', res)
@@ -110,8 +113,7 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
         instance = self.plugin.return_value
         instance.update_routertype.return_value = return_value
 
-        res = self.api.put(_get_path('routertypes', id=rt_id,
-                                     fmt=self.fmt),
+        res = self.api.put(_get_path('routertypes', id=rt_id, fmt=self.fmt),
                            self.serialize(update_data))
 
         instance.update_routertype.assert_called_with(

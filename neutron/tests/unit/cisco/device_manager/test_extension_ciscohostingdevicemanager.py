@@ -19,9 +19,9 @@ import copy
 import mock
 from webob import exc
 
+from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
-from neutron.openstack.common import uuidutils
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
@@ -262,4 +262,3 @@ class TestCiscoHostingDeviceManagerAttributeValidators(base.BaseTestCase):
             ciscohostingdevicemanager.DriverNotFound,
             ciscohostingdevicemanager.convert_validate_driver,
             'this.is.not.a.driver')
-
