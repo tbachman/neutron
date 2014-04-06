@@ -110,7 +110,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                'is_visible': True,
                'primary_key': True},
         'template_id': {'allow_post': True, 'allow_put': False,
-                        'required_by_policy': True,  'is_visible': True},
+                        'required_by_policy': True, 'is_visible': True},
         'credentials_id': {'allow_post': True, 'allow_put': True,
                            'default': None, 'is_visible': True},
         'device_id': {'allow_post': True, 'allow_put': True,

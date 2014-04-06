@@ -22,6 +22,7 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_const
+from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
                                          router_sch_db)
 from neutron.plugins.cisco.l3.extensions import routertype
@@ -49,6 +50,11 @@ class TestL3RouterServicePlugin(
                                    constants.L3_AGENT_SCHEDULER_EXT_ALIAS]
 
     def __init__(self):
+        self.agent_notifiers.update(
+            {constants.AGENT_TYPE_L3:
+             l3_router_rpc_joint_agent_api.L3JointAgentNotify,
+             cl3_const.AGENT_TYPE_CFG:
+             l3_router_rpc_joint_agent_api.L3JointAgentNotify})
         self.router_scheduler = importutils.import_object(
             cfg.CONF.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
@@ -91,15 +97,12 @@ class L3RoutertypeAwareSchedulerTestCase(
         self._register_l3_agents()
 
         self._mock_l3_admin_tenant()
-        self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
-        self._mock_svc_vm_create_delete()
 
     def tearDown(self):
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
-        self._remove_mgmt_nw_for_tests()
         super(L3RoutertypeAwareSchedulerTestCase, self).tearDown()
 
 

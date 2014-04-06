@@ -113,6 +113,7 @@ class L3RouterConvenienceMixin:
             mock.Mock(return_value=None))
         self.get_routertype_scheduler_fcn_p.start()
 
+
 class TestL3RouterBaseExtensionManager(object):
 
     def get_resources(self):

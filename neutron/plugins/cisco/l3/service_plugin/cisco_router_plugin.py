@@ -16,7 +16,6 @@
 
 from oslo.config import cfg
 
-from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
@@ -96,7 +95,8 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         self.topic = topics.L3PLUGIN
         self.conn = rpc.create_connection(new=True)
         self.agent_notifiers.update(
-            {q_const.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotify,
+            {q_const.AGENT_TYPE_L3:
+             l3_router_rpc_joint_agent_api.L3JointAgentNotify,
              cl3_constants.AGENT_TYPE_CFG:
              l3_router_rpc_joint_agent_api.L3JointAgentNotify})
         # Disable notifications from l3 base class to l3 agents

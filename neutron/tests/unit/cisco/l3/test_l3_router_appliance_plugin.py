@@ -25,7 +25,6 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common.notifier import test_notifier
 from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hd_mgr_db
 from neutron.plugins.cisco.l3.extensions import routertype
 from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
@@ -112,18 +111,8 @@ class L3RouterApplianceTestCaseBase(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-  #      templates = self._test_create_hosting_device_templates()
-  #      self._test_create_routertypes(templates.values())
-  #      self._mock_svc_vm_create_delete()
-  #      self._mock_get_routertype_scheduler_always_none()
 
     def tearDown(self):
-#        plugin = NeutronManager.get_plugin()
-#        plugin.delete_all_hosting_devices(context.get_admin_context(), True)
-#        plugin.reset_all()
-
-#        self._test_remove_routertypes()
-#        self._test_remove_hosting_device_templates()
         self._remove_mgmt_nw_for_tests()
         super(L3RouterApplianceTestCaseBase, self).tearDown()
 
@@ -155,6 +144,7 @@ class L3RouterApplianceTestCaseBase(
                     query_params="%s=False" % external_net.EXTERNAL)
                 # 2 networks since there is also the mgmt network
                 self.assertEqual(len(body['networks']), 2)
+
 
 class L3RouterApplianceNamespaceTestCase(L3RouterApplianceTestCaseBase):
 

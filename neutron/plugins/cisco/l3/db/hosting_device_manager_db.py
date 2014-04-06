@@ -34,7 +34,6 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import (devmgr_rpc_cfgagent_api as
                                              devmgr_rpc)
-from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import service_vm_lib
 from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
 from neutron.plugins.cisco.l3.db.hd_models import HostingDeviceTemplate
@@ -100,6 +99,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         cls._mgmt_nw_uuid = None
         cls._mgmt_sec_grp_id = None
         cls._plugging_drivers = {}
+        cls._hosting_device_drivers = {}
         cls._cfgagent_scheduler = None
         cls._svc_vm_mgr = None
 
@@ -616,10 +616,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                       hosting_device['id'])
         plugging_drv.delete_hosting_device_resources(
             context, self.l3_tenant_id(), **res)
-        template = hosting_device['template']
         with context.session.begin(subtransactions=True):
             context.session.delete(hosting_device)
-        mgr_context = neutron_context.get_admin_context()
 
     def _get_total_available_slots(self, context, template_id, capacity):
         """Returns available slots sum for devices based on <template_id>."""

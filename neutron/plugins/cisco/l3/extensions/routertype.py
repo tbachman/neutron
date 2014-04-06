@@ -19,10 +19,8 @@ from abc import abstractmethod
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
-from neutron.api.v2 import base
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions
-from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
@@ -96,6 +94,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
                     'is_visible': True},
     }
 }
+
 
 class Routertype(extensions.ExtensionDescriptor):
     """Extension class to define different types of Neutron routers.

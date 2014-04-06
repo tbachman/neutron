@@ -220,6 +220,7 @@ class DeviceManagerTestCaseMixin(object):
         except AttributeError:
             return
 
+
 class TestDeviceManagerDBPlugin(
     test_db_plugin.NeutronDbPluginV2TestCase,
     DeviceManagerTestCaseMixin,

@@ -81,8 +81,8 @@ class RouterTypeNotFound(n_exc.NeutronException):
 
 
 class MultipleRouterTypes(n_exc.NeutronException):
-    message = _("Multiple router type with same name %(name)s. exist. Id "
-                "must be used to.")
+    message = _("Multiple router type with same name %(name)s exist. Id "
+                "must be used to specify router type.")
 
 
 class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
@@ -100,6 +100,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     _backlogged_routers = {}
     _refresh_router_backlog = True
     _heartbeat = None
+
+    @classmethod
+    def reset_all(cls):
+        cls._router_schedulers = {}
+        cls._namespace_router_type_id = None
+        cls._backlogged_routers = {}
+        cls._refresh_router_backlog = True
+        cls._heartbeat = None
 
     def create_router(self, context, router):
         r = router['router']
@@ -350,36 +358,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     self._add_hosting_port_info(context, router, plg_drv)
         return sync_data
 
-    def get_router_type(self, context, id_or_name):
-        query = context.session.query(RouterType)
-        query = query.filter(RouterType.id == id_or_name)
-        try:
-            return query.one()
-        except exc.MultipleResultsFound:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Database inconsistency: Multiple router types '
-                            'with same id %s'), id_or_name)
-                raise RouterTypeNotFound(router_type=id_or_name)
-        except exc.NoResultFound:
-            query = context.session.query(RouterType)
-            query = query.filter(RouterType.name == id_or_name)
-            try:
-                return query.one()
-            except exc.MultipleResultsFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.debug(_('Multiple router types with name %s found. '
-                                'Id must be specified to allow arbitration.'),
-                              id_or_name)
-                    raise MultipleRouterTypes(name=id_or_name)
-            except exc.NoResultFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.error(_('No router type with name %s found.'),
-                              id_or_name)
-                    raise RouterTypeNotFound(router_type=id_or_name)
-
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
         LOG.info(_('Attempting to schedule router %s.'),
-                  r_hd_binding['router']['id'])
+                 r_hd_binding['router']['id'])
         scheduler = self._get_router_type_scheduler(
             context, r_hd_binding['router_type_id'])
         if scheduler is None:
@@ -411,9 +392,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     self.remove_router_from_backlog(router['id'])
                 else:
                     LOG.debug(_('Could not allocated slots for router '
-                               '%(r_id)s in hosting device %(d_id)s.'),
-                             {'r_id': r_hd_binding['router']['id'],
-                              'd_id': r_hd_binding.hosting_device_id})
+                                '%(r_id)s in hosting device %(d_id)s.'),
+                              {'r_id': r_hd_binding['router']['id'],
+                               'd_id': r_hd_binding.hosting_device_id})
                     # we got not slot so backlog it for another scheduling
                     # attempt later.
                     self.backlog_router(router)
@@ -446,6 +427,38 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                        'hosting device %(d_id)s'),
                      {'r_id': r_hd_binding['router']['id'],
                       'd_id': r_hd_binding.hosting_device_id})
+
+    def get_router_type_id(self, context, router_id):
+        r_hd_b = self._get_router_binding_info(context, router_id,
+                                               load_hd_info=False)
+        return r_hd_b['router_type_id']
+
+    def get_router_type(self, context, id_or_name):
+        query = context.session.query(RouterType)
+        query = query.filter(RouterType.id == id_or_name)
+        try:
+            return query.one()
+        except exc.MultipleResultsFound:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_('Database inconsistency: Multiple router types '
+                            'with same id %s'), id_or_name)
+                raise RouterTypeNotFound(router_type=id_or_name)
+        except exc.NoResultFound:
+            query = context.session.query(RouterType)
+            query = query.filter(RouterType.name == id_or_name)
+            try:
+                return query.one()
+            except exc.MultipleResultsFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.debug(_('Multiple router types with name %s found. '
+                                'Id must be specified to allow arbitration.'),
+                              id_or_name)
+                    raise MultipleRouterTypes(name=id_or_name)
+            except exc.NoResultFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('No router type with name %s found.'),
+                              id_or_name)
+                    raise RouterTypeNotFound(router_type=id_or_name)
 
     def get_namespace_router_type_id(self, context):
         if self._namespace_router_type_id is None:

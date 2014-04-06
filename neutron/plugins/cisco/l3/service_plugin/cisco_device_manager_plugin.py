@@ -32,7 +32,6 @@ from neutron.plugins.cisco.l3.db import cfg_agentschedulers_db as agt_sched_db
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as dev_mgr_db
 from neutron.plugins.cisco.l3.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
-from neutron.plugins.common import constants
 
 
 class CiscoDevMgrPluginRpcCallbacks(devices_rpc.DeviceMgrCfgRpcCallbackMixin):

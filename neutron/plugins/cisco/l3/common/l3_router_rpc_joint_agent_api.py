@@ -26,8 +26,6 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-AGENT_TYPE = {topics.L3_AGENT: "l3 agent",
-              cl3_constants.CFG_AGENT: "Cisco cfg agent"}
 L3AGENT_SCHED = constants.L3_AGENT_SCHEDULER_EXT_ALIAS
 CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
@@ -75,7 +73,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
             for agent in agents:
                 LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
                             'message %(method)s'),
-                          {'agent_type': AGENT_TYPE[agent.topic],
+                          {'agent_type': agent.agent_type,
                            'topic': agent.topic,
                            'host': agent.host,
                            'method': method})

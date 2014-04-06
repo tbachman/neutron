@@ -30,6 +30,7 @@ LOG = logging.getLogger(__name__)
 
 AGENT_TYPE_L3 = constants.AGENT_TYPE_L3
 
+
 class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
     """A router type aware l3 agent scheduler for Cisco router service plugin.
 
@@ -67,9 +68,9 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 unscheduled_router_ids = []
                 for router_id in router_ids:
                     try:
-                        router_type_id = plugin.get_router_type(
-                            context, router_id)['id']
-                    except (KeyError, n_exc.NeutronException):
+                        router_type_id = plugin.get_router_type_id(
+                            context, router_id)
+                    except n_exc.NeutronException:
                         router_type_id = None
                     if router_type_id != ns_routertype_id:
                         LOG.debug(_('Router %(r_id)s is of type %(t_id)s '
@@ -98,7 +99,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 query = context.session.query(l3_db.Router.id)
                 query = query.join(l3_models.RouterHostingDeviceBinding)
                 query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.router_type ==
+                    l3_models.RouterHostingDeviceBinding.router_type_id ==
                     ns_routertype_id, stmt)
                 unscheduled_router_ids = [router_id_[0] for router_id_ in
                                           query]
@@ -115,7 +116,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 candidates = plugin.get_l3_agent_candidates(router, [l3_agent])
                 if not candidates:
                     to_removed_ids.append(router['id'])
-            router_ids = list([r['id'] for r in routers]) - set(to_removed_ids)
+            router_ids = set([r['id'] for r in routers]) - set(to_removed_ids)
             if not router_ids:
                 LOG.warn(_('No routers compatible with L3 agent configuration'
                            ' on host %s'), host)

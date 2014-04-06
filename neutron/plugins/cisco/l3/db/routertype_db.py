@@ -17,16 +17,15 @@
 from sqlalchemy.orm import exc
 
 from neutron.db import db_base_plugin_v2 as base_db
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.db.l3_models import RouterType
-import neutron.plugins.cisco.l3.extensions.routertype as router_type
+import neutron.plugins.cisco.l3.extensions.routertype as routertype
 
 LOG = logging.getLogger(__name__)
 
 
-class RoutertypeDbMixin(router_type.RoutertypePluginBase,
+class RoutertypeDbMixin(routertype.RoutertypePluginBase,
                         base_db.CommonDbMixin):
     """Mixin class for Router types."""
 
@@ -76,8 +75,8 @@ class RoutertypeDbMixin(router_type.RoutertypePluginBase,
             raise routertype.RouterTypeNotFound(routertype_id=id)
 
     def get_routertypes(self, context, filters=None, fields=None,
-                         sorts=None, limit=None, marker=None,
-                         page_reverse=False):
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
         LOG.debug(_("get_routertypes() called"))
         return self._get_collection(context, RouterType,
                                     self._make_routertype_dict,
@@ -95,4 +94,3 @@ class RoutertypeDbMixin(router_type.RoutertypePluginBase,
                'scheduler': routertype['scheduler'],
                'cfg_agent_driver': routertype['cfg_agent_driver']}
         return self._fields(res, fields)
-

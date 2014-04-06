@@ -38,8 +38,8 @@ VM_ROUTERTYPE_NAME = cl3_constants.CSR1KV_ROUTER_TYPE
 HW_ROUTERTYPE_NAME = "HW_router"
 
 NOOP_SCHEDULER = ('neutron.plugins.cisco.l3.scheduler.'
-                 'noop_l3_router_hosting_device_scheduler.'
-                 'NoopL3RouterHostingDeviceScheduler')
+                  'noop_l3_router_hosting_device_scheduler.'
+                  'NoopL3RouterHostingDeviceScheduler')
 NOOP_AGT_DRV = NOOP_SCHEDULER
 
 TEST_SLOT_NEED = 2
