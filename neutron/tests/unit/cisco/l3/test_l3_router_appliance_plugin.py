@@ -14,155 +14,86 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import mock
 from oslo.config import cfg
 
-from neutron.common import exceptions as n_exc
 from neutron import context
-from neutron.db import api as qdbapi
-from neutron.db import db_base_plugin_v2
-from neutron.db import model_base
 from neutron.extensions import external_net
+from neutron.extensions import extraroute
+from neutron.extensions import l3
 from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common.notifier import test_notifier
-from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hd_mgr_db
-from neutron.plugins.cisco.l3.db import l3_router_appliance_db
-from neutron.plugins.common import constants
+from neutron.plugins.cisco.l3.extensions import routertype
+from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.tests.unit.cisco.device_manager import test_db_device_manager
+from neutron.tests.unit.cisco.l3 import l3_router_conveniences
+from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
 from neutron.tests.unit import test_l3_plugin
 
 LOG = logging.getLogger(__name__)
 
 
-# This router service plugin class is just for testing
-class TestL3RouterAppliancePlugin(db_base_plugin_v2.CommonDbMixin,
-                                  l3_router_appliance_db.
-                                  L3RouterApplianceDBMixin):
-
-    supported_extension_aliases = ["router",  # "ext-gw-mode",
-                                   "extraroute"]
-
-    def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
-
-    def get_plugin_type(self):
-        return constants.L3_ROUTER_NAT
-
-    def get_plugin_description(self):
-        return "Cisco L3 Routing Service Plugin for testing"
+CORE_PLUGIN_KLASS = device_manager_conveniences.CORE_PLUGIN_KLASS
+L3_PLUGIN_KLASS = (
+    "neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin."
+    "TestApplianceL3RouterServicePlugin")
 
 
-# Functions to mock service VM creation.
-# def dispatch_service_vm_mock(self, context, instance_name, vm_image,
-#                              vm_flavor, hosting_device_drv, mgmt_port,
-#                              ports=None):
-#     vm_id = uuidutils.generate_uuid()
-#
-#     try:
-#         # Assumption for now is that this does not need to be
-#         # plugin dependent, only hosting device type dependent.
-#         hosting_device_drv.create_configdrive_files(context, mgmt_port)
-#     except IOError:
-#         return None
-#
-#     if mgmt_port is not None:
-#         p_dict = {'port': {'device_id': vm_id,
-#                            'device_owner': 'nova'}}
-#         self._core_plugin.update_port(context, mgmt_port['id'], p_dict)
-#
-#     for port in ports:
-#         p_dict = {'port': {'device_id': vm_id,
-#                            'device_owner': 'nova'}}
-#         self._core_plugin.update_port(context, port['id'], p_dict)
-#
-#     myserver = {'server': {'adminPass': "MVk5HPrazHcG",
-#                 'id': vm_id,
-#                 'links': [{'href': "http://openstack.example.com/v2/"
-#                                    "openstack/servers/" + vm_id,
-#                            'rel': "self"},
-#                           {'href': "http://openstack.example.com/"
-#                                    "openstack/servers/" + vm_id,
-#                            'rel': "bookmark"}]}}
-#
-#     return myserver['server']
-#
-#
-# def delete_service_vm_mock(self, context, vm_id, hosting_device_drv,
-#                            mgmt_nw_id):
-#         result = True
-#         # Get ports on management network (should be only one)
-#         ports = self._core_plugin.get_ports(
-#             context, filters={'device_id': [vm_id],
-#                               'network_id': [mgmt_nw_id]})
-#         if ports:
-#             hosting_device_drv.delete_configdrive_files(context, ports[0])
-#
-#         try:
-#             ports = self._core_plugin.get_ports(context,
-#                                                 filters={'device_id': [vm_id]})
-#             for port in ports:
-#                 self._core_plugin.delete_port(context, port['id'])
-#         except n_exc.NeutronException as e:
-#             LOG.error(_('Failed to delete service VM %(id)s due to %(err)s'),
-#                       {'id': vm_id, 'err': e})
-#             result = False
-#         return result
+class TestApplianceL3RouterExtensionManager(
+    test_db_routertype.L3TestRoutertypeExtensionManager):
+
+    def get_resources(self):
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            extraroute.EXTENDED_ATTRIBUTES_2_0['routers'])
+        return super(TestApplianceL3RouterExtensionManager,
+                     self).get_resources()
 
 
-# def get_hosting_device_template_mock(self, context, host_type):
-#     return {'id': '11111111-2222-3333-4444-555555555555',
-#             'tenant_id': self.l3_tenant_id(),
-#             'name': 'CSR1kv',
-#             'enabled': True,
-#             'host_category': cl3_const.VM_CATEGORY,
-#             'host_type': cl3_const.CSR1KV_HOST,
-#             'service_types': 'router',
-#             'image': cfg.CONF.csr1kv_image,
-#             'flavor': cfg.CONF.csr1kv_flavor,
-#             'configuration_mechanism': 'Netconf',
-#             'transport_port': cl3_const.CSR1kv_SSH_NETCONF_PORT,
-#             'booting_time': cfg.CONF.csr1kv_booting_time,
-#             'capacity': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
-#             'tenant_bound': None,
-#             'device_driver': 'neutron.plugins.cisco.l3.tests.unit.'
-#                              'hd_dummy_driver.DummyHostingDeviceDriver',
-#             'plugging_driver': 'neutron.plugins.cisco.l3.tests.unit.'
-#                                'plugging_dummy_driver.DummyTrunkingPlugDriver',
-#             'cfg_agent_driver': 'router:neutron.plugins.cisco.l3.agent.'
-#                                 'csr1000v.cisco_csr_network_driver.'
-#                                 'CiscoCSRDriver',
-#             'schedulers': 'router:neutron.plugins.cisco.l3.scheduler.XXX.'
-#                           'YYY'
-#             }
+# A routertype and set routes capable L3 routing service plugin class
+class TestApplianceL3RouterServicePlugin(
+        l3_router_conveniences.TestL3RouterServicePlugin):
+
+    supported_extension_aliases = ["router", "extraroute",
+                                   routertype.ROUTERTYPE_ALIAS]
 
 
-class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
+class L3RouterApplianceTestCase(
+    test_ext_extraroute.ExtraRouteDBSepTestCase,
+    test_db_routertype.RoutertypeTestCaseMixin,
+    test_db_device_manager.DeviceManagerTestCaseMixin,
+    l3_router_conveniences.L3RouterConvenienceMixin,
+        device_manager_conveniences.DeviceManagerConvenienceMixin):
 
-    def setUp(self):
-        # the plugin without L3 support
-        plugin = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
-        # the L3 service plugin
-        l3_plugin = (
-            'neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.'
-            'TestL3RouterAppliancePlugin')
+    resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
+                           .resource_prefix_map)
+
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        if not core_plugin:
+            core_plugin = CORE_PLUGIN_KLASS
+        if l3_plugin is None:
+            l3_plugin = L3_PLUGIN_KLASS
         service_plugins = {'l3_plugin_name': l3_plugin}
+        cfg.CONF.set_override('api_extensions_path',
+                              l3_router_conveniences.extensions_path)
 
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
         cfg.CONF.set_default('max_routes', 3)
-        ext_mgr = test_ext_extraroute.ExtraRouteTestExtensionManager()
+        ext_mgr = TestApplianceL3RouterExtensionManager()
 
-#        hd_mgr_db.HostingDeviceManagerMixin._instance = None
         hd_mgr_db.HostingDeviceManagerMixin._mgmt_nw_uuid = None
         hd_mgr_db.HostingDeviceTemplate._mgmt_sec_grp_id = None
 
+        # call grandparent's setUp() to avoid that wrong plugin and
+        # extensions are used.
         super(test_l3_plugin.L3BaseForSepTests, self).setUp(
-            plugin=plugin, ext_mgr=ext_mgr,
-            service_plugins=service_plugins)
+            plugin=core_plugin, service_plugins=service_plugins,
+            ext_mgr=ext_mgr)
 
         # Set to None to reload the drivers
         notifier_api._drivers = None
@@ -177,57 +108,28 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
             cfg.StrOpt('admin_password', default='secrete')]
         cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
-        # Mock l3 admin tenant
-        # self.tenant_id_fcn_p = mock.patch(
-        #     'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
-        #     'HostingDeviceManagerMixin.l3_tenant_id')
-        # self.tenant_id_fcn = self.tenant_id_fcn_p.start()
-        # self.tenant_id_fcn.return_value = "L3AdminTenantId"
-        #
-        # # Mock creation/deletion of service VMs
-        # self.dispatch_svc_vm_fcn_p = mock.patch(
-        #     'neutron.plugins.cisco.l3.common.service_vm_lib.ServiceVMManager.'
-        #     'dispatch_service_vm', dispatch_service_vm_mock)
-        # self.dispatch_svc_vm_fcn_p.start()
-        #
-        # self.delete_svc_vm_fcn_p = mock.patch(
-        #     'neutron.plugins.cisco.l3.common.service_vm_lib.ServiceVMManager.'
-        #     'delete_service_vm', delete_service_vm_mock)
-        # self.delete_svc_vm_fcn_p.start()
-        #
-        # self.get_hosting_device_template_fcn_p = mock.patch(
-        #     'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
-        #     'HostingDeviceManagerMixin.get_hosting_device_template',
-        #     get_hosting_device_template_mock)
-        # self.get_hosting_device_template_fcn_p.start()
-
-        self.sched = mock.patch(
-            'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
-            'L3RouterApplianceDBMixin.hosting_scheduler',
-            mock.Mock(return_value=None))
-        self.sched.start()
-
         cfg.CONF.register_opt(
             cfg.BoolOpt('router_auto_schedule', default=True,
                         help=_('Allow auto scheduling of routers to '
                                'L3 agent.')))
 
+        cfg.CONF.set_override('default_router_type',
+                              cl3_const.NAMESPACE_ROUTER_TYPE)
+
+        self._mock_l3_admin_tenant()
+        self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(
             templates['network_node']['hosting_device_template']['id'])
-        self._create_mgmt_nw_for_tests(self.fmt)
-
-        self._mock_l3_admin_tenant()
         self._mock_svc_vm_create_delete()
 
     def tearDown(self):
-        dev_mgr = hd_mgr_db.HostingDeviceManagerMixin.get_instance()
-        dev_mgr.delete_all_service_vm_hosting_devices(
-            context.get_admin_context(), cl3_const.CSR1KV_HOST)
+        plugin = NeutronManager.get_plugin()
+        plugin.delete_all_hosting_devices(context.get_admin_context(), True)
 
-        self._remove_mgmt_nw_for_tests()
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
+        self._remove_mgmt_nw_for_tests()
         super(L3RouterApplianceTestCase, self).tearDown()
 #        super(test_l3_plugin.L3NatDBSepTestCase, self).tearDown()
 

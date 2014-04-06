@@ -25,16 +25,16 @@ from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
                                          router_sch_db)
 from neutron.plugins.cisco.l3.extensions import routertype
-from neutron.tests.unit.cisco.device_manager import device_manager_convenience
+from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_convenience
+from neutron.tests.unit.cisco.l3 import l3_router_conveniences
 from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_l3_schedulers
 
 LOG = logging.getLogger(__name__)
 
 
-CORE_PLUGIN_KLASS = device_manager_convenience.CORE_PLUGIN_KLASS
+CORE_PLUGIN_KLASS = device_manager_conveniences.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
     "neutron.tests.unit.cisco.l3.test_l3_routertype_aware_schedulers."
     "TestL3RouterServicePlugin")
@@ -42,7 +42,7 @@ L3_PLUGIN_KLASS = (
 
 # A scheduler-enabled routertype capable L3 routing service plugin class
 class TestL3RouterServicePlugin(
-    l3_router_convenience.TestL3RouterServicePlugin,
+    l3_router_conveniences.TestL3RouterServicePlugin,
         router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
     supported_extension_aliases = ["router", routertype.ROUTERTYPE_ALIAS,
@@ -57,11 +57,10 @@ class TestL3RouterServicePlugin(
 
 class L3RoutertypeAwareSchedulerTestCase(
     test_l3_schedulers.L3SchedulerTestCase,
-        router_sch_db.L3RouterTypeAwareSchedulerDbMixin,
         test_db_routertype.RoutertypeTestCaseMixin,
         test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_convenience.L3RouterConvenienceMixin,
-        device_manager_convenience.DeviceManagerConvenienceMixin):
+        l3_router_conveniences.L3RouterConvenienceMixin,
+        device_manager_conveniences.DeviceManagerConvenienceMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
@@ -75,8 +74,9 @@ class L3RoutertypeAwareSchedulerTestCase(
         service_plugins = {'l3_plugin_name': l3_plugin}
 
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_convenience.extensions_path)
+                              l3_router_conveniences.extensions_path)
         ext_mgr = test_db_routertype.L3TestRoutertypeExtensionManager()
+
         # call grandparent's setUp() to avoid that wrong plugin and
         # extensions are used.
         super(test_l3_schedulers.L3SchedulerTestCase, self).setUp(
@@ -90,18 +90,17 @@ class L3RoutertypeAwareSchedulerTestCase(
         self.plugin = manager.NeutronManager.get_plugin()
         self._register_l3_agents()
 
+        self._mock_l3_admin_tenant()
+        self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(
             templates['network_node']['hosting_device_template']['id'])
-        self._create_mgmt_nw_for_tests(self.fmt)
-
-        self._mock_l3_admin_tenant()
         self._mock_svc_vm_create_delete()
 
     def tearDown(self):
-        self._remove_mgmt_nw_for_tests()
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
+        self._remove_mgmt_nw_for_tests()
         super(L3RoutertypeAwareSchedulerTestCase, self).tearDown()
 
 

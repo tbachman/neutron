@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 
 
 CORE_PLUGIN_KLASS = (
-    "neutron.tests.unit.cisco.device_manager.device_manager_convenience."
+    "neutron.tests.unit.cisco.device_manager.device_manager_conveniences."
     "TestCorePlugin")
 extensions_path = ':' + neutron.plugins.__path__[0] + '/cisco/l3/extensions'
 

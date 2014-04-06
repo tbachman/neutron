@@ -32,7 +32,7 @@ LOG = logging.getLogger(__name__)
 
 
 L3_PLUGIN_KLASS = (
-    "neutron.tests.unit.cisco.l3.l3_router_convenience."
+    "neutron.tests.unit.cisco.l3.l3_router_conveniences."
     "TestL3RouterServicePlugin")
 extensions_path = neutron.plugins.__path__[0] + '/cisco/l3/extensions'
 

@@ -27,7 +27,7 @@ from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hdm_db
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
-from neutron.tests.unit.cisco.device_manager import device_manager_convenience
+from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
 from neutron.tests.unit import test_db_plugin
 
 
@@ -200,7 +200,7 @@ class DeviceManagerTestCaseMixin(object):
 class TestDeviceManagerDBPlugin(
     test_db_plugin.NeutronDbPluginV2TestCase,
     DeviceManagerTestCaseMixin,
-    device_manager_convenience.DeviceManagerConvenienceMixin):
+    device_manager_conveniences.DeviceManagerConvenienceMixin):
 
     resource_prefix_map = dict(
         (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
@@ -211,7 +211,7 @@ class TestDeviceManagerDBPlugin(
             dm_plugin = DB_DM_PLUGIN_KLASS
         service_plugins = {'dm_plugin_name': dm_plugin}
         cfg.CONF.set_override('api_extensions_path',
-                              device_manager_convenience.extensions_path)
+                              device_manager_conveniences.extensions_path)
         hdm_db.HostingDeviceManagerMixin.supported_extension_aliases = (
             [ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS])
         super(TestDeviceManagerDBPlugin, self).setUp(
@@ -221,7 +221,7 @@ class TestDeviceManagerDBPlugin(
         if not ext_mgr:
             self.plugin = importutils.import_object(dm_plugin)
             ext_mgr = api_ext.PluginAwareExtensionManager(
-                device_manager_convenience.extensions_path,
+                device_manager_conveniences.extensions_path,
                 {constants.DEVICE_MANAGER: self.plugin})
             app = config.load_paste_app('extensions_test_app')
             self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)

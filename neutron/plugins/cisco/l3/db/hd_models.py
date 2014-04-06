@@ -116,7 +116,11 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # 'tenant_bound' is empty or is id of the only tenant allowed to
     # own/place resources on this hosting device
     tenant_bound = sa.Column(sa.String(36))
-    auto_delete_on_fail = sa.Column(sa.Boolean, default=True, nullable=False)
+    # If 'auto_delete' is True, a VM-based hosting device is subject to
+    # deletion as part of hosting device pool management and in case of VM
+    # failures. If 'auto_delete' is set to False, the hosting device must be
+    # manually unregistered in the device manager and deleted in Nova.
+    auto_delete = sa.Column(sa.Boolean, default=False, nullable=False)
 
 
 class SlotAllocation(model_base.BASEV2):

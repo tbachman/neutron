@@ -14,6 +14,7 @@
 
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import exists
+from sqlalchemy.sql import expression as expr
 
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
@@ -26,6 +27,8 @@ from neutron.scheduler import l3_agent_scheduler
 
 LOG = logging.getLogger(__name__)
 
+
+AGENT_TYPE_L3 = constants.AGENT_TYPE_L3
 
 class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
     """A router type aware l3 agent scheduler for Cisco router service plugin.
@@ -45,10 +48,9 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
         with context.session.begin(subtransactions=True):
             # query if we have valid l3 agent on the host
             query = context.session.query(agents_db.Agent)
-            query = query.filter(agents_db.Agent.agent_type ==
-                                 constants.AGENT_TYPE_L3,
+            query = query.filter(agents_db.Agent.agent_type == AGENT_TYPE_L3,
                                  agents_db.Agent.host == host,
-                                 agents_db.Agent.admin_state_up == True)
+                                 agents_db.Agent.admin_state_up == expr.true())
             try:
                 l3_agent = query.one()
             except (exc.MultipleResultsFound, exc.NoResultFound):

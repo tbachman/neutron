@@ -313,6 +313,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                          ...},
               ...}
         """
+        LOG.debug(_('Processing affected routers in dead hosting devices'))
         with context.session.begin(subtransactions=True):
             for hd in hosting_devices:
                 hd_bindings = self._get_hosting_device_bindings(context,
@@ -377,9 +378,15 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     raise RouterTypeNotFound(router_type=id_or_name)
 
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
+        LOG.info(_('Attempting to schedule router %s.'),
+                  r_hd_binding['router']['id'])
         scheduler = self._get_router_type_scheduler(
             context, r_hd_binding['router_type_id'])
         if scheduler is None:
+            LOG.debug(_('Aborting scheduling of router %(r_id)s as no '
+                        'scheduler was found for its router type %(type)s.'),
+                      {'r_id': r_hd_binding['router']['id'],
+                       'type': r_hd_binding['router_type_id']})
             return False
         with context.session.begin(subtransactions=True):
             selected_hd = scheduler.schedule_router(self, context,
@@ -403,15 +410,25 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     r_hd_binding.hosting_device_id = selected_hd[0]['id']
                     self.remove_router_from_backlog(router['id'])
                 else:
+                    LOG.debug(_('Could not allocated slots for router '
+                               '%(r_id)s in hosting device %(d_id)s.'),
+                             {'r_id': r_hd_binding['router']['id'],
+                              'd_id': r_hd_binding.hosting_device_id})
                     # we got not slot so backlog it for another scheduling
                     # attempt later.
                     self.backlog_router(router)
                     return False
             if r_hd_binding.hosting_device_id is not None:
+                LOG.info(_('Succesfully scheduled router %(r_id)s to hosting '
+                           'device %(d_id)s'),
+                         {'r_id': r_hd_binding['router']['id'],
+                          'd_id': r_hd_binding.hosting_device_id})
                 context.session.add(r_hd_binding)
         return True
 
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
+        LOG.info(_('Attempting to un-schedule router %s.'),
+                 r_hd_binding['router']['id'])
         if r_hd_binding['hosting_device'] is None:
             return False
         scheduler = self._get_router_type_scheduler(
@@ -425,6 +442,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 context, r_hd_binding['hosting_device'],
                 r_hd_binding['router'],
                 r_hd_binding['router_type']['slot_need'])
+            LOG.info(_('Succesfully un-scheduled router %(r_id)s from '
+                       'hosting device %(d_id)s'),
+                     {'r_id': r_hd_binding['router']['id'],
+                      'd_id': r_hd_binding.hosting_device_id})
 
     def get_namespace_router_type_id(self, context):
         if self._namespace_router_type_id is None:
@@ -440,11 +461,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         if ((router or {}).get('id') is None or
                 router['id'] in self._backlogged_routers):
             return
+        LOG.info(_('Backlogging router %s for renewed scheduling attempt '
+                   'later'), id)
         self._backlogged_routers[router['id']] = router
 
     @lockutils.synchronized('routers', 'neutron-')
     def remove_router_from_backlog(self, id):
         self._backlogged_routers.pop(id, None)
+        LOG.info(_('Router %s removed from backlog'), id)
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _process_backlogged_routers(self):
@@ -454,6 +478,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             return
         context = n_context.get_admin_context()
         scheduled_routers = []
+        LOG.info(_('Processing router (scheduling) backlog'))
         # try to reschedule
         for r_id, router in self._backlogged_routers.items():
             self._add_type_and_hosting_device_info(context, router)
@@ -472,6 +497,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         self._heartbeat.start(interval=cfg.CONF.backlog_processing_interval)
 
     def _sync_router_backlog(self):
+        LOG.info(_('Synchronizing router (scheduling) backlog'))
         context = n_context.get_admin_context()
         type_to_exclude = self.get_namespace_router_type_id(context)
         query = context.session.query(RouterHostingDeviceBinding)
@@ -652,6 +678,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def _get_router_type_scheduler(self, context, id):
         """Returns the scheduler (instance) for a router type."""
+        if id is None:
+            return
         try:
             return self._router_schedulers[id]
         except KeyError:

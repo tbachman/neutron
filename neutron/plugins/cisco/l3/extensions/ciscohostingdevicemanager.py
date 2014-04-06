@@ -98,6 +98,8 @@ DEVICES = DEVICE + 's'
 DEVICE_TEMPLATE = DEVICE + '_template'
 DEVICE_TEMPLATES = DEVICE_TEMPLATE + 's'
 
+AUTO_DELETE_DEFAULT = False
+
 # Attribute Map
 RESOURCE_ATTRIBUTE_MAP = {
     DEVICES: {
@@ -137,9 +139,9 @@ RESOURCE_ATTRIBUTE_MAP = {
         'tenant_bound': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
-        'auto_delete_on_fail': {'allow_post': True, 'allow_put': True,
-                                'convert_to': attr.convert_to_boolean,
-                                'default': False, 'is_visible': True},
+        'auto_delete': {'allow_post': True, 'allow_put': True,
+                        'convert_to': attr.convert_to_boolean,
+                        'default': AUTO_DELETE_DEFAULT, 'is_visible': True},
     },
     DEVICE_TEMPLATES: {
         'tenant_id': {'allow_post': True, 'allow_put': False,

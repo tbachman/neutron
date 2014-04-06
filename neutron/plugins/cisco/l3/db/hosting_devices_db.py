@@ -28,6 +28,9 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
+AUTO_DELETE_DEFAULT = ciscohostingdevicemanager.AUTO_DELETE_DEFAULT
+
+
 class HostingDeviceDBMixin(
         ciscohostingdevicemanager.CiscoHostingDevicePluginBase,
         base_db.CommonDbMixin):
@@ -57,7 +60,7 @@ class HostingDeviceDBMixin(
                 booting_time=hd.get('booting_time'),
                 status=hd.get('status', svc_constants.ACTIVE),
                 tenant_bound=hd.get('tenant_bound'),
-                auto_delete_on_fail=hd.get('auto_delete_on_fail', True))
+                auto_delete=hd.get('auto_delete', AUTO_DELETE_DEFAULT))
             context.session.add(hd_db)
         return self._make_hosting_device_dict(hd_db)
 
@@ -180,7 +183,7 @@ class HostingDeviceDBMixin(
                'booting_time': hd['booting_time'],
                'status': hd['status'],
                'tenant_bound': hd['tenant_bound'],
-               'auto_delete_on_fail': hd['auto_delete_on_fail']}
+               'auto_delete': hd['auto_delete']}
         return self._fields(res, fields)
 
     def _get_hosting_device_template(self, context, id):
