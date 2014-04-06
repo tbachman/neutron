@@ -93,8 +93,7 @@ class L3RoutertypeAwareSchedulerTestCase(
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
-        self._test_create_routertypes(
-            templates['network_node']['hosting_device_template']['id'])
+        self._test_create_routertypes(templates.values())
         self._mock_svc_vm_create_delete()
 
     def tearDown(self):

@@ -61,7 +61,7 @@ class TestApplianceL3RouterServicePlugin(
                                    routertype.ROUTERTYPE_ALIAS]
 
 
-class L3RouterApplianceTestCase(
+class L3RouterApplianceTestCaseBase(
     test_ext_extraroute.ExtraRouteDBSepTestCase,
     test_db_routertype.RoutertypeTestCaseMixin,
     test_db_device_manager.DeviceManagerTestCaseMixin,
@@ -85,9 +85,6 @@ class L3RouterApplianceTestCase(
         cfg.CONF.set_default('allow_overlapping_ips', True)
         cfg.CONF.set_default('max_routes', 3)
         ext_mgr = TestApplianceL3RouterExtensionManager()
-
-        hd_mgr_db.HostingDeviceManagerMixin._mgmt_nw_uuid = None
-        hd_mgr_db.HostingDeviceTemplate._mgmt_sec_grp_id = None
 
         # call grandparent's setUp() to avoid that wrong plugin and
         # extensions are used.
@@ -113,34 +110,30 @@ class L3RouterApplianceTestCase(
                         help=_('Allow auto scheduling of routers to '
                                'L3 agent.')))
 
-        cfg.CONF.set_override('default_router_type',
-                              cl3_const.NAMESPACE_ROUTER_TYPE)
-
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-        templates = self._test_create_hosting_device_templates()
-        self._test_create_routertypes(
-            templates['network_node']['hosting_device_template']['id'])
-        self._mock_svc_vm_create_delete()
+  #      templates = self._test_create_hosting_device_templates()
+  #      self._test_create_routertypes(templates.values())
+  #      self._mock_svc_vm_create_delete()
+  #      self._mock_get_routertype_scheduler_always_none()
 
     def tearDown(self):
-        plugin = NeutronManager.get_plugin()
-        plugin.delete_all_hosting_devices(context.get_admin_context(), True)
+#        plugin = NeutronManager.get_plugin()
+#        plugin.delete_all_hosting_devices(context.get_admin_context(), True)
+#        plugin.reset_all()
 
-        self._test_remove_routertypes()
-        self._test_remove_hosting_device_templates()
+#        self._test_remove_routertypes()
+#        self._test_remove_hosting_device_templates()
         self._remove_mgmt_nw_for_tests()
-        super(L3RouterApplianceTestCase, self).tearDown()
-#        super(test_l3_plugin.L3NatDBSepTestCase, self).tearDown()
+        super(L3RouterApplianceTestCaseBase, self).tearDown()
 
     def test_get_network_succeeds_without_filter(self):
         plugin = NeutronManager.get_plugin()
-        dev_mgr = hd_mgr_db.HostingDeviceManagerMixin.get_instance()
         ctx = context.Context(None, None, is_admin=True)
         nets = plugin.get_networks(ctx, filters=None)
         # Remove mgmt network from list
         for i in xrange(len(nets)):
-            if nets[i].get('id') == dev_mgr.mgmt_nw_id():
+            if nets[i].get('id') == plugin.mgmt_nw_id():
                 del nets[i]
                 break
         self.assertEqual(nets, [])
@@ -163,6 +156,51 @@ class L3RouterApplianceTestCase(
                 # 2 networks since there is also the mgmt network
                 self.assertEqual(len(body['networks']), 2)
 
+class L3RouterApplianceNamespaceTestCase(L3RouterApplianceTestCaseBase):
 
-class L3RouterApplianceTestCaseXML(L3RouterApplianceTestCase):
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        super(L3RouterApplianceNamespaceTestCase, self).setUp(
+            core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
+            ext_mgr=ext_mgr)
+
+        cfg.CONF.set_override('default_router_type',
+                              cl3_const.NAMESPACE_ROUTER_TYPE)
+
+        templates = self._test_create_hosting_device_templates()
+        self._test_create_routertypes(templates.values())
+
+    def tearDown(self):
+        plugin = NeutronManager.get_plugin()
+        plugin.reset_all()
+
+        self._test_remove_routertypes()
+        self._test_remove_hosting_device_templates()
+        super(L3RouterApplianceTestCaseBase, self).tearDown()
+
+
+class L3RouterApplianceVMTestCase(L3RouterApplianceTestCaseBase):
+
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        super(L3RouterApplianceVMTestCase, self).setUp(
+            core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
+            ext_mgr=ext_mgr)
+
+        templates = self._test_create_hosting_device_templates()
+        self._test_create_routertypes(templates.values())
+        self._mock_svc_vm_create_delete()
+        self._mock_get_routertype_scheduler_always_none()
+
+    def tearDown(self):
+        plugin = NeutronManager.get_plugin()
+        plugin.delete_all_hosting_devices(context.get_admin_context(), True)
+        plugin.reset_all()
+
+        self._test_remove_routertypes()
+        self._test_remove_hosting_device_templates()
+        super(L3RouterApplianceTestCaseBase, self).tearDown()
+
+
+class L3RouterApplianceTestCaseXML(L3RouterApplianceTestCaseBase):
     fmt = 'xml'

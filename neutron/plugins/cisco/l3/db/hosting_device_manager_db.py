@@ -95,6 +95,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     _svc_vm_mgr = None
 
     @classmethod
+    def reset_all(cls):
+        cls._l3_tenant_uuid = None
+        cls._mgmt_nw_uuid = None
+        cls._mgmt_sec_grp_id = None
+        cls._plugging_drivers = {}
+        cls._cfgagent_scheduler = None
+        cls._svc_vm_mgr = None
+
+    @classmethod
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
@@ -420,7 +429,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         :param hosting_device: db object for hosting device
         :return: True if hosting_device has been deleted, otherwise False
         """
-        if (hosting_device['host_category'] == cl3_const.VM_CATEGORY and
+        if (hosting_device['host_category'] == VM_CATEGORY and
                 hosting_device['auto_delete']):
             self._delete_dead_service_vm_hosting_device(context,
                                                         hosting_device)
@@ -454,7 +463,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         not slowed down by booting of the hosting device.
         """
         # For now the pool size is only elastic for service VMs.
-        if template['host_category'] == cl3_const.HARDWARE_CATEGORY:
+        if template['host_category'] != VM_CATEGORY:
             return
         # Maintain a pool of approximately 'desired_slots_free' available
         # for allocation. Approximately means:

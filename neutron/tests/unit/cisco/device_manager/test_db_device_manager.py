@@ -22,7 +22,6 @@ import webob.exc
 from neutron.api import extensions as api_ext
 from neutron.common import config
 from neutron.openstack.common import importutils
-from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hdm_db
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
@@ -32,26 +31,39 @@ from neutron.tests.unit import test_db_plugin
 
 
 DB_DM_PLUGIN_KLASS = (
-    "neutron.plugins.cisco.l3.db.hosting_device_manager_db."
-    "HostingDeviceManagerMixin")
-NN_TEMPLATE_NAME = cl3_constants.NETWORK_NODE_TEMPLATE
+    'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
+    'HostingDeviceManagerMixin')
+
 NN_CATEGORY = ciscohostingdevicemanager.NETWORK_NODE_CATEGORY
+NN_TEMPLATE_NAME = cl3_constants.NETWORK_NODE_TEMPLATE
+NS_ROUTERTYPE_NAME = cl3_constants.NAMESPACE_ROUTER_TYPE
 VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
+VM_TEMPLATE_NAME = "CSR1kv_template"
+VM_BOOTING_TIME = 420
+VM_SLOT_CAPACITY = 3
+VM_DESIRED_SLOTS_FREE = 3
+VM_ROUTERTYPE_NAME = cl3_constants.CSR1KV_ROUTER_TYPE
 HW_CATEGORY = ciscohostingdevicemanager.HARDWARE_CATEGORY
-DEFAULT_SERVICE_TYPES = 'router'
-NETWORK_NODE_SERVICE_TYPES = 'router:fwaas:vpn'
+HW_TEMPLATE_NAME = "HW_template"
+HW_ROUTERTYPE_NAME = "HW_router"
+
+DEFAULT_SERVICE_TYPES = "router"
+NETWORK_NODE_SERVICE_TYPES = "router:fwaas:vpn"
+
 NOOP_DEVICE_DRIVER = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
                       'noop_hd_driver.NoopHostingDeviceDriver')
 NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.l3.plugging_drivers.'
                         'noop_plugging_driver.NoopPluggingDriver')
-DESCRIPTION = 'default description'
+TEST_DEVICE_DRIVER = ('neutron.plugins.cisco.l3.test.device_manager.'
+                      'hd_test_driver.TestHostingDeviceDriver')
+TEST_PLUGGING_DRIVER = ('neutron.plugins.cisco.l3.test.device_manager.'
+                        'plugging_test_driver.TestTrunkingPlugDriver')
+
+DESCRIPTION = "default description"
 SHARED = True
-ACTION = 'allow'
+ACTION = "allow"
 ENABLED = True
 ADMIN_STATE_UP = True
-
-
-timestamp = timeutils.utcnow
 
 
 class DeviceManagerTestCaseMixin(object):
@@ -127,7 +139,7 @@ class DeviceManagerTestCaseMixin(object):
             'cfg_agent_id': kwargs.get('cfg_agent_id'),
             'booting_time': kwargs.get('booting_time', 0),
             'tenant_bound': kwargs.get('tenant_bound'),
-            'auto_delete_on_fail': kwargs.get('auto_delete_on_fail', False)}
+            'auto_delete': kwargs.get('auto_delete', False)}
         return data
 
     def _get_test_hosting_device_template_attr(self, name='device_template_1',
@@ -177,25 +189,36 @@ class DeviceManagerTestCaseMixin(object):
 
     def _test_create_hosting_device_templates(self):
         # template for network nodes.
-        res = self._create_hosting_device_template(self.fmt, NN_TEMPLATE_NAME,
+        nnt = self._create_hosting_device_template(self.fmt, NN_TEMPLATE_NAME,
                                                    True, NN_CATEGORY)
-        self._nw_node_template = self.deserialize(self.fmt, res)
-        self._vm_template = None
-        self._hw_template = None
-        return {'network_node': self._nw_node_template,
-                'vm': self._vm_template,
-                'hw': self._hw_template}
+        vmt = self._create_hosting_device_template(
+            self.fmt, VM_TEMPLATE_NAME, True, VM_CATEGORY,
+            booting_time=VM_BOOTING_TIME,
+            slot_capacity=VM_SLOT_CAPACITY,
+            desired_slots_free=VM_DESIRED_SLOTS_FREE,
+            device_driver=TEST_DEVICE_DRIVER,
+            plugging_driver=TEST_PLUGGING_DRIVER)
+        nw_node_template = self.deserialize(self.fmt, nnt)
+        vm_template = self.deserialize(self.fmt, vmt)
+        hw_template = None
+        self._templates = {'network_node': {'template': nw_node_template,
+                                            'router_type': NS_ROUTERTYPE_NAME},
+                           'vm': {'template': vm_template,
+                                  'router_type': VM_ROUTERTYPE_NAME},
+                           'hw': {'template': hw_template,
+                                  'router_type': HW_ROUTERTYPE_NAME}}
+        return self._templates
 
     def _test_remove_hosting_device_templates(self):
+
         try:
-            tl = [self._nw_node_template, self._vm_template, self._hw_template]
+            for name, info in self._templates.items():
+                template = info['template']
+                if template is not None:
+                    self._delete('hosting_device_templates',
+                                 template['hosting_device_template']['id'])
         except AttributeError:
             return
-        for template in tl:
-            if template is not None:
-                self._delete('hosting_device_templates',
-                             template['hosting_device_template']['id'])
-
 
 class TestDeviceManagerDBPlugin(
     test_db_plugin.NeutronDbPluginV2TestCase,

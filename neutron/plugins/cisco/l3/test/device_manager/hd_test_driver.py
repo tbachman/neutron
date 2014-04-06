@@ -17,7 +17,7 @@
 from neutron.plugins.cisco.l3.hosting_device_drivers import HostingDeviceDriver
 
 
-class DummyHostingDeviceDriver(HostingDeviceDriver):
+class TestHostingDeviceDriver(HostingDeviceDriver):
 
     def hosting_device_name(self):
         return "Test_HD"

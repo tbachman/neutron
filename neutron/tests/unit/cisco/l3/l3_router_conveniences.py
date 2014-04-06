@@ -106,6 +106,12 @@ class L3RouterConvenienceMixin:
             'delete_service_vm', self._delete_service_vm_mock)
         self.delete_svc_vm_fcn_p.start()
 
+    def _mock_get_routertype_scheduler_always_none(self):
+        self.get_routertype_scheduler_fcn_p = mock.patch(
+            'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
+            'L3RouterApplianceDBMixin._get_router_type_scheduler',
+            mock.Mock(return_value=None))
+        self.get_routertype_scheduler_fcn_p.start()
 
 class TestL3RouterBaseExtensionManager(object):
 

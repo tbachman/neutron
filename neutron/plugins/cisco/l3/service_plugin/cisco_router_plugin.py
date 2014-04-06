@@ -36,6 +36,7 @@ from neutron.plugins.cisco.l3.common import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
                                          router_sch_db)
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
+from neutron.plugins.cisco.l3.extensions import routertype
 from neutron.plugins.common import constants
 
 
@@ -68,7 +69,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     """
     supported_extension_aliases = ["router",  # "ext-gw-mode",
                                    "extraroute", "l3_agent_scheduler",
-                                   "router_type"]
+                                   routertype.ROUTERTYPE_ALIAS]
 
     def __init__(self):
         qdbapi.register_models(base=model_base.BASEV2)

@@ -16,7 +16,6 @@
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_const
 from neutron.plugins.cisco.l3.plugging_drivers import n1kv_trunking_driver
@@ -24,13 +23,10 @@ from neutron.plugins.cisco.l3.plugging_drivers import n1kv_trunking_driver
 LOG = logging.getLogger(__name__)
 
 
-class DummyTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
+class TestTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
     """This is a driver class for service VMs used together with
     the a plugin that supports VLAN trunking in similar way as N1kv.
     """
-    @property
-    def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
 
     def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted, **kwargs):
