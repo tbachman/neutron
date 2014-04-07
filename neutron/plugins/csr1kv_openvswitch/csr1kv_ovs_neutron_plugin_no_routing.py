@@ -64,7 +64,6 @@ from neutron.plugins.csr1kv_openvswitch.common import constants
 from neutron.plugins.csr1kv_openvswitch.extensions import trunkport
 from neutron.plugins.openvswitch import ovs_db_v2
 
-
 LOG = logging.getLogger(__name__)
 
 

@@ -20,8 +20,8 @@ import mock
 from webob import exc
 
 from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
-from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
+from neutron.openstack.common import uuidutils
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
@@ -63,8 +63,7 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
 
         instance = self.plugin.return_value
         instance.create_hosting_device.return_value = return_value
-        res = self.api.post(_get_path('dev_mgr/hosting_devices',
-                                      fmt=self.fmt),
+        res = self.api.post(_get_path('dev_mgr/hosting_devices', fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
         instance.create_hosting_device.assert_called_with(mock.ANY,
@@ -97,11 +96,10 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
         instance = self.plugin.return_value
         instance.get_hosting_device.return_value = return_value
 
-        res = self.api.get(_get_path('dev_mgr/hosting_devices',
-                                     id=hd_id, fmt=self.fmt))
+        res = self.api.get(_get_path('dev_mgr/hosting_devices', id=hd_id,
+                                     fmt=self.fmt))
 
-        instance.get_hosting_device.assert_called_with(mock.ANY,
-                                                       hd_id,
+        instance.get_hosting_device.assert_called_with(mock.ANY, hd_id,
                                                        fields=mock.ANY)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)

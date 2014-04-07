@@ -92,7 +92,7 @@ VM_CATEGORY = 'VM'
 HARDWARE_CATEGORY = 'Hardware'
 NETWORK_NODE_CATEGORY = 'Network_Node'
 
-HOSTING_DEVICE_MANAGER_ALIAS = 'cisco-hosting-device-manager'
+HOSTING_DEVICE_MANAGER_ALIAS = 'dev_mgr'
 DEVICE = 'hosting_device'
 DEVICES = DEVICE + 's'
 DEVICE_TEMPLATE = DEVICE + '_template'

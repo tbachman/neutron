@@ -33,7 +33,7 @@ EXT_TO_SERVICE_MAPPING = {
     'vpnaas': VPN,
     'metering': METERING,
     'router': L3_ROUTER_NAT,
-    'devmgr': DEVICE_MANAGER
+    'dev_mgr': DEVICE_MANAGER
 }
 
 # TODO(salvatore-orlando): Move these (or derive them) from conf file

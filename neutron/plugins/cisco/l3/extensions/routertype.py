@@ -13,30 +13,49 @@
 #    under the License.
 #
 # @author: Bob Melander, Cisco Systems, Inc.
+# @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 from abc import abstractmethod
 
-import webob.exc
-
 from neutron.api import extensions
-from neutron.api.v2 import attributes
+from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import base
-from neutron.api.v2 import resource
+from neutron.api.v2 import resource_helper
 from neutron.common import exceptions
-from neutron.common import utils
 from neutron import manager
+from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.plugins.common import constants as service_constants
-from neutron import wsgi
+from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
 
-ROUTER_TYPE_ALIAS = 'routertype'
-NAME = 'router_type'
-ROUTER_TYPE = NAME + ':id'
-ROUTER_TYPES = ROUTER_TYPE + 's'
 
-EXTENDED_ATTRIBUTES_2_0 = {
+class DriverNotFound(exceptions.NetworkNotFound):
+    message = _("Driver %(driver)s does not exist")
+
+
+class SchedulerNotFound(exceptions.NetworkNotFound):
+    message = _("Scheduler %(scheduler)s does not exist")
+
+
+def convert_validate_import(import_obj):
+    if import_obj is None:
+        raise DriverNotFound(driver=import_obj)
+    try:
+        kwargs = {}
+        importutils.import_object(import_obj, **kwargs)
+        return import_obj
+    except ImportError:
+        raise DriverNotFound(driver=import_obj)
+    except Exception:
+        return import_obj
+
+ROUTERTYPE = 'routertype'
+ROUTERTYPE_ALIAS = ROUTERTYPE
+TYPE_ATTR = ROUTERTYPE + ':id'
+ROUTER_TYPES = ROUTERTYPE + 's'
+
+RESOURCE_ATTRIBUTE_MAP = {
     ROUTER_TYPES: {
         'id': {'allow_post': False, 'allow_put': False,
                'validate': {'type:uuid': None},
@@ -48,6 +67,9 @@ EXTENDED_ATTRIBUTES_2_0 = {
         'description': {'allow_post': True, 'allow_put': True,
                         'validate': {'type:string': None},
                         'is_visible': True, 'default': ''},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'required_by_policy': True,
+                      'is_visible': True},
         'template_id': {'allow_post': True, 'allow_put': False,
                         'validate': {'type:uuid': None},
                         'is_visible': True},
@@ -57,38 +79,23 @@ EXTENDED_ATTRIBUTES_2_0 = {
                       'is_visible': True},
         'scheduler': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
-                      'validate': {'type:string': None},
+                      'convert_to': convert_validate_import,
                       'is_visible': True},
         'cfg_agent_driver': {'allow_post': True, 'allow_put': False,
                              'required_by_policy': True,
-                             'validate': {'type:string': None},
+                             'convert_to': convert_validate_import,
                              'is_visible': True},
-    },
-    'routers': {
-        ROUTER_TYPE: {'allow_post': True, 'allow_put': True,
-                      'validate': {'type:string': None},
-                      'default': attributes.ATTR_NOT_SPECIFIED,
-                      'is_visible': True},
     }
 }
 
-
-class RouterTypeController(wsgi.Controller):
-    def get_plugin(self):
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
-        if not plugin or not utils.is_extension_supported(plugin,
-                                                          ROUTER_TYPE_ALIAS):
-            LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router type resources'))
-            msg = _('The resource could not be found.')
-            raise webob.exc.HTTPNotFound(msg)
-        return plugin
-
-    def index(self, request, **kwargs):
-        plugin = self.get_plugin()
-        return plugin.get_router_types(request.context, **kwargs)
-
+EXTENDED_ATTRIBUTES_2_0 = {
+    'routers': {
+        TYPE_ATTR: {'allow_post': True, 'allow_put': True,
+                    'validate': {'type:string': None},
+                    'default': attr.ATTR_NOT_SPECIFIED,
+                    'is_visible': True},
+    }
+}
 
 class Routertype(extensions.ExtensionDescriptor):
     """Extension class to define different types of Neutron routers.
@@ -113,15 +120,15 @@ class Routertype(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_alias(cls):
-        return ROUTER_TYPE_ALIAS
+        return ROUTERTYPE_ALIAS
 
     @classmethod
     def get_description(cls):
-        return "Introduces router_type attribute for Neutron Routers"
+        return "Introduces router types for Neutron Routers"
 
     @classmethod
     def get_namespace(cls):
-        return "http://docs.openstack.org/ext/" + NAME + "/api/v1.0"
+        return "http://docs.openstack.org/ext/" + ROUTERTYPE + "/api/v1.0"
 
     @classmethod
     def get_updated(cls):
@@ -130,14 +137,29 @@ class Routertype(extensions.ExtensionDescriptor):
     @classmethod
     def get_resources(cls):
         """Returns Ext Resources."""
-        exts = []
-        parent = dict(member_name="router",
-                      collection_name="routers")
-        controller = resource.Resource(RouterTypeController(),
-                                       base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(
-            ROUTER_TYPES, controller, parent))
-        return exts
+        plural_mappings = resource_helper.build_plural_mappings(
+            {}, RESOURCE_ATTRIBUTE_MAP)
+        attr.PLURALS.update(plural_mappings)
+        return resource_helper.build_resource_info(plural_mappings,
+                                                   RESOURCE_ATTRIBUTE_MAP,
+                                                   constants.L3_ROUTER_NAT)
+        # """Returns Ext Resources."""
+        # exts = []
+        # my_plurals = [(key, key[:-1]) for key in RESOURCE_ATTRIBUTE_MAP.keys()]
+        # attributes.PLURALS.update(dict(my_plurals))
+        # plugin = manager.NeutronManager.get_plugin()
+        # collection_name = ROUTER_TYPES
+        # params = RESOURCE_ATTRIBUTE_MAP.get(ROUTER_TYPES, dict())
+        # controller = base.create_resource(collection_name,
+        #                                   ROUTERTYPE,
+        #                                   plugin, params, allow_bulk=True,
+        #                                   allow_pagination=True,
+        #                                   allow_sorting=True)
+        # ex = extensions.ResourceExtension(collection_name,
+        #                                   controller,
+        #                                   attr_map=params)
+        # exts.append(ex)
+        # return exts
 
     def get_extended_resources(self, version):
         if version == "2.0":
@@ -169,38 +191,40 @@ class RouterTypeHasRouters(exceptions.NeutronException):
                 "of that type exists")
 
 
+class RouterTypeNotFound(exceptions.NotFound):
+    message = _("RouterType %(router_type_id)s could not be found.")
+
+
 class RouterTypePluginBase(object):
     """REST API to manage router types.
 
     All methods except listing require admin context.
     """
-
     @abstractmethod
-    def create_router_type(self, context, router_type):
+    def create_routertype(self, context, routertype):
         """Creates a router type.
-
          Also binds it to the specified hosting device template.
          """
         pass
 
     @abstractmethod
-    def update_router_type(self, context, router_type):
+    def update_routertype(self, context, id, routertype):
         """Updates a router type."""
         pass
 
     @abstractmethod
-    def delete_router_type(self, context, id):
+    def delete_routertype(self, context, id):
         """Deletes a router type."""
         pass
 
     @abstractmethod
-    def get_router_type(self, context, id, fields=None):
-        """Lists defined router types."""
+    def get_routertype(self, context, id, fields=None):
+        """Lists defined router type."""
         pass
 
     @abstractmethod
-    def get_router_types(self, context, filters=None, fields=None,
-                         sorts=None, limit=None, marker=None,
-                         page_reverse=False):
+    def get_routertypes(self, context, filters=None, fields=None,
+                        sorts=None, limit=None, marker=None,
+                        page_reverse=False):
         """Lists defined router types."""
         pass

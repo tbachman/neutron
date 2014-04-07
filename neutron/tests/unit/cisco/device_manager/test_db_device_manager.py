@@ -15,7 +15,6 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 import contextlib
-import logging
 
 import mock
 from oslo.config import cfg
@@ -36,7 +35,6 @@ from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
 from neutron.tests.unit import test_db_plugin
 
 
-LOG = logging.getLogger(__name__)
 DB_DM_PLUGIN_KLASS = (
     "neutron.plugins.cisco.l3.db.hosting_device_manager_db."
     "HostingDeviceManagerMixin")
@@ -213,7 +211,8 @@ class TestDeviceManagerDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
         hdm_db.HostingDeviceManagerMixin.supported_extension_aliases = (
             [ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS])
         super(TestDeviceManagerDBPlugin, self).setUp(
-            ext_mgr=ext_mgr, service_plugins=service_plugins)
+            plugin=core_plugin, service_plugins=service_plugins,
+            ext_mgr=ext_mgr)
 
         if not ext_mgr:
             self.plugin = importutils.import_object(dm_plugin)
