@@ -22,8 +22,8 @@ from sqlalchemy import or_
 from sqlalchemy.sql import expression as expr
 
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.db.hd_models import HostingDevice
-from neutron.plugins.cisco.l3.db.hd_models import SlotAllocation
+from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
+from neutron.plugins.cisco.db.device_manager.hd_models import SlotAllocation
 
 LOG = logging.getLogger(__name__)
 

@@ -19,22 +19,22 @@ import contextlib
 from oslo.config import cfg
 import webob.exc
 
-from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.extensions import (ciscohostingdevicemanager as
-                                                 ciscodevmgr)
+from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
+                                              ciscodevmgr)
 from neutron.plugins.common import constants
-from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager.test_db_device_manager import (
     DeviceManagerTestCaseMixin)
-from neutron.tests.unit.cisco.l3 import l3_router_conveniences
+from neutron.tests.unit.cisco.l3 import l3_router_test_support
 from neutron.tests.unit import test_db_plugin
 
 
-CORE_PLUGIN_KLASS = device_manager_conveniences.CORE_PLUGIN_KLASS
-L3_PLUGIN_KLASS = l3_router_conveniences.L3_PLUGIN_KLASS
+CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
+L3_PLUGIN_KLASS = l3_router_test_support.L3_PLUGIN_KLASS
 
-NS_ROUTERTYPE_NAME = cl3_constants.NAMESPACE_ROUTER_TYPE
-VM_ROUTERTYPE_NAME = cl3_constants.CSR1KV_ROUTER_TYPE
+NS_ROUTERTYPE_NAME = c_constants.NAMESPACE_ROUTER_TYPE
+VM_ROUTERTYPE_NAME = c_constants.CSR1KV_ROUTER_TYPE
 HW_ROUTERTYPE_NAME = "HW_router"
 
 NOOP_SCHEDULER = ('neutron.plugins.cisco.l3.scheduler.'
@@ -147,11 +147,11 @@ class RoutertypeTestCaseMixin(object):
 
 
 class L3TestRoutertypeExtensionManager(
-    l3_router_conveniences.TestL3RouterBaseExtensionManager):
+    l3_router_test_support.TestL3RouterBaseExtensionManager):
 
     def get_resources(self):
         res = super(L3TestRoutertypeExtensionManager, self).get_resources()
-        ext_mgr = (device_manager_conveniences.
+        ext_mgr = (device_manager_test_support.
                    TestDeviceManagerExtensionManager())
         for item in ext_mgr.get_resources():
             res.append(item)
@@ -175,7 +175,7 @@ class TestRoutertypeDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
         if dm_plugin is not None:
             service_plugins['dm_plugin_name'] = dm_plugin
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_conveniences.extensions_path)
+                              l3_router_test_support.extensions_path)
         if not ext_mgr:
             ext_mgr = L3TestRoutertypeExtensionManager()
         super(TestRoutertypeDBPlugin, self).setUp(

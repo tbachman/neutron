@@ -22,7 +22,7 @@ from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.db import l3_models
+from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.scheduler import l3_agent_scheduler
 
 LOG = logging.getLogger(__name__)

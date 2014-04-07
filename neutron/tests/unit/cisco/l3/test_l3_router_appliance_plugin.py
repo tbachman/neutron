@@ -24,11 +24,11 @@ from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common.notifier import test_notifier
-from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.extensions import routertype
-from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.extensions import routertype
+from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_conveniences
+from neutron.tests.unit.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
 from neutron.tests.unit import test_l3_plugin
@@ -36,7 +36,7 @@ from neutron.tests.unit import test_l3_plugin
 LOG = logging.getLogger(__name__)
 
 
-CORE_PLUGIN_KLASS = device_manager_conveniences.CORE_PLUGIN_KLASS
+CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
     "neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin."
     "TestApplianceL3RouterServicePlugin")
@@ -54,7 +54,7 @@ class TestApplianceL3RouterExtensionManager(
 
 # A routertype and set routes capable L3 routing service plugin class
 class TestApplianceL3RouterServicePlugin(
-        l3_router_conveniences.TestL3RouterServicePlugin):
+        l3_router_test_support.TestL3RouterServicePlugin):
 
     supported_extension_aliases = ["router", "extraroute",
                                    routertype.ROUTERTYPE_ALIAS]
@@ -64,8 +64,8 @@ class L3RouterApplianceTestCaseBase(
     test_ext_extraroute.ExtraRouteDBSepTestCase,
     test_db_routertype.RoutertypeTestCaseMixin,
     test_db_device_manager.DeviceManagerTestCaseMixin,
-    l3_router_conveniences.L3RouterConvenienceMixin,
-        device_manager_conveniences.DeviceManagerConvenienceMixin):
+    l3_router_test_support.L3RouterTestSupportMixin,
+        device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
@@ -78,7 +78,7 @@ class L3RouterApplianceTestCaseBase(
             l3_plugin = L3_PLUGIN_KLASS
         service_plugins = {'l3_plugin_name': l3_plugin}
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_conveniences.extensions_path)
+                              l3_router_test_support.extensions_path)
 
         # for these tests we need to enable overlapping ips
         cfg.CONF.set_default('allow_overlapping_ips', True)
@@ -155,7 +155,7 @@ class L3RouterApplianceNamespaceTestCase(L3RouterApplianceTestCaseBase):
             ext_mgr=ext_mgr)
 
         cfg.CONF.set_override('default_router_type',
-                              cl3_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE)
 
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())

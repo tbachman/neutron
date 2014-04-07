@@ -20,13 +20,13 @@ from neutron.common import constants
 from neutron.db import agentschedulers_db
 from neutron.manager import NeutronManager
 from neutron.openstack.common import importutils
-from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.extensions import (ciscohostingdevicemanager as
-                                                 ciscodevmgr)
+from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
+                                              ciscodevmgr)
 from neutron.plugins.common import constants as svc_constants
-from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_conveniences
+from neutron.tests.unit.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit.cisco.l3 import test_l3_routertype_aware_schedulers
 from neutron.tests.unit.openvswitch import test_agent_scheduler
@@ -41,7 +41,7 @@ L3_PLUGIN_KLASS = test_l3_routertype_aware_schedulers.L3_PLUGIN_KLASS
 
 
 # A core plugin supporting Cisco device manager functionality
-class TestAgentSchedCorePlugin(device_manager_conveniences.TestCorePlugin,
+class TestAgentSchedCorePlugin(device_manager_test_support.TestCorePlugin,
                                agentschedulers_db.DhcpAgentSchedulerDbMixin):
 
     supported_extension_aliases = ["external-net", "agent",
@@ -58,8 +58,8 @@ class L3RouterApplianceAgentSchedulerTestCase(
         test_agent_scheduler.OvsAgentSchedulerTestCase,
         test_db_routertype.RoutertypeTestCaseMixin,
         test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_conveniences.L3RouterConvenienceMixin,
-        device_manager_conveniences.DeviceManagerConvenienceMixin):
+        l3_router_test_support.L3RouterTestSupportMixin,
+        device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
@@ -72,9 +72,9 @@ class L3RouterApplianceAgentSchedulerTestCase(
                           else l3_plugin)
 
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_conveniences.extensions_path)
+                              l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',
-                              cl3_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE)
 
         super(L3RouterApplianceAgentSchedulerTestCase, self).setUp()
 
@@ -96,8 +96,8 @@ class L3RouterApplianceL3AgentNotifierTestCase(
         test_agent_scheduler.OvsL3AgentNotifierTestCase,
         test_db_routertype.RoutertypeTestCaseMixin,
         test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_conveniences.L3RouterConvenienceMixin,
-        device_manager_conveniences.DeviceManagerConvenienceMixin):
+        l3_router_test_support.L3RouterTestSupportMixin,
+        device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
@@ -110,9 +110,9 @@ class L3RouterApplianceL3AgentNotifierTestCase(
                           else l3_plugin)
 
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_conveniences.extensions_path)
+                              l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',
-                              cl3_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE)
 
         super(L3RouterApplianceL3AgentNotifierTestCase, self).setUp()
 

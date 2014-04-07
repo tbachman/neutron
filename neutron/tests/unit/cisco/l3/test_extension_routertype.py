@@ -20,7 +20,7 @@ import mock
 from webob import exc
 
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.l3.extensions import routertype
+from neutron.plugins.cisco.extensions import routertype
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
 
@@ -39,14 +39,13 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
         # used in these test. That way, NeutronManager will return that plugin
         # as the l3 router service plugin.
         self._setUpExtension(
-            'neutron.plugins.cisco.l3.extensions.routertype.'
-            'RoutertypePluginBase', None,
-            routertype.RESOURCE_ATTRIBUTE_MAP, routertype.Routertype, '',
+            'neutron.plugins.cisco.extensions.routertype.RoutertypePluginBase',
+            None, routertype.RESOURCE_ATTRIBUTE_MAP, routertype.Routertype, '',
             supported_extension_aliases=['router',
                                          routertype.ROUTERTYPE_ALIAS])
 
     def test_create_routertype(self):
-        dummy = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
+        dummy = ('neutron.plugins.cisco.device_manager.hosting_device_drivers.'
                  'noop_hd_driver.NoopHostingDeviceDriver')
         rt_id = _uuid()
         data = {'routertype': {

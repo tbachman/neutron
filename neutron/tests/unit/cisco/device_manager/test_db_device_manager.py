@@ -22,27 +22,28 @@ import webob.exc
 from neutron.api import extensions as api_ext
 from neutron.common import config
 from neutron.openstack.common import importutils
-from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db as hdm_db
-from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
+from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
+                                                     as hdm_db)
+from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
-from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit import test_db_plugin
 
 
 DB_DM_PLUGIN_KLASS = (
-    'neutron.plugins.cisco.l3.db.hosting_device_manager_db.'
+    'neutron.plugins.cisco.db.device_manager.hosting_device_manager_db.'
     'HostingDeviceManagerMixin')
 
 NN_CATEGORY = ciscohostingdevicemanager.NETWORK_NODE_CATEGORY
-NN_TEMPLATE_NAME = cl3_constants.NETWORK_NODE_TEMPLATE
-NS_ROUTERTYPE_NAME = cl3_constants.NAMESPACE_ROUTER_TYPE
+NN_TEMPLATE_NAME = c_constants.NETWORK_NODE_TEMPLATE
+NS_ROUTERTYPE_NAME = c_constants.NAMESPACE_ROUTER_TYPE
 VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
 VM_TEMPLATE_NAME = "CSR1kv_template"
 VM_BOOTING_TIME = 420
 VM_SLOT_CAPACITY = 3
 VM_DESIRED_SLOTS_FREE = 3
-VM_ROUTERTYPE_NAME = cl3_constants.CSR1KV_ROUTER_TYPE
+VM_ROUTERTYPE_NAME = c_constants.CSR1KV_ROUTER_TYPE
 HW_CATEGORY = ciscohostingdevicemanager.HARDWARE_CATEGORY
 HW_TEMPLATE_NAME = "HW_template"
 HW_ROUTERTYPE_NAME = "HW_router"
@@ -50,13 +51,15 @@ HW_ROUTERTYPE_NAME = "HW_router"
 DEFAULT_SERVICE_TYPES = "router"
 NETWORK_NODE_SERVICE_TYPES = "router:fwaas:vpn"
 
-NOOP_DEVICE_DRIVER = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
-                      'noop_hd_driver.NoopHostingDeviceDriver')
-NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.l3.plugging_drivers.'
-                        'noop_plugging_driver.NoopPluggingDriver')
-TEST_DEVICE_DRIVER = ('neutron.plugins.cisco.l3.test.device_manager.'
+NOOP_DEVICE_DRIVER = ('neutron.plugins.cisco.device_manager.'
+                      'hosting_device_drivers.noop_hd_driver.'
+                      'NoopHostingDeviceDriver')
+NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.device_manager.'
+                        'plugging_drivers.noop_plugging_driver.'
+                        'NoopPluggingDriver')
+TEST_DEVICE_DRIVER = ('neutron.plugins.cisco.test.device_manager.'
                       'hd_test_driver.TestHostingDeviceDriver')
-TEST_PLUGGING_DRIVER = ('neutron.plugins.cisco.l3.test.device_manager.'
+TEST_PLUGGING_DRIVER = ('neutron.plugins.cisco.test.device_manager.'
                         'plugging_test_driver.TestTrunkingPlugDriver')
 
 DESCRIPTION = "default description"
@@ -224,7 +227,7 @@ class DeviceManagerTestCaseMixin(object):
 class TestDeviceManagerDBPlugin(
     test_db_plugin.NeutronDbPluginV2TestCase,
     DeviceManagerTestCaseMixin,
-    device_manager_conveniences.DeviceManagerConvenienceMixin):
+    device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = dict(
         (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
@@ -235,7 +238,7 @@ class TestDeviceManagerDBPlugin(
             dm_plugin = DB_DM_PLUGIN_KLASS
         service_plugins = {'dm_plugin_name': dm_plugin}
         cfg.CONF.set_override('api_extensions_path',
-                              device_manager_conveniences.extensions_path)
+                              device_manager_test_support.extensions_path)
         hdm_db.HostingDeviceManagerMixin.supported_extension_aliases = (
             [ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS])
         super(TestDeviceManagerDBPlugin, self).setUp(
@@ -245,7 +248,7 @@ class TestDeviceManagerDBPlugin(
         if not ext_mgr:
             self.plugin = importutils.import_object(dm_plugin)
             ext_mgr = api_ext.PluginAwareExtensionManager(
-                device_manager_conveniences.extensions_path,
+                device_manager_test_support.extensions_path,
                 {constants.DEVICE_MANAGER: self.plugin})
             app = config.load_paste_app('extensions_test_app')
             self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)

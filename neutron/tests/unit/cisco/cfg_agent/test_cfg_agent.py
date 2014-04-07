@@ -23,11 +23,12 @@ from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.l3.agent.cfg_agent import CiscoCfgAgent
-from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
+from neutron.plugins.cisco.cfg_agent.cfg_agent import CiscoCfgAgent
+from neutron.plugins.cisco.cfg_agent.cfg_exceptions import (
+    CSR1kvConfigException)
+from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 from neutron.tests import base
 
-from neutron.plugins.cisco.l3.common.exceptions import CSR1000vConfigException
 
 _uuid = uuidutils.generate_uuid
 HOSTNAME = 'myhost'
@@ -50,7 +51,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
                            'subnet': {'cidr': '19.4.4.0/24',
                                       'gateway_ip': '19.4.4.1'}}
         self.hosting_device = {'id': _uuid(),
-                               'host_type': 'CSR1000v',
+                               'host_type': 'CSR1kv',
                                'ip_address': '20.0.0.5',
                                'port': '23'}
         self.router = {
@@ -64,7 +65,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'neutron.agent.linux.ip_lib.device_exists')
         self.device_exists = self.device_exists_p.start()
         self.l3pluginApi_cls_p = mock.patch(
-            'neutron.plugins.cisco.l3.agent.cfg_agent.CiscoL3PluginApi')
+            'neutron.plugins.cisco.cfg_agent.cfg_agent.CiscoL3PluginApi')
         l3pluginApi_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
         l3pluginApi_cls.return_value = self.plugin_api
@@ -137,10 +138,10 @@ class TestBasicRouterOperations(base.BaseTestCase):
         e_type = 'Fake error'
         e_tag = 'Fake error tag'
         params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
-        agent.internal_network_added.side_effect = CSR1000vConfigException(
+        agent.internal_network_added.side_effect = CSR1kvConfigException(
             **params)
         ri = RouterInfo(router['id'], router=router)
-        self.assertRaises(CSR1000vConfigException,
+        self.assertRaises(CSR1kvConfigException,
                           agent.process_router, ri)
         #Clean up updated_routers set.
         agent.updated_routers.clear()

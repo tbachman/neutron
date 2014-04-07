@@ -20,7 +20,7 @@ import mock
 from webob import exc
 
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.l3.extensions import ciscohostingdevicemanager
+from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
@@ -37,7 +37,7 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
     def setUp(self):
         super(CiscoHostingDeviceManagerTestCase, self).setUp()
         self._setUpExtension(
-            'neutron.plugins.cisco.l3.extensions.ciscohostingdevicemanager.'
+            'neutron.plugins.cisco.extensions.ciscohostingdevicemanager.'
             'CiscoHostingDevicePluginBase',
             constants.DEVICE_MANAGER,
             ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP,
@@ -56,7 +56,7 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
             'cfg_agent_id': None,
             'booting_time': 10,
             'tenant_bound': None,
-            'auto_delete_on_fail': True}}
+            'auto_delete': True}}
 
         return_value = copy.copy(data['hosting_device'])
         return_value.update({'id': hd_id})
@@ -130,10 +130,12 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
 
     def test_create_hosting_device_template(self):
         hdt_id = _uuid()
-        device_driver = ('neutron.plugins.cisco.l3.hosting_device_drivers.'
-                         'noop_hd_driver.NoopHostingDeviceDriver')
-        plugging_driver = ('neutron.plugins.cisco.l3.plugging_drivers.'
-                           'noop_plugging_driver.NoopPluggingDriver')
+        device_driver = ('neutron.plugins.cisco.device_manager.'
+                         'hosting_device_drivers.noop_hd_driver.'
+                         'NoopHostingDeviceDriver')
+        plugging_driver = ('neutron.plugins.cisco.device_manager.'
+                           'plugging_drivers.noop_plugging_driver.'
+                           'NoopPluggingDriver')
         data = {'hosting_device_template': {
             'tenant_id': _uuid(),
             'name': 'HostingDeviceTemplate1',
@@ -253,7 +255,7 @@ class TestCiscoHostingDeviceManagerAttributeValidators(base.BaseTestCase):
             'not a port number')
 
     def test_convert_validate_driver(self):
-        drv = ('neutron.plugins.cisco.l3.plugging_drivers'
+        drv = ('neutron.plugins.cisco.device_manager.plugging_drivers'
                '.noop_plugging_driver.NoopPluggingDriver')
         res = ciscohostingdevicemanager.convert_validate_driver(drv)
         self.assertEqual(res, drv)

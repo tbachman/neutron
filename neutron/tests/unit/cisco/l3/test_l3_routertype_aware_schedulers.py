@@ -21,21 +21,21 @@ from neutron import context as q_context
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.common import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.db import (l3_routertype_aware_schedulers_db as
-                                         router_sch_db)
-from neutron.plugins.cisco.l3.extensions import routertype
-from neutron.tests.unit.cisco.device_manager import device_manager_conveniences
+from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
+from neutron.plugins.cisco.db.scheduler import (
+    l3_routertype_aware_schedulers_db as router_sch_db)
+from neutron.plugins.cisco.extensions import routertype
+from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_conveniences
+from neutron.tests.unit.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_l3_schedulers
 
 LOG = logging.getLogger(__name__)
 
 
-CORE_PLUGIN_KLASS = device_manager_conveniences.CORE_PLUGIN_KLASS
+CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
     "neutron.tests.unit.cisco.l3.test_l3_routertype_aware_schedulers."
     "TestL3RouterServicePlugin")
@@ -43,7 +43,7 @@ L3_PLUGIN_KLASS = (
 
 # A scheduler-enabled routertype capable L3 routing service plugin class
 class TestL3RouterServicePlugin(
-    l3_router_conveniences.TestL3RouterServicePlugin,
+    l3_router_test_support.TestL3RouterServicePlugin,
         router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
     supported_extension_aliases = ["router", routertype.ROUTERTYPE_ALIAS,
@@ -53,7 +53,7 @@ class TestL3RouterServicePlugin(
         self.agent_notifiers.update(
             {constants.AGENT_TYPE_L3:
              l3_router_rpc_joint_agent_api.L3JointAgentNotify,
-             cl3_const.AGENT_TYPE_CFG:
+             c_const.AGENT_TYPE_CFG:
              l3_router_rpc_joint_agent_api.L3JointAgentNotify})
         self.router_scheduler = importutils.import_object(
             cfg.CONF.router_type_aware_scheduler_driver)
@@ -65,8 +65,8 @@ class L3RoutertypeAwareSchedulerTestCase(
     test_l3_schedulers.L3SchedulerTestCase,
         test_db_routertype.RoutertypeTestCaseMixin,
         test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_conveniences.L3RouterConvenienceMixin,
-        device_manager_conveniences.DeviceManagerConvenienceMixin):
+        l3_router_test_support.L3RouterTestSupportMixin,
+        device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
@@ -80,7 +80,7 @@ class L3RoutertypeAwareSchedulerTestCase(
         service_plugins = {'l3_plugin_name': l3_plugin}
 
         cfg.CONF.set_override('api_extensions_path',
-                              l3_router_conveniences.extensions_path)
+                              l3_router_test_support.extensions_path)
         ext_mgr = test_db_routertype.L3TestRoutertypeExtensionManager()
 
         # call grandparent's setUp() to avoid that wrong plugin and
@@ -90,7 +90,7 @@ class L3RoutertypeAwareSchedulerTestCase(
             ext_mgr=ext_mgr)
 
         cfg.CONF.set_override('default_router_type',
-                              cl3_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE)
 
         self.adminContext = q_context.get_admin_context()
         self.plugin = manager.NeutronManager.get_plugin()

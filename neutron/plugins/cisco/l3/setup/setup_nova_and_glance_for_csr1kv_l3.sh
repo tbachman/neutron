@@ -147,12 +147,12 @@ fi
 echo -n "Checking if '$csr1kvHostingDeviceTemplateName' is registered as hosting device template in $osn ..."
 if [ "$plugin" == "n1kv" ]; then
    db="cisco_$osn"
-   hd_driver="neutron.plugins.cisco.l3.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
-   plugging_driver="neutron.plugins.cisco.l3.plugging_drivers.n1kv_trunking_driver.N1kvTrunkingPlugDriver"
+   hd_driver="neutron.plugins.cisco.device_manager.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
+   plugging_driver="neutron.plugins.cisco.device_manager.plugging_drivers.n1kv_trunking_driver.N1kvTrunkingPlugDriver"
 else
    db="csr1kv_ovs_$osn"
-   hd_driver="neutron.plugins.cisco.l3.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
-   plugging_driver="neutron.plugins.cisco.l3.plugging_drivers.ovs_trunking_driver.OvsTrunkingPlugDriver"
+   hd_driver="neutron.plugins.cisco.device_manager.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
+   plugging_driver="neutron.plugins.cisco.device_manager.plugging_drivers.ovs_trunking_driver.OvsTrunkingPlugDriver"
 fi
 sql_statement="SELECT id FROM hostingdevicetemplates where id='11111111-2222-3333-4444-555555555555'"
 hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
@@ -195,8 +195,8 @@ if [ "$hasTemplate" != "Yes" ]; then
    ('$tenantId', '11111110-2222-3333-4444-555555555555',
     'Network_Node_template', TRUE, 'Hardware', 'router:VPN:FW',
     NULL, NULL, NULL, 'CLI', NULL, NULL, 200, 0, NULL,
-    'neutron.plugins.cisco.l3.hosting_device_drivers.noop_hd_driver.NoopHostingDeviceDriver',
-    'neutron.plugins.cisco.l3.plugging_drivers.noop_plugging_driver.NoopPluggingDriver')"
+    'neutron.plugins.cisco.device_manager.hosting_device_drivers.noop_hd_driver.NoopHostingDeviceDriver',
+    'neutron.plugins.cisco.device_manager.plugging_drivers.noop_plugging_driver.NoopPluggingDriver')"
    mysql -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
@@ -217,7 +217,7 @@ if [ "$hasRouterType" != "Yes" ]; then
     'CSR1kv_router','Neutron Router implemented in Cisco CSR1kv',
     '11111111-2222-3333-4444-555555555555', 6,
     'neutron.plugins.cisco.l3.scheduler.l3_router_hosting_device_scheduler.L3RouterHostingDeviceScheduler',
-    'neutron.plugins.cisco.l3.agent.csr1000v.cisco_csr_network_driver.CiscoCSRDriver')"
+    'neutron.plugins.cisco.cfg_agent.csr1kv.cisco_csr_network_driver.CiscoCSRDriver')"
     mysql -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
