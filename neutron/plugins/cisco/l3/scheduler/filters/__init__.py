@@ -6,7 +6,7 @@ __author__ = 'nalle'
 Scheduler host filters
 """
 
-from neutron.plugins.cisco.l3.scheduler import filters
+from neutron.plugins.cisco.l3.scheduler.filters import filters
 
 class BaseHostFilter(filters.BaseFilter):
     """Skeleton for filters"""
