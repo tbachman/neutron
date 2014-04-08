@@ -7,7 +7,7 @@ from oslo.config import cfg
 from neutron.openstack.common.gettextutils import _
 from neutron.openstack.common import log as logging
 #from neutron.plugins.cisco.l3.scheduler import scheduler_options
-from neutron.plugins.cisco.l3.scheduler import filters
+from neutron.plugins.cisco.l3.scheduler.filters import filters
 from neutron.plugins.cisco.l3.scheduler import weights
 
 CONF = cfg.CONF

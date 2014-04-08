@@ -1,7 +1,7 @@
 __author__ = 'nalle'
 
 
-from neutron.plugins.cisco.l3.scheduler import filters
+from neutron.plugins.cisco.l3.scheduler.filters import filters
 
 
 class AllHostsFilter(filters.BaseHostFilter):
