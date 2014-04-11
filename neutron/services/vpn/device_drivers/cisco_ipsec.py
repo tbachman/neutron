@@ -16,6 +16,7 @@
 
 import abc
 from collections import namedtuple
+import copy
 import requests
 
 import netaddr
@@ -51,6 +52,11 @@ RollbackStep = namedtuple('RollbackStep', ['action', 'resource_id', 'title'])
 
 class CsrResourceCreateFailure(exceptions.NeutronException):
     message = _("Cisco CSR failed to create %(resource)s (%(which)s)")
+
+
+class CsrAdminStateChangeFailure(exceptions.NeutronException):
+    message = _("Cisco CSR failed to change %(tunnel)s admin state to "
+                "%(state)s")
 
 
 class CsrDriverMismatchError(exceptions.NeutronException):
@@ -221,8 +227,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
     def vpnservice_updated(self, context, **kwargs):
         """Handle VPNaaS service driver change notifications."""
-        LOG.debug(_("Handling VPN service update notification '%s'"),
-                  kwargs.get('reason', ''))
+        reason = kwargs.get('reason', '')
+        LOG.debug(_("Handling VPN service update notification '%s'"), reason)
         self.sync(context, [])
 
     def create_vpn_service(self, service_data):
@@ -239,36 +245,37 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         conn_id = conn_data['id']
         conn_is_admin_up = conn_data[u'admin_state_up']
 
-        if conn_id in vpn_service.conn_state:
+        if conn_id in vpn_service.conn_state:  # Existing connection...
             ipsec_conn = vpn_service.conn_state[conn_id]
+            config_changed = ipsec_conn.check_for_changes(conn_data)
+            if config_changed:
+                LOG.debug(_("Update: Existing connection %s changed"), conn_id)
+                ipsec_conn.delete_ipsec_site_connection(context, conn_id)
+                ipsec_conn.create_ipsec_site_connection(context, conn_data)
+                ipsec_conn.conn_info = copy.deepcopy(conn_data)
+
             if ipsec_conn.forced_down:
                 if vpn_service.is_admin_up and conn_is_admin_up:
                     LOG.debug(_("Update: Connection %s no longer admin down"),
                               conn_id)
-                    # TODO(pcm) Do no shut on tunnel, once CSR supports
+                    ipsec_conn.set_admin_state(is_up=True)
                     ipsec_conn.forced_down = False
-                    ipsec_conn.create_ipsec_site_connection(context, conn_data)
             else:
                 if not vpn_service.is_admin_up or not conn_is_admin_up:
                     LOG.debug(_("Update: Connection %s forced to admin down"),
                               conn_id)
-                    # TODO(pcm) Do shut on tunnel, once CSR supports
+                    ipsec_conn.set_admin_state(is_up=False)
                     ipsec_conn.forced_down = True
-                    ipsec_conn.delete_ipsec_site_connection(context, conn_id)
-                else:
-                    # TODO(pcm) FUTURE handle connection update
-                    LOG.debug(_("Update: Ignoring existing connection %s"),
-                              conn_id)
         else:  # New connection...
             ipsec_conn = vpn_service.create_connection(conn_data)
+            ipsec_conn.create_ipsec_site_connection(context, conn_data)
             if not vpn_service.is_admin_up or not conn_is_admin_up:
-                # TODO(pcm) Create, but set tunnel down, once CSR supports
                 LOG.debug(_("Update: Created new connection %s in admin down "
                             "state"), conn_id)
+                ipsec_conn.set_admin_state(is_up=False)
                 ipsec_conn.forced_down = True
             else:
                 LOG.debug(_("Update: Created new connection %s"), conn_id)
-                ipsec_conn.create_ipsec_site_connection(context, conn_data)
 
         ipsec_conn.is_dirty = False
         ipsec_conn.last_status = conn_data['status']
@@ -538,12 +545,38 @@ class CiscoCsrIPSecConnection(object):
     """State and actions for IPSec site-to-site connections."""
 
     def __init__(self, conn_info, csr):
-        self.conn_id = conn_info['id']
+        self.conn_info = copy.deepcopy(conn_info)
         self.csr = csr
         self.steps = []
         self.forced_down = False
-        self.is_admin_up = conn_info[u'admin_state_up']
-        self.tunnel = conn_info['cisco']['site_conn_id']
+        self.changed = False
+
+    @property
+    def conn_id(self):
+        return self.conn_info['id']
+
+    @property
+    def is_admin_up(self):
+        return self.conn_info['admin_state_up']
+
+    @is_admin_up.setter
+    def is_admin_up(self, is_up):
+        self.conn_info['admin_state_up'] = is_up
+
+    @property
+    def tunnel(self):
+        return self.conn_info['cisco']['site_conn_id']
+
+    def check_for_changes(self, curr_conn):
+        return (
+            self.conn_info['mtu'] != curr_conn['mtu'] or
+            self.conn_info['psk'] != curr_conn['psk'] or
+            self.conn_info['peer_address'] != curr_conn['peer_address'] or
+            self.conn_info['peer_cidrs'] != curr_conn['peer_cidrs'] or
+            self.conn_info['ike_policy'] != curr_conn['ike_policy'] or
+            self.conn_info['ipsec_policy'] != curr_conn['ipsec_policy'] or
+            self.conn_info['cisco'] != curr_conn['cisco']
+        )
 
     def find_current_status_in(self, statuses):
         if self.tunnel in statuses:
@@ -821,3 +854,12 @@ class CiscoCsrIPSecConnection(object):
 
         LOG.info(_("SUCCESS: Deleted IPSec site-to-site connection %s"),
                  conn_id)
+
+    def set_admin_state(self, is_up):
+        """Change the admin state for the IPSec connection."""
+        self.csr.set_ipsec_connection_state(self.tunnel, admin_up=is_up)
+        if self.csr.status != requests.codes.NO_CONTENT:
+            state = "UP" if is_up else "DOWN"
+            LOG.error(_("Unable to change %(tunnel)s admin state to "
+                        "%(state)s"), {'tunnel': self.tunnel, 'state': state})
+            raise CsrAdminStateChangeFailure(tunnel=self.tunnel, state=state)
