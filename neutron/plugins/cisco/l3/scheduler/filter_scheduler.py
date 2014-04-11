@@ -6,7 +6,7 @@ from oslo.config import cfg
 
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
-from neutron.plugins.cisco.l3.scheduler import weights
+from neutron.plugins.cisco.l3.scheduler.weights import weights_base
 from neutron.plugins.cisco.l3.db.filter_chain_db import FilterChain as Fc
 
 CONF = cfg.CONF
@@ -32,11 +32,11 @@ class FilterScheduler(object):
         self.filter_classes = self.filter_handler.get_matching_classes(
             CONF.scheduler_available_filters)
 
-        self.weight_handler = weights.HostWeightHandler()
+        self.weight_handler = weights_base.HostWeightHandler()
         self.weight_classes = self.weight_handler.get_matching_classes(
             CONF.weight_classes)
 
-    def schedule_instance(self, context, resource, hosts, chain_id, weight_properties):
+    def schedule_instance(self, context, resource, hosts, chain_id, weight_functions):
 
         filter_chain = Fc.get_filter_chain(context, chain_id)
         if filter_chain is None:
@@ -45,12 +45,15 @@ class FilterScheduler(object):
         good_filter_chain = self._choose_host_filters(filter_chain)
         try:
              weighed_host = self._schedule(context, resource,
-                                       hosts, weight_properties, good_filter_chain)
+                                       hosts, weight_functions, good_filter_chain)
         except IndexError:
             # FIX - raise exception.NoValidHost(reason="")
             pass
 
         resource_id = resource.get('id')
+
+
+
 
             #TO_DO BIND INSTANCE TO HOST.
             #We got a host from weighed_hosts
@@ -58,7 +61,7 @@ class FilterScheduler(object):
             #Bind in db, look at Bobs code
 
     def _schedule(self, context, resource, hosts,
-                  weight_properties, filter_chain=None, ):
+                  weight_functions, filter_chain=None, ):
 
         filtered_hosts = self.get_filtered_hosts(resource, hosts,
                                                  filter_chain)
@@ -67,7 +70,7 @@ class FilterScheduler(object):
             return None
 
         chosen_host = self.get_weighed_hosts(filtered_hosts,
-                                             weight_properties)
+                                             weight_functions)
         if not chosen_host:
             return None
 
