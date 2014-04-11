@@ -62,9 +62,5 @@ class HostFilterHandler(BaseFilterHandler):
 
 
 def all_filters():
-    """Return a list of filter classes found in this directory.
 
-    This method is used as the default for available scheduler filters
-    and should return a list of all filter classes available.
-    """
     return HostFilterHandler().get_all_classes()
