@@ -22,7 +22,6 @@ import webob.exc
 
 from neutron.api import extensions as api_ext
 from neutron.common import config
-from neutron import context as n_context
 from neutron.manager import NeutronManager
 from neutron.openstack.common import importutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
