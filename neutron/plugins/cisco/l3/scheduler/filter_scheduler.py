@@ -2,6 +2,7 @@ __author__ = 'nalle'
 
 '''Does not iterate over multiple instances in a request.
 Assumes that the plugins forwards a list of hosts'''
+
 from oslo.config import cfg
 
 from neutron.openstack.common import log as logging
@@ -14,11 +15,11 @@ LOG = logging.getLogger(__name__)
 
 filter_scheduler_opts = [
     cfg.MultiStrOpt('scheduler_available_filters',
-                    default=['neutron.plugins.cisco.l3.scheduler.filters.all_filters'],
+                    default=['neutron.plugins.cisco.l3.scheduler.filters.filters_base.all_filters'],
                     help='Filter classes available to the scheduler'),
 
     cfg.ListOpt('scheduler_weight_classes',
-                default=['neutron.plugins.cisco.l3.scheduler.weights.all_weighers'],
+                default=['neutron.plugins.cisco.l3.scheduler.weights.weights_base.all_weighers'],
                 help='Which weight class names to use for weighing hosts')
 ]
 
@@ -44,21 +45,11 @@ class FilterScheduler(object):
             pass
         good_filter_chain = self._choose_host_filters(filter_chain)
         try:
-             weighed_host = self._schedule(context, resource,
-                                       hosts, weight_functions, good_filter_chain)
-        except IndexError:
+            return self._schedule(context, resource,
+                                  hosts, weight_functions, good_filter_chain)
+        except :
             # FIX - raise exception.NoValidHost(reason="")
             pass
-
-        resource_id = resource.get('id')
-
-
-
-
-            #TO_DO BIND INSTANCE TO HOST.
-            #We got a host from weighed_hosts
-            #we got a resource
-            #Bind in db, look at Bobs code
 
     def _schedule(self, context, resource, hosts,
                   weight_functions, filter_chain=None, ):
@@ -69,12 +60,10 @@ class FilterScheduler(object):
             # All hosts failed all filters
             return None
 
-        chosen_host = self.get_weighed_hosts(filtered_hosts,
-                                             weight_functions)
-        if not chosen_host:
-            return None
+        weighted_hosts = self.get_weighed_hosts(filtered_hosts,
+                                                weight_functions)
 
-        return chosen_host
+        return weighted_hosts
 
     def get_filtered_hosts(self, resource, hosts, filter_chain):
         """Filter hosts and return only ones passing all filters."""
