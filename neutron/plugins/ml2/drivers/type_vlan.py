@@ -67,6 +67,7 @@ class VlanAllocation(model_base.BASEV2):
                         autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False)
     network_id = sa.Column(sa.String(255), nullable=True)
+    provider_network = sa.Column(sa.Boolean, default=False)
 
 
 class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
@@ -162,15 +163,15 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
         self._sync_vlan_allocations()
         LOG.info(_("VlanTypeDriver initialization complete"))
 
-    def create_network(self, session, context):
-        net_data = context._network
+    def create_network(self, session, net_data):
         segments = self._process_provider_create(net_data)
         net_id = net_data.get('id')
 
         if segments:
             all_segments = []
             for segment in segments:
-                one_seg = self.reserve_provider_segment(session, segment)
+                one_seg = self.reserve_provider_segment(session, net_id,
+                                                        segment)
                 all_segments.append(one_seg)
             return all_segments
         else:
@@ -218,7 +219,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                 msg = _("%s prohibited for VLAN provider network") % key
                 raise exc.InvalidInput(error_message=msg)
 
-    def reserve_provider_segment(self, session, segment):
+    def reserve_provider_segment(self, session, network_id, segment):
         physical_network = segment[api.PHYSICAL_NETWORK]
         vlan_id = segment[api.SEGMENTATION_ID]
         with session.begin(subtransactions=True):
@@ -236,6 +237,8 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                           {'vlan_id': vlan_id,
                            'physical_network': physical_network})
                 alloc.allocated = True
+                alloc.network_id = network_id
+                alloc.provider_network = True
                 return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                         api.PHYSICAL_NETWORK: alloc.physical_network,
                         api.SEGMENTATION_ID: alloc.vlan_id}
@@ -246,7 +249,9 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                            'physical_network': physical_network})
                 alloc = VlanAllocation(physical_network=physical_network,
                                        vlan_id=vlan_id,
-                                       allocated=True)
+                                       allocated=True,
+                                       network_id=network_id,
+                                       provider_network=True)
                 session.add(alloc)
                 return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                         api.PHYSICAL_NETWORK: alloc.physical_network,

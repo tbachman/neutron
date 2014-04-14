@@ -260,17 +260,21 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         with session.begin(subtransactions=True):
             self._ensure_default_security_group(context, tenant_id)
             result = super(Ml2Plugin, self).create_network(context, network)
+            net_data['id'] = result.get('id')
+            type_result = self.type_manager.create_network(session, net_data)
+
+            if type_result:
+                for one_result in type_result:
+                    for one_segment in one_result:
+                        # Track this type segment in the DB
+                        db.add_network_segment(
+                            session,
+                            net_data.get('id'),
+                            one_segment[api.NETWORK_TYPE])
+
             network_context = driver_context.NetworkContext(self, context,
                                                             result)
             self._process_l3_create(context, result, net_data)
-            type_result = self.type_manager.create_network(session,
-                                                           network_context)
-            if type_result:
-                for one_result in type_result:
-                    # Track this type segment in the DB
-                    db.add_network_segment(session,
-                                           network_context.current.get('id'),
-                                           one_result[api.NETWORK_TYPE])
 
             self._extend_network_dict_provider(context, result)
             self.mechanism_manager.create_network_precommit(network_context)
