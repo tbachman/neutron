@@ -310,3 +310,7 @@ class NetworkVxlanPortRangeError(NeutronException):
 
 class DuplicatedExtension(NeutronException):
     message = _("Found duplicate extension: %(alias)s")
+
+
+class NoValidHost(NeutronException):
+    message = _("No valid host was found. %(reason)s")

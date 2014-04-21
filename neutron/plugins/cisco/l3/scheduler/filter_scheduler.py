@@ -4,7 +4,7 @@ __author__ = 'nalle'
 Assumes that the plugins forwards a list of hosts'''
 
 from oslo.config import cfg
-
+from neutron.common import exceptions
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
 from neutron.plugins.cisco.l3.scheduler.weights import weights_base
@@ -48,9 +48,8 @@ class FilterScheduler(object):
         try:
             return self._schedule(resource,
                                   hosts, weight_functions, good_filter_chain)
-        except :
-            # FIX - raise exception.NoValidHost(reason="")
-            pass
+        except:
+            raise exceptions.NoValidHost(reason="")
 
     def _schedule(self, resource, hosts,
                   weight_functions, filter_chain=None):
@@ -58,8 +57,7 @@ class FilterScheduler(object):
         filtered_hosts = self.get_filtered_hosts(resource, hosts,
                                                  filter_chain)
         if not filtered_hosts:
-            # All hosts failed all filters
-            return None
+            raise exceptions.NoValidHost(reason="")
 
         weighted_hosts = self.get_weighed_hosts(filtered_hosts,
                                                 weight_functions)
