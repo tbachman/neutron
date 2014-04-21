@@ -37,9 +37,7 @@ class FilterScheduler(object):
         self.weight_classes = self.weight_handler.get_matching_classes(
             CONF.weight_classes)
 
-    def schedule_instance(self, context, resource, hosts, chain_id, weight_functions, **kwargs):
-
-        #Check cache, if not, check db.
+    def schedule_instance(self, context, resource, hosts, chain_id, weight_functions):
 
         filter_chain = Fc.get_filter_chain(context, chain_id)
         if filter_chain is None:
@@ -49,26 +47,26 @@ class FilterScheduler(object):
         good_filter_chain = self._choose_host_filters(filter_chain)
         try:
             return self._schedule(resource,
-                                  hosts, weight_functions, good_filter_chain, **kwargs)
+                                  hosts, weight_functions, good_filter_chain)
         except:
             raise exceptions.NoValidHost(reason="")
 
     def _schedule(self, resource, hosts,
-                  weight_functions, filter_chain=None, **kwargs):
+                  weight_functions, filter_chain=None):
 
         filtered_hosts = self.get_filtered_hosts(resource, hosts,
-                                                 filter_chain, **kwargs)
+                                                 filter_chain)
         if not filtered_hosts:
             raise exceptions.NoValidHost(reason="")
 
         weighted_hosts = self.get_weighed_hosts(filtered_hosts,
-                                                weight_functions, **kwargs)
+                                                weight_functions)
 
         return weighted_hosts
 
-    def get_filtered_hosts(self, resource, hosts, filter_chain, **kwargs):
+    def get_filtered_hosts(self, resource, hosts, filter_chain):
         """Filter hosts and return only ones passing all filters."""
-        return self.filter_handler.get_filtered_objects(resource, hosts, filter_chain, **kwargs)
+        return self.filter_handler.get_filtered_objects(resource, hosts, filter_chain)
 
     def get_weighed_hosts(self, hosts, weight_functions):
         """Weigh the hosts."""
