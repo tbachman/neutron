@@ -22,3 +22,19 @@ class FilterChainManager(base_db.CommonDbMixin):
             return filters
         except exc.NoResultFound:
             pass
+
+    def update_filter_chain(self, context, filter_id, new_filter_chain):
+        filters_string = ', '.join(new_filter_chain)
+        with context.session.begin(subtransactions=True):
+            query = context.session.query(
+                FilterChain).with_lockmode('update')
+            db = query.filter_by(id=filter_id).one()
+            db.update(filters_string)
+
+    def delete_filter_chain(self, context, filter_id):
+
+        with context.session.begin(subtransactions=True):
+            query = context.session.query(
+                FilterChain).with_lockmode('update')
+            db = query.filter_by(id=filter_id).one()
+            context.session.delete(db)

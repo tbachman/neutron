@@ -8,7 +8,7 @@ from oslo.config import cfg
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
 from neutron.plugins.cisco.l3.scheduler.weights import weights_base
-from neutron.plugins.cisco.l3.db.filter_chain_db import FilterChain as Fc
+from neutron.plugins.cisco.l3.db.filter_chain_db import FilterChainManager as Fc
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -43,16 +43,17 @@ class FilterScheduler(object):
         if filter_chain is None:
             #EXCPETION - filter chain does not exist in database
             pass
+
         good_filter_chain = self._choose_host_filters(filter_chain)
         try:
-            return self._schedule(context, resource,
+            return self._schedule(resource,
                                   hosts, weight_functions, good_filter_chain)
         except :
             # FIX - raise exception.NoValidHost(reason="")
             pass
 
-    def _schedule(self, context, resource, hosts,
-                  weight_functions, filter_chain=None, ):
+    def _schedule(self, resource, hosts,
+                  weight_functions, filter_chain=None):
 
         filtered_hosts = self.get_filtered_hosts(resource, hosts,
                                                  filter_chain)
