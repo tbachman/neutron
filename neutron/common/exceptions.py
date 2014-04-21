@@ -323,3 +323,7 @@ class DeviceIDNotOwnedByTenant(Conflict):
 
 class InvalidCIDR(BadRequest):
     message = _("Invalid CIDR %(input)s given as IP prefix")
+
+
+class NoValidHost(NeutronException):
+    message = _("No valid host was found. %(reason)s")
