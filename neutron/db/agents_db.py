@@ -217,3 +217,7 @@ class AgentExtRpcCallback(object):
         if not self.plugin:
             self.plugin = manager.NeutronManager.get_plugin()
         self.plugin.create_or_update_agent(context, agent_state)
+
+
+
+
