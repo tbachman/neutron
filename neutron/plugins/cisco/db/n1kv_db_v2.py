@@ -1112,7 +1112,7 @@ class NetworkProfile_db_mixin(object):
             is_updated = True
         if context.is_admin and "remove_tenants" in p:
             for remove_tenant in p['remove_tenants']:
-                if remove_tenant == context.tenant_id: 
+                if remove_tenant == context.tenant_id:
                     continue
                 delete_profile_binding(remove_tenant, id)
             is_updated = True
