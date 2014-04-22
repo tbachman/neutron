@@ -9,3 +9,6 @@ class AllHostsFilter(filters_base.BaseHostFilter):
 
     def host_passes(self, host, resource):
         return True
+
+    def get_description(self):
+        ""

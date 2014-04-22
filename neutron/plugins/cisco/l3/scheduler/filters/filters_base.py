@@ -46,6 +46,10 @@ class BaseHostFilter(BaseFilter):
 
         raise NotImplementedError()
 
+    def get_description(self):
+
+        raise NotImplementedError()
+
 
 class HostFilterHandler(BaseFilterHandler):
     def __init__(self):
