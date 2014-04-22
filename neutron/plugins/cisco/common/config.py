@@ -82,6 +82,9 @@ cisco_n1k_opts = [
                help=_("N1K Policy profile polling duration in seconds")),
     cfg.IntOpt('http_timeout', default=15,
                help=_("N1K http timeout duration in seconds")),
+    cfg.BoolOpt('restrict_policy_profiles', default=False,
+                help=_("Restrict the visibility of policy profiles to the "
+                       "tenants")),
 ]
 
 cfg.CONF.register_opts(cisco_opts, "CISCO")
