@@ -405,17 +405,17 @@ def delete_segment_allocations(db_session, net_p):
     with db_session.begin(subtransactions=True):
         seg_min, seg_max = get_segment_range(net_p)
         if net_p['segment_type'] == c_const.NETWORK_TYPE_VLAN:
-            db_session.query(n1kv_models_v2.N1kvVlanAllocation).filter(
-                (n1kv_models_v2.N1kvVlanAllocation.physical_network ==
-                 net_p['physical_network']),
-                (n1kv_models_v2.N1kvVlanAllocation.vlan_id >= seg_min),
-                (n1kv_models_v2.N1kvVlanAllocation.vlan_id <=
-                 seg_max)).delete()
+            for vlan_id in range(seg_min, seg_max + 1):
+                alloc = (db_session.query(n1kv_models_v2.N1kvVlanAllocation).
+                         filter_by(physical_network=net_p['physical_network'],
+                                   vlan_id=vlan_id).
+                         one())
+                db_session.delete(alloc)
         elif net_p['segment_type'] == c_const.NETWORK_TYPE_OVERLAY:
-            db_session.query(n1kv_models_v2.N1kvVxlanAllocation).filter(
-                (n1kv_models_v2.N1kvVxlanAllocation.vxlan_id >= seg_min),
-                (n1kv_models_v2.N1kvVxlanAllocation.vxlan_id <=
-                 seg_max)).delete()
+            for vxlan_id in range(seg_min, seg_max + 1):
+                alloc = (db_session.query(n1kv_models_v2.N1kvVxlanAllocation).
+                         filter_by(vxlan_id=vxlan_id).one())
+                db_session.delete(alloc)
 
 
 def sync_vlan_allocations(db_session, net_p):
@@ -933,6 +933,29 @@ def delete_profile_binding(db_session, tenant_id, profile_id):
         return
 
 
+def update_profile_binding(db_session, profile_id, tenants, profile_type):
+    LOG.debug(_('delete profile_binding()'))
+    if profile_type not in ["network", "policy"]:
+        raise n_exc.NeutronException(_("Invalid profile type"))
+    db_session = db_session or db.get_session()
+    with db_session.begin(subtransactions=True):
+        old_tenants = (db_session.query(n1kv_models_v2.ProfileBinding).
+                       filter_by(profile_id=profile_id,
+                                 profile_type=profile_type).all())
+        new_tenants_set = set(tenants)
+        old_tenants_set = set([tenant['tenant_id'] for tenant in old_tenants])
+        for tenant_id in old_tenants_set - new_tenants_set:
+            for tenant in old_tenants:
+                if tenant_id == tenant['tenant_id']:
+                    db_session.delete(tenant)
+                    break
+        for tenant_id in new_tenants_set - old_tenants_set:
+            tenant = n1kv_models_v2.ProfileBinding(profile_type=profile_type,
+                                                   tenant_id=tenant_id,
+                                                   profile_id=profile_id)
+            db_session.add(tenant)
+
+
 def _get_profile_bindings(db_session, profile_type=None):
     """
     Retrieve a list of profile bindings.
@@ -1043,10 +1066,11 @@ class NetworkProfile_db_mixin(object):
                                    context.tenant_id,
                                    net_profile.id,
                                    c_const.NETWORK)
-            if p.get("add_tenant"):
-                self.add_network_profile_tenant(context.session,
-                                                net_profile.id,
-                                                p["add_tenant"])
+            if p.get("add_tenants"):
+                for tenant in p["add_tenants"]:
+                    self.add_network_profile_tenant(context.session,
+                                                    net_profile.id,
+                                                    tenant)
         return self._make_network_profile_dict(net_profile)
 
     def delete_network_profile(self, context, id):
@@ -1081,28 +1105,33 @@ class NetworkProfile_db_mixin(object):
         p = network_profile["network_profile"]
         original_net_p = get_network_profile(context.session, id)
         # Update network profile to tenant id binding.
-        if context.is_admin and "add_tenant" in p:
-            self.add_network_profile_tenant(context.session, id,
-                                            p["add_tenant"])
+        if context.is_admin and "add_tenants" in p:
+            if context.tenant_id not in p['add_tenants']:
+                p['add_tenants'].append(context.tenant_id)
+            update_profile_binding(context.session, id,
+                                   p['add_tenants'], c_const.NETWORK)
             is_updated = True
-        if context.is_admin and "remove_tenant" in p:
-            delete_profile_binding(context.session, p["remove_tenant"], id)
+        if context.is_admin and "remove_tenants" in p:
+            for remove_tenant in p['remove_tenants']:
+                if remove_tenant == context.tenant_id: 
+                    continue
+                delete_profile_binding(remove_tenant, id)
             is_updated = True
         if original_net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
             #TODO(abhraut): Remove check when Trunk supports segment range.
-            if p.get('segment_range'):
+            if "segment_range" in p and p["segment_range"]:
                 msg = _("segment_range not required for TRUNK")
-                LOG.error(msg)
+                LOG.exception(msg)
                 raise n_exc.InvalidInput(error_message=msg)
         if original_net_p.segment_type in [c_const.NETWORK_TYPE_VLAN,
                                            c_const.NETWORK_TYPE_TRUNK]:
-            if p.get("multicast_ip_range"):
+            if "multicast_ip_range" in p and p["multicast_ip_range"]:
                 msg = _("multicast_ip_range not required")
-                LOG.error(msg)
+                LOG.exception(msg)
                 raise n_exc.InvalidInput(error_message=msg)
         # Update segment range if network profile is not in use.
-        if (p.get("segment_range") and
-            p.get("segment_range") != original_net_p.segment_range):
+        if ("segment_range" in p and p["segment_range"] and
+            p["segment_range"] != original_net_p.segment_range):
             if not self._segment_in_use(context.session, original_net_p):
                 delete_segment_allocations(context.session, original_net_p)
                 updated_net_p = update_network_profile(context.session, id, p)
@@ -1366,7 +1395,7 @@ class NetworkProfile_db_mixin(object):
                         "max": c_const.NEXUS_VXLAN_MAX})
                 LOG.error(msg)
                 raise n_exc.InvalidInput(error_message=msg)
-            profiles = _get_network_profiles(db_session=context.session)
+            profiles = _get_network_profiles()
         if profiles:
             for profile in profiles:
                 if id and profile.id == id:

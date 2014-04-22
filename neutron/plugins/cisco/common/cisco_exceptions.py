@@ -171,8 +171,8 @@ class NetworkProfileNotFound(exceptions.NotFound):
 
 class NetworkProfileInUse(exceptions.InUse):
     """Network Profile with the given UUID is in use."""
-    message = _("One or more network segments belonging to network "
-                "profile %(profile)s is in use.")
+    message = _("One or more network segments belonging to network"
+                " profile %(profile)s is in use.")
 
 
 class NoMoreNetworkSegments(exceptions.NoNetworkAvailable):
