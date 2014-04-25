@@ -1,10 +1,12 @@
-__author__ = 'nalle'
+#Taken from Nova
 
 import inspect
 import os
 import sys
 
+from neutron.common import exceptions
 from neutron.openstack.common import importutils
+
 
 class BaseLoader(object):
     def __init__(self, loadable_cls_type):
@@ -13,7 +15,31 @@ class BaseLoader(object):
         self.package = mod.__package__
         self.loadable_cls_type = loadable_cls_type
 
+    def _is_correct_class(self, obj):
+        """Return whether an object is a class of the correct type and
+        is not prefixed with an underscore.
+        """
+        return (inspect.isclass(obj) and
+                (not obj.__name__.startswith('_')) and
+                issubclass(obj, self.loadable_cls_type))
+
+    def _get_classes_from_module(self, module_name):
+        """Get the classes from a module that match the type we want."""
+        classes = []
+        module = importutils.import_module(module_name)
+        for obj_name in dir(module):
+            # Skip objects that are meant to be private.
+            if obj_name.startswith('_'):
+                continue
+            itm = getattr(module, obj_name)
+            if self._is_correct_class(itm):
+                classes.append(itm)
+        return classes
+
     def get_all_classes(self):
+        """Get the classes of the type we want from all modules found
+        in the directory that defines this class.
+        """
         classes = []
         for dirpath, dirnames, filenames in os.walk(self.path):
             relpath = os.path.relpath(dirpath, self.path)
@@ -47,7 +73,6 @@ class BaseLoader(object):
                     classes.append(cls)
             else:
                 error_str = 'Not a class of the correct type'
-               # raise exception.ClassNotFound(class_name=cls_name,
-                                             # exception=error_str)
+                raise exceptions.ClassNotFound(class_name=cls_name,
+                                              exception=error_str)
         return classes
-

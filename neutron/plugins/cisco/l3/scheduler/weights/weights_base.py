@@ -80,7 +80,7 @@ class BaseWeigher(object):
 class BaseWeightHandler(loadables.BaseLoader):
     object_class = WeighedObject
 
-    def get_weighed_objects(self, hosts, weight_functions):
+    def get_weighed_objects(self, hosts, weight_functions, **kwargs):
         """Return a sorted (descending), normalized list of WeighedObjects."""
 
         if not hosts:

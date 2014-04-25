@@ -35,11 +35,13 @@ from neutron.plugins.cisco.l3.db import (composite_agentschedulers_db as
                                          agt_sch_db)
 from neutron.plugins.cisco.l3.db import l3_cfg_rpc_base
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
+from neutron.plugins.cisco.l3.scheduler import filter_rpc
 from neutron.plugins.common import constants
 
 
 class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
-                                    l3_cfg_rpc_base.L3CfgRpcCallbackMixin):
+                                    l3_cfg_rpc_base.L3CfgRpcCallbackMixin,
+                                    filter_rpc.FilterSchedulerCallback):
 
     # Set RPC API version to 1.0 by default.
     RPC_API_VERSION = '1.0'
@@ -106,6 +108,14 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         self.conn.create_consumer(self.topic, self.dispatcher,
                                   fanout=False)
         self.conn.consume_in_thread()
+
+        self.topic2 = 'filter_scheduler'
+        self.connection = rpc.create_connection(new=True)
+        self.callbacks = CiscoRouterPluginRpcCallbacks()
+        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.connnection.create_consumer(self.topic2, self.dispatcher,
+                                  fanout=False)
+        self.connection.consume_in_thread()
 
     def get_plugin_type(self):
         return constants.L3_ROUTER_NAT

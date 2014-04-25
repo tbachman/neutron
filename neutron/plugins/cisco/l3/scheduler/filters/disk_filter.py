@@ -36,3 +36,6 @@ class DiskFilter(filters.BaseHostFilter):
         disk_gb_limit = disk_mb_limit / 1024
         host.limits['disk_gb'] = disk_gb_limit
         return True
+
+    def get_description(self):
+        ""

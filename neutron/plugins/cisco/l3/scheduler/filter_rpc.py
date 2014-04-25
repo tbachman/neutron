@@ -9,9 +9,10 @@ class FilterSchedulerCallback(object):
 
         resource = kwargs.pop('resource')
         hosts = kwargs.pop('hosts')
-        chain_id = kwargs.pop('chain_id')
+        chain_name = kwargs.pop('chain_name')
         weight_functions = kwargs.pop('weight_functions')
 
-        weighted_hosts = FilterScheduler.schedule_instance(context, resource, hosts, chain_id, weight_functions, **kwargs)
+        weighted_hosts = FilterScheduler.schedule_instance(context, resource, hosts, chain_name, weight_functions,
+                                                           **kwargs)
 
         return weighted_hosts
