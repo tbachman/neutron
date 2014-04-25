@@ -22,7 +22,7 @@ class BaseFilter(object):
 
 class BaseFilterHandler(loadables.BaseLoader):
 
-    def get_filtered_objects(self, resource, hosts, filters):
+    def get_filtered_objects(self, resource, hosts, filters, **kwargs):
         filtered_hosts = list(hosts)
         for filter_cls in filters:
             current_filter = filter_cls()
