@@ -1066,7 +1066,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             elif binding.network_type == c_const.NETWORK_TYPE_VLAN:
                 n1kv_db_v2.release_vlan(session, binding.physical_network,
                                         binding.segmentation_id)
-            self._process_l3_delete(context, id)
             super(N1kvNeutronPluginV2, self).delete_network(context, id)
             # the network_binding record is deleted via cascade from
             # the network record, so explicit removal is not necessary
