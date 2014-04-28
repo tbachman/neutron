@@ -319,3 +319,15 @@ class DuplicatedExtension(NeutronException):
 class DeviceIDNotOwnedByTenant(Conflict):
     message = _("The following device_id %(device_id)s is not owned by your "
                 "tenant or matches another tenants router.")
+
+
+class NoValidHost(NeutronException):
+    message = _(" ")
+
+
+class NoFilterChainFound(NeutronException):
+    message = _(" ")
+
+
+class ClassNotFound(NotFound):
+    message = _("Class %(class_name)s could not be found: %(exception)s")
