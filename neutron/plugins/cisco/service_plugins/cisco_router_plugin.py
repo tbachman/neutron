@@ -108,7 +108,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         self.conn.create_consumer(self.topic, self.dispatcher,
                                   fanout=False)
         self.conn.consume_in_thread()
-        """
+
         self.topic2 = 'filter_scheduler'
         self.connection = rpc.create_connection(new=True)
         self.callbacks = CiscoRouterPluginRpcCallbacks()
@@ -116,7 +116,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         self.connection.create_consumer(self.topic2, self.dispatcher,
                                   fanout=False)
         self.connection.consume_in_thread()
-        """
+        
 
     def get_plugin_type(self):
         return constants.L3_ROUTER_NAT
