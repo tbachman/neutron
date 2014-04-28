@@ -38,7 +38,7 @@ class FilterScheduler(object):
             CONF.weight_classes)
         self.chain_dic = {}
 
-    def schedule_instance(self, context, resource, hosts, chain_name, weight_functions, **kwargs):
+    def schedule_instance(self, context, resource, hosts, chain_name, weight_functions, rpc, **kwargs):
 
         #Check cache, if not, check db.
 
@@ -54,17 +54,20 @@ class FilterScheduler(object):
 
         try:
             return self._schedule(resource,
-                                  hosts, weight_functions, filter_chain, **kwargs)
+                                  hosts, weight_functions, filter_chain, rpc, **kwargs)
         except:
             raise exceptions.NoValidHost(reason="")
 
     def _schedule(self, resource, hosts,
-                  weight_functions, filter_chain=None, **kwargs):
+                  weight_functions, filter_chain=None, rpc=False, **kwargs):
 
         filtered_hosts = self.get_filtered_hosts(resource, hosts,
                                                  filter_chain, **kwargs)
         if not filtered_hosts:
             raise exceptions.NoValidHost(reason="")
+
+        if rpc:
+            return filtered_hosts
 
         weighted_hosts = self.get_weighed_hosts(filtered_hosts,
                                                 weight_functions, **kwargs)
