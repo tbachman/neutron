@@ -1116,7 +1116,7 @@ class NetworkProfile_db_mixin(object):
             for remove_tenant in p['remove_tenants']:
                 if remove_tenant == context.tenant_id: 
                     continue
-                delete_profile_binding(remove_tenant, id)
+                delete_profile_binding(context.session, remove_tenant, id)
             is_updated = True
         if original_net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
             #TODO(abhraut): Remove check when Trunk supports segment range.
