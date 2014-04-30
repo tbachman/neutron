@@ -1115,7 +1115,7 @@ class NetworkProfile_db_mixin(object):
             for remove_tenant in p['remove_tenants']:
                 if remove_tenant == context.tenant_id:
                     continue
-                delete_profile_binding(remove_tenant, id)
+                delete_profile_binding(context.session, remove_tenant, id)
             is_updated = True
         if original_net_p.segment_type == c_const.NETWORK_TYPE_TRUNK:
             #TODO(abhraut): Remove check when Trunk supports segment range.
@@ -1319,7 +1319,7 @@ class NetworkProfile_db_mixin(object):
                 raise n_exc.InvalidInput(error_message=msg)
         if segment_type in [c_const.NETWORK_TYPE_TRUNK,
                             c_const.NETWORK_TYPE_OVERLAY]:
-            if "sub_type" not in net_p:
+            if not attributes.is_attr_set(net_p.get("sub_type")):
                 msg = _("Argument sub_type missing "
                         "for network profile")
                 LOG.exception(msg)
