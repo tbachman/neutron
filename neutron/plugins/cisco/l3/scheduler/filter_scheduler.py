@@ -47,10 +47,11 @@ class FilterScheduler(object):
         if filter_chain is None:
             filter_chain = Fc.get_filter_chain(context, chain_name)
             if filter_chain is None:
-                raise exceptions.NoFilterChainFound()
-            else:
+                filter_chain = Fc.create_filter_chain(context, chain_name, ['AllHostsFilter'])
                 self.chain_dic[chain_name] = self._choose_host_filters(filter_chain)
                 filter_chain = self.chain_dic.get(chain_name)
+                if filter_chain is None:
+                    raise exceptions.NoFilterChainFound()
 
         try:
             return self._schedule(resource,
