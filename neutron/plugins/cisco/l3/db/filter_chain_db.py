@@ -7,11 +7,12 @@ from neutron.db import db_base_plugin_v2 as base_db
 
 class FilterChainManager(base_db.CommonDbMixin):
 
-    def create_filter_chain(self, context, filters):
+    def create_filter_chain(self, context, chain_name, filters):
 
         filters_string = ', '.join(filters)
         with context.session.begin(subtransactions=True):
-            filter_chain_db = FilterChain(filter_list=filters_string)
+            filter_chain_db = FilterChain(filter_name=chain_name,
+                                          filter_list=filters_string)
             context.session.add(filter_chain_db)
 
     def get_filter_chain(self, context, chain_name):
