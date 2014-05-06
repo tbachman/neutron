@@ -175,17 +175,19 @@ class CiscoCfgAgent(manager.Manager):
 
         #Other references held by the cfg agent
         self._hdm = HostingDevicesManager()
+        self.context = n_context.get_admin_context_without_session()
+        self._initialize_plugin_rpc(host)
         self._initialize_service_helpers()
         self._start_periodic_tasks()
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
-
-    def _initialize_service_helpers(self):
-        self.routing_service_helper = RoutingServiceHelper(self)
 
     def _initialize_plugin_rpc(self, host):
         self.devmgr_rpc = CiscoDeviceManagerPluginApi(
             topics.DEVICE_MANAGER_PLUGIN, host)
         self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
+
+    def _initialize_service_helpers(self):
+        self.routing_service_helper = RoutingServiceHelper(self)
 
     def _start_periodic_tasks(self):
         self.rpc_loop = loopingcall.FixedIntervalLoopingCall(self._rpc_loop)
@@ -355,22 +357,11 @@ class CiscoCfgAgent(manager.Manager):
         """
         hosting_devices = {}
 
-        for r in resources.get('routers') or []:
-            hd_id = r['hosting_device']['id']
-            hosting_devices.setdefault(hd_id, {})
-            hosting_devices[hd_id].setdefault('routers', []).append(r)
-
-        for r in resources.get('removed_routers') or []:
-            hd_id = r['hosting_device']['id']
-            hosting_devices.setdefault(hd_id, {})
-            hosting_devices[hd_id].setdefault('removed_routers', []).append(r)
-
-        # for vpn in resources.get('vpns') or []:
-        #     pass
-        #
-        # for fw in resources.get('fws') or []:
-        #     pass
-
+        for key in resources.keys():
+            for r in resources.get(key) or []:
+                hd_id = r['hosting_device']['id']
+                hosting_devices.setdefault(hd_id, {})
+                hosting_devices[hd_id].setdefault(key, []).append(r)
         return hosting_devices
 
     ## Main orchestrator ##
@@ -481,7 +472,7 @@ class RoutingServiceHelper(object):
         try:
             if deconfigure:
                 #ToDo: Check here
-                self.agent.process_router(ri)
+                self.process_router(ri)
                 driver = self._hdm.get_driver(ri)
                 driver.router_removed(ri, deconfigure)
                 self._hdm.remove_driver(router_id)
@@ -740,11 +731,6 @@ class RoutingServiceHelper(object):
         """Find UUID of single external network for this agent."""
         if self.conf.gateway_external_network_id:
             return self.conf.gateway_external_network_id
-            # Cfg agent doesn't use external_network_bridge to handle external
-        # networks, so bridge_mappings with provider networks will be used
-        # and the cfg agent is able to handle any external networks.
-        if not self.conf.external_network_bridge:
-            return
         try:
             return self.plugin_rpc.get_external_network_id(self.context)
         except rpc_common.RemoteError as e:
@@ -780,7 +766,6 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             'start_flag': True,
             'agent_type': c_constants.AGENT_TYPE_CFG}
         report_interval = cfg.CONF.AGENT.report_interval
-        self.context = n_context.get_admin_context_without_session()
         self.use_call = True
         self._initialize_plugin_rpc(host)
         self._agent_registration()
@@ -793,15 +778,16 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
     def _agent_registration(self):
         for attempts in xrange(MAX_REGISTRATION_ATTEMPTS):
-            self.send_agent_report(self.agent_state)
-            res = self.devmgr_rpc.register_for_duty(self.context)
+            context = n_context.get_admin_context_without_session()
+            self.send_agent_report(self.agent_state, context)
+            res = self.devmgr_rpc.register_for_duty(context)
             if res is True:
                 LOG.info(_("[Agent registration] Agent successfully "
                            "registered"))
                 return
             elif res is False:
                 LOG.warn(_("[Agent registration] Neutron server said that "
-                           "device manager was not ready. Retrying in %d "
+                           "device manager was not ready. Retrying in %0.2f "
                            "seconds "), REGISTRATION_RETRY_DELAY)
                 time.sleep(REGISTRATION_RETRY_DELAY)
             elif res is None:
@@ -852,11 +838,11 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         configurations['total floating_ips'] = num_floating_ips
         configurations['hosting_devices'] = routers_per_hd
         configurations['non_responding_hosting_devices'] = non_responding
-        self.send_agent_report(self.agent_state)
+        self.send_agent_report(self.agent_state, self.context)
 
-    def send_agent_report(self, report):
+    def send_agent_report(self, report, context):
         try:
-            self.state_rpc.report_state(self.context, report, self.use_call)
+            self.state_rpc.report_state(context, report, self.use_call)
             report.pop('start_flag', None)
             self.use_call = False
             LOG.debug(_("Send agent report successfully completed"))
