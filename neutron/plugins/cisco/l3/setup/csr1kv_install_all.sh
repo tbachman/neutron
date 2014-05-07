@@ -9,11 +9,13 @@ osn=${1:-neutron}
 plugin=${2:-n1kv}
 #plugin=${2:-ovs}
 localrc=$3
+mysql_user=$4
+mysql_password=$5
 
 source ~/devstack/openrc admin demo
 ./setup_keystone_for_csr1kv_l3.sh $osn
 source ~/devstack/openrc $osn L3AdminTenant
-./setup_nova_and_glance_for_csr1kv_l3.sh $osn $plugin $localrc
+./setup_nova_and_glance_for_csr1kv_l3.sh $osn $plugin $localrc $mysql_user $mysql_password
 ./setup_neutron_for_csr1kv_l3.sh $osn $plugin $localrc
 ./setup_l3cfgagent_networking.sh $osn $plugin
 source ~/devstack/openrc admin demo

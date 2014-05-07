@@ -9,7 +9,12 @@ adminUser=${1:-neutron}
 osn=$adminUser
 plugin=${2:-n1kv}
 localrc=$3
+mysql_user=$4
+mysql_password=$5
 
+if [[ -n $mysql_user && -n $mysql_password ]]; then
+   mysql_auth="-u $mysql_user -p$mysql_password"
+fi
 
 if [[ ! -z $localrc && -f $localrc ]]; then
     eval $(grep ^Q_CISCO_CSR1KV_QCOW2_IMAGE= $localrc)
@@ -156,13 +161,13 @@ else
 fi
 
 sql_statement="SELECT id FROM devicecredentials WHERE id='$csr1kvCredentialId'"
-hasCredential=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
+hasCredential=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 if [ "$hasCredential" != "Yes" ]; then
    echo " No, it is not. Registering it."
     sql_statement="INSERT INTO devicecredentials VALUES
    ('$csr1kvCredentialId', 'CSR1kv credentials', 'For CSR1kv VM instances',
     'stack', 'cisco', NULL)"
-   mysql -e "use $db; $sql_statement"
+   mysql $mysql_auth -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
 fi
@@ -170,7 +175,7 @@ fi
 
 echo -n "Checking if '$csr1kvHostingDeviceTemplateName' is registered as hosting device template in $osn ..."
 sql_statement="SELECT id FROM hostingdevicetemplates WHERE id='11111111-2222-3333-4444-555555555555'"
-hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
+hasTemplate=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
@@ -184,7 +189,7 @@ if [ "$hasTemplate" != "Yes" ]; then
     '$csr1kvHostingDeviceTemplateName', TRUE, 'VM', 'router',
     '$csr1kvImageName', '$csr1kvFlavorId', '$csr1kvCredentialId', 'Netconf',
     22, 420, 10, 5, NULL, '$hd_driver', '$plugging_driver')"
-   mysql -e "use $db; $sql_statement"
+   mysql $mysql_auth -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
 fi
@@ -199,7 +204,7 @@ else
    agent_driver="neutron.plugins.cisco.cfg_agent.dummy_driver.DummyRoutingDriver"
 fi
 sql_statement="SELECT id FROM hostingdevicetemplates WHERE id='11111110-2222-3333-4444-555555555555'"
-hasTemplate=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
+hasTemplate=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
 if [ "$hasTemplate" != "Yes" ]; then
    echo " No, it is not. Registering it."
@@ -214,7 +219,7 @@ if [ "$hasTemplate" != "Yes" ]; then
     NULL, NULL, NULL, 'CLI', NULL, NULL, 200, 0, NULL,
     'neutron.plugins.cisco.device_manager.hosting_device_drivers.noop_hd_driver.NoopHostingDeviceDriver',
     'neutron.plugins.cisco.device_manager.plugging_drivers.noop_plugging_driver.NoopPluggingDriver')"
-   mysql -e "use $db; $sql_statement"
+   mysql $mysql_auth -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
 fi
@@ -222,7 +227,7 @@ fi
 
 echo -n "Checking if 'CSR1kv_router' is registered as router type in $osn ..."
 sql_statement="SELECT id FROM routertypes where id='22221111-2222-3333-4444-555555555555'"
-hasRouterType=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
+hasRouterType=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
 if [ "$hasRouterType" != "Yes" ]; then
    echo " No, it is not. Registering it."
@@ -235,7 +240,7 @@ if [ "$hasRouterType" != "Yes" ]; then
     '11111111-2222-3333-4444-555555555555', TRUE, 6,
     'neutron.plugins.cisco.l3.scheduler.l3_router_hosting_device_scheduler.L3RouterHostingDeviceScheduler',
     '$agent_driver')"
-    mysql -e "use $db; $sql_statement"
+    mysql $mysql_auth -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
 fi
@@ -243,7 +248,7 @@ fi
 
 echo -n "Checking if 'NetworkNamespace_router' is registered as router type in $osn ..."
 sql_statement="SELECT id FROM routertypes where id='22221112-2222-3333-4444-555555555555'"
-hasRouterType=`mysql -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
+hasRouterType=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
 if [ "$hasRouterType" != "Yes" ]; then
    echo " No, it is not. Registering it."
@@ -256,7 +261,7 @@ if [ "$hasRouterType" != "Yes" ]; then
     'Neutron router implemented in Linux network namespace',
     '11111110-2222-3333-4444-555555555555', TRUE, 6,
     '', '')"
-   mysql -e "use $db; $sql_statement"
+   mysql $mysql_auth -e "use $db; $sql_statement"
 else
    echo " Yes, it is."
 fi
