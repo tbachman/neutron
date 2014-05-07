@@ -177,23 +177,24 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('_populate_policy_profiles'))
         try:
             vsm_profiles = {}
-            plugin_profiles = {}
+            plugin_profiles_set = set()
             # Fetch policy profiles from VSM
             policy_profiles = self.pool.spawn(
                 self.n1kvclient.list_port_profiles).wait()
             if policy_profiles:
-                for profile in policy_profiles['body'][c_const.SET]:
-                    profile_name = (profile[c_const.PROPERTIES].
+                for profile in policy_profiles:
+                    profile_name = (policy_profiles
+                                    [profile][c_const.PROPERTIES].
                                     get(c_const.NAME, None))
-                    profile_id = (profile[c_const.PROPERTIES].
+                    profile_id = (policy_profiles
+                                  [profile][c_const.PROPERTIES].
                                   get(c_const.ID, None))
                     if profile_id and profile_name:
                         vsm_profiles[profile_id] = profile_name
                 # Fetch policy profiles previously populated
                 for profile in n1kv_db_v2.get_policy_profiles():
-                    plugin_profiles[profile.id] = profile.name
+                    plugin_profiles_set.add(profile.id)
                 vsm_profiles_set = set(vsm_profiles)
-                plugin_profiles_set = set(plugin_profiles)
                 # Update database if the profile sets differ.
                 if vsm_profiles_set ^ plugin_profiles_set:
                 # Add profiles in database if new profiles were created in VSM
