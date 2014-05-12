@@ -109,7 +109,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                                   fanout=False)
         self.conn.consume_in_thread()
 
-        self.topic2 = 'filter_scheduler'
+        self.topic2 = 'topic.filter_scheduler'
         self.connection = rpc.create_connection(new=True)
         self.callbacks = CiscoRouterPluginRpcCallbacks()
         self.dispatcher = self.callbacks.create_rpc_dispatcher()

@@ -8,7 +8,7 @@ from neutron.common import exceptions
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
 from neutron.plugins.cisco.l3.scheduler.weights import weights_base
-from neutron.plugins.cisco.db.scheduler.filter_chain_db import FilterChainManager as Fc
+from neutron.plugins.cisco.db.scheduler.filter_chain_db import FilterChainManager
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -37,32 +37,42 @@ class FilterScheduler(object):
         self.weight_classes = self.weight_handler.get_matching_classes(
             CONF.weight_classes)
         self.chain_dic = {}
+        self.filter_db_handler = FilterChainManager()
 
-    def schedule_instance(self, context, resource, hosts, chain_name, weight_functions, rpc, **kwargs):
+    def schedule_instance(self, context, instance, hosts, chain_name, weight_functions, rpc, **kwargs):
 
         #Check cache, if not, check db.
+
+        # HARD CODED FILTER CHAINS - IN THE FUTURE USE CLI COMMANDS
 
         filter_chain = self.chain_dic.get(chain_name)
 
         if filter_chain is None:
-            filter_chain = Fc.get_filter_chain(context, chain_name)
+            filter_chain = self.filter_db_handler.get_filter_chain(context, chain_name)
             if filter_chain is None:
-                filter_chain = Fc.create_filter_chain(context, chain_name, ['AllHostsFilter'])
+                if chain_name is 'all_filter':
+                    filter_name_class = 'AllHostsFilter'
+                else:
+                    filter_name_class = 'NoHostsFilter'
+
+                filter_chain = self.filter_db_handler.create_filter_chain(context, chain_name, [filter_name_class])
                 self.chain_dic[chain_name] = self._choose_host_filters(filter_chain)
                 filter_chain = self.chain_dic.get(chain_name)
                 if filter_chain is None:
                     raise exceptions.NoFilterChainFound()
 
+        # END OF HARD CODE
+
         try:
-            return self._schedule(resource,
+            return self._schedule(instance,
                                   hosts, weight_functions, filter_chain, rpc, **kwargs)
         except:
             raise exceptions.NoValidHost(reason="")
 
-    def _schedule(self, resource, hosts,
+    def _schedule(self, instance, hosts,
                   weight_functions, filter_chain=None, rpc=False, **kwargs):
 
-        filtered_hosts = self.get_filtered_hosts(resource, hosts,
+        filtered_hosts = self.get_filtered_hosts(instance, hosts,
                                                  filter_chain, **kwargs)
         if not filtered_hosts:
             raise exceptions.NoValidHost(reason="")
@@ -75,9 +85,9 @@ class FilterScheduler(object):
 
         return weighted_hosts
 
-    def get_filtered_hosts(self, resource, hosts, filter_chain, **kwargs):
+    def get_filtered_hosts(self, instance, hosts, filter_chain, **kwargs):
         """Filter hosts and return only ones passing all filters."""
-        return self.filter_handler.get_filtered_objects(resource, hosts, filter_chain, **kwargs)
+        return self.filter_handler.get_filtered_objects(instance, hosts, filter_chain, **kwargs)
 
     def get_weighed_hosts(self, hosts, weight_functions, **kwargs):
         """Weigh the hosts."""

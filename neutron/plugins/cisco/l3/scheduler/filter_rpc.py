@@ -7,12 +7,12 @@ class FilterSchedulerCallback(object):
 
     def neutron_filter_scheduler(self, context, **kwargs):
 
-        resource = kwargs.pop('resource')
+        instance = kwargs.pop('instance')
         hosts = kwargs.pop('hosts')
         chain_name = kwargs.pop('chain_name')
         weight_functions = kwargs.pop('weight_functions')
 
-        weighted_hosts = FilterScheduler.schedule_instance(context, resource, hosts, chain_name, weight_functions, True,
+        weighted_hosts = FilterScheduler.schedule_instance(context, instance, hosts, chain_name, weight_functions, True,
                                                            **kwargs)
 
         return weighted_hosts
