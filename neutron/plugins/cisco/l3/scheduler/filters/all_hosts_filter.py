@@ -7,7 +7,7 @@ class AllHostsFilter(filters_base.BaseHostFilter):
 
     run_filter_once_per_request = True
 
-    def host_passes(self, host, resource):
+    def host_passes(self, host, resource, **kwargs):
         return True
 
     def get_description(self):

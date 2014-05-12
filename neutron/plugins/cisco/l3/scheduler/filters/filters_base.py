@@ -8,13 +8,13 @@ LOG = logging.getLogger(__name__)
 
 class BaseFilter(object):
     """Skeleton"""
-    def _filter_one(self, host, resource):
+    def _filter_one(self, host, resource, **kwargs):
         return True
 
-    def filter_all(self, host_list, resource):
+    def filter_all(self, host_list, resource, **kwargs):
 
         for host in host_list:
-            if self._filter_one(host, resource):
+            if self._filter_one(host, resource, **kwargs):
                 yield host
 
     run_filter_once_per_request = False
@@ -28,7 +28,7 @@ class BaseFilterHandler(loadables.BaseLoader):
             current_filter = filter_cls()
 
             hosts = current_filter.filter_all(filtered_hosts,
-                                              resource)
+                                              resource, **kwargs)
             if hosts is None:
                 return
             filtered_hosts = list(hosts)
@@ -39,10 +39,10 @@ class BaseFilterHandler(loadables.BaseLoader):
 
 class BaseHostFilter(BaseFilter):
     """Skeleton for filters"""
-    def _filter_one(self, host, resource):
-        return self.host_passes(host, resource)
+    def _filter_one(self, host, resource, **kwargs):
+        return self.host_passes(host, resource, **kwargs)
 
-    def host_passes(self, host, resource):
+    def host_passes(self, host, resource, **kwargs):
 
         raise NotImplementedError()
 

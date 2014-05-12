@@ -15,21 +15,22 @@ class Neighbor(model_base.BASEV2, models_v2.HasId):
 
 class NeighborsFilter(filters_base.BaseHostFilter, base_db.CommonDbMixin):
 
-    def get_physical_host(self, context, vm):
+    def get_physical_host_of_neighbor(self, context, neighbor):
         query = self._model_query(context, Instance)
-        rt = query.filter(Instance.id == vm).one()
+        rt = query.filter(Instance.id == neighbor).one()
         hostname = rt['hostname']
 
         return hostname
 
     def get_neighbors(self, context, physical_host):
-        self._get_collection(context, Neighbor,
+        return self._get_collection(context, Neighbor,
                                     filters={'physical_host': [physical_host]},
                                     fields=['neighbor'])
 
-    def host_passes(self, host, resource, context=None):
+    def host_passes(self, host, resource, context=None, **kwargs):
 
-        physical_host = self.get_physical_host(context, resource)
+        neighbor = kwargs.get('neighbor')
+        physical_host = self.get_physical_host_of_neighbor(context, neighbor)
 
         neighbors = self.get_neighbors(context, physical_host)
 

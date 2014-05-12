@@ -16,7 +16,7 @@ CONF.register_opt(disk_allocation_ratio_opt)
 
 class DiskFilter(filters.BaseHostFilter):
 
-    def host_passes(self, host, resource):
+    def host_passes(self, host, resource, **kwargs):
         """Filter based on disk usage."""
         instance_type = resource.get('instance_type')
         requested_disk = (1024 * (instance_type['root_gb'] +
