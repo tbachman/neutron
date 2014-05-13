@@ -25,6 +25,7 @@ filter_scheduler_opts = [
 
 CONF.register_opts(filter_scheduler_opts)
 
+#TEST
 
 class FilterScheduler(object):
     def __init__(self):
