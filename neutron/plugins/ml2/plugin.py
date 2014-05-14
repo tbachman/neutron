@@ -262,7 +262,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             result = super(Ml2Plugin, self).create_network(context, network)
             net_data['id'] = result.get('id')
             type_result = self.type_manager.create_network(session, net_data)
-
             if type_result:
                 for one_result in type_result:
                     for one_segment in one_result:

@@ -49,6 +49,7 @@ class GreAllocation(model_base.BASEV2):
     network_id = sa.Column(sa.String(36),
                            sa.ForeignKey('networks.id', ondelete="CASCADE"),
                            nullable=True)
+    provider_network = sa.Column(sa.Boolean, default=False)
 
 
 class GreEndpoints(model_base.BASEV2):
@@ -75,15 +76,15 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
         )
         self._sync_gre_allocations()
 
-    def create_network(self, session, context):
-        net_data = context._network
+    def create_network(self, session, net_data):
         segments = self._process_provider_create(net_data)
         net_id = net_data.get('id')
 
         if segments:
             all_segments = []
             for segment in segments:
-                one_seg = self.reserve_provider_segment(session, segment)
+                one_seg = self.reserve_provider_segment(session, net_id,
+                                                        segment)
                 all_segments.append(one_seg)
             return all_segments
         else:
@@ -100,10 +101,10 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                  filter_by(network_id=network_id).one())
 
         return {api.NETWORK_TYPE: p_const.TYPE_GRE,
-                api.PHYSICAL_NETWORK: alloc.physical_network,
+                api.PHYSICAL_NETWORK: None,
                 api.SEGMENTATION_ID: alloc.gre_id}
 
-    def reserve_provider_segment(self, session, segment):
+    def reserve_provider_segment(self, session, network_id, segment):
         segmentation_id = segment.get(api.SEGMENTATION_ID)
         with session.begin(subtransactions=True):
             try:
@@ -116,12 +117,21 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                 LOG.debug(_("Reserving specific gre tunnel %s from pool"),
                           segmentation_id)
                 alloc.allocated = True
+                alloc.network_id = network_id
+                alloc.provider_network = True
+                return {api.NETWORK_TYPE: p_const.TYPE_GRE,
+                        api.PHYSICAL_NETWORK: None,
+                        api.SEGMENTATION_ID: alloc.gre_id}
             except sa_exc.NoResultFound:
                 LOG.debug(_("Reserving specific gre tunnel %s outside pool"),
                           segmentation_id)
-                alloc = GreAllocation(gre_id=segmentation_id)
-                alloc.allocated = True
+                alloc = GreAllocation(gre_id=segmentation_id,
+                                      allocated=True,
+                                      provider_network=True)
                 session.add(alloc)
+                return {api.NETWORK_TYPE: p_const.TYPE_GRE,
+                        api.PHYSICAL_NETWORK: None,
+                        api.SEGMENTATION_ID: alloc.gre_id}
 
     def allocate_tenant_segment(self, session, network_id):
         with session.begin(subtransactions=True):
@@ -136,10 +146,9 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                 alloc.network_id = network_id
                 return ({api.NETWORK_TYPE: p_const.TYPE_GRE,
                         api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.gre_id})
+                        api.SEGMENTATION_ID: alloc.gre_id},)
 
     def release_segment(self, session, network_id):
-        gre_id = segment[api.SEGMENTATION_ID]
         with session.begin(subtransactions=True):
             try:
                 alloc = (session.query(GreAllocation).
@@ -147,6 +156,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                          with_lockmode('update').
                          one())
                 alloc.allocated = False
+                gre_id = alloc['gre_id']
                 for lo, hi in self.gre_id_ranges:
                     if lo <= gre_id <= hi:
                         LOG.debug(_("Releasing gre tunnel %s to pool"),

@@ -4,15 +4,17 @@ from neutron.extensions import providernet as provider
 from neutron.plugins.ml2 import driver_api as api
 
 class TypeDriverMixin(object):
-    def _process_provider_segment(self, segment):
-        network_type = segment.get(provider.NETWORK_TYPE)
-        physical_network = segment.get(provider.PHYSICAL_NETWORK)
-        segmentation_id = segment.get(provider.SEGMENTATION_ID)
+    def _process_provider_segment(self, net_data):
+        network_type = net_data.get(provider.NETWORK_TYPE)
+        physical_network = net_data.get(provider.PHYSICAL_NETWORK)
+        segmentation_id = net_data.get(provider.SEGMENTATION_ID)
 
         if attributes.is_attr_set(network_type):
             segment = {api.NETWORK_TYPE: network_type,
-                       api.PHYSICAL_NETWORK: physical_network,
                        api.SEGMENTATION_ID: segmentation_id}
+            if type(physical_network) is not object:
+                segment[api.PHYSICAL_NETWORK] = physical_network
+
             self.validate_provider_segment(segment)
             return segment
 

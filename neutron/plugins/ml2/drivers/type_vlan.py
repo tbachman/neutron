@@ -274,7 +274,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                 alloc.network_id = network_id
                 return ({api.NETWORK_TYPE: p_const.TYPE_VLAN,
                         api.PHYSICAL_NETWORK: alloc.physical_network,
-                        api.SEGMENTATION_ID: alloc.vlan_id})
+                        api.SEGMENTATION_ID: alloc.vlan_id},)
 
     def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):

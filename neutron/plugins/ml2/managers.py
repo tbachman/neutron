@@ -73,11 +73,11 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             LOG.info(_("Initializing driver for type '%s'"), network_type)
             driver.obj.initialize()
 
-    def create_network(self, session, context):
+    def create_network(self, session, net_data):
         segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segments.append(driver.obj.create_network(session, context))
+            segments.append(driver.obj.create_network(session, net_data))
 
         return segments
 
