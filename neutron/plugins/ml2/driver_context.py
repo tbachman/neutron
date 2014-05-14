@@ -34,8 +34,10 @@ class NetworkContext(MechanismDriverContext, api.NetworkContext):
         super(NetworkContext, self).__init__(plugin, plugin_context)
         self._network = network
         self._original_network = original_network
-        self._segments = db.get_network_segments(plugin_context.session,
-                                                 network['id'])
+        #self._segments = db.get_network_segments(plugin_context.session,
+        #                                         network['id'])
+        self._segments = plugin.type_manager.get_segments(
+            plugin_context, network['id'])
 
     @property
     def current(self):

@@ -95,7 +95,7 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                 all_segments.append(one_seg)
             return all_segments
         else:
-            return self.allocate_tenant_segment(session, net_id)
+            return [self.allocate_tenant_segment(session, net_id)]
 
     def delete_network(self, session, context):
         net_data = context._network
@@ -146,9 +146,9 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                           {'vxlan_vni': alloc.vxlan_vni})
                 alloc.allocated = True
                 alloc.network_id = network_id
-                return ({api.NETWORK_TYPE: p_const.TYPE_VXLAN,
-                         api.PHYSICAL_NETWORK: None,
-                         api.SEGMENTATION_ID: alloc.vxlan_vni},)
+                return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
+                        api.PHYSICAL_NETWORK: None,
+                        api.SEGMENTATION_ID: alloc.vxlan_vni}
 
     def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):

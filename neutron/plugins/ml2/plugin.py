@@ -271,6 +271,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                             net_data.get('id'),
                             one_segment[api.NETWORK_TYPE])
 
+            self._extend_network_dict_provider(context, result)
             network_context = driver_context.NetworkContext(self, context,
                                                             result)
             self._process_l3_create(context, result, net_data)

@@ -91,11 +91,11 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             driver = self.drivers.get(network_type)
             driver.obj.create_port(session, context)
 
-    def get_segments(self, session, network_id):
+    def get_segments(self, context, network_id):
         segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segments.append(driver.obj.get_segment(session, network_id))
+            segments.append(driver.obj.get_segment(context, network_id))
 
         return segments
 

@@ -175,7 +175,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                 all_segments.append(one_seg)
             return all_segments
         else:
-            return self.allocate_tenant_segment(session, net_id)
+            return [self.allocate_tenant_segment(session, net_id)]
 
     def delete_network(self, session, context):
         net_data = context._network
@@ -272,9 +272,9 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                            'network_id': network_id})
                 alloc.allocated = True
                 alloc.network_id = network_id
-                return ({api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                return {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                         api.PHYSICAL_NETWORK: alloc.physical_network,
-                        api.SEGMENTATION_ID: alloc.vlan_id},)
+                        api.SEGMENTATION_ID: alloc.vlan_id}
 
     def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):

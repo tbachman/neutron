@@ -88,7 +88,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                 all_segments.append(one_seg)
             return all_segments
         else:
-            return self.allocate_tenant_segment(session, net_id)
+            return [self.allocate_tenant_segment(session, net_id)]
 
     def delete_network(self, session, context):
         net_data = context._network
@@ -144,9 +144,9 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                           {'gre_id': alloc.gre_id})
                 alloc.allocated = True
                 alloc.network_id = network_id
-                return ({api.NETWORK_TYPE: p_const.TYPE_GRE,
+                return {api.NETWORK_TYPE: p_const.TYPE_GRE,
                         api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.gre_id},)
+                        api.SEGMENTATION_ID: alloc.gre_id}
 
     def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):
