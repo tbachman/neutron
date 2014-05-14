@@ -69,7 +69,7 @@ class VxlanEndpoints(model_base.BASEV2):
         return "<VxlanTunnelEndpoint(%s)>" % self.ip_address
 
 
-class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
+class VxlanTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
 
     def get_type(self):
         return p_const.TYPE_VXLAN
@@ -96,6 +96,20 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
             return all_segments
         else:
             return self.allocate_tenant_segment(session, net_id)
+
+    def delete_network(self, session, context):
+        net_data = context._network
+        net_id = net_data.get('id')
+        self.release_segment(session, net_id)
+
+    def get_segment(self, context, network_id):
+        LOG.debug(_("Returning segments for network %s") % network_id)
+        alloc = (context.session.query(VxlanAllocation).
+                 filter_by(network_id=network_id).one())
+
+        return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
+                api.PHYSICAL_NETWORK: None,
+                api.SEGMENTATION_ID: alloc.vxlan_vni}
 
     def reserve_provider_segment(self, session, network_id, segment):
         segmentation_id = segment.get(api.SEGMENTATION_ID)
@@ -132,9 +146,9 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
                           {'vxlan_vni': alloc.vxlan_vni})
                 alloc.allocated = True
                 alloc.network_id = network_id
-                return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
-                        api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.vxlan_vni}
+                return ({api.NETWORK_TYPE: p_const.TYPE_VXLAN,
+                         api.PHYSICAL_NETWORK: None,
+                         api.SEGMENTATION_ID: alloc.vxlan_vni},)
 
     def release_segment(self, session, network_id):
         with session.begin(subtransactions=True):
@@ -144,7 +158,7 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
                          with_lockmode('update').
                          one())
                 alloc.allocated = False
-                vxlan_vni = alloc[api.SEGMENTATION_ID]
+                vxlan_vni = alloc['vxlan_vni']
                 for low, high in self.vxlan_vni_ranges:
                     if low <= vxlan_vni <= high:
                         LOG.debug(_("Releasing vxlan tunnel %s to pool"),
