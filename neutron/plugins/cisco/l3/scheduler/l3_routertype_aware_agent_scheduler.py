@@ -126,12 +126,12 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 self.bind_router(context, router_id, l3_agent)
         return True
 
-    def schedule(self, plugin, context, router):
+    def schedule(self, plugin, context, router, candidates=None):
         # Only network namespace based routers should be scheduled here
         ns_routertype_id = plugin.get_namespace_router_type_id(context)
         if router['router_type']['id'] == ns_routertype_id:
             # Do the traditional Neutron router scheduling
             return plugin.l3agent_scheduler.schedule(plugin, context,
-                                                     router['id'])
+                                                     router['id'], candidates)
         else:
             return

@@ -46,10 +46,8 @@ class L3RouterTypeAwareSchedulerDbMixin(
     """
 
     def list_active_sync_routers_on_hosting_devices(self, context, host,
-                                                    router_id,
+                                                    router_ids=None,
                                                     hosting_device_ids=None):
-        if hosting_device_ids is None:
-            hosting_device_ids = []
         agent = self._get_agent_by_type_and_host(
             context, c_constants.AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
@@ -57,17 +55,22 @@ class L3RouterTypeAwareSchedulerDbMixin(
         query = context.session.query(RouterHostingDeviceBinding.router_id)
         query = query.join(HostingDevice)
         query = query.filter(HostingDevice.cfg_agent_id == agent.id)
-        if router_id:
-            query = query.filter(
-                RouterHostingDeviceBinding.router_id == router_id)
-        if len(hosting_device_ids) == 1:
-            query = query.filter(
-                RouterHostingDeviceBinding.hosting_device_id ==
-                hosting_device_ids[0])
-        elif len(hosting_device_ids) > 1:
-            query = query.filter(
-                RouterHostingDeviceBinding.hosting_device_id.in_(
-                    hosting_device_ids))
+        if router_ids:
+            if len(router_ids) == 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.router_id == router_ids[0])
+            else:
+                query = query.filter(
+                    RouterHostingDeviceBinding.router_id.in_(router_ids))
+        if hosting_device_ids:
+            if len(hosting_device_ids) == 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.hosting_device_id ==
+                    hosting_device_ids[0])
+            elif len(hosting_device_ids) > 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.hosting_device_id.in_(
+                        hosting_device_ids))
         router_ids = [item[0] for item in query]
         if router_ids:
             return self.get_sync_data_ext(context, router_ids=router_ids,

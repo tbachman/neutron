@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 
 
 COMPOSITE_AGENTS_SCHEDULER_OPTS = [
-    cfg.IntOpt('cfg_agent_down_time', default=15,
+    cfg.IntOpt('cfg_agent_down_time', default=25,
                help=_('Seconds of no status update until a cfg agent '
                       'is considered down.')),
     cfg.StrOpt('configuration_agent_scheduler_driver',
@@ -113,6 +113,8 @@ class CfgAgentSchedulerDbMixin(
                         self, context, hosting_device)
                     if agent is not None:
                         agents.append(agent)
+                else:
+                    agents.append(hosting_device.cfg_agent)
         else:
             agents = [hosting_device.cfg_agent for hosting_device in query
                       if hosting_device.cfg_agent is not None]

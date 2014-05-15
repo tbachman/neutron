@@ -154,7 +154,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 self._add_type_and_hosting_device_info(e_context, o_r,
                                                        schedule=False)
                 p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
-                    context, (o_r['hosting_device'] or {}).get('template_id'))
+                    e_context,
+                    (o_r['hosting_device'] or {}).get('template_id'))
                 if p_drv is not None:
                     p_drv.teardown_logical_port_connectivity(e_context,
                                                              o_r_db.gw_port)
@@ -176,7 +177,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 e_context, router, binding_info=r_hd_binding, schedule=False)
             if router_db.gw_port is not None:
                 p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
-                    context,
+                    e_context,
                     (router['hosting_device'] or {}).get('template_id'))
                 if p_drv is not None:
                     p_drv.teardown_logical_port_connectivity(e_context,
@@ -218,7 +219,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             e_context = context.elevated()
             self._add_type_and_hosting_device_info(e_context, routers[0])
             p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
-                context,
+                e_context,
                 (routers[0]['hosting_device'] or {}).get('template_id'))
             if p_drv is not None:
                 p_drv.teardown_logical_port_connectivity(e_context, port_db)

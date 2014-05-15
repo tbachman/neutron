@@ -671,13 +671,17 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         plugging_drv.delete_hosting_device_resources(
             context, self.l3_tenant_id(), **res)
         with context.session.begin(subtransactions=True):
+            # remove all allocations in this hosting device
+            context.session.query(SlotAllocation).filter_by(
+                hosting_device_id=hosting_device['id']).delete()
             context.session.delete(hosting_device)
 
     def _get_total_available_slots(self, context, template_id, capacity):
         """Returns available slots in idle devices based on <template_id>.
 
         Only slots in tenant unbound hosting devices are counted to ensure
-        there is always hosting device slots available regardless of tenant."""
+        there is always hosting device slots available regardless of tenant.
+        """
         query = context.session.query(HostingDevice.id)
         query = query.outerjoin(
             SlotAllocation,

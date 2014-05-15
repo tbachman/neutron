@@ -223,7 +223,7 @@ class CiscoCfgAgent(manager.Manager):
                         "removed routers"),
                       {'ur': len(self.updated_routers),
                        'rr': len(self.removed_routers)})
-            #Collect data from plugin
+            # Collect data from plugin
             resources = {}
             if self.updated_routers:
                 router_ids = list(self.updated_routers)
@@ -236,16 +236,16 @@ class CiscoCfgAgent(manager.Manager):
                 for r in self.removed_routers:
                     removed_routers_list.append(self.router_info[r].router)
                 resources['removed_routers'] = removed_routers_list
-            resources['all_routers'] = False
+            #resources['all_routers'] = False
 
             # ToDo: Add fetching of info for other plugins here
 
             # Sort on hosting device
             hosting_devices = self._sort_resources_per_hosting_device(
                 resources)
-            #Despatch process_services() for each hosting device
+            # Dispatch process_services() for each hosting device
             pool = eventlet.GreenPool()
-            for device_id, resources in hosting_devices:
+            for device_id, resources in hosting_devices.items():
                 pool.spawn_n(self.process_services, device_id, resources)
             pool.waitall()
             # if self.removed_routers:
@@ -279,14 +279,15 @@ class CiscoCfgAgent(manager.Manager):
                 routers = self.plugin_rpc.get_routers(
                     context, router_ids)
                 resources['routers'] = routers
-                resources['all_routers'] = True
+                flags = {'all_routers': True}
                 # Sort on hosting device
                 hosting_devices = self._sort_resources_per_hosting_device(
                     resources)
                 # Dispatch process_services() for each hosting device
                 pool = eventlet.GreenPool()
                 for device_id, resources in hosting_devices.items():
-                    pool.spawn_n(self.process_services, device_id, resources)
+                    pool.spawn_n(self.process_services, device_id,
+                                 resources, flags)
                 pool.waitall()
                 self.fullsync = False
                 LOG.debug(_("_sync_routers_task successfully completed"))
@@ -365,7 +366,7 @@ class CiscoCfgAgent(manager.Manager):
         return hosting_devices
 
     ## Main orchestrator ##
-    def process_services(self, hosting_device_id, resources):
+    def process_services(self, hosting_device_id, resources, flags=None):
         """Process services associated with a hosting device.
 
         This method dictates the order of processing of services.
@@ -380,15 +381,12 @@ class CiscoCfgAgent(manager.Manager):
         # First we process routing service
         routers = resources.get('routers')
         if routers:
-            self.routing_service_helper.process_routers(routers,
-                                                        resources.get(
-                                                            'all_routers',
-                                                        False))
+            self.routing_service_helper.process_routers(
+                routers, (flags or {}).get('all_routers', False))
 
         removed_routers = resources.get('removed_routers')
         if removed_routers:
-            self.routing_service_helper._process_router_delete(
-                removed_routers)
+            self.routing_service_helper._process_router_delete(removed_routers)
         LOG.debug(_("Processing for hosting device: %s completed"),
                   hosting_device_id)
 
@@ -407,22 +405,22 @@ class CiscoCfgAgent(manager.Manager):
         if res['reachable']:
             LOG.debug(_("Requesting routers for hosting devices: %s "
                         "that are now responding."), res['reachable'])
-            for hd_id in res['reachable']:
-                #Fetch routers for this reachable Hosting Device
-                routers = self.plugin_rpc.get_routers(
-                    context, router_ids=None, hd_ids=hd_id)
-                resources = {'routers': routers, 'all_routers': True}
-                self.process_services(hd_id, resources)
+            # Fetch routers for this reachable Hosting Device
+            # TODO(Hareesh): also fetch other service instances
+            routers = self.plugin_rpc.get_routers(context, router_ids=None,
+                                                  hd_ids=res['reachable'])
+            resources = {'routers': routers, 'all_routers': True}
+            self.process_services(hd_id, resources)
         if res['dead']:
             LOG.debug(_("Reporting dead hosting devices: %s"),
                       res['dead'])
             # Process dead hosting device
-            self.devmgr_rpc.report_dead_hosting_devices(
-                context, hd_ids=res['dead'])
+            self.devmgr_rpc.report_dead_hosting_devices(context,
+                                                        hd_ids=res['dead'])
 
 
 #ToDo(Hareesh): Note this class will be moved to a service_helpers.py file.
-# Also the stiching between this and the agent is not complete yet.
+# Also the stitching between this and the agent is not complete yet.
 class RoutingServiceHelper(object):
 
     def __init__(self, cfg_agent):
