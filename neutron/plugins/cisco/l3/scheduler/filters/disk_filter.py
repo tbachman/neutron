@@ -3,7 +3,7 @@ __author__ = 'nalle'
 from oslo.config import cfg
 
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
+from neutron.plugins.cisco.l3.scheduler import filters
 
 LOG = logging.getLogger(__name__)
 

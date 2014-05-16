@@ -3,9 +3,8 @@ import abc
 
 import six
 
-from neutron.plugins.cisco.l3.scheduler import loadables
-
 from oslo.config import cfg
+from neutron import loadables
 
 CONF = cfg.CONF
 
@@ -101,31 +100,3 @@ class BaseWeightHandler(loadables.BaseLoader):
                 obj.weight += weigher.weight_multiplier() * weight
 
         return sorted(weighed_objs, key=lambda x: x.weight, reverse=True)
-
-
-class WeighedHost(WeighedObject):
-    def to_dict(self):
-        x = dict(weight=self.weight)
-        x['host'] = self.obj.host
-        return x
-
-    def __repr__(self):
-        return "WeighedHost [host: %s, weight: %s]" % (
-                self.obj.host, self.weight)
-
-
-class BaseHostWeigher(BaseWeigher):
-    """Base class for host weights."""
-    pass
-
-
-class HostWeightHandler(BaseWeightHandler):
-    object_class = WeighedHost
-
-    def __init__(self):
-        super(HostWeightHandler, self).__init__(BaseHostWeigher)
-
-
-def all_weighers():
-    """Return a list of weight plugin classes found in this directory."""
-    return HostWeightHandler().get_all_classes()

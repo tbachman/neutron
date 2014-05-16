@@ -6,8 +6,8 @@ Assumes that the plugins forwards a list of hosts'''
 from oslo.config import cfg
 from neutron.common import exceptions
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.l3.scheduler.filters import filters_base as filters
-from neutron.plugins.cisco.l3.scheduler.weights import weights_base
+from neutron.plugins.cisco.l3.scheduler import filters
+from neutron.plugins.cisco.l3.scheduler import weights
 from neutron.plugins.cisco.db.scheduler.filter_chain_db import FilterChainManager
 
 CONF = cfg.CONF
@@ -15,11 +15,11 @@ LOG = logging.getLogger(__name__)
 
 filter_scheduler_opts = [
     cfg.MultiStrOpt('scheduler_available_filters',
-                    default=['neutron.plugins.cisco.l3.scheduler.filters.filters_base.all_filters'],
+                    default=['neutron.plugins.cisco.l3.scheduler.filters.all_filters'],
                     help='Filter classes available to the scheduler'),
 
     cfg.ListOpt('scheduler_weight_classes',
-                default=['neutron.plugins.cisco.l3.scheduler.weights.weights_base.all_weighers'],
+                default=['neutron.plugins.cisco.l3.scheduler.weights.all_weighers'],
                 help='Which weight class names to use for weighing hosts')
 ]
 
@@ -34,9 +34,9 @@ class FilterScheduler(object):
         self.filter_classes = self.filter_handler.get_matching_classes(
             CONF.scheduler_available_filters)
 
-        self.weight_handler = weights_base.HostWeightHandler()
+        self.weight_handler = weights.HostWeightHandler()
         self.weight_classes = self.weight_handler.get_matching_classes(
-            CONF.weight_classes)
+            CONF.scheduler_weight_classes)
         self.chain_dic = {}
         self.filter_db_handler = FilterChainManager()
 
@@ -51,15 +51,15 @@ class FilterScheduler(object):
         if filter_chain is None:
             filter_chain = self.filter_db_handler.get_filter_chain(context, chain_name)
             if filter_chain is None:
-                if chain_name is 'all_filter':
+                if chain_name == 'all_filter':
                     filter_name_class = 'AllHostsFilter'
                 else:
                     filter_name_class = 'NoHostsFilter'
 
                 filter_chain = self.filter_db_handler.create_filter_chain(context, chain_name, [filter_name_class])
-                self.chain_dic[chain_name] = self._choose_host_filters(filter_chain)
+                self.chain_dic[chain_name] = self._choose_host_filters([filter_name_class])
                 filter_chain = self.chain_dic.get(chain_name)
-                if filter_chain is None:
+                if not filter_chain:
                     raise exceptions.NoFilterChainFound()
 
         # END OF HARD CODE
@@ -101,8 +101,6 @@ class FilterScheduler(object):
     def _choose_host_filters(self, filter_cls_names):
         """Remove any bad filters in the filter chain"""
 
-        if filter_cls_names is None:
-            filter_cls_names = CONF.scheduler_default_filters
         if not isinstance(filter_cls_names, (list, tuple)):
             filter_cls_names = [filter_cls_names]
         cls_map = dict((cls.__name__, cls) for cls in self.filter_classes)

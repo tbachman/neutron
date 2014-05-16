@@ -1,6 +1,5 @@
 from oslo.config import cfg
-
-from neutron.plugins.cisco.l3.scheduler.weights import weights_base
+from neutron.plugins.cisco.l3.scheduler import weights
 
 ram_weight_opts = [
         cfg.FloatOpt('ram_weight_multiplier',
@@ -13,7 +12,7 @@ CONF = cfg.CONF
 CONF.register_opts(ram_weight_opts)
 
 
-class RAMWeigher(weights_base.BaseHostWeigher):
+class RAMWeigher(weights.BaseHostWeigher):
     minval = 0
 
     def weight_multiplier(self):

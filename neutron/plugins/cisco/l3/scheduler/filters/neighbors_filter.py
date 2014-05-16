@@ -1,6 +1,6 @@
 __author__ = 'nalle'
-
-from neutron.plugins.cisco.l3.scheduler.filters import filters_base
+'''
+from neutron.plugins.cisco.l3.scheduler import filters
 from nova.db.sqlalchemy.models import Instance
 from neutron.db import model_base
 from neutron.db import models_v2
@@ -13,7 +13,7 @@ class Neighbor(model_base.BASEV2, models_v2.HasId):
     neighbor = sa.Column(sa.String(255), nullable=False)
 
 
-class NeighborsFilter(filters_base.BaseHostFilter, base_db.CommonDbMixin):
+class NeighborsFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
 
     def get_physical_host_of_neighbor(self, context, neighbor):
         query = self._model_query(context, Instance)
@@ -40,4 +40,4 @@ class NeighborsFilter(filters_base.BaseHostFilter, base_db.CommonDbMixin):
             return False
 
     def get_description(self):
-        ""
+        '''
