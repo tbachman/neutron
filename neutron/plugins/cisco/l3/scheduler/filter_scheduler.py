@@ -68,7 +68,7 @@ class FilterScheduler(object):
             return self._schedule(instance,
                                   hosts, weight_functions, filter_chain, rpc, **kwargs)
         except:
-            raise exceptions.NoValidHost(reason="")
+            return 'No valid host'
 
     def _schedule(self, instance, hosts,
                   weight_functions, filter_chain=None, rpc=False, **kwargs):
