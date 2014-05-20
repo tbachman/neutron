@@ -124,7 +124,7 @@ class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
         logical resources should be removed from the hosting devices
         """
         if hosting_data:
-            self._notification_host(context, 'hosting_device_removed',
+            self._notification_host(context, 'hosting_devices_removed',
                                     {'hosting_data': hosting_data,
                                      'deconfigure': deconfigure}, host)
 

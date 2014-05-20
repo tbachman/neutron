@@ -29,6 +29,7 @@ from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
+from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
 from neutron.plugins.cisco.extensions import routertype
@@ -54,6 +55,7 @@ class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
+                        routertype_db.RoutertypeDbMixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,
                         router_sch_db.L3RouterTypeAwareSchedulerDbMixin):

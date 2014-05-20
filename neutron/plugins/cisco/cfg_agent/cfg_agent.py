@@ -324,7 +324,7 @@ class CiscoCfgAgent(manager.Manager):
         LOG.debug(_('Got router added to agent :%r'), payload)
         self.routers_updated(context, payload)
 
-    def hosting_device_removed(self, context, payload):
+    def hosting_devices_removed(self, context, payload):
         """Deal with hosting device removed RPC message.
         Payload format:
         {

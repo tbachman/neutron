@@ -25,8 +25,7 @@ import neutron.plugins.cisco.extensions.routertype as routertype
 LOG = logging.getLogger(__name__)
 
 
-class RoutertypeDbMixin(routertype.RoutertypePluginBase,
-                        base_db.CommonDbMixin):
+class RoutertypeDbMixin(routertype.RoutertypePluginBase):
     """Mixin class for Router types."""
 
     def create_routertype(self, context, routertype):
