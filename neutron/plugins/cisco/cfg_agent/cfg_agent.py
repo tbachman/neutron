@@ -409,8 +409,11 @@ class CiscoCfgAgent(manager.Manager):
             # TODO(Hareesh): also fetch other service instances
             routers = self.plugin_rpc.get_routers(context, router_ids=None,
                                                   hd_ids=res['reachable'])
-            resources = {'routers': routers, 'all_routers': True}
-            self.process_services(hd_id, resources)
+            resources = {'routers': routers}
+            flags = {'all_routers': True}
+            #ToDo(Hareesh): Make this multi-threaded
+            for hd_id in res['reachable']:
+                self.process_services(hd_id, resources, flags)
         if res['dead']:
             LOG.debug(_("Reporting dead hosting devices: %s"),
                       res['dead'])
