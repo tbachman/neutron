@@ -42,8 +42,7 @@ from neutron.plugins.common import constants
 
 class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
                                     l3_router_rpc.L3RouterCfgRpcCallbackMixin):
-    # Set RPC API version to 1.0 by default.
-    RPC_API_VERSION = '1.0'
+    RPC_API_VERSION = '1.1'
 
     def create_rpc_dispatcher(self):
         """Get the rpc dispatcher for this manager.
