@@ -112,7 +112,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        router_type_name = r.get(routertype.ROUTERTYPE,
+        router_type_name = r.get(routertype.TYPE_ATTR,
                                  cfg.CONF.default_router_type)
         # bobmel: Hard coding to shared host for now
         share_host = True
