@@ -44,7 +44,7 @@ class FilterScheduler(object):
 
         #Check cache, if not, check db.
 
-        # HARD CODED FILTER CHAINS - IN THE FUTURE USE CLI COMMANDS
+        # HARD CODED FILTER CHAINS - IN THE FUTURE USE CLI COMMANDS TO CREATE, UPDATE, DELETE FILTER CHAINS
 
         filter_chain = self.chain_dic.get(chain_name)
 
@@ -53,14 +53,17 @@ class FilterScheduler(object):
             if filter_chain is None:
                 if chain_name == 'all_filter':
                     filter_name_class = 'AllHostsFilter'
-                else:
+                elif chain_name == 'no_filter':
                     filter_name_class = 'NoHostsFilter'
-
-                filter_chain = self.filter_db_handler.create_filter_chain(context, chain_name, [filter_name_class])
-                self.chain_dic[chain_name] = self._choose_host_filters([filter_name_class])
-                filter_chain = self.chain_dic.get(chain_name)
-                if not filter_chain:
+                else:
                     raise exceptions.NoFilterChainFound()
+
+                self.filter_db_handler.create_filter_chain(context, chain_name, [filter_name_class])
+                filter_chain = self.filter_db_handler.get_filter_chain(context, chain_name)
+            self.chain_dic[chain_name] = self._choose_host_filters(filter_chain)
+            filter_chain = self.chain_dic.get(chain_name)
+            if not filter_chain:
+                raise exceptions.NoFilterChainFound()
 
         # END OF HARD CODE
 
