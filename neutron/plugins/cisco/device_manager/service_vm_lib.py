@@ -68,11 +68,24 @@ class ServiceVMManager:
             status = c_constants.SVM_ERROR
         return status
 
-    def dispatch_service_vm_dis(self, context, instance_name, vm_image,
-                                vm_flavor, hosting_device_drv, mgmt_port,
-                                ports=None):
-#    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
-#                            hosting_device_drv, mgmt_port, ports=None):
+    #TODO(remove fake function later)
+    def dispatch_service_vm(self, context, instance_name, vm_image,
+                            vm_flavor, hosting_device_drv, mgmt_port,
+                            ports=None):
+        if self._core_plugin.__class__.__name__ != 'CSR1kv_OVSNeutronPluginV2':
+            return self.dispatch_service_vm_real(context, instance_name,
+                                                 vm_image, vm_flavor,
+                                                 hosting_device_drv,
+                                                 mgmt_port, ports)
+        else:
+            return self.dispatch_service_vm_fake(context, instance_name,
+                                                 vm_image, vm_flavor,
+                                                 hosting_device_drv,
+                                                 mgmt_port, ports)
+
+    def dispatch_service_vm_real(self, context, instance_name, vm_image,
+                                 vm_flavor, hosting_device_drv, mgmt_port,
+                                 ports=None):
         nics = [{'port-id': mgmt_port['id']}]
         for port in ports:
             nics.append({'port-id': port['id']})
@@ -111,10 +124,18 @@ class ServiceVMManager:
             return None
         return {'id': server.id}
 
+    #TODO(remove fake function later)
     def delete_service_vm_dis(self, context, vm_id, hosting_device_drv,
                               mgmt_nw_id):
-#    def delete_service_vm(self, context, vm_id, hosting_device_drv,
-#                          mgmt_nw_id):
+        if self._core_plugin.__class__.__name__ != 'CSR1kv_OVSNeutronPluginV2':
+            return self.delete_service_vm_real(context, vm_id,
+                                               hosting_device_drv, mgmt_nw_id)
+        else:
+            return self.delete_service_vm_fake(context, vm_id,
+                                               hosting_device_drv, mgmt_nw_id)
+
+    def delete_service_vm_real(self, context, vm_id, hosting_device_drv,
+                               mgmt_nw_id):
         result = True
         # Get ports on management network (should be only one)
         ports = self._core_plugin.get_ports(
@@ -137,13 +158,11 @@ class ServiceVMManager:
             result = False
         return result
 
-    # TODO(bobmel): Move this to fake_service_vm_lib.py file
-    # with FakeServiceVMManager
-    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
-                            hosting_device_drv, mgmt_port, ports=None):
-#    def dispatch_service_vm_fake(self, context, instance_name, vm_image,
-#                                 vm_flavor, hosting_device_drv, mgmt_port,
-#                                 ports=None):
+    # TODO(bobmel): Move this to fake_service_vm_lib.py file with
+    # FakeServiceVMManager
+    def dispatch_service_vm_fake(self, context, instance_name, vm_image,
+                                 vm_flavor, hosting_device_drv, mgmt_port,
+                                 ports=None):
         vm_id = uuidutils.generate_uuid()
 
         try:
@@ -180,10 +199,8 @@ class ServiceVMManager:
 
         return myserver['server']
 
-    def delete_service_vm(self, context, vm_id, hosting_device_drv,
-                          mgmt_nw_id):
-#    def delete_service_vm_fake(self, context, vm_id, hosting_device_drv,
-#                               mgmt_nw_id):
+    def delete_service_vm_fake(self, context, vm_id, hosting_device_drv,
+                               mgmt_nw_id):
         result = True
         # Get ports on management network (should be only one)
         ports = self._core_plugin.get_ports(

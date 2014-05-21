@@ -21,6 +21,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import expression as expr
 
+from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
@@ -112,8 +113,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        router_type_name = r.get(routertype.TYPE_ATTR,
-                                 cfg.CONF.default_router_type)
+        router_type_name = r[routertype.TYPE_ATTR]
+        if router_type_name is attributes.ATTR_NOT_SPECIFIED:
+            router_type_name = cfg.CONF.default_router_type
         # bobmel: Hard coding to shared host for now
         share_host = True
         with context.session.begin(subtransactions=True):
