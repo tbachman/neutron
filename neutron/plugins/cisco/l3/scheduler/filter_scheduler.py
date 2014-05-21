@@ -55,6 +55,8 @@ class FilterScheduler(object):
                     filter_name_class = 'AllHostsFilter'
                 elif chain_name == 'no_filter':
                     filter_name_class = 'NoHostsFilter'
+                elif chain_name == 'neighbor_filter':
+                    filter_name_class = 'NeighborsFilter'
                 else:
                     raise exceptions.NoFilterChainFound()
 
@@ -68,15 +70,15 @@ class FilterScheduler(object):
         # END OF HARD CODE
 
         try:
-            return self._schedule(instance,
+            return self._schedule(context, instance,
                                   hosts, weight_functions, filter_chain, rpc, **kwargs)
         except:
             raise exceptions.NoValidHost(reason="")
 
-    def _schedule(self, instance, hosts,
+    def _schedule(self, context, instance, hosts,
                   weight_functions, filter_chain=None, rpc=False, **kwargs):
 
-        filtered_hosts = self.get_filtered_hosts(instance, hosts,
+        filtered_hosts = self.get_filtered_hosts(context, instance, hosts,
                                                  filter_chain, **kwargs)
         if not filtered_hosts:
             if rpc:
@@ -91,9 +93,9 @@ class FilterScheduler(object):
 
         return weighted_hosts
 
-    def get_filtered_hosts(self, instance, hosts, filter_chain, **kwargs):
+    def get_filtered_hosts(self, context, instance, hosts, filter_chain, **kwargs):
         """Filter hosts and return only ones passing all filters."""
-        return self.filter_handler.get_filtered_objects(instance, hosts, filter_chain, **kwargs)
+        return self.filter_handler.get_filtered_objects(context, instance, hosts, filter_chain, **kwargs)
 
     def get_weighed_hosts(self, hosts, weight_functions, **kwargs):
         """Weigh the hosts."""

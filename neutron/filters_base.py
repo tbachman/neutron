@@ -11,7 +11,7 @@ class BaseFilter(object):
     def _filter_one(self, host, resource, **kwargs):
         return True
 
-    def filter_all(self, host_list, resource, **kwargs):
+    def filter_all(self, context, host_list, resource, **kwargs):
 
         for host in host_list:
             if self._filter_one(host, resource, **kwargs):
@@ -22,12 +22,12 @@ class BaseFilter(object):
 
 class BaseFilterHandler(loadables.BaseLoader):
 
-    def get_filtered_objects(self, resource, hosts, filters, **kwargs):
+    def get_filtered_objects(self, context, resource, hosts, filters, **kwargs):
         filtered_hosts = list(hosts)
         for filter_cls in filters:
             current_filter = filter_cls()
 
-            hosts = current_filter.filter_all(filtered_hosts,
+            hosts = current_filter.filter_all(context, filtered_hosts,
                                               resource, **kwargs)
             if hosts is None:
                 return
