@@ -169,6 +169,22 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         l3_router_rpc_api.L3JointAgentNotify.routers_updated(context, routers)
         return router_updated
 
+    #Todo(bobmel): Move this to l3_routertype_aware_schedulers_db later
+    def _check_router_needs_rescheduling(self, context, router_id, gw_info):
+        try:
+            ns_routertype_id = self.get_namespace_router_type_id(context)
+            router_type_id = self.get_router_type_id(context, router_id)
+        except AttributeError, n_exc.NeutronException:
+            return
+        if router_type_id != ns_routertype_id:
+            LOG.debug(_('Router %(r_id)s is of type %(t_id)s which is not '
+                        'hosted by l3 agents'),
+                      {'r_id': router_id, 't_id': router_type_id})
+            return
+        return super(L3RouterTypeAwareSchedulerDbMixin,
+                     self)._check_router_needs_rescheduling(context, router_id,
+                                                            gw_info)
+
     def delete_router(self, context, id):
         router_db = self._get_router(context, id)
         router = self._make_router_dict(router_db)
