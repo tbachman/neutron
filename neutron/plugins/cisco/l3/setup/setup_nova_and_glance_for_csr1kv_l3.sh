@@ -51,10 +51,10 @@ source ~/devstack/openrc $adminUser $L3AdminTenant
 echo -n "Checking if flavor '$csr1kvFlavorName' exists ..."
 flavorId=`nova flavor-show $csr1kvFlavorId 2>&1 | awk '
 /No flavor|id|endpoint/ {
-   if ($index ("endpoint", $0) > 0) {
+   if (index($0, "endpoint") > 0) {
       print "NO SERVER"; nextfile;
    }
-   else if ($2 == "No")
+   else if (index($0, "No flavor") > 0)
       print "No";
    else
       print $4;
@@ -131,10 +131,10 @@ fi
 echo -n "Checking if image '$csr1kvImageName' exists ..."
 hasImage=`glance image-show $csr1kvImageName 2>&1 | awk '
 /Property|No|endpoint/ {
-   if ($index ("endpoint", $0) > 0) {
+   if (index($0, "endpoint") > 0) {
       print "NO SERVER"; nextfile;
    }
-   else if ($1 == "No")
+   else if (index($0, "No flavor") > 0)
       print "No";
    else
       print "Yes";
