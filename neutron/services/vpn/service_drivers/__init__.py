@@ -19,6 +19,8 @@ import abc
 
 import six
 
+from neutron.db import l3_db
+from neutron.extensions import vpnaas
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.rpc import proxy
@@ -32,13 +34,36 @@ class VpnDriver(object):
 
     def __init__(self, service_plugin):
         self.service_plugin = service_plugin
+        self.l3_plugin = manager.NeutronManager.get_service_plugins().get(
+            constants.L3_ROUTER_NAT)
+        self.core_plugin = manager.NeutronManager.get_plugin()
 
     @property
     def service_type(self):
         pass
 
+    def _check_router(self, context, router_id):
+        router = self.l3_plugin.get_router(context, router_id)
+        if not router.get(l3_db.EXTERNAL_GW_INFO):
+            raise vpnaas.RouterIsNotExternal(router_id=router_id)
+
+    def _check_subnet_id(self, context, router_id, subnet_id):
+        ports = self.core_plugin.get_ports(
+            context,
+            filters={'fixed_ips': {'subnet_id': [subnet_id]},
+                     'device_id': [router_id]})
+        if not ports:
+            raise vpnaas.SubnetIsNotConnectedToRouter(
+                subnet_id=subnet_id,
+                router_id=router_id)
+
+    def validate_create_vpnservice(self, context, vpnservice):
+        vpns = vpnservice['vpnservice']
+        self._check_router(context, vpns['router_id'])
+        self._check_subnet_id(context, vpns['router_id'], vpns['subnet_id'])
+
     @abc.abstractmethod
-    def create_vpnservice(self, context, vpnservice):
+    def apply_create_vpnservice(self, context, vpnservice):
         pass
 
     @abc.abstractmethod

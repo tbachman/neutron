@@ -120,7 +120,7 @@ class IPsecVPNDriver(service_drivers.VpnDriver):
     def update_ipsecpolicy(self, context, old_ipsec_policy, ipsecpolicy):
         pass
 
-    def create_vpnservice(self, context, vpnservice):
+    def apply_create_vpnservice(self, context, vpnservice):
         pass
 
     def update_vpnservice(self, context, old_vpnservice, vpnservice):

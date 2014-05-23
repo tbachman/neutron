@@ -46,6 +46,19 @@ class TestCiscoIPsecDriverValidation(base.BaseTestCase):
         super(TestCiscoIPsecDriverValidation, self).setUp()
         mock.patch('neutron.openstack.common.rpc.create_connection').start()
         self.service_plugin = mock.Mock()
+
+        self.l3_plugin = mock.Mock()
+        service_plugin_p = mock.patch(
+            'neutron.manager.NeutronManager.get_service_plugins')
+        get_service_plugin = service_plugin_p.start()
+        get_service_plugin.return_value = {
+            constants.L3_ROUTER_NAT: self.l3_plugin}
+
+        self.core_plugin = mock.Mock()
+        core_plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
+        get_plugin = core_plugin_p.start()
+        get_plugin.return_value = self.core_plugin
+
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(self.service_plugin)
         self.context = n_ctx.Context('some_user', 'some_tenant')
         self.vpn_service = mock.Mock()
