@@ -430,7 +430,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 pass
             for hd in hosting_devices:
                 if self._process_non_responsive_hosting_device(e_context, hd):
-                    devmgr_rpc.DeviceMgrCfgAgentNotify.hosting_device_removed(
+                    devmgr_rpc.DeviceMgrCfgAgentNotify.hosting_devices_removed(
                         context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):

@@ -84,15 +84,3 @@ class L3RouterCfgRpcCallbackMixin(object):
             plugin.update_port(context, port['id'],
                                {'port': {portbindings.HOST_ID: host}})
 
-    def get_external_network_id(self, context, **kwargs):
-        """Get one external network id for cfg agent.
-
-        cfg agent expects only on external network when it performs
-        this query.
-        """
-        context = neutron_context.get_admin_context()
-        plugin = manager.NeutronManager.get_plugin()
-        net_id = plugin.get_external_network_id(context)
-        LOG.debug(_("External network ID returned to cfg agent: %s"),
-                  net_id)
-        return net_id

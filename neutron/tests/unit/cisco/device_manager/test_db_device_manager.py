@@ -844,7 +844,7 @@ class TestDeviceManagerDBPlugin(
                                   handle_non_responding_hosting_devices)
                         l3mock.assert_called_once()
                         if expected_num_remaining == 0:
-                            m2.hosting_device_removed.assert_called_once()
+                            m2.hosting_devices_removed.assert_called_once()
 
     # handled failed hosting device tests
     def test_failed_managed_vm_based_hosting_device_gets_deleted(self):

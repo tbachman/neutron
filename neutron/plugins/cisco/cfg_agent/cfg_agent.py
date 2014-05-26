@@ -111,21 +111,9 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
                                        hosting_device_ids=hd_ids),
                          topic=self.topic)
 
-    def get_external_network_id(self, context):
-        """Make a remote process call to retrieve the external network id.
-
-        :param context : session context
-        :raise common.RemoteError: with TooManyExternalNetworks
-                                   as exc_type if there are
-                                   more than one external network
-        """
-        return self.call(context,
-                         self.make_msg('get_external_network_id',
-                                       host=self.host),
-                         topic=self.topic)
-
 
 #ToDo: Placeholder for PluginAPI for other services
+
 
 class CiscoCfgAgent(manager.Manager):
     """Cisco Cfg Agent.
@@ -144,9 +132,6 @@ class CiscoCfgAgent(manager.Manager):
     RPC_API_VERSION = '1.1'
 
     OPTS = [
-        cfg.StrOpt('external_network_bridge', default='',
-                   help=_("Name of bridge used for external network "
-                          "traffic.")),
         cfg.StrOpt('gateway_external_network_id', default='',
                    help=_("UUID of external network for routers configured "
                           "by agents.")),
@@ -542,13 +527,7 @@ class RoutingServiceHelper(object):
         :param all_routers: Flag for specifying a partial list of routers
         :return: None
         """
-        if (self.conf.external_network_bridge and
-                not (ip_lib.device_exists(self.conf.external_network_bridge))):
-            LOG.error(_("The external network bridge '%s' does not exist"),
-                      self.conf.external_network_bridge)
-            return
 
-        target_ex_net_id = self._fetch_external_net_id()
         # if routers are all the routers we have (they are from router sync on
         # starting or when error occurs during running), we seek the
         # routers which should be removed.
@@ -563,14 +542,9 @@ class RoutingServiceHelper(object):
         for r in routers:
             if not r['admin_state_up']:
                 continue
-                # Note: Whether the router can only be assigned to a particular
+            # Note: Whether the router can only be assigned to a particular
             # hosting device is decided and enforced by the plugin.
             # So no checks are done here.
-            ex_net_id = (r['external_gateway_info'] or {}).get(
-                'network_id')
-            if (target_ex_net_id and ex_net_id and
-                    ex_net_id != target_ex_net_id):
-                continue
             cur_router_ids.add(r['id'])
             if not self._hdm.is_hosting_device_reachable(r['id'], r):
                 LOG.info(
@@ -630,7 +604,8 @@ class RoutingServiceHelper(object):
                 self.external_gateway_added(ri, ex_gw_port)
             elif not ex_gw_port and ri.ex_gw_port:
                 self.external_gateway_removed(ri, ri.ex_gw_port)
-
+            #TODO(hareesh): Remove stale external GWs similarly as in l3agent
+            #TODO(hareesh): Set floating ip statuses similarly as in l3agent
             if ex_gw_port:
                 self.process_router_floating_ips(ri, ex_gw_port)
 
@@ -727,21 +702,6 @@ class RoutingServiceHelper(object):
             driver = self._hdm.get_driver(ri)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes
-
-    def _fetch_external_net_id(self):
-        """Find UUID of single external network for this agent."""
-        if self.conf.gateway_external_network_id:
-            return self.conf.gateway_external_network_id
-        try:
-            return self.plugin_rpc.get_external_network_id(self.context)
-        except rpc_common.RemoteError as e:
-            with excutils.save_and_reraise_exception():
-                if e.exc_type == 'TooManyExternalNetworks':
-                    msg = _(
-                        "The 'gateway_external_network_id' option must be "
-                        "configured for this agent as Neutron has more than "
-                        "one external network.")
-                    raise Exception(msg)
 
     def _set_subnet_info(self, port):
         ips = port['fixed_ips']
