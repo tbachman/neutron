@@ -12,10 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
+import collections
 import mock
 from oslo.config import cfg
 import testtools
@@ -28,6 +25,12 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.openvswitch.common import constants
 from neutron.tests import base
 from neutron.tests import tools
+
+try:
+    OrderedDict = collections.OrderedDict
+except AttributeError:
+    import ordereddict
+    OrderedDict = ordereddict.OrderedDict
 
 OVS_LINUX_KERN_VERS_WITHOUT_VXLAN = "3.12.0"
 
@@ -402,6 +405,50 @@ class OVS_Lib_Test(base.BaseTestCase):
         run_ofctl.assert_has_calls([
             mock.call('add-flows', ['-'], 'added_flow_1\nadded_flow_2\n'),
             mock.call('del-flows', ['-'], 'deleted_flow_1\n')
+        ])
+
+    def test_defer_apply_flows_concurrently(self):
+        flow_expr = mock.patch.object(ovs_lib, '_build_flow_expr_str').start()
+        flow_expr.side_effect = ['added_flow_1', 'deleted_flow_1',
+                                 'modified_flow_1', 'added_flow_2',
+                                 'deleted_flow_2', 'modified_flow_2']
+
+        run_ofctl = mock.patch.object(self.br, 'run_ofctl').start()
+
+        def run_ofctl_fake(cmd, args, process_input=None):
+            self.br.defer_apply_on()
+            if cmd == 'add-flows':
+                self.br.add_flow(flow='added_flow_2')
+            elif cmd == 'del-flows':
+                self.br.delete_flows(flow='deleted_flow_2')
+            elif cmd == 'mod-flows':
+                self.br.mod_flow(flow='modified_flow_2')
+        run_ofctl.side_effect = run_ofctl_fake
+
+        self.br.defer_apply_on()
+        self.br.add_flow(flow='added_flow_1')
+        self.br.delete_flows(flow='deleted_flow_1')
+        self.br.mod_flow(flow='modified_flow_1')
+        self.br.defer_apply_off()
+
+        run_ofctl.side_effect = None
+        self.br.defer_apply_off()
+
+        flow_expr.assert_has_calls([
+            mock.call({'flow': 'added_flow_1'}, 'add'),
+            mock.call({'flow': 'deleted_flow_1'}, 'del'),
+            mock.call({'flow': 'modified_flow_1'}, 'mod'),
+            mock.call({'flow': 'added_flow_2'}, 'add'),
+            mock.call({'flow': 'deleted_flow_2'}, 'del'),
+            mock.call({'flow': 'modified_flow_2'}, 'mod')
+        ])
+        run_ofctl.assert_has_calls([
+            mock.call('add-flows', ['-'], 'added_flow_1\n'),
+            mock.call('del-flows', ['-'], 'deleted_flow_1\n'),
+            mock.call('mod-flows', ['-'], 'modified_flow_1\n'),
+            mock.call('add-flows', ['-'], 'added_flow_2\n'),
+            mock.call('del-flows', ['-'], 'deleted_flow_2\n'),
+            mock.call('mod-flows', ['-'], 'modified_flow_2\n')
         ])
 
     def test_add_tunnel_port(self):
@@ -868,3 +915,35 @@ class OVS_Lib_Test(base.BaseTestCase):
         min_kernel_ver = constants.MINIMUM_LINUX_KERNEL_OVS_VXLAN
         self._check_ovs_vxlan_version(min_vxlan_ver, min_vxlan_ver,
                                       min_kernel_ver, expecting_ok=True)
+
+    def test_ofctl_arg_supported(self):
+        with mock.patch('neutron.common.utils.get_random_string') as utils:
+            utils.return_value = 'test'
+            supported = ovs_lib.ofctl_arg_supported(self.root_helper, 'cmd',
+                                                    ['args'])
+            self.execute.assert_has_calls([
+                mock.call(['ovs-vsctl', self.TO, '--', '--if-exists', 'del-br',
+                           'br-test-test'], root_helper=self.root_helper),
+                mock.call(['ovs-vsctl', self.TO, '--', '--may-exist', 'add-br',
+                           'br-test-test'], root_helper=self.root_helper),
+                mock.call(['ovs-ofctl', 'cmd', 'br-test-test', 'args'],
+                          root_helper=self.root_helper),
+                mock.call(['ovs-vsctl', self.TO, '--', '--if-exists', 'del-br',
+                           'br-test-test'], root_helper=self.root_helper)
+            ])
+            self.assertTrue(supported)
+
+            self.execute.side_effect = Exception
+            supported = ovs_lib.ofctl_arg_supported(self.root_helper, 'cmd',
+                                                    ['args'])
+            self.execute.assert_has_calls([
+                mock.call(['ovs-vsctl', self.TO, '--', '--if-exists', 'del-br',
+                           'br-test-test'], root_helper=self.root_helper),
+                mock.call(['ovs-vsctl', self.TO, '--', '--may-exist', 'add-br',
+                           'br-test-test'], root_helper=self.root_helper),
+                mock.call(['ovs-ofctl', 'cmd', 'br-test-test', 'args'],
+                          root_helper=self.root_helper),
+                mock.call(['ovs-vsctl', self.TO, '--', '--if-exists', 'del-br',
+                           'br-test-test'], root_helper=self.root_helper)
+            ])
+            self.assertFalse(supported)

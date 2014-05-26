@@ -32,6 +32,7 @@ from neutron.plugins.linuxbridge.common import constants as lconst
 from neutron.tests import base
 
 LOCAL_IP = '192.168.0.33'
+DEVICE_1 = 'tapabcdef01-12'
 
 
 class FakeIpLinkCommand(object):
@@ -110,6 +111,62 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
                                     'get_interface_mac')
         self.get_mac = self.get_mac_p.start()
         self.get_mac.return_value = '00:00:00:00:00:01'
+
+    def test_treat_devices_removed_with_existed_device(self):
+        agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
+                                                                     0,
+                                                                     None)
+        devices = [DEVICE_1]
+        with contextlib.nested(
+            mock.patch.object(agent.plugin_rpc, "update_device_down"),
+            mock.patch.object(agent, "remove_devices_filter")
+        ) as (fn_udd, fn_rdf):
+            fn_udd.return_value = {'device': DEVICE_1,
+                                   'exists': True}
+            with mock.patch.object(linuxbridge_neutron_agent.LOG,
+                                   'info') as log:
+                resync = agent.treat_devices_removed(devices)
+                self.assertEqual(2, log.call_count)
+                self.assertFalse(resync)
+                self.assertTrue(fn_udd.called)
+                self.assertTrue(fn_rdf.called)
+
+    def test_treat_devices_removed_with_not_existed_device(self):
+        agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
+                                                                     0,
+                                                                     None)
+        devices = [DEVICE_1]
+        with contextlib.nested(
+            mock.patch.object(agent.plugin_rpc, "update_device_down"),
+            mock.patch.object(agent, "remove_devices_filter")
+        ) as (fn_udd, fn_rdf):
+            fn_udd.return_value = {'device': DEVICE_1,
+                                   'exists': False}
+            with mock.patch.object(linuxbridge_neutron_agent.LOG,
+                                   'debug') as log:
+                resync = agent.treat_devices_removed(devices)
+                self.assertEqual(1, log.call_count)
+                self.assertFalse(resync)
+                self.assertTrue(fn_udd.called)
+                self.assertTrue(fn_rdf.called)
+
+    def test_treat_devices_removed_failed(self):
+        agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
+                                                                     0,
+                                                                     None)
+        devices = [DEVICE_1]
+        with contextlib.nested(
+            mock.patch.object(agent.plugin_rpc, "update_device_down"),
+            mock.patch.object(agent, "remove_devices_filter")
+        ) as (fn_udd, fn_rdf):
+            fn_udd.side_effect = Exception()
+            with mock.patch.object(linuxbridge_neutron_agent.LOG,
+                                   'debug') as log:
+                resync = agent.treat_devices_removed(devices)
+                self.assertEqual(2, log.call_count)
+                self.assertTrue(resync)
+                self.assertTrue(fn_udd.called)
+                self.assertTrue(fn_rdf.called)
 
     def test_update_devices_failed(self):
         agent = linuxbridge_neutron_agent.LinuxBridgeNeutronAgentRPC({},
@@ -339,10 +396,11 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             with mock.patch.object(utils, 'execute') as exec_fn:
                 exec_fn.return_value = False
                 self.assertEqual(self.lbm.ensure_vlan("eth0", "1"), "eth0.1")
-                exec_fn.assert_called_twice()
+                # FIXME(kevinbenton): validate the params to the exec_fn calls
+                self.assertEqual(exec_fn.call_count, 2)
                 exec_fn.return_value = True
                 self.assertIsNone(self.lbm.ensure_vlan("eth0", "1"))
-                exec_fn.assert_called_once()
+                self.assertEqual(exec_fn.call_count, 3)
 
     def test_ensure_vxlan(self):
         seg_id = "12345678"

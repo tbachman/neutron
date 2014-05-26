@@ -22,6 +22,7 @@ from oslo.config import cfg
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.common import exceptions
+from neutron.common import utils as common_utils
 from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
@@ -208,7 +209,14 @@ class OVSBridge(BaseOVS):
 
     def defer_apply_off(self):
         LOG.debug(_('defer_apply_off'))
-        for action, flows in self.deferred_flows.items():
+        # Note(ethuleau): stash flows and disable deferred mode. Then apply
+        # flows from the stashed reference to be sure to not purge flows that
+        # were added between two ofctl commands.
+        stashed_deferred_flows, self.deferred_flows = (
+            self.deferred_flows, {'add': '', 'mod': '', 'del': ''}
+        )
+        self.defer_apply_flows = False
+        for action, flows in stashed_deferred_flows.items():
             if flows:
                 LOG.debug(_('Applying following deferred flows '
                             'to bridge %s'), self.br_name)
@@ -216,8 +224,6 @@ class OVSBridge(BaseOVS):
                     LOG.debug(_('%(action)s: %(flow)s'),
                               {'action': action, 'flow': line})
                 self.run_ofctl('%s-flows' % action, ['-'], flows)
-        self.defer_apply_flows = False
-        self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
 
     def add_tunnel_port(self, port_name, remote_ip, local_ip,
                         tunnel_type=p_const.TYPE_GRE,
@@ -581,3 +587,26 @@ def _build_flow_expr_str(flow_dict, cmd):
         flow_expr_arr.append(actions)
 
     return ','.join(flow_expr_arr)
+
+
+def ofctl_arg_supported(root_helper, cmd, args):
+    '''Verify if ovs-ofctl binary supports command with specific args.
+
+    :param root_helper: utility to use when running shell cmds.
+    :param cmd: ovs-vsctl command to use for test.
+    :param args: arguments to test with command.
+    :returns: a boolean if the args supported.
+    '''
+    supported = True
+    br_name = 'br-test-%s' % common_utils.get_random_string(6)
+    test_br = OVSBridge(br_name, root_helper)
+    test_br.reset_bridge()
+
+    full_args = ["ovs-ofctl", cmd, test_br.br_name] + args
+    try:
+        utils.execute(full_args, root_helper=root_helper)
+    except Exception:
+        supported = False
+
+    test_br.destroy()
+    return supported

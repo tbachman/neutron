@@ -26,7 +26,6 @@ import testtools
 
 from neutron.agent.common import config
 from neutron.agent import dhcp_agent
-from neutron.agent.dhcp_agent import DhcpAgentWithStateReport
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import interface
 from neutron.common import constants as const
@@ -141,10 +140,10 @@ class TestDhcpAgent(base.BaseTestCase):
         state_rpc_str = 'neutron.agent.rpc.PluginReportStateAPI'
         # sync_state is needed for this test
         cfg.CONF.set_override('report_interval', 1, 'AGENT')
-        with mock.patch.object(DhcpAgentWithStateReport,
+        with mock.patch.object(dhcp_agent.DhcpAgentWithStateReport,
                                'sync_state',
                                autospec=True) as mock_sync_state:
-            with mock.patch.object(DhcpAgentWithStateReport,
+            with mock.patch.object(dhcp_agent.DhcpAgentWithStateReport,
                                    'periodic_resync',
                                    autospec=True) as mock_periodic_resync:
                 with mock.patch(state_rpc_str) as state_rpc:
@@ -159,7 +158,8 @@ class TestDhcpAgent(base.BaseTestCase):
                         cfg.CONF.register_opts(dhcp.OPTS)
                         cfg.CONF.register_opts(interface.OPTS)
                         cfg.CONF(project='neutron')
-                        agent_mgr = DhcpAgentWithStateReport('testhost')
+                        agent_mgr = dhcp_agent.DhcpAgentWithStateReport(
+                            'testhost')
                         eventlet.greenthread.sleep(1)
                         agent_mgr.after_start()
                         mock_sync_state.assert_called_once_with(agent_mgr)
@@ -366,7 +366,7 @@ class TestDhcpAgent(base.BaseTestCase):
         with mock.patch.object(dhcp, 'LOG') as log:
             self.assertRaises(SystemExit, dhcp.DeviceManager,
                               cfg.CONF, 'sudo', None)
-            log.error.assert_called_once()
+            self.assertEqual(log.error.call_count, 1)
 
 
 class TestLogArgs(base.BaseTestCase):
@@ -1268,14 +1268,12 @@ class TestDeviceManager(base.BaseTestCase):
         expected = ('dhcp1ae5f96c-c527-5079-82ea-371a01645457-12345678-1234-'
                     '5678-1234567890ab')
 
-        with mock.patch('socket.gethostname') as get_host:
-            with mock.patch('uuid.uuid5') as uuid5:
-                uuid5.return_value = '1ae5f96c-c527-5079-82ea-371a01645457'
-                get_host.return_value = 'localhost'
+        with mock.patch('uuid.uuid5') as uuid5:
+            uuid5.return_value = '1ae5f96c-c527-5079-82ea-371a01645457'
 
-                dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, None)
-                self.assertEqual(dh.get_device_id(fake_net), expected)
-                uuid5.assert_called_once_with(uuid.NAMESPACE_DNS, 'localhost')
+            dh = dhcp.DeviceManager(cfg.CONF, cfg.CONF.root_helper, None)
+            uuid5.called_once_with(uuid.NAMESPACE_DNS, cfg.CONF.host)
+            self.assertEqual(dh.get_device_id(fake_net), expected)
 
     def test_update(self):
         # Try with namespaces and no metadata network
@@ -1330,7 +1328,7 @@ class TestDeviceManager(base.BaseTestCase):
             network = FakeV4Network()
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         self.assertFalse(device.route.delete_gateway.called)
         device.route.add_gateway.assert_called_once_with('192.168.0.1')
 
@@ -1344,7 +1342,7 @@ class TestDeviceManager(base.BaseTestCase):
             network.namespace = 'qdhcp-1234'
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         self.assertFalse(device.route.delete_gateway.called)
         self.assertFalse(device.route.add_gateway.called)
 
@@ -1358,7 +1356,7 @@ class TestDeviceManager(base.BaseTestCase):
             network.namespace = 'qdhcp-1234'
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         device.route.delete_gateway.assert_called_once_with('192.168.0.1')
         self.assertFalse(device.route.add_gateway.called)
 
@@ -1372,7 +1370,7 @@ class TestDeviceManager(base.BaseTestCase):
             network.namespace = 'qdhcp-1234'
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         device.route.delete_gateway.assert_called_once_with('192.168.0.1')
         self.assertFalse(device.route.add_gateway.called)
 
@@ -1385,7 +1383,7 @@ class TestDeviceManager(base.BaseTestCase):
             network = FakeV4Network()
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         self.assertFalse(device.route.delete_gateway.called)
         self.assertFalse(device.route.add_gateway.called)
 
@@ -1398,7 +1396,7 @@ class TestDeviceManager(base.BaseTestCase):
             network = FakeV4Network()
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         self.assertFalse(device.route.delete_gateway.called)
         device.route.add_gateway.assert_called_once_with('192.168.0.1')
 
@@ -1415,7 +1413,7 @@ class TestDeviceManager(base.BaseTestCase):
             network.subnets = [subnet2, FakeV4Subnet()]
             dh._set_default_route(network, 'tap-name')
 
-        device.route.get_gateway.assert_called_once()
+        self.assertEqual(device.route.get_gateway.call_count, 1)
         self.assertFalse(device.route.delete_gateway.called)
         device.route.add_gateway.assert_called_once_with('192.168.1.1')
 

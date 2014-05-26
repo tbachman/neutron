@@ -20,7 +20,6 @@ from webob import exc
 import webtest
 
 from neutron.api import extensions
-from neutron.api.extensions import PluginAwareExtensionManager
 from neutron.api.v2 import attributes
 from neutron import context
 from neutron.db import api as db_api
@@ -37,9 +36,8 @@ from neutron.tests import base
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extensions
-from neutron.tests.unit.vmware import NSXEXT_PATH
-from neutron.tests.unit.vmware import PLUGIN_NAME
-from neutron.tests.unit.vmware.test_nsx_plugin import NsxPluginV2TestCase
+from neutron.tests.unit import vmware
+from neutron.tests.unit.vmware import test_nsx_plugin
 
 _uuid = test_api_v2._uuid
 _get_path = test_api_v2._get_path
@@ -88,7 +86,7 @@ class NetworkGatewayExtensionTestCase(base.BaseTestCase):
         manager.NeutronManager.get_plugin().supported_extension_aliases = (
             [networkgw.EXT_ALIAS])
         ext_mgr = TestExtensionManager()
-        PluginAwareExtensionManager._instance = ext_mgr
+        extensions.PluginAwareExtensionManager._instance = ext_mgr
         self.ext_mdw = test_extensions.setup_extensions_middleware(ext_mgr)
         self.api = webtest.TestApp(self.ext_mdw)
 
@@ -515,37 +513,58 @@ class NetworkGatewayDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
                                   expected_code=exc.HTTPNotFound.code)
 
     def test_create_network_gateway(self):
+        tenant_id = _uuid()
         with contextlib.nested(
-            self._gateway_device(name='dev_1'),
-            self._gateway_device(name='dev_2')) as (dev_1, dev_2):
+            self._gateway_device(name='dev_1',
+                                 tenant_id=tenant_id),
+            self._gateway_device(name='dev_2',
+                                 tenant_id=tenant_id)) as (dev_1, dev_2):
             name = 'test-gw'
             dev_1_id = dev_1[self.dev_resource]['id']
             dev_2_id = dev_2[self.dev_resource]['id']
             devices = [{'id': dev_1_id, 'interface_name': 'xxx'},
                        {'id': dev_2_id, 'interface_name': 'yyy'}]
             keys = [('devices', devices), ('name', name)]
-            with self._network_gateway(name=name, devices=devices) as gw:
+            with self._network_gateway(name=name,
+                                       devices=devices,
+                                       tenant_id=tenant_id) as gw:
                 for k, v in keys:
                     self.assertEqual(gw[self.gw_resource][k], v)
 
     def test_create_network_gateway_no_interface_name(self):
-        with self._gateway_device() as dev:
+        tenant_id = _uuid()
+        with self._gateway_device(tenant_id=tenant_id) as dev:
             name = 'test-gw'
             devices = [{'id': dev[self.dev_resource]['id']}]
             exp_devices = devices
             exp_devices[0]['interface_name'] = 'breth0'
             keys = [('devices', exp_devices), ('name', name)]
-            with self._network_gateway(name=name, devices=devices) as gw:
+            with self._network_gateway(name=name,
+                                       devices=devices,
+                                       tenant_id=tenant_id) as gw:
                 for k, v in keys:
                     self.assertEqual(gw[self.gw_resource][k], v)
 
+    def test_create_network_gateway_not_owned_device_raises_404(self):
+        # Create a device with a different tenant identifier
+        with self._gateway_device(name='dev', tenant_id=_uuid()) as dev:
+            name = 'test-gw'
+            dev_id = dev[self.dev_resource]['id']
+            devices = [{'id': dev_id, 'interface_name': 'xxx'}]
+            res = self._create_network_gateway(
+                'json', _uuid(), name=name, devices=devices)
+            self.assertEqual(404, res.status_int)
+
     def test_delete_network_gateway(self):
-        with self._gateway_device() as dev:
+        tenant_id = _uuid()
+        with self._gateway_device(tenant_id=tenant_id) as dev:
             name = 'test-gw'
             device_id = dev[self.dev_resource]['id']
             devices = [{'id': device_id,
                         'interface_name': 'xxx'}]
-            with self._network_gateway(name=name, devices=devices) as gw:
+            with self._network_gateway(name=name,
+                                       devices=devices,
+                                       tenant_id=tenant_id) as gw:
                 # Nothing to do here - just let the gateway go
                 gw_id = gw[self.gw_resource]['id']
         # Verify nothing left on db
@@ -863,13 +882,13 @@ class NetworkGatewayDbTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         self.assertIsNone(dev_query.first())
 
 
-class TestNetworkGateway(NsxPluginV2TestCase,
+class TestNetworkGateway(test_nsx_plugin.NsxPluginV2TestCase,
                          NetworkGatewayDbTestCase):
 
-    def setUp(self, plugin=PLUGIN_NAME, ext_mgr=None):
-        cfg.CONF.set_override('api_extensions_path', NSXEXT_PATH)
+    def setUp(self, plugin=vmware.PLUGIN_NAME, ext_mgr=None):
+        cfg.CONF.set_override('api_extensions_path', vmware.NSXEXT_PATH)
         # Mock l2gwlib calls for gateway devices since this resource is not
-        # mocked through the fake NVP API client
+        # mocked through the fake NSX API client
         create_gw_dev_patcher = mock.patch.object(
             l2gwlib, 'create_gateway_device')
         update_gw_dev_patcher = mock.patch.object(
@@ -1046,7 +1065,7 @@ class TestNetworkGatewayPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def __init__(self, **args):
         super(TestNetworkGatewayPlugin, self).__init__(**args)
-        extensions.append_api_extensions_path([NSXEXT_PATH])
+        extensions.append_api_extensions_path([vmware.NSXEXT_PATH])
 
     def delete_port(self, context, id, nw_gw_port_check=True):
         if nw_gw_port_check:

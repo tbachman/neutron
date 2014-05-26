@@ -50,7 +50,6 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self.conf.set_override('router_id', 'fake_id')
         self.conf.set_override('interface_driver',
                                'neutron.agent.linux.interface.NullDriver')
-        self.conf.set_override('send_arp_for_ha', 1)
         self.conf.root_helper = 'sudo'
 
         self.device_exists_p = mock.patch(
@@ -421,7 +420,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         del router[l3_constants.INTERFACE_KEY]
         del router['gw_port']
         agent.process_router(ri)
-        self.send_arp.assert_called_once()
+        self.assertEqual(self.send_arp.call_count, 1)
         self.assertFalse(agent.process_router_floating_ip_addresses.called)
         self.assertFalse(agent.process_router_floating_ip_nat_rules.called)
 
@@ -582,7 +581,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
                            if r not in ri.iptables_manager.ipv4['nat'].rules]
         self.assertEqual(len(nat_rules_delta), 2)
         self._verify_snat_rules(nat_rules_delta, router)
-        self.send_arp.assert_called_once()
+        self.assertEqual(self.send_arp.call_count, 1)
 
     def test_process_router_snat_enabled(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
@@ -604,7 +603,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
                            if r not in orig_nat_rules]
         self.assertEqual(len(nat_rules_delta), 2)
         self._verify_snat_rules(nat_rules_delta, router)
-        self.send_arp.assert_called_once()
+        self.assertEqual(self.send_arp.call_count, 1)
 
     def test_process_router_interface_added(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
@@ -634,7 +633,8 @@ class TestBasicRouterOperations(base.BaseTestCase):
                            if r not in orig_nat_rules]
         self.assertEqual(len(nat_rules_delta), 1)
         self._verify_snat_rules(nat_rules_delta, router)
-        self.send_arp.assert_called_once()
+        # send_arp is called both times process_router is called
+        self.assertEqual(self.send_arp.call_count, 2)
 
     def test_process_router_interface_removed(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
@@ -656,7 +656,8 @@ class TestBasicRouterOperations(base.BaseTestCase):
                            if r not in ri.iptables_manager.ipv4['nat'].rules]
         self.assertEqual(len(nat_rules_delta), 1)
         self._verify_snat_rules(nat_rules_delta, router, negate=True)
-        self.send_arp.assert_called_once()
+        # send_arp is called both times process_router is called
+        self.assertEqual(self.send_arp.call_count, 2)
 
     def test_process_router_internal_network_added_unexpected_error(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
@@ -1200,6 +1201,8 @@ class TestL3AgentEventHandler(base.BaseTestCase):
     def setUp(self):
         super(TestL3AgentEventHandler, self).setUp()
         cfg.CONF.register_opts(l3_agent.L3NATAgent.OPTS)
+        agent_config.register_interface_driver_opts_helper(cfg.CONF)
+        agent_config.register_use_namespaces_opts_helper(cfg.CONF)
         cfg.CONF.set_override(
             'interface_driver', 'neutron.agent.linux.interface.NullDriver'
         )

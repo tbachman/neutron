@@ -14,6 +14,7 @@
 #    under the License.
 
 import random
+import weakref
 
 import netaddr
 from oslo.config import cfg
@@ -32,7 +33,6 @@ from neutron.db import sqlalchemyutils
 from neutron.extensions import l3
 from neutron import manager
 from neutron import neutron_plugin_base_v2
-from neutron.notifiers import nova
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
@@ -89,6 +89,16 @@ class CommonDbMixin(object):
             cls._model_query_hooks[model] = model_hooks
         model_hooks[name] = {'query': query_hook, 'filter': filter_hook,
                              'result_filters': result_filters}
+
+    @property
+    def safe_reference(self):
+        """Return a weakref to the instance.
+
+        Minimize the potential for the instance persisting
+        unnecessarily in memory by returning a weakref proxy that
+        won't prevent deallocation.
+        """
+        return weakref.proxy(self)
 
     def _model_query(self, context, model):
         query = context.session.query(model)
@@ -227,6 +237,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
     def __init__(self):
         db.configure_db()
         if cfg.CONF.notify_nova_on_port_status_changes:
+            from neutron.notifiers import nova
             # NOTE(arosen) These event listners are here to hook into when
             # port status changes and notify nova about their change.
             self.nova_notifier = nova.Notifier()
