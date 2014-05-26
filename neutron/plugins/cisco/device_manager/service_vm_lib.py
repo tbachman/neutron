@@ -125,8 +125,8 @@ class ServiceVMManager:
         return {'id': server.id}
 
     #TODO(remove fake function later)
-    def delete_service_vm_dis(self, context, vm_id, hosting_device_drv,
-                              mgmt_nw_id):
+    def delete_service_vm(self, context, vm_id, hosting_device_drv,
+                          mgmt_nw_id):
         if self._core_plugin.__class__.__name__ != 'CSR1kv_OVSNeutronPluginV2':
             return self.delete_service_vm_real(context, vm_id,
                                                hosting_device_drv, mgmt_nw_id)
