@@ -75,8 +75,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         basepath = neutron.plugins.__path__[0]
-        ext_paths = [basepath + '/cisco/extensions',
-                     basepath + '/cisco/l3/extensions']
+        ext_paths = [basepath + '/cisco/extensions']
         cp = cfg.CONF.api_extensions_path
         to_add = ""
         for ext_path in ext_paths:
