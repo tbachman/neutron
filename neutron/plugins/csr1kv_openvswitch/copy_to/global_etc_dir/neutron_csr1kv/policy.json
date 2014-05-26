@@ -26,7 +26,6 @@
     "get_network:provider:network_type": "rule:admin_only",
     "get_network:provider:physical_network": "rule:admin_only",
     "get_network:provider:segmentation_id": "rule:admin_only",
-    "get_network:trunkport:trunked_networks": "rule:admin_or_network_owner",
     "get_network:queue_id": "rule:admin_only",
     "create_network:shared": "rule:admin_only",
     "create_network:router:external": "rule:admin_only",
@@ -34,13 +33,13 @@
     "create_network:provider:network_type": "rule:admin_only",
     "create_network:provider:physical_network": "rule:admin_only",
     "create_network:provider:segmentation_id": "rule:admin_only",
-    "create_network:trunkport:trunked_networks": "rule:admin_or_network_owner",
+    "create_network:trunkport:trunked_networks": "rule:admin_or_owner",
     "update_network": "rule:admin_or_owner",
     "update_network:segments": "rule:admin_only",
     "update_network:provider:network_type": "rule:admin_only",
     "update_network:provider:physical_network": "rule:admin_only",
     "update_network:provider:segmentation_id": "rule:admin_only",
-    "update_network:trunkport:trunked_networks": "rule:admin_or_network_owner",
+    "update_network:trunkport:trunked_networks": "rule:admin_or_owner",
     "delete_network": "rule:admin_or_owner",
 
     "create_port": "",
@@ -82,8 +81,6 @@
 
     "create_firewall_rule": "",
     "get_firewall_rule": "rule:admin_or_owner or rule:shared_firewalls",
-    "create_firewall_rule:shared": "rule:admin_or_owner",
-    "get_firewall_rule:shared": "rule:admin_or_owner",
     "update_firewall_rule": "rule:admin_or_owner",
     "delete_firewall_rule": "rule:admin_or_owner",
 
@@ -134,4 +131,6 @@
     "get_metering_label_rule": "rule:admin_only",
 
     "get_service_provider": "rule:regular_user"
+    "get_lsn": "rule:admin_only",
+    "create_lsn": "rule:admin_only"
 }
