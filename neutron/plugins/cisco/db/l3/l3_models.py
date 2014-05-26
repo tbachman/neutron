@@ -56,7 +56,9 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
-    router = orm.relationship(l3_db.Router)
+    router = orm.relationship(
+        l3_db.Router,
+        backref=orm.backref('hosting_info', cascade='all', uselist=False))
     # 'router_type_id' is id of router type for this router
     router_type_id = sa.Column(
         sa.String(36),

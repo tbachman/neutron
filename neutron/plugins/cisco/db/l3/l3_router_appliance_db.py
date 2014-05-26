@@ -25,9 +25,11 @@ from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
+from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_db
 from neutron.db import models_v2
+from neutron.extensions import l3
 from neutron.extensions import providernet as pr_net
 from neutron import manager
 from neutron.openstack.common import excutils
@@ -110,6 +112,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         cls._backlogged_routers = {}
         cls._refresh_router_backlog = True
         cls._heartbeat = None
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+        l3.ROUTERS, ['_extend_router_dict_routertype'])
 
     def create_router(self, context, router):
         r = router['router']
@@ -551,6 +556,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                                             process_extensions=False)
             self._backlogged_routers[binding.router_id] = router
         self._refresh_router_backlog = False
+
+    def _extend_router_dict_routertype(self, router_res, router_db):
+        router_res[routertype.TYPE_ATTR] = (router_db.hosting_info
+                                            .router_type_id)
 
     @property
     def _core_plugin(self):
