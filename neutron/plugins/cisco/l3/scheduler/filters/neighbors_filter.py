@@ -28,9 +28,10 @@ class NeighborsFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
         physical_neighbors = self.get_neighbors(context, neighbor_physical_host)
 
         neighbors = []
-        for host in physical_neighbors:
-            if host in host_list:
-                neighbors.append(host)
+        for neighbor in physical_neighbors:
+            for host in host_list:
+                if host.host == neighbor:
+                    neighbors.append(host)
 
         return neighbors
 
