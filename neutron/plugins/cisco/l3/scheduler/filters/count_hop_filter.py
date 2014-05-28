@@ -2,8 +2,6 @@ __author__ = 'nalle'
 
 from neutron.plugins.cisco.l3.scheduler import filters
 from neutron.plugins.cisco.l3.scheduler.filters.neighbors_filter import Neighbor
-from neutron.db import model_base
-from neutron.db import models_v2
 from neutron.db import db_base_plugin_v2 as base_db
 import copy
 
