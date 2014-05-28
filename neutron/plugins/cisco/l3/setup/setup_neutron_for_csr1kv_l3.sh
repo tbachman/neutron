@@ -34,7 +34,7 @@ template_file_src=/opt/stack/$osn/$osn/plugins/cisco/device_manager/configdrive_
 osnMgmtNwName=osn_mgmt_nw
 mgmtSecGrp=mgmt_sec_grp
 mgmtProviderNwName=mgmt_net
-mgmtProviderVlanId=140
+mgmtProviderVlanId=99
 osnMgmtSubnetName=osn_mgmt_subnet
 # note that the size of this network sets the limit on number of CSR instances
 osnMgmtNw=10.0.100.0
