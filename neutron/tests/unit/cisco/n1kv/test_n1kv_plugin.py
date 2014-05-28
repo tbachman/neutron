@@ -52,20 +52,18 @@ VLAN_MAX = 110
 class FakeResponse(object):
 
     """
-    This object is returned by mocked httplib instead of a normal response.
+    This object is returned by mocked requests lib instead of normal response.
 
-    Initialize it with the status code, content type and buffer contents
-    you wish to return.
+    Initialize it with the status code, header and buffer contents you wish to
+    return.
 
     """
-    def __init__(self, status, response_text, content_type):
+    def __init__(self, status, response_text, headers):
         self.buffer = response_text
-        self.status = status
+        self.status_code = status
+        self.headers = headers
 
-    def __getitem__(cls, val):
-        return "application/xml"
-
-    def read(self, *args, **kwargs):
+    def json(self, *args, **kwargs):
         return self.buffer
 
 
@@ -164,47 +162,28 @@ class N1kvPluginTestCase(test_plugin.NeutronDbPluginV2TestCase):
 
         """
         if not self.DEFAULT_RESP_BODY:
-            self.DEFAULT_RESP_BODY = (
-                """<?xml version="1.0" encoding="utf-8"?>
-                <set name="events_set">
-                <instance name="1" url="/api/hyper-v/events/1">
-                <properties>
-                <cmd>configure terminal ; port-profile type vethernet grizzlyPP
-                    (SUCCESS)
-                </cmd>
-                <id>42227269-e348-72ed-bdb7-7ce91cd1423c</id>
-                <time>1369223611</time>
-                <name>grizzlyPP</name>
-                </properties>
-                </instance>
-                <instance name="2" url="/api/hyper-v/events/2">
-                <properties>
-                <cmd>configure terminal ; port-profile type vethernet havanaPP
-                    (SUCCESS)
-                </cmd>
-                <id>3fc83608-ae36-70e7-9d22-dec745623d06</id>
-                <time>1369223661</time>
-                <name>havanaPP</name>
-                </properties>
-                </instance>
-                </set>
-                """)
-        # Creating a mock HTTP connection object for httplib. The N1KV client
-        # interacts with the VSM via HTTP. Since we don't have a VSM running
-        # in the unit tests, we need to 'fake' it by patching the HTTP library
-        # itself. We install a patch for a fake HTTP connection class.
+            self.DEFAULT_RESP_BODY = {
+                "icehouse-pp": {"properties": {"name": "icehouse-pp",
+                                               "id": "some-uuid-1"}},
+                "havana_pp": {"properties": {"name": "havana_pp",
+                                             "id": "some-uuid-2"}},
+                "dhcp_pp": {"properties": {"name": "dhcp_pp",
+                                           "id": "some-uuid-3"}},
+            }
+        # Creating a mock HTTP connection object for requests lib. The N1KV
+        # client interacts with the VSM via HTTP. Since we don't have a VSM
+        # running in the unit tests, we need to 'fake' it by patching the HTTP
+        # library itself. We install a patch for a fake HTTP connection class.
         # Using __name__ to avoid having to enter the full module path.
-        http_patcher = patch(n1kv_client.httplib2.__name__ + ".Http")
+        http_patcher = mock.patch(n1kv_client.requests.__name__ + ".request")
         FakeHttpConnection = http_patcher.start()
         # Now define the return values for a few functions that may be called
         # on any instance of the fake HTTP connection class.
-        instance = FakeHttpConnection.return_value
-        instance.getresponse.return_value = (FakeResponse(
-                                             self.DEFAULT_RESP_CODE,
-                                             self.DEFAULT_RESP_BODY,
-                                             'application/xml'))
-        instance.request.return_value = (instance.getresponse.return_value,
-                                         self.DEFAULT_RESP_BODY)
+        self.resp_headers = {"content-type": "application/json"}
+        FakeHttpConnection.return_value = (FakeResponse(
+                                           self.DEFAULT_RESP_CODE,
+                                           self.DEFAULT_RESP_BODY,
+                                           self.resp_headers))
 
         # Patch some internal functions in a few other parts of the system.
         # These help us move along, without having to mock up even more systems
@@ -820,6 +799,9 @@ class TestN1kvNetworks(test_plugin.TestNetworksV2,
 
 class TestN1kvSubnets(test_plugin.TestSubnetsV2,
                       N1kvPluginTestCase):
+
+    def setUp(self):
+        super(TestN1kvSubnets, self).setUp()
 
     def test_create_subnet_with_invalid_parameters(self):
         """Test subnet creation with invalid parameters sent to the VSM."""
