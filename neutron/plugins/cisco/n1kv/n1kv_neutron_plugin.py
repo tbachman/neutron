@@ -1237,7 +1237,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                              port[n1kv.PROFILE_ID],
                                              port['network_id'])
             if l3plugin:
-                self.disassociate_floatingips(context, id)
+                l3plugin.disassociate_floatingips(context, id)
             super(N1kvNeutronPluginV2, self).delete_port(context, id)
         self._send_delete_port_request(context, port, vm_network)
 
