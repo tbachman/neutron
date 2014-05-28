@@ -40,7 +40,7 @@ class FilterScheduler(object):
         self.chain_dic = {}
         self.filter_db_handler = FilterChainManager()
 
-    def schedule_instance(self, context, instance, hosts, chain_name, weight_functions, rpc, **kwargs):
+    def schedule_instance(self, context, instance, hosts, chain_name, weight_functions, no_weighing, **kwargs):
 
         #Check cache, if not, check db.
 
@@ -71,27 +71,25 @@ class FilterScheduler(object):
 
         try:
             return self._schedule(context, instance,
-                                  hosts, weight_functions, filter_chain, rpc, **kwargs)
+                                  hosts, weight_functions, filter_chain, no_weighing, **kwargs)
         except:
             raise exceptions.NoValidHost(reason="")
 
     def _schedule(self, context, instance, hosts,
-                  weight_functions, filter_chain=None, rpc=False, **kwargs):
+                  weight_functions, filter_chain=None, no_weighing=False, **kwargs):
 
         filtered_hosts = self.get_filtered_hosts(context, instance, hosts,
                                                  filter_chain, **kwargs)
         if not filtered_hosts:
-            if rpc:
+            if no_weighing:
                 return 'No valid host'
             raise exceptions.NoValidHost(reason="")
 
-        if rpc:
-            return filtered_hosts
-
-        weighted_hosts = self.get_weighed_hosts(filtered_hosts,
+        if not no_weighing:
+            filtered_hosts = self.get_weighed_hosts(filtered_hosts,
                                                 weight_functions, **kwargs)
 
-        return weighted_hosts
+        return filtered_hosts
 
     def get_filtered_hosts(self, context, instance, hosts, filter_chain, **kwargs):
         """Filter hosts and return only ones passing all filters."""
