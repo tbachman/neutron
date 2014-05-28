@@ -134,7 +134,7 @@ hasImage=`glance image-show $csr1kvImageName 2>&1 | awk '
    if (index($0, "endpoint") > 0) {
       print "NO SERVER"; nextfile;
    }
-   else if (index($0, "No flavor") > 0)
+   else if (index($0, "No image") > 0)
       print "No";
    else
       print "Yes";
