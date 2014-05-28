@@ -19,11 +19,9 @@ class NeighborsFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
 
     def get_neighbors(self, context, physical_host):
         query = self._model_query(context, Neighbor)
-        neighbors = query.filter(Neighbor.physical_host == physical_host)
+        neighbors = query.filter(Neighbor.physical_host == physical_host).all()
 
-        apa = neighbors.all()
-
-        return apa
+        return neighbors
 
     def _make_neighbor_dict(self, neighbor, fields=None):
         res = {'physical_host': neighbor['physical_host'],
