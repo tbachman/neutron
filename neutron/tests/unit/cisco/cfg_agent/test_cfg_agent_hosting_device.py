@@ -24,8 +24,8 @@ from neutron.openstack.common import uuidutils
 
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.hosting_devices_manager import (
-    HostingDevicesManager)
+from neutron.plugins.cisco.cfg_agent.device_driver_manager import (
+    DeviceDriverManager)
 from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 from neutron.tests import base
 
@@ -37,7 +37,7 @@ class TestHostingDevice(base.BaseTestCase):
 
     def setUp(self):
         super(TestHostingDevice, self).setUp()
-        self.hdm = HostingDevicesManager()
+        self.hdm = DeviceDriverManager()
         self.hdm._is_pingable = mock.MagicMock()
         self.hdm._is_pingable.return_value = True
 

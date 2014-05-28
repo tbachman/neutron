@@ -23,10 +23,10 @@ from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
-import neutron.plugins.cisco.cfg_agent.csr1kv.cisco_csr1kv_snippets as snippets
+import neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv.cisco_csr1kv_snippets as snippets
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.csr1kv.csr1kv_routing_driver import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv.csr1kv_routing_driver import (
     CSR1kvRoutingDriver)
 from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 

@@ -14,8 +14,8 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-import logging
 import json
+import logging
 
 from neutron.plugins.cisco.cfg_agent.services_api import RoutingDriverBase
 
@@ -23,14 +23,16 @@ LOG = logging.getLogger(__name__)
 
 
 class DummyRoutingDriver(RoutingDriverBase):
-    """Dummy Routing Driver.
-
-    """
+    """Dummy Routing Driver."""
 
     DEV_NAME_LEN = 14
 
     def __init__(self, **device_params):
-        LOG.debug(json.dumps(device_params, sort_keys=True, indent=4))
+        my_device_params = device_params
+        # Datetime values causes json decoding errors. So removing it locally
+        if my_device_params.get('created_at'):
+            del my_device_params['created_at']
+        LOG.debug(json.dumps(my_device_params, sort_keys=True, indent=4))
 
     ###### Public Functions ########
     def router_added(self, ri):
@@ -41,12 +43,16 @@ class DummyRoutingDriver(RoutingDriverBase):
 
     def internal_network_added(self, ri, port):
         LOG.debug("DummyDriver internal_network_added() called.")
+        LOG.debug("Int port data: " + json.dumps(port, sort_keys=True,
+                  indent=4))
 
     def internal_network_removed(self, ri, port):
         LOG.debug("DummyDriver internal_network_removed() called.")
 
     def external_gateway_added(self, ri, ex_gw_port):
         LOG.debug("DummyDriver external_gateway_added() called.")
+        LOG.debug("Ext port data: " + json.dumps(ex_gw_port, sort_keys=True,
+                  indent=4))
 
     def external_gateway_removed(self, ri, ex_gw_port):
         LOG.debug("DummyDriver external_gateway_removed() called.")

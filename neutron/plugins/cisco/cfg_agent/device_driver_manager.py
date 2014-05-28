@@ -23,7 +23,6 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
-from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 
 LOG = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ AGENT_OPTS = [
 cfg.CONF.register_opts(AGENT_OPTS)
 
 
-class HostingDevicesManager(object):
+class DeviceDriverManager(object):
     """This class acts as a manager for different hosting devices.
 
     The hosting devices manager  keeps the relationship between the
@@ -61,11 +60,12 @@ class HostingDevicesManager(object):
         self.backlog_hosting_devices = {}
 
     def get_driver(self, router_info):
-        if isinstance(router_info, RouterInfo):
-            router_id = router_info.router_id
-        else:
-            raise TypeError("Expected RouterInfo object. "
-                            "Got %s instead"), type(router_info)
+        # if isinstance(router_info, RouterInfo):
+        #     router_id = router_info.router_id
+        # else:
+        #     raise TypeError("Expected RouterInfo object. "
+        #                     "Got %s instead"), type(router_info)
+        router_id = router_info.router_id
         hosting_device = self.router_id_hosting_devices.get(router_id, None)
         if hosting_device is not None:
             driver = self._drivers.get(hosting_device['id'], None)

@@ -18,19 +18,17 @@ import logging
 import netaddr
 import re
 import time
+import xml.etree.ElementTree as ET
 
 from ciscoconfparse import CiscoConfParse
 from ncclient import manager
-import xml.etree.ElementTree as ET
-
-from oslo.config import cfg
-
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
-from neutron.plugins.cisco.cfg_agent.csr1kv import (cisco_csr1kv_snippets as
-                                                    snippets)
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+    cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.services_api import RoutingDriverBase
 from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
                                                   n1kv_constants)
+from oslo.config import cfg
 
 LOG = logging.getLogger(__name__)
 
