@@ -56,7 +56,9 @@ class FilterScheduler(object):
                 elif chain_name == 'no_filter':
                     filter_name_class = 'NoHostsFilter'
                 elif chain_name == 'neighbor_filter':
-                    filter_name_class = 'CountHopFilter'
+                    filter_name_class = 'NeighborsFilter'
+                elif chain_name == 'max_hop_filter':
+                    filter_name_class = 'MaxHopFilter'
                 else:
                     raise exceptions.NoFilterChainFound()
 

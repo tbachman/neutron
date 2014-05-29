@@ -6,7 +6,7 @@ from neutron.db import db_base_plugin_v2 as base_db
 import copy
 
 
-class CountHopFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
+class MaxHopFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
 
     def get_neighbors_list(self, context):
         neighbors = self._get_collection(context, Neighbor,
@@ -67,7 +67,15 @@ class CountHopFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
 
         neighbor_dict = self.constructNeighDict(context)
 
-        return self.getNeighborWithinHop(neighbor_dict, neighbor_physical_host, no_hops)
+        within_hop_neigh = self.getNeighborWithinHop(neighbor_dict, neighbor_physical_host, no_hops)
+
+        neighbors = []
+        for whn in within_hop_neigh:
+            for host in host_list:
+                if host['host'] == whn:
+                    neighbors.append(host)
+        return neighbors
+
 
     def get_description(self):
         ""
