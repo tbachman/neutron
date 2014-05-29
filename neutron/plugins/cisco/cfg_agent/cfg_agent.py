@@ -430,16 +430,6 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
 def main(manager='neutron.plugins.cisco.cfg_agent.'
                  'cfg_agent.CiscoCfgAgentWithStateReport'):
-    #####
-    import mock
-    devmgr_pluginApi_cls_p = mock.patch(
-        'neutron.plugins.cisco.cfg_agent.cfg_agent.'
-        'CiscoDeviceManagerPluginApi')
-    devmgr_pluginApi_cls = devmgr_pluginApi_cls_p.start()
-    devmgr_plugin_api = mock.Mock()
-    devmgr_pluginApi_cls.return_value = devmgr_plugin_api
-    devmgr_plugin_api.register_for_duty.return_value = True
-    #####
     eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(CiscoCfgAgent.OPTS)
