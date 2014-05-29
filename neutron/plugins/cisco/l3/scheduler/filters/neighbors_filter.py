@@ -1,19 +1,8 @@
 __author__ = 'nalle'
 
 from neutron.plugins.cisco.l3.scheduler import filters
-from neutron.db import model_base
-from neutron.db import models_v2
+from neutron.plugins.cisco.db.scheduler.filter_model import Neighbor
 from neutron.db import db_base_plugin_v2 as base_db
-import sqlalchemy as sa
-
-
-class Neighbor(model_base.BASEV2, models_v2.HasId):
-
-    __tablename__ = 'neighbors'
-
-    physical_host = sa.Column(sa.TEXT, nullable=False)
-    neighbor = sa.Column(sa.TEXT, nullable=False)
-
 
 class NeighborsFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
 

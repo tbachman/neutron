@@ -1,7 +1,7 @@
 __author__ = 'nalle'
 
 from sqlalchemy.orm import exc
-from neutron.plugins.cisco.db.scheduler.filter_chain_model import FilterChain
+from neutron.plugins.cisco.db.scheduler.filter_model import FilterChain
 from neutron.db import db_base_plugin_v2 as base_db
 
 

@@ -1,7 +1,7 @@
 __author__ = 'nalle'
 
 from neutron.plugins.cisco.l3.scheduler import filters
-from neutron.plugins.cisco.l3.scheduler.filters.neighbors_filter import Neighbor
+from neutron.plugins.cisco.db.scheduler.filter_model import Neighbor
 from neutron.db import db_base_plugin_v2 as base_db
 import copy
 
@@ -37,7 +37,7 @@ class MaxHopFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
         listNodeParsed.append(node1)
         listPrevNodes = copy.deepcopy(dictNeigh[node1])
 
-        for i in range (0, len(dictNeigh.keys())):
+        for i in range(0, len(dictNeigh.keys())):
 
             if node2 in listNodes:
                 hop_count = i +1
@@ -56,9 +56,9 @@ class MaxHopFilter(filters.BaseHostFilter, base_db.CommonDbMixin):
     def getNeighborWithinHop(self, dic, vm, count=0):
         li = dic.keys()
         nearby_neighbor = []
-        for i in range(len(li)-1):
-            if self.getHopCount(dic, vm, (li[i+1])) <= count:
-                nearby_neighbor.append(li[i+1])
+        for i in range(len(li)):
+            if self.getHopCount(dic, vm, (li[i])) <= count:
+                nearby_neighbor.append(li[i])
         return nearby_neighbor
 
     def filter_all(self, context, host_list, resource, **kwargs):

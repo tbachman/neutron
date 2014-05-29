@@ -8,7 +8,7 @@ from neutron.common import exceptions
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.scheduler import filters
 from neutron.plugins.cisco.l3.scheduler import weights
-from neutron.plugins.cisco.db.scheduler.filter_chain_db import FilterChainManager
+from neutron.plugins.cisco.db.scheduler.filter_db import FilterChainManager
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
