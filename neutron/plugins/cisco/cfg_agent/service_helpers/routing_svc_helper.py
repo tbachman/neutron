@@ -45,7 +45,7 @@ class RouterInfo(object):
     Information about the neutron router is exchanged as a python dictionary
     between plugin and config agent. RouterInfo is a wrapper around that dict,
     with attributes for common parameters. These attributes keep the state
-    of the current router configuration, and is used for detecting router
+    of the current router configuration, and are used for detecting router
     state changes when an updated router dict is received.
 
     This is a modified version of the RouterInfo class defined in the
@@ -87,7 +87,7 @@ class RouterInfo(object):
 
 
 class CiscoRoutingPluginApi(proxy.RpcProxy):
-    """Agent side of the  routing RPC API."""
+    """RoutingServiceHelper(Agent) side of the  routing RPC API."""
 
     BASE_RPC_API_VERSION = '1.0'
 
@@ -138,7 +138,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         self.removed_routers = set()
 
         self.fullsync = True
-        self.topic = c_constants.CFG_AGENT_L3_ROUTING
+        self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, self.host)
         self._setup_rpc()
         # self.agent = cfg_agent
         # Short cut for attributes in agent
@@ -200,8 +200,8 @@ class RoutingServiceHelper(ServiceHelperBase):
         """Operations when a router is added.
 
         Create a new RouterInfo object for this router and add it to the
-        agent's router_info dictionary.  Then `router_added()` is called on
-        the driver.
+        service helpers router_info dictionary.  Then `router_added()` is
+        called on the device driver.
 
         :param router_id: id of the router
         :param router: router dict
@@ -215,9 +215,9 @@ class RoutingServiceHelper(ServiceHelperBase):
     def _router_removed(self, router_id, deconfigure=True):
         """Operations when a router is removed.
 
-        Get the RouterInfo object corresponding to the router in the agent's
-        router_info dict. If deconfigure is set to True, remove the router's
-        configuration from the hosting device.
+        Get the RouterInfo object corresponding to the router in the service
+        helpers's router_info dict. If deconfigure is set to True,
+        remove this router's configuration from the hosting device.
         :param router_id: id of the router
         :param deconfigure: if True, the router's configuration is deleted from
         the hosting device.
@@ -285,6 +285,19 @@ class RoutingServiceHelper(ServiceHelperBase):
         raise NotImplementedError
 
     def process_service(self, *args, **kwargs):
+        """Process changes to the routers managed by this connfig agent.
+
+        Entry point to the routing service helper. Config agent calls this
+        function periodically as part of the rpc_loop.
+        The latest state of any updated routers are fetched. If full sync,
+        data on all the routers are fetched.
+        The routers are then sorted on the hosting device where they are
+        configured. Then process_routers() is called on thread per device.
+
+        :param args:
+        :param kwargs:
+        :return: None
+        """
         try:
             LOG.debug(_("Starting processing routing service"))
             resources = {}
@@ -335,22 +348,19 @@ class RoutingServiceHelper(ServiceHelperBase):
         """Process the set of routers.
 
         Iterating on the set of routers received and comparing it with the
-        set of routers already in the agent, new routers which are added are
-        identified. Then check the reachability (via ping) of hosting device
-        where the router is hosted and backlogs it if necessary. For routers
-        which are only updated, call `process_router()` on them. Note that
-        for each router this is done in an independent thread.
+        set of routers already in the routing service helper,
+        new routers which are added are identified. Then check the
+        reachability (via ping) of hosting device where the router is hosted
+        and backlogs it if necessary.
+        For routers which are only updated, call `process_router()` on them.
 
-        When all_routers is set to True, this will result in the detection and
-        deletion of routers which are to be removed.
-
-        if routers are all the routers we have (they are from router sync on
-        starting or when error occurs during running), we seek the
-        routers which should be removed. If routers are from server side
-        notification, we seek them from subset of incoming routers and ones
-        we have now.
+        When all_routers is set to True (because of a full sync),
+        this will result in the detection and deletion of routers which are
+        to be removed.
 
         :param routers: The set of routers to be processed
+        :param removed_routers: the set of routers which where removed
+        :param device_id: Id of the hosting device
         :param all_routers: Flag for specifying a partial list of routers
         :return: None
         """
