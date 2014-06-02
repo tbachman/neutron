@@ -89,7 +89,7 @@ class RouterInfo(object):
 class CiscoRoutingPluginApi(proxy.RpcProxy):
     """RoutingServiceHelper(Agent) side of the  routing RPC API."""
 
-    BASE_RPC_API_VERSION = '1.0'
+    BASE_RPC_API_VERSION = '1.1'
 
     def __init__(self, topic, host):
         super(CiscoRoutingPluginApi, self).__init__(
