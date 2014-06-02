@@ -71,15 +71,19 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
             else:
                 agents = []
             for agent in agents:
+                # Only use agent topic for l3 agent, otherwise topic for
+                # router service helper in cfg agent.
+                topic = (agent.topic if router['hosting_device'] is None else
+                         c_constants.CFG_AGENT_L3_ROUTING)
                 LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
                             'message %(method)s'),
                           {'agent_type': agent.agent_type,
-                           'topic': agent.topic,
+                           'topic': topic,
                            'host': agent.host,
                            'method': method})
                 self.cast(context,
                           self.make_msg(method, routers=[router['id']]),
-                          topic='%s.%s' % (agent.topic, agent.host),
+                          topic='%s.%s' % (topic, agent.host),
                           version='1.1')
 
     def _notification(self, context, method, routers, operation, data):
