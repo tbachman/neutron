@@ -138,7 +138,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         self.removed_routers = set()
 
         self.fullsync = True
-        self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, self.host)
+        self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
         self._setup_rpc()
         # self.agent = cfg_agent
         # Short cut for attributes in agent

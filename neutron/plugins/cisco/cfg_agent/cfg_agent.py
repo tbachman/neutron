@@ -97,7 +97,7 @@ class CiscoCfgAgent(manager.Manager):
     RPC_API_VERSION = '1.1'
 
     OPTS = [
-        cfg.IntOpt('rpc_loop_interval', default=3,
+        cfg.IntOpt('rpc_loop_interval', default=10,
                    help=_("Interval when the rpc loop executes. This is when "
                           "agent fetches info about the updated or removed "
                           "routers notified from a plugin side RPC.")),
