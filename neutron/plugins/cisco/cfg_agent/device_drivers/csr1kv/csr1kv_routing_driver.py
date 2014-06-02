@@ -47,10 +47,12 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
     def __init__(self, **device_params):
         try:
             self._csr_host = device_params['management_ip_address']
-            self._csr_ssh_port = device_params['port']
+            self._csr_ssh_port = device_params['protocol_port']
             # Using defaults for user/password if not in device params
-            self._csr_user = device_params.get('user', 'stack')
-            self._csr_password = device_params.get('password', 'cisco')
+            credentials = device_params['credentials']
+            if credentials:
+                self._csr_user = credentials['username']
+                self._csr_password = credentials['password']
             self._timeout = cfg.CONF.device_connection_timeout
             self._csr_conn = None
             self._intfs_enabled = False
