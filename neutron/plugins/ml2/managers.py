@@ -118,8 +118,9 @@ class TypeManager(stevedore.named.NamedExtensionManager):
         segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segments.append(driver.obj.allocate_static_segment(session,
-                                                               net_data))
+            segment = driver.obj.allocate_static_segment(session, net_data)
+            if segment:
+                segments.append(segment)
         return segments
 
     def create_subnet(self, session, context):
@@ -136,7 +137,9 @@ class TypeManager(stevedore.named.NamedExtensionManager):
         segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segments.append(driver.obj.get_segment(context, network_id))
+            segment = driver.obj.get_segment(context, network_id)
+            if segment:
+                segments.append(segment)
 
         return segments
 
