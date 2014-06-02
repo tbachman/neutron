@@ -20,6 +20,7 @@ import Queue
 import six
 import threading
 
+from neutron.common import rpc as q_rpc
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -64,6 +65,10 @@ class ServiceHelperBase(object):
 
     def update(self, resource, **kwargs):
         LOG.debug(_("Update received"))
+
+    def create_rpc_dispatcher(self):
+        """Get the rpc dispatcher for this service."""
+        return q_rpc.PluginRpcDispatcher([self])
 
     @abstractmethod
     def process_service(self, *args, **kwargs):

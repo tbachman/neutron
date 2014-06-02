@@ -23,6 +23,8 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import rpc
+from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common.rpc import proxy
 
 from neutron.plugins.cisco.cfg_agent.cfg_exceptions import DriverException
@@ -30,7 +32,7 @@ from neutron.plugins.cisco.cfg_agent.device_driver_manager import (
     DeviceDriverManager)
 from neutron.plugins.cisco.cfg_agent.service_helpers.service_helper import (
     ServiceHelperBase)
-
+from neutron.plugins.cisco.common import cisco_constants as c_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -136,6 +138,8 @@ class RoutingServiceHelper(ServiceHelperBase):
         self.removed_routers = set()
 
         self.fullsync = True
+        self.topic = c_constants.CFG_AGENT_L3_ROUTING
+        self._setup_rpc()
         # self.agent = cfg_agent
         # Short cut for attributes in agent
         # self._hdm = self.agent._hdm
@@ -143,6 +147,15 @@ class RoutingServiceHelper(ServiceHelperBase):
         # self.conf = self.agent.conf
         # self.context = self.agent.context
         # self.router_info = self.agent.router_info
+
+    def _setup_rpc(self):
+        self.conn = rpc.create_connection(new=True)
+        self.dispatcher = self.create_rpc_dispatcher()
+        self.conn.create_consumer(
+            self.topic,
+            self.dispatcher,
+            fanout=False)
+        self.conn.consume_in_thread()
 
     ### Notifications from Plugin ####
     def router_deleted(self, context, router_id):
@@ -277,6 +290,7 @@ class RoutingServiceHelper(ServiceHelperBase):
             resources = {}
             if self.fullsync:
                 LOG.debug(_("FullSync flag is on. Starting fullsync"))
+                self.fullsync = False
                 self.updated_routers.clear()
                 self.removed_routers.clear()
                 routers = self.plugin_rpc.get_routers(self.context)
@@ -305,17 +319,19 @@ class RoutingServiceHelper(ServiceHelperBase):
             for device_id, resources in hosting_devices.items():
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
-                pool.spawn_n(self.process_routers, routers,
-                             removed_routers, all_routers=self.fullsync)
+                pool.spawn_n(self.process_routers, routers, removed_routers,
+                             device_id, all_routers=self.fullsync)
             pool.waitall()
-            if self.fullsync:
-                self.fullsync = False
             LOG.debug(_("Routing service processing successfully completed"))
+        except rpc_common.RPCException:
+            LOG.exception(_("Failed processing routers due to RPC error"))
+            self.fullsync = True
         except Exception:
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
 
-    def process_routers(self, routers, removed_routers, all_routers=False):
+    def process_routers(self, routers, removed_routers,
+                        device_id=None, all_routers=False):
         """Process the set of routers.
 
         Iterating on the set of routers received and comparing it with the
@@ -338,36 +354,41 @@ class RoutingServiceHelper(ServiceHelperBase):
         :param all_routers: Flag for specifying a partial list of routers
         :return: None
         """
-        if all_routers:
-            prev_router_ids = set(self.router_info)
-        else:
-            prev_router_ids = set(self.router_info) & set(
-                [router['id'] for router in routers])
-        cur_router_ids = set()
-        for r in routers:
-            if not r['admin_state_up']:
-                continue
-            # Note: Whether the router can only be assigned to a particular
-            # hosting device is decided and enforced by the plugin.
-            # So no checks are done here.
-            cur_router_ids.add(r['id'])
-            if not self._hdm.is_hosting_device_reachable(r['id'], r):
-                LOG.info(
-                    _("Router: %(id)s is on unreachable hosting device. "
-                      "Skip processing it."), {'id': r['id']})
-                continue
-            if r['id'] not in self.router_info:
-                self._router_added(r['id'], r)
-            ri = self.router_info[r['id']]
-            ri.router = r
-            self.process_router(ri)
-        # identify and remove routers that no longer exist
-        for router_id in prev_router_ids - cur_router_ids:
-            self._router_removed(router_id)
-        if removed_routers:
-            for router in removed_routers:
-                self._router_removed(router['id'])
-                # self.removed_routers.remove(router['id'])
+        try:
+            if all_routers:
+                prev_router_ids = set(self.router_info)
+            else:
+                prev_router_ids = set(self.router_info) & set(
+                    [router['id'] for router in routers])
+            cur_router_ids = set()
+            for r in routers:
+                if not r['admin_state_up']:
+                    continue
+                # Note: Whether the router can only be assigned to a particular
+                # hosting device is decided and enforced by the plugin.
+                # So no checks are done here.
+                cur_router_ids.add(r['id'])
+                if not self._hdm.is_hosting_device_reachable(r['id'], r):
+                    LOG.info(
+                        _("Router: %(id)s is on unreachable hosting device. "
+                          "Skip processing it."), {'id': r['id']})
+                    continue
+                if r['id'] not in self.router_info:
+                    self._router_added(r['id'], r)
+                ri = self.router_info[r['id']]
+                ri.router = r
+                self.process_router(ri)
+            # identify and remove routers that no longer exist
+            for router_id in prev_router_ids - cur_router_ids:
+                self._router_removed(router_id)
+            if removed_routers:
+                for router in removed_routers:
+                    self._router_removed(router['id'])
+                    # self.removed_routers.remove(router['id'])
+        except:
+            LOG.exception(_("Exception in processing routers on device:%s"),
+                          device_id)
+            self.fullsync = True
 
     def process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
