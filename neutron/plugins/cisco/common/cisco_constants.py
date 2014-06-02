@@ -111,7 +111,8 @@ AGENT_TYPE_CFG = 'Cisco cfg agent'
 
 # Topic for Cisco configuration agent
 CFG_AGENT = 'cisco_cfg_agent'
-
+# Topic for routing service helper in Cisco configuration agent
+CFG_AGENT_L3_ROUTING = 'cisco_cfg_agent_l3_routing'
 
 # Device manager and (hosting) devices
 # ====================================
