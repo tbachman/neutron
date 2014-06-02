@@ -48,6 +48,7 @@ class RpcCallbacks(n_rpc.RpcCallback,
 
     def __init__(self, notifier, type_manager):
         self.setup_tunnel_callback_mixin(notifier, type_manager)
+        self.type_manager = type_manager
         super(RpcCallbacks, self).__init__()
 
     @classmethod
@@ -92,7 +93,8 @@ class RpcCallbacks(n_rpc.RpcCallback,
                             {'device': device, 'agent_id': agent_id})
                 return {'device': device}
 
-            segments = db.get_network_segments(session, port.network_id)
+            segments = self.type_manager.get_segments(rpc_context,
+                                                      port.network_id)
             if not segments:
                 LOG.warning(_("Device %(device)s requested by agent "
                               "%(agent_id)s has network %(network_id)s with "
