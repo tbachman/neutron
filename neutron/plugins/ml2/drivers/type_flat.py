@@ -25,7 +25,7 @@ from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2 import driver_api as ap
+from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.type_driver_common import TypeDriverMixin
 
 LOG = log.getLogger(__name__)
@@ -86,8 +86,7 @@ class FlatTypeDriver(api.TypeDriver, TypeDriverMixin):
     def initialize(self):
         LOG.info(_("ML2 FlatTypeDriver initialization complete"))
 
-    def create_network(self, session, context):
-        net_data = context._network
+    def allocate_static_segment(self, session, net_data):
         segments = self._process_provider_create(net_data)
         if segments:
             for segment in segments:
@@ -182,7 +181,7 @@ class FlatTypeDriver(api.TypeDriver, TypeDriverMixin):
         # Tenant flat networks are not supported.
         return
 
-    def release_segment(self, session, segment):
+    def release_static_segment(self, session, segment):
         physical_network = segment[api.PHYSICAL_NETWORK]
         with session.begin(subtransactions=True):
             try:

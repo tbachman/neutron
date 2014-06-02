@@ -68,6 +68,47 @@ class TypeManager(stevedore.named.NamedExtensionManager):
                 raise SystemExit(msg)
         LOG.info(_("Tenant network_types: %s"), self.tenant_network_types)
 
+    def _process_provider_segment(self, net_data):
+        network_type = net_data.get(provider.NETWORK_TYPE)
+        physical_network = net_data.get(provider.PHYSICAL_NETWORK)
+        segmentation_id = net_data.get(provider.SEGMENTATION_ID)
+
+        if attributes.is_attr_set(network_type):
+            segment = {api.NETWORK_TYPE: network_type,
+                       api.SEGMENTATION_ID: segmentation_id}
+            if type(physical_network) is not object:
+                segment[api.PHYSICAL_NETWORK] = physical_network
+
+            self.validate_provider_segment(segment)
+            return segment
+
+        msg = _("network_type required")
+        raise exc.InvalidInput(error_message=msg)
+
+    def _process_provider_create(self, network):
+        segments = []
+
+        if any(attributes.is_attr_set(network.get(f))
+               for f in (provider.NETWORK_TYPE, provider.PHYSICAL_NETWORK,
+                         provider.SEGMENTATION_ID)):
+            # Verify that multiprovider and provider attributes are not set
+            # at the same time.
+            if attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+                raise mpnet.SegmentsSetInConjunctionWithProviders()
+
+            network_type = network.get(provider.NETWORK_TYPE)
+            physical_network = network.get(provider.PHYSICAL_NETWORK)
+            segmentation_id = network.get(provider.SEGMENTATION_ID)
+            segments = [{provider.NETWORK_TYPE: network_type,
+                         provider.PHYSICAL_NETWORK: physical_network,
+                         provider.SEGMENTATION_ID: segmentation_id}]
+        elif attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+            segments = network[mpnet.SEGMENTS]
+        else:
+            return
+
+        return [self._process_provider_segment(s) for s in segments]
+
     def initialize(self):
         for network_type, driver in self.drivers.iteritems():
             LOG.info(_("Initializing driver for type '%s'"), network_type)
@@ -77,8 +118,8 @@ class TypeManager(stevedore.named.NamedExtensionManager):
         segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segments.append(driver.obj.create_network(session, net_data))
-
+            segments.append(driver.obj.allocate_static_segment(session,
+                                                               net_data))
         return segments
 
     def create_subnet(self, session, context):
@@ -99,10 +140,10 @@ class TypeManager(stevedore.named.NamedExtensionManager):
 
         return segments
 
-    def delete_network(self, session, context):
+    def delete_network(self, session, network_id):
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            driver.obj.delete_network(session, context)
+            driver.obj.release_static_segment(session, network_id)
 
     def delete_subnet(self, session, context):
         for network_type in self.tenant_network_types:

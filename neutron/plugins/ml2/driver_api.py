@@ -64,28 +64,23 @@ class TypeDriver(object):
         """
         pass
 
-    def create_network(self, context):
+    @abstractmethod
+    def allocate_static_segment(self, context):
         pass
 
-    def delete_network(self, context):
-        pass
-
-    def create_subnet(self, context):
-        pass
-
-    def delete_subnet(self, context):
-        pass
-
-    def create_port(self, context):
-        pass
-
-    def delete_port(self, context):
+    @abstractmethod
+    def release_static_segment(self, context):
         pass
 
     @abstractmethod
     def get_segment(self, context, network_id):
         pass
 
+    def allocate_dynamic_segment(self, context):
+        pass
+
+    def release_dynamic_segment(self, context):
+        pass
 
 @six.add_metaclass(ABCMeta)
 class NetworkContext(object):

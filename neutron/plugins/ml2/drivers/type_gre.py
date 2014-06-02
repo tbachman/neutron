@@ -76,7 +76,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
         )
         self._sync_gre_allocations()
 
-    def create_network(self, session, net_data):
+    def allocate_static_segment(self, session, net_data):
         segments = self._process_provider_create(net_data)
         net_id = net_data.get('id')
 
@@ -93,7 +93,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
     def delete_network(self, session, context):
         net_data = context._network
         net_id = net_data.get('id')
-        self.release_segment(session, net_id)
+        self.release_static_segment(session, net_id)
 
     def get_segment(self, context, network_id):
         LOG.debug(_("Returning segments for network %s") % network_id)
@@ -148,7 +148,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver, TypeDriverMixin):
                         api.PHYSICAL_NETWORK: None,
                         api.SEGMENTATION_ID: alloc.gre_id}
 
-    def release_segment(self, session, network_id):
+    def release_static_segment(self, session, network_id):
         with session.begin(subtransactions=True):
             try:
                 alloc = (session.query(GreAllocation).

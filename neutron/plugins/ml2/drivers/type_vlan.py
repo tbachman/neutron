@@ -68,6 +68,7 @@ class VlanAllocation(model_base.BASEV2):
     allocated = sa.Column(sa.Boolean, nullable=False)
     network_id = sa.Column(sa.String(255), nullable=True)
     provider_network = sa.Column(sa.Boolean, default=False)
+    extra_info = sa.Column(sa.Text, nullable=True)
 
 
 class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
@@ -163,7 +164,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
         self._sync_vlan_allocations()
         LOG.info(_("VlanTypeDriver initialization complete"))
 
-    def create_network(self, session, net_data):
+    def allocate_static_segment(self, session, net_data):
         segments = self._process_provider_create(net_data)
         net_id = net_data.get('id')
 
@@ -276,7 +277,7 @@ class VlanTypeDriver(api.TypeDriver, TypeDriverMixin):
                         api.PHYSICAL_NETWORK: alloc.physical_network,
                         api.SEGMENTATION_ID: alloc.vlan_id}
 
-    def release_segment(self, session, network_id):
+    def release_static_segment(self, session, network_id):
         with session.begin(subtransactions=True):
             try:
                 alloc = (session.query(VlanAllocation).

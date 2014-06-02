@@ -276,7 +276,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                                             result)
             self._process_l3_create(context, result, net_data)
 
-            self._extend_network_dict_provider(context, result)
             self.mechanism_manager.create_network_precommit(network_context)
 
         try:
@@ -379,7 +378,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                             net_context)
                         # Delete all segments for this network via the type
                         # drivers
-                        self.type_manager.delete_network(session, net_context)
+                        self.type_manager.delete_network(session, id)
 
                         record = self._get_network(context, id)
                         LOG.debug(_("Deleting network record %s"), record)
