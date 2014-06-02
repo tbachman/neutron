@@ -115,19 +115,22 @@ class TypeDriver(object):
         pass
 
     @abc.abstractmethod
-    def release_segment(self, session, segment):
-        """Release network segment.
-
-        :param session: database session
-        :param segment: segment dictionary using keys defined above
-
-        Called inside transaction context on session to release a
-        tenant or provider network's type-specific resource. Runtime
-        errors are not expected, but raising an exception will result
-        in rollback of the transaction.
-        """
+    def allocate_static_segment(self, context):
         pass
 
+    @abc.abstractmethod
+    def release_static_segment(self, context):
+        pass
+
+    @abc.abstractmethod
+    def get_segment(self, context, network_id):
+        pass
+
+    def allocate_dynamic_segment(self, context):
+        pass
+
+    def release_dynamic_segment(self, context):
+        pass
 
 @six.add_metaclass(abc.ABCMeta)
 class NetworkContext(object):

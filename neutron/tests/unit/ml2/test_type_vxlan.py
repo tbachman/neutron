@@ -37,7 +37,7 @@ INVALID_VXLAN_VNI = 7337
 MULTICAST_GROUP = "239.1.1.1"
 VXLAN_UDP_PORT_ONE = 9999
 VXLAN_UDP_PORT_TWO = 8888
-
+NETWORK_ID = 'network1234'
 
 class VxlanTypeTest(base.BaseTestCase):
     def setUp(self):
@@ -120,26 +120,27 @@ class VxlanTypeTest(base.BaseTestCase):
         segment = {api.NETWORK_TYPE: 'vxlan',
                    api.PHYSICAL_NETWORK: 'None',
                    api.SEGMENTATION_ID: 101}
-        observed = self.driver.reserve_provider_segment(self.session, segment)
+        self.driver.reserve_provider_segment(self.session, NETWORK_ID, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
                                                  observed[api.SEGMENTATION_ID])
         self.assertTrue(alloc.allocated)
 
         with testtools.ExpectedException(exc.TunnelIdInUse):
-            self.driver.reserve_provider_segment(self.session, segment)
+            self.driver.reserve_provider_segment(self.session, NETWORK_ID,
+                                                 segment)
 
-        self.driver.release_segment(self.session, segment)
+        self.driver.release_static_segment(self.session, NETWORK_ID)
         alloc = self.driver.get_vxlan_allocation(self.session,
                                                  observed[api.SEGMENTATION_ID])
         self.assertFalse(alloc.allocated)
 
         segment[api.SEGMENTATION_ID] = 1000
-        observed = self.driver.reserve_provider_segment(self.session, segment)
+        self.driver.reserve_provider_segment(self.session, NETWORK_ID, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
                                                  observed[api.SEGMENTATION_ID])
         self.assertTrue(alloc.allocated)
 
-        self.driver.release_segment(self.session, segment)
+        self.driver.release_static_segment(self.session, NETWORK_ID)
         alloc = self.driver.get_vxlan_allocation(self.session,
                                                  observed[api.SEGMENTATION_ID])
         self.assertIsNone(alloc)
@@ -147,21 +148,22 @@ class VxlanTypeTest(base.BaseTestCase):
     def test_allocate_tenant_segment(self):
         tunnel_ids = set()
         for x in moves.xrange(TUN_MIN, TUN_MAX + 1):
-            segment = self.driver.allocate_tenant_segment(self.session)
+            segment = self.driver.allocate_tenant_segment(self.session,
+                                                          NETWORK_ID)
             self.assertThat(segment[api.SEGMENTATION_ID],
                             matchers.GreaterThan(TUN_MIN - 1))
             self.assertThat(segment[api.SEGMENTATION_ID],
                             matchers.LessThan(TUN_MAX + 1))
             tunnel_ids.add(segment[api.SEGMENTATION_ID])
 
-        segment = self.driver.allocate_tenant_segment(self.session)
+        segment = self.driver.allocate_tenant_segment(self.session, NETWORK_ID)
         self.assertIsNone(segment)
 
         segment = {api.NETWORK_TYPE: 'vxlan',
                    api.PHYSICAL_NETWORK: 'None',
                    api.SEGMENTATION_ID: tunnel_ids.pop()}
-        self.driver.release_segment(self.session, segment)
-        segment = self.driver.allocate_tenant_segment(self.session)
+        self.driver.release_static_segment(self.session, NETWORK_ID)
+        segment = self.driver.allocate_tenant_segment(self.session, NETWORK_ID)
         self.assertThat(segment[api.SEGMENTATION_ID],
                         matchers.GreaterThan(TUN_MIN - 1))
         self.assertThat(segment[api.SEGMENTATION_ID],
@@ -170,7 +172,7 @@ class VxlanTypeTest(base.BaseTestCase):
 
         for tunnel_id in tunnel_ids:
             segment[api.SEGMENTATION_ID] = tunnel_id
-            self.driver.release_segment(self.session, segment)
+            self.driver.release_static_segment(self.session, NETWORK_ID)
 
     def test_vxlan_endpoints(self):
         """Test VXLAN allocation/de-allocation."""
@@ -213,13 +215,14 @@ class VxlanTypeMultiRangeTest(base.BaseTestCase):
         self.session = db.get_session()
         self.addCleanup(db.clear_db)
 
-    def test_release_segment(self):
-        segments = [self.driver.allocate_tenant_segment(self.session)
+    def test_release_static_segment(self):
+        segments = [self.driver.allocate_tenant_segment(self.session,
+                                                        NETWORK_ID)
                     for i in range(4)]
 
         # Release them in random order. No special meaning.
         for i in (0, 2, 1, 3):
-            self.driver.release_segment(self.session, segments[i])
+            self.driver.release_static_segment(self.session, NETWORK_ID)
 
         for key in (self.TUN_MIN0, self.TUN_MAX0,
                     self.TUN_MIN1, self.TUN_MAX1):

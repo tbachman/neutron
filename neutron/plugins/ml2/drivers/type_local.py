@@ -40,6 +40,9 @@ class LocalTypeDriver(api.TypeDriver):
     def initialize(self):
         pass
 
+    def allocate_static_segment(self, session, net_data):
+        pass
+
     def validate_provider_segment(self, segment):
         for key, value in segment.iteritems():
             if value and key not in [api.NETWORK_TYPE]:
@@ -54,6 +57,9 @@ class LocalTypeDriver(api.TypeDriver):
         # No resources to allocate
         return {api.NETWORK_TYPE: p_const.TYPE_LOCAL}
 
-    def release_segment(self, session, segment):
+    def release_static_segment(self, session, network_id):
         # No resources to release
+        pass
+
+    def get_segment(self, context, network_id):
         pass

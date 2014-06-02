@@ -34,28 +34,22 @@ def add_network_segment(session, network_id, segment):
         record = models.NetworkSegment(
             id=uuidutils.generate_uuid(),
             network_id=network_id,
-            network_type=segment.get(api.NETWORK_TYPE),
-            physical_network=segment.get(api.PHYSICAL_NETWORK),
-            segmentation_id=segment.get(api.SEGMENTATION_ID)
+            segment_type=segment_type,
         )
         session.add(record)
-    LOG.info(_("Added segment %(id)s of type %(network_type)s for network"
+    LOG.info(_("Added segment %(id)s of type %(segment_type)s for network"
                " %(network_id)s"),
              {'id': record.id,
-              'network_type': record.network_type,
+              'segment_type': record.segment_type,
               'network_id': record.network_id})
 
 
 def get_network_segments(session, network_id):
     with session.begin(subtransactions=True):
-        records = (session.query(models.NetworkSegment).
-                   filter_by(network_id=network_id))
-        return [{api.ID: record.id,
-                 api.NETWORK_TYPE: record.network_type,
-                 api.PHYSICAL_NETWORK: record.physical_network,
-                 api.SEGMENTATION_ID: record.segmentation_id}
-                for record in records]
-
+        records = models.NetworkSegment(
+            network_id=network_id
+        )
+        return records
 
 def add_port_binding(session, port_id):
     with session.begin(subtransactions=True):

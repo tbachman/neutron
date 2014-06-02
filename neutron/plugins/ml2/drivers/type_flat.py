@@ -17,11 +17,17 @@ from oslo.config import cfg
 from oslo.db import exception as db_exc
 import sqlalchemy as sa
 
+from neutron import manager
+from neutron.api.v2 import attributes
 from neutron.common import exceptions as exc
 from neutron.db import model_base
+from neutron.extensions import multiprovidernet as mpnet
+from neutron.extensions import portbindings
+from neutron.extensions import providernet as provider
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers.type_driver_common import TypeDriverMixin
 
 LOG = log.getLogger(__name__)
 
@@ -47,9 +53,10 @@ class FlatAllocation(model_base.BASEV2):
 
     physical_network = sa.Column(sa.String(64), nullable=False,
                                  primary_key=True)
+    network_id = sa.Column(sa.String(255), nullable=True)
 
 
-class FlatTypeDriver(api.TypeDriver):
+class FlatTypeDriver(api.TypeDriver, TypeDriverMixin):
     """Manage state for flat networks with ML2.
 
     The FlatTypeDriver implements the 'flat' network_type. Flat
@@ -80,6 +87,65 @@ class FlatTypeDriver(api.TypeDriver):
 
     def initialize(self):
         LOG.info(_("ML2 FlatTypeDriver initialization complete"))
+
+    def allocate_static_segment(self, session, net_data):
+        segments = self._process_provider_create(net_data)
+        if segments:
+            for segment in segments:
+                self.reserve_provider_segment(session, segment)
+        else:
+            self.allocate_tenant_segment(session)
+
+    def get_segment(self, context, network_id):
+        LOG.debug(_("Returning segments for network %s") % network_id)
+        alloc = (context.session.query(FlatAllocation).
+                 filter_by(network_id=network_id).one())
+
+        return {api.NETWORK_TYPE: p_const.TYPE_FLAT,
+                api.PHYSICAL_NETWORK: alloc.physical_network}
+
+    def _process_provider_segment(self, segment):
+        network_type = self._get_attribute(segment, provider.NETWORK_TYPE)
+        physical_network = self._get_attribute(segment,
+                                               provider.PHYSICAL_NETWORK)
+        segmentation_id = self._get_attribute(segment,
+                                              provider.SEGMENTATION_ID)
+
+        if attributes.is_attr_set(network_type):
+            segment = {api.NETWORK_TYPE: network_type,
+                       api.PHYSICAL_NETWORK: physical_network,
+                       api.SEGMENTATION_ID: segmentation_id}
+            self.type_manager.validate_provider_segment(segment)
+            return segment
+
+        msg = _("network_type required")
+        raise exc.InvalidInput(error_message=msg)
+
+    def _process_provider_create(self, network):
+        segments = []
+
+        if any(attributes.is_attr_set(network.get(f))
+               for f in (provider.NETWORK_TYPE, provider.PHYSICAL_NETWORK,
+                         provider.SEGMENTATION_ID)):
+            # Verify that multiprovider and provider attributes are not set
+            # at the same time.
+            if attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+                raise mpnet.SegmentsSetInConjunctionWithProviders()
+
+            network_type = self._get_attribute(network, provider.NETWORK_TYPE)
+            physical_network = self._get_attribute(network,
+                                                   provider.PHYSICAL_NETWORK)
+            segmentation_id = self._get_attribute(network,
+                                                  provider.SEGMENTATION_ID)
+            segments = [{provider.NETWORK_TYPE: network_type,
+                         provider.PHYSICAL_NETWORK: physical_network,
+                         provider.SEGMENTATION_ID: segmentation_id}]
+        elif attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+            segments = network[mpnet.SEGMENTS]
+        else:
+            return
+
+        return [self._process_provider_segment(s) for s in segments]
 
     def validate_provider_segment(self, segment):
         physical_network = segment.get(api.PHYSICAL_NETWORK)
@@ -114,7 +180,7 @@ class FlatTypeDriver(api.TypeDriver):
         # Tenant flat networks are not supported.
         return
 
-    def release_segment(self, session, segment):
+    def release_static_segment(self, session, segment):
         physical_network = segment[api.PHYSICAL_NETWORK]
         with session.begin(subtransactions=True):
             count = (session.query(FlatAllocation).

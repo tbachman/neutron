@@ -68,32 +68,75 @@ class TypeManager(stevedore.named.NamedExtensionManager):
                 raise SystemExit(1)
         LOG.info(_("Tenant network_types: %s"), self.tenant_network_types)
 
+    def _process_provider_segment(self, net_data):
+        network_type = net_data.get(provider.NETWORK_TYPE)
+        physical_network = net_data.get(provider.PHYSICAL_NETWORK)
+        segmentation_id = net_data.get(provider.SEGMENTATION_ID)
+
+        if attributes.is_attr_set(network_type):
+            segment = {api.NETWORK_TYPE: network_type,
+                       api.SEGMENTATION_ID: segmentation_id}
+            if type(physical_network) is not object:
+                segment[api.PHYSICAL_NETWORK] = physical_network
+
+            self.validate_provider_segment(segment)
+            return segment
+
+        msg = _("network_type required")
+        raise exc.InvalidInput(error_message=msg)
+
+    def _process_provider_create(self, network):
+        segments = []
+
+        if any(attributes.is_attr_set(network.get(f))
+               for f in (provider.NETWORK_TYPE, provider.PHYSICAL_NETWORK,
+                         provider.SEGMENTATION_ID)):
+            # Verify that multiprovider and provider attributes are not set
+            # at the same time.
+            if attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+                raise mpnet.SegmentsSetInConjunctionWithProviders()
+
+            network_type = network.get(provider.NETWORK_TYPE)
+            physical_network = network.get(provider.PHYSICAL_NETWORK)
+            segmentation_id = network.get(provider.SEGMENTATION_ID)
+            segments = [{provider.NETWORK_TYPE: network_type,
+                         provider.PHYSICAL_NETWORK: physical_network,
+                         provider.SEGMENTATION_ID: segmentation_id}]
+        elif attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
+            segments = network[mpnet.SEGMENTS]
+        else:
+            return
+
+        return [self._process_provider_segment(s) for s in segments]
+
     def initialize(self):
         for network_type, driver in self.drivers.iteritems():
             LOG.info(_("Initializing driver for type '%s'"), network_type)
             driver.obj.initialize()
 
-    def validate_provider_segment(self, segment):
-        network_type = segment[api.NETWORK_TYPE]
-        driver = self.drivers.get(network_type)
-        if driver:
-            driver.obj.validate_provider_segment(segment)
-        else:
-            msg = _("network_type value '%s' not supported") % network_type
-            raise exc.InvalidInput(error_message=msg)
-
-    def reserve_provider_segment(self, session, segment):
-        network_type = segment.get(api.NETWORK_TYPE)
-        driver = self.drivers.get(network_type)
-        return driver.obj.reserve_provider_segment(session, segment)
-
-    def allocate_tenant_segment(self, session):
+    def create_network(self, session, net_data):
+        segments = []
         for network_type in self.tenant_network_types:
             driver = self.drivers.get(network_type)
-            segment = driver.obj.allocate_tenant_segment(session)
+            segment = driver.obj.allocate_static_segment(session, net_data)
             if segment:
-                return segment
-        raise exc.NoNetworkAvailable()
+                segments.append(segment)
+        return segments
+
+    def get_segments(self, context, network_id):
+        segments = []
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            segment = driver.obj.get_segment(context, network_id)
+            if segment:
+                segments.append(segment)
+
+        return segments
+
+    def delete_network(self, session, network_id):
+        for network_type in self.tenant_network_types:
+            driver = self.drivers.get(network_type)
+            driver.obj.release_static_segment(session, network_id)
 
     def release_segment(self, session, segment):
         network_type = segment.get(api.NETWORK_TYPE)

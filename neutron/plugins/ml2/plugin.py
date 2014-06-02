@@ -139,49 +139,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                   fanout=False)
         return self.conn.consume_in_threads()
 
-    def _process_provider_segment(self, segment):
-        network_type = self._get_attribute(segment, provider.NETWORK_TYPE)
-        physical_network = self._get_attribute(segment,
-                                               provider.PHYSICAL_NETWORK)
-        segmentation_id = self._get_attribute(segment,
-                                              provider.SEGMENTATION_ID)
-
-        if attributes.is_attr_set(network_type):
-            segment = {api.NETWORK_TYPE: network_type,
-                       api.PHYSICAL_NETWORK: physical_network,
-                       api.SEGMENTATION_ID: segmentation_id}
-            self.type_manager.validate_provider_segment(segment)
-            return segment
-
-        msg = _("network_type required")
-        raise exc.InvalidInput(error_message=msg)
-
-    def _process_provider_create(self, network):
-        segments = []
-
-        if any(attributes.is_attr_set(network.get(f))
-               for f in (provider.NETWORK_TYPE, provider.PHYSICAL_NETWORK,
-                         provider.SEGMENTATION_ID)):
-            # Verify that multiprovider and provider attributes are not set
-            # at the same time.
-            if attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
-                raise mpnet.SegmentsSetInConjunctionWithProviders()
-
-            network_type = self._get_attribute(network, provider.NETWORK_TYPE)
-            physical_network = self._get_attribute(network,
-                                                   provider.PHYSICAL_NETWORK)
-            segmentation_id = self._get_attribute(network,
-                                                  provider.SEGMENTATION_ID)
-            segments = [{provider.NETWORK_TYPE: network_type,
-                         provider.PHYSICAL_NETWORK: physical_network,
-                         provider.SEGMENTATION_ID: segmentation_id}]
-        elif attributes.is_attr_set(network.get(mpnet.SEGMENTS)):
-            segments = network[mpnet.SEGMENTS]
-        else:
-            return
-
-        return [self._process_provider_segment(s) for s in segments]
-
     def _get_attribute(self, attrs, key):
         value = attrs.get(key)
         if value is attributes.ATTR_NOT_SPECIFIED:
@@ -189,8 +146,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         return value
 
     def _extend_network_dict_provider(self, context, network):
-        id = network['id']
-        segments = db.get_network_segments(context.session, id)
+        # Query all type drivers to grab segments for the network
+        segments = self.type_manager.get_segments(context,
+                                                  network.get('id'))
         if not segments:
             LOG.error(_("Network %s has no segments"), id)
             network[provider.NETWORK_TYPE] = None
@@ -491,32 +449,32 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def create_network(self, context, network):
         net_data = network['network']
-        segments = self._process_provider_create(net_data)
         tenant_id = self._get_tenant_id_for_create(context, net_data)
 
         session = context.session
         with session.begin(subtransactions=True):
             self._ensure_default_security_group(context, tenant_id)
             result = super(Ml2Plugin, self).create_network(context, network)
-            network_id = result['id']
-            self._process_l3_create(context, result, net_data)
-            # REVISIT(rkukura): Consider moving all segment management
-            # to TypeManager.
-            if segments:
-                for segment in segments:
-                    segment = self.type_manager.reserve_provider_segment(
-                        session, segment)
-                    db.add_network_segment(session, network_id, segment)
-            else:
-                segment = self.type_manager.allocate_tenant_segment(session)
-                db.add_network_segment(session, network_id, segment)
+            net_data['id'] = result.get('id')
+            type_result = self.type_manager.create_network(session, net_data)
+            if len(type_result) > 0:
+                for one_result in type_result:
+                    for one_segment in one_result:
+                        # Track this type segment in the DB
+                        db.add_network_segment(
+                            session,
+                            net_data.get('id'),
+                            one_segment[api.NETWORK_TYPE])
+
             self._extend_network_dict_provider(context, result)
-            mech_context = driver_context.NetworkContext(self, context,
-                                                         result)
-            self.mechanism_manager.create_network_precommit(mech_context)
+            network_context = driver_context.NetworkContext(self, context,
+                                                            result)
+            self._process_l3_create(context, result, net_data)
+
+            self.mechanism_manager.create_network_precommit(network_context)
 
         try:
-            self.mechanism_manager.create_network_postcommit(mech_context)
+            self.mechanism_manager.create_network_postcommit(driver_context)
         except ml2_exc.MechanismDriverError:
             with excutils.save_and_reraise_exception():
                 LOG.error(_("mechanism_manager.create_network_postcommit "
@@ -618,18 +576,19 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
                     if not (ports or subnets):
                         network = self.get_network(context, id)
-                        mech_context = driver_context.NetworkContext(self,
-                                                                     context,
-                                                                     network)
+                        net_context = driver_context.NetworkContext(self,
+                                                                    context,
+                                                                    network)
+                        # Invoke delete_network on all mech drivers
                         self.mechanism_manager.delete_network_precommit(
-                            mech_context)
+                            net_context)
+                        # Delete all segments for this network via the type
+                        # drivers
+                        self.type_manager.delete_network(session, id)
 
                         record = self._get_network(context, id)
                         LOG.debug(_("Deleting network record %s"), record)
                         session.delete(record)
-
-                        for segment in mech_context.network_segments:
-                            self.type_manager.release_segment(session, segment)
 
                         # The segment records are deleted via cascade from the
                         # network record, so explicit removal is not necessary.
@@ -660,7 +619,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                       subnet.id)
 
         try:
-            self.mechanism_manager.delete_network_postcommit(mech_context)
+            self.mechanism_manager.delete_network_postcommit(net_context)
         except ml2_exc.MechanismDriverError:
             # TODO(apech) - One or more mechanism driver failed to
             # delete the network.  Ideally we'd notify the caller of
