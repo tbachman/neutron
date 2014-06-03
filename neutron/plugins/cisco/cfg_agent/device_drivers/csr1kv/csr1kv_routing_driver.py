@@ -573,7 +573,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
     def remove_dyn_nat_translations(self):
         conn = self._get_connection()
         confstr = snippets.CLEAR_DYN_NAT_TRANS
-        rpc_obj = conn.get(("subtree", confstr))
+        rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'CLEAR_DYN_NAT_TRANS')
 
     def add_floating_ip(self, floating_ip, fixed_ip, vrf):
