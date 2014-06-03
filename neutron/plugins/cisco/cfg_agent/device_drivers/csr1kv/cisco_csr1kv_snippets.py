@@ -337,8 +337,15 @@ REMOVE_DEFAULT_ROUTE = """
 # we can turn off NAT on an interface
 # Syntax: clear ip nat translation [forced]
 #=============================================================================#
+# CLEAR_DYN_NAT_TRANS = """
+# <oper-data-format-text-block>
+#     <exec>clear ip nat translation forced</exec>
+# </oper-data-format-text-block>
+# """
 CLEAR_DYN_NAT_TRANS = """
-<oper-data-format-text-block>
-    <exec>clear ip nat translation forced</exec>
-</oper-data-format-text-block>
+<config>
+        <cli-config-data>
+            <cmd>do clear ip nat translation forced</cmd>
+        </cli-config-data>
+</config>
 """
