@@ -73,8 +73,12 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
             for agent in agents:
                 # Only use agent topic for l3 agent, otherwise topic for
                 # router service helper in cfg agent.
-                topic = (agent.topic if router['hosting_device'] is None else
-                         c_constants.CFG_AGENT_L3_ROUTING)
+                if router['hosting_device'] is None:
+                    topic = agent.topic
+                    version = '1.1'
+                else:
+                    topic = c_constants.CFG_AGENT_L3_ROUTING
+                    version = '1.0'
                 LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
                             'message %(method)s'),
                           {'agent_type': agent.agent_type,
@@ -84,7 +88,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
                 self.cast(context,
                           self.make_msg(method, routers=[router['id']]),
                           topic='%s.%s' % (topic, agent.host),
-                          version='1.1')
+                          version=version)
 
     def _notification(self, context, method, routers, operation, data):
         """Notify all or individual L3 agents and Cisco cfg agents."""
