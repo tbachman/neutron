@@ -19,15 +19,13 @@ import datetime
 from oslo.config import cfg
 
 from neutron.agent.linux import utils as linux_utils
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
-from neutron.plugins.cisco.cfg_agent import cfg_exceptions
 
 LOG = logging.getLogger(__name__)
 
 
-AGENT_OPTS = [
+STATUS_OPTS = [
     cfg.IntOpt('device_connection_timeout', default=30,
                help=_("Timeout value for connecting to a hosting device")),
     cfg.IntOpt('hosting_device_dead_timeout', default=300,
@@ -37,86 +35,22 @@ AGENT_OPTS = [
                       "or high load when the device may not be responding.")),
 ]
 
-cfg.CONF.register_opts(AGENT_OPTS)
+cfg.CONF.register_opts(STATUS_OPTS)
 
 
-class DeviceDriverManager(object):
-    """This class acts as a manager for different hosting devices.
+class DeviceStatus(object):
+    """Device status and backlog processing."""
 
-    The hosting devices manager  keeps the relationship between the
-    different logical resources (eg: routers) and where they are
-    hosted. For configuring these logical resources in a hosting device, a set
-    of driver objects are used. The driver objects are device and service
-    specific. When a get_driver() call is made for a specific resource, the
-    hosting device for that resource is extracted from the resource dicts
-    'hosting_device' key. If a driver for that particular hosting device and
-    service combo is found, it is reused, else a new driver is instantiated
-    and returned.
-    """
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(DeviceStatus, cls).__new__(
+                cls, *args, **kwargs)
+        return cls._instance
 
     def __init__(self):
-        self.router_id_hosting_devices = {}
-        self._drivers = {}
         self.backlog_hosting_devices = {}
-
-    def get_driver(self, router_info):
-        # if isinstance(router_info, RouterInfo):
-        #     router_id = router_info.router_id
-        # else:
-        #     raise TypeError("Expected RouterInfo object. "
-        #                     "Got %s instead"), type(router_info)
-        router_id = router_info.router_id
-        hosting_device = self.router_id_hosting_devices.get(router_id, None)
-        if hosting_device is not None:
-            driver = self._drivers.get(hosting_device['id'], None)
-            if driver is None:
-                driver = self._set_driver(router_info)
-        else:
-            driver = self._set_driver(router_info)
-        return driver
-
-    def _set_driver(self, router_info):
-        try:
-            _driver = None
-            router_id = router_info.router_id
-            router = router_info.router
-
-            hosting_device = router['hosting_device']
-            _hd_id = hosting_device['id']
-            driver_class = router['router_type']['cfg_agent_driver']
-
-            try:
-                _driver = importutils.import_object(
-                    driver_class,
-                    **hosting_device)
-            except ImportError:
-                LOG.exception(_("Error loading cfg agent driver for routing "
-                                "service %(driver)s for hosting device "
-                                "template  %(t_name)s(%(t_id)s)"),
-                              {'driver': driver_class,
-                               't_name': hosting_device['name'],
-                               't_id': _hd_id})
-                raise cfg_exceptions.DriverNotFound(driver=driver_class)
-            self.router_id_hosting_devices[router_id] = hosting_device
-            self._drivers[_hd_id] = _driver
-        except (AttributeError, KeyError) as e:
-            LOG.error(_("Cannot set driver for router. Reason: %s"), e)
-        return _driver
-
-    def clear_driver_connection(self, hd_id):
-            driver = self._drivers.get(hd_id, None)
-            if driver:
-                driver.clear_connection()
-                LOG.debug(_("Cleared connection @ %s"), driver._csr_host)
-
-    def remove_driver(self, router_id):
-        del self.router_id_hosting_devices[router_id]
-        for hd_id in self._drivers.keys():
-            if hd_id not in self.router_id_hosting_devices.values():
-                del self._drivers[hd_id]
-
-    def pop(self, hd_id):
-        self._drivers.pop(hd_id, None)
 
     def get_backlogged_hosting_devices(self):
         backlogged_hosting_devices = {}
@@ -150,7 +84,6 @@ class DeviceDriverManager(object):
                 datetime.timedelta(seconds=hd['booting_time']))
             self.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [router_id]}
-            self.clear_driver_connection(hd_id)
             LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
                         "to backlog"), {'hd_id': hd_id,
                                         'ip': hd['management_ip_address']})

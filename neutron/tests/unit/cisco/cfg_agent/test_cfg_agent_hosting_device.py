@@ -24,7 +24,7 @@ from neutron.openstack.common import uuidutils
 
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.device_driver_manager import (
+from neutron.plugins.cisco.cfg_agent.device_status import (
     DeviceDriverManager)
 from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 from neutron.tests import base

@@ -28,8 +28,9 @@ from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common.rpc import proxy
 
 from neutron.plugins.cisco.cfg_agent.cfg_exceptions import DriverException
-from neutron.plugins.cisco.cfg_agent.device_driver_manager import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.driver_mgr import (
     DeviceDriverManager)
+from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
 from neutron.plugins.cisco.cfg_agent.service_helpers.service_helper import (
     ServiceHelperBase)
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -127,11 +128,12 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
 class RoutingServiceHelper(ServiceHelperBase):
 
     def __init__(self, host, conf, cfg_agent):
-        self.cfg_agent = cfg_agent
         self.conf = conf
+        self.cfg_agent = cfg_agent
         self.context = n_context.get_admin_context_without_session()
         self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
-        self._hdm = DeviceDriverManager()
+        self._dev_status = DeviceStatus()
+        self._drivermgr = DeviceDriverManager()
 
         self.router_info = {}
         self.updated_routers = set()
@@ -142,7 +144,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         self._setup_rpc()
         # self.agent = cfg_agent
         # Short cut for attributes in agent
-        # self._hdm = self.agent._hdm
+        # self._dev_status = self.agent._dev_status
         # self.plugin_rpc = self.agent.plugin_rpc
         # self.conf = self.agent.conf
         # self.context = self.agent.context
@@ -194,7 +196,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                       payload['hosting_data'])
             for router_id in resource_data.get('routers', []):
                 self._router_removed(router_id, payload['deconfigure'])
-            self._hdm.pop(hd_id)
+            self._drivermgr.pop(hd_id)
 
     def _router_added(self, router_id, router):
         """Operations when a router is added.
@@ -208,7 +210,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         :return: None
         """
         ri = RouterInfo(router_id, router)
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.router_added(ri)
         self.router_info[router_id] = ri
 
@@ -235,9 +237,9 @@ class RoutingServiceHelper(ServiceHelperBase):
             if deconfigure:
                 #ToDo: Check here
                 self.process_router(ri)
-                driver = self._hdm.get_driver(ri)
+                driver = self._drivermgr.get_driver(ri)
                 driver.router_removed(ri, deconfigure)
-                self._hdm.remove_driver(router_id)
+                self._drivermgr.remove_driver(router_id)
             del self.router_info[router_id]
         except DriverException:
             LOG.info(_("Router remove for router_id: %s was incomplete. "
@@ -248,41 +250,38 @@ class RoutingServiceHelper(ServiceHelperBase):
             self.agent.updated_routers.discard(router_id)
 
     def internal_network_added(self, ri, port, ex_gw_port):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.internal_network_added(ri, port)
         if ri.snat_enabled and ex_gw_port:
             driver.enable_internal_network_NAT(ri, port, ex_gw_port)
 
     def internal_network_removed(self, ri, port, ex_gw_port):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.internal_network_removed(ri, port)
         if ri.snat_enabled and ex_gw_port:
             driver.disable_internal_network_NAT(ri, port, ex_gw_port)
 
     def external_gateway_added(self, ri, ex_gw_port):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.external_gateway_added(ri, ex_gw_port)
         if ri.snat_enabled and ri.internal_ports:
             for port in ri.internal_ports:
                 driver.enable_internal_network_NAT(ri, port, ex_gw_port)
 
     def external_gateway_removed(self, ri, ex_gw_port):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         if ri.snat_enabled and ri.internal_ports:
             for port in ri.internal_ports:
                 driver.disable_internal_network_NAT(ri, port, ex_gw_port)
         driver.external_gateway_removed(ri, ex_gw_port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.floating_ip_added(ri, ex_gw_port, floating_ip, fixed_ip)
 
     def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        driver = self._hdm.get_driver(ri)
+        driver = self._drivermgr.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
-
-    def process_service_for_devices(self, devices, *args, **kwargs):
-        raise NotImplementedError
 
     def process_service(self, *args, **kwargs):
         """Process changes to the routers managed by this connfig agent.
@@ -343,6 +342,31 @@ class RoutingServiceHelper(ServiceHelperBase):
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
 
+    def process_service_for_devices(self, devices, *args, **kwargs):
+        try:
+            LOG.debug(_("Starting processing routing for device %s"), devices)
+            resources = {}
+            routers = self.plugin_rpc.get_routers(self.context, hd_ids=devices)
+            resources['routers'] = routers
+            # Sort on hosting device
+            hosting_devices = self._sort_resources_per_hosting_device(
+                resources)
+            # Dispatch process_services() for each hosting device
+            pool = eventlet.GreenPool()
+            for device_id, resources in hosting_devices.items():
+                routers = resources.get('routers')
+                removed_routers = resources.get('removed_routers')
+                pool.spawn_n(self.process_routers, routers, removed_routers,
+                             device_id, all_routers=self.fullsync)
+            pool.waitall()
+            LOG.debug(_("Routing service processing successfully completed"))
+        except rpc_common.RPCException:
+            LOG.exception(_("Failed processing routers due to RPC error"))
+            self.fullsync = True
+        except Exception:
+            LOG.exception(_("Failed processing routers"))
+            self.fullsync = True
+
     def process_routers(self, routers, removed_routers,
                         device_id=None, all_routers=False):
         """Process the set of routers.
@@ -378,7 +402,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                 # hosting device is decided and enforced by the plugin.
                 # So no checks are done here.
                 cur_router_ids.add(r['id'])
-                if not self._hdm.is_hosting_device_reachable(r['id'], r):
+                if not self._dev_status.is_hosting_device_reachable(r['id'], r):
                     LOG.info(
                         _("Router: %(id)s is on unreachable hosting device. "
                           "Skip processing it."), {'id': r['id']})
@@ -533,12 +557,12 @@ class RoutingServiceHelper(ServiceHelperBase):
                 if route['destination'] == del_route['destination']:
                     removes.remove(del_route)
                     #replace success even if there is no existing route
-            driver = self._hdm.get_driver(ri)
+            driver = self._drivermgr.get_driver(ri)
             driver.routes_updated(ri, 'replace', route)
 
         for route in removes:
             LOG.debug(_("Removed route entry is '%s'"), route)
-            driver = self._hdm.get_driver(ri)
+            driver = self._drivermgr.get_driver(ri)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes
 
@@ -574,7 +598,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                 num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
         for (hd_id, num) in num_hd_routers.items():
             routers_per_hd[hd_id] = {'routers': num}
-        non_responding = self._hdm.get_backlogged_hosting_devices()
+        non_responding = self._dev_status.get_backlogged_hosting_devices()
         # configurations = self.agent_state['configurations']
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
