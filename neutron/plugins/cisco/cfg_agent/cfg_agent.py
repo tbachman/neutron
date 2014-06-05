@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 
 # Constants for agent registration.
 REGISTRATION_RETRY_DELAY = 2
-MAX_REGISTRATION_ATTEMPTS = 60
+MAX_REGISTRATION_ATTEMPTS = 30
 
 
 class CiscoDeviceManagerPluginApi(proxy.RpcProxy):
@@ -201,7 +201,7 @@ class CiscoCfgAgent(manager.Manager):
         """
         removed_router_ids = []
         for hd_id, resource_data in payload['hosting_data'].items():
-            removed_router_ids.append(resource_data.get('routers'), [])
+            removed_router_ids.append(resource_data.get('routers', None))
         if removed_router_ids:
             self.process_services(removed_router_ids=removed_router_ids)
 
