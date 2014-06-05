@@ -74,11 +74,6 @@ class ServiceHelperBase(object):
     def process_service(self, *args, **kwargs):
         raise NotImplementedError
 
-    @abstractmethod
-    def process_service_for_devices(self, devices, *args, **kwargs):
-        raise NotImplementedError
-
-
 class QueueMixin(object):
     def __init__(self):
         super(QueueMixin, self).__init__()
