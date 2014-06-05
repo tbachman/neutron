@@ -82,7 +82,7 @@ NETWORK_SUBTYPE_TRUNK_VXLAN = NETWORK_TYPE_OVERLAY
 
 # Number of threads for HTTP connections to the VSM
 HTTP_POOL_SIZE = 4
-DEFAULT_HTTP_TIMEOUT = 15
+DEFAULT_HTTP_TIMEOUT = 30
 SET = 'set'
 INSTANCE = 'instance'
 PROPERTIES = 'properties'
