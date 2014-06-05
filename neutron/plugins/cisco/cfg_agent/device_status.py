@@ -59,7 +59,8 @@ class DeviceStatus(object):
                 'affected routers': data['routers']}
         return backlogged_hosting_devices
 
-    def is_hosting_device_reachable(self, router_id, router):
+    def is_hosting_device_reachable(self, router):
+        router_id = router['id']
         hd = router['hosting_device']
         hd_id = hd['id']
         hd_mgmt_ip = hd['management_ip_address']
