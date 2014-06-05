@@ -56,6 +56,8 @@ cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS)
 MIN_LL_VLAN_TAG = 10
 MAX_LL_VLAN_TAG = 200
 FULL_VLAN_SET = set(range(MIN_LL_VLAN_TAG, MAX_LL_VLAN_TAG + 1))
+DELETION_ATTEMPTS = 5
+SECONDS_BETWEEN_ATTEMPTS = 3
 
 # Port lookups can fail so retries are needed
 MAX_HOSTING_PORT_LOOKUP_ATTEMPTS = 10
@@ -276,35 +278,62 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,
                                         **kwargs):
-         # Remove anything created.
-        if mgmt_port is not None:
-            try:
-                self._core_plugin.delete_port(context, mgmt_port['id'])
-            except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete management port %(port_id)s for '
-                            'service vm due to %(err)s'),
-                          {'port_id': mgmt_port['id'], 'err': e})
-        for item in kwargs['ports']:
-            try:
-                self._core_plugin.delete_port(context, item['id'])
-            except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete trunk port %(port_id)s for '
-                            'service vm due to %(err)s'),
-                          {'port_id': item['id'], 'err': e})
-        for item in kwargs['subnets']:
-            try:
-                self._core_plugin.delete_subnet(context, item['id'])
-            except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete subnet %(subnet_id)s for '
-                            'service vm due to %(err)s'),
-                          {'subnet_id': item['id'], 'err': e})
-        for item in kwargs['networks']:
-            try:
-                self._core_plugin.delete_network(context, item['id'])
-            except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete trunk network %(net_id)s for '
-                            'service vm due to %(err)s'),
-                          {'net_id': item['id'], 'err': e})
+        attempts = 1
+        port_ids = set([p['id'] for p in kwargs['ports']])
+        subnet_ids = set([s['id'] for s in kwargs['subnets']])
+        net_ids = set([n['id'] for n in kwargs['networks']])
+
+        while mgmt_port is not None or port_ids or subnet_ids or net_ids:
+            if attempts == DELETION_ATTEMPTS:
+                LOG.warning(_('Aborting resource deletion after %d '
+                              'unsuccessful attempts'), DELETION_ATTEMPTS)
+                break
+            else:
+                if attempts > 1:
+                    sleep(SECONDS_BETWEEN_ATTEMPTS)
+                LOG.info(_('Initiating deletion attempt %d'), attempts)
+            # Remove anything created.
+            if mgmt_port is not None:
+                try:
+                    self._core_plugin.delete_port(context, mgmt_port['id'])
+                    mgmt_port = None
+                except n_exc.PortNotFound:
+                    mgmt_port = None
+                except n_exc.NeutronException as e:
+                    LOG.error(_('Failed to delete management port %(port_id) '
+                                'for service vm due to %(err)s'),
+                              {'port_id': mgmt_port['id'], 'err': e})
+            for item in port_ids.copy():
+                try:
+                    self._core_plugin.delete_port(context, item)
+                    port_ids.remove(item)
+                except n_exc.PortNotFound:
+                    port_ids.remove(item)
+                except n_exc.NeutronException as e:
+                    LOG.error(_('Failed to delete trunk port %(port_id)s for '
+                                'service vm due to %(err)s'),
+                              {'port_id': item, 'err': e})
+            for item in subnet_ids.copy():
+                try:
+                    self._core_plugin.delete_subnet(context, item)
+                    subnet_ids.remove(item)
+                except n_exc.SubnetNotFound:
+                    subnet_ids.remove(item)
+                except n_exc.NeutronException as e:
+                    LOG.error(_('Failed to delete subnet %(subnet_id)s for '
+                                'service vm due to %(err)s'),
+                              {'subnet_id': item, 'err': e})
+            for item in net_ids.copy():
+                try:
+                    self._core_plugin.delete_network(context, item)
+                    net_ids.remove(item)
+                except n_exc.NetworkNotFound:
+                    net_ids.remove(item)
+                except n_exc.NeutronException as e:
+                    LOG.error(_('Failed to delete trunk network %(net_id)s for '
+                                'service vm due to %(err)s'),
+                              {'net_id': item, 'err': e})
+            attempts += 1
 
     def setup_logical_port_connectivity(self, context, port_db):
         # Add the VLAN to the VLANs that the hosting port trunks.
