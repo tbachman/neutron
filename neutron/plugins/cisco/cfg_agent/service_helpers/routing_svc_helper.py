@@ -347,7 +347,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                     router_ids = list(self.updated_routers)
                     LOG.debug(_("Updated routers:%s"), list(router_ids))
                     self.updated_routers.clear()
-                    routers.append(self._fetch_router_info(
+                    routers.update(self._fetch_router_info(
                         router_ids=router_ids))
                 if removed_router_ids:
                     self.removed_routers.union(set(removed_router_ids))
@@ -356,13 +356,14 @@ class RoutingServiceHelper(ServiceHelperBase):
                               list(self.removed_routers))
                     for r_id in self.removed_routers:
                         removed_routers[r_id] = self.router_info[r_id]
-            # Add everything to resource dict
+
+            # Sort on hosting device
             resources['routers'] = routers
             if removed_routers:
                 resources['removed_routers'] = removed_routers
-            # Sort on hosting device
             hosting_devices = self._sort_resources_per_hosting_device(
                 resources)
+
             # Dispatch process_services() for each hosting device
             pool = eventlet.GreenPool()
             for device_id, resources in hosting_devices.items():
