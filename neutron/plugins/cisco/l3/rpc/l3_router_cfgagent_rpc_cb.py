@@ -62,7 +62,7 @@ class L3RouterCfgRpcCallbackMixin(object):
                 plugin, constants.PORT_BINDING_EXT_ALIAS):
             self._ensure_host_set_on_ports(context, plugin, host, routers)
         LOG.debug(_("Routers returned to Cisco cfg agent@%(agt)s:\n "
-                    "%(routers)%s"),
+                    "%(routers)s"),
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 

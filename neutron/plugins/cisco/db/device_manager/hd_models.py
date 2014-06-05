@@ -156,7 +156,8 @@ class HostedHostingPortBinding(model_base.BASEV2):
     network_type = sa.Column(sa.String(32))
     hosting_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id',
-                                              ondelete='SET NULL'))
+                                              ondelete='CASCADE'))
+#                                              ondelete='SET NULL'))
     hosting_port = orm.relationship(
         models_v2.Port,
         primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')
