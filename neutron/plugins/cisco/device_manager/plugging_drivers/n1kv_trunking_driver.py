@@ -290,7 +290,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 break
             else:
                 if attempts > 1:
-                    sleep(SECONDS_BETWEEN_ATTEMPTS)
+                    eventlet.sleep(SECONDS_BETWEEN_ATTEMPTS)
                 LOG.info(_('Initiating deletion attempt %d'), attempts)
             # Remove anything created.
             if mgmt_port is not None:
