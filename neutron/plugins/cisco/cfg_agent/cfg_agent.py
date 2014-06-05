@@ -201,7 +201,7 @@ class CiscoCfgAgent(manager.Manager):
         """
         removed_router_ids = []
         for hd_id, resource_data in payload['hosting_data'].items():
-            removed_router_ids.append(resource_data.get('routers', None))
+            removed_router_ids += resource_data.get('routers', [])
         if removed_router_ids:
             self.process_services(removed_router_ids=removed_router_ids)
 

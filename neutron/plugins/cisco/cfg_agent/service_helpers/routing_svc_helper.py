@@ -290,12 +290,14 @@ class RoutingServiceHelper(ServiceHelperBase):
                     LOG.debug(_("Adding Routers on:%s"), device_ids)
                     routers.append(self._fetch_router_info(device_ids))
                 if removed_router_ids:
-                    self.removed_routers.union(set(removed_router_ids))
+                    self.removed_routers = self.removed_routers.union(set(
+                        removed_router_ids))
                 if self.removed_routers:
-                    removed_routers_ids= list(self.removed_routers)
+                    removed_routers_ids = list(self.removed_routers)
                     LOG.debug(_("Removed routers:%s"), removed_routers_ids)
                     for r in removed_routers_ids:
-                        removed_routers.append(self.router_info.get(r).router)
+                        if r in self.router_info:
+                            removed_routers.append(self.router_info[r].router)
 
             # Sort on hosting device
             if routers:
