@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 
 # Constants for agent registration.
 REGISTRATION_RETRY_DELAY = 2
-MAX_REGISTRATION_ATTEMPTS = 20
+MAX_REGISTRATION_ATTEMPTS = 60
 
 
 class CiscoDeviceManagerPluginApi(proxy.RpcProxy):
@@ -121,8 +121,8 @@ class CiscoCfgAgent(manager.Manager):
                                                            self)
 
     def _start_periodic_tasks(self):
-        self.rpc_loop = loopingcall.FixedIntervalLoopingCall(self._rpc_loop)
-        self.rpc_loop.start(interval=self.conf.rpc_loop_interval)
+        self.loop = loopingcall.FixedIntervalLoopingCall(self.process_services)
+        self.loop.start(interval=self.conf.rpc_loop_interval)
 
     def after_start(self):
         LOG.info(_("Cisco cfg agent started"))
@@ -131,10 +131,16 @@ class CiscoCfgAgent(manager.Manager):
         return self.routing_service_helper
 
     ## Periodic tasks ##
+    @periodic_task.periodic_task
+    def _backlog_task(self, context):
+        """Process backlogged devices."""
+        LOG.debug(_("Processing backlog."))
+        self._process_backlogged_hosting_devices(context)
 
+    ## Main orchestrator ##
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
-    def _rpc_loop(self):
-        """Process routers received via RPC.
+    def process_services(self, device_ids=None, removed_router_ids=None):
+        """Process services associated with a hosting device.
 
         This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
         routers which have been notified via RPC from the plugin. Plugin sends
@@ -149,51 +155,19 @@ class CiscoCfgAgent(manager.Manager):
         `_sync_task()` because of the lock which avoids race conditions
          on `updated_routers` and `removed_routers`
 
-        :return: None
-        """
-        LOG.debug(_("Starting RPC loop for processing services"))
-        self.process_services()
-        LOG.debug(_("RPC loop successfully completed"))
-
-    @periodic_task.periodic_task
-    @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
-    def _backlog_task(self, context):
-        """Process backlogged devices
-        """
-        LOG.debug(_("Processing backlog."))
-        #ToDo(Hareesh): Verify backlog processing
-        self._process_backlogged_hosting_devices(context)
-
-    ## Main orchestrator ##
-    def process_services(self):
-        """Process services associated with a hosting device.
-
         This method dictates the order of processing of services.
         Any cross dependencies should be solved here, thus making it a
         single point of change for interaction among services.
 
-        :param resources: dict of resources. Valid keys now are 'routers',
-        'removed_routers' and 'all_routers'(flag)
+        :param device_ids: List of device_ids to process
+        :param removed_router_ids: List of router_ids which are removed
         :return: None
         """
         #ToDo(Hareesh): Verify admin_up event
         LOG.debug(_("Processing services started"))
         # First we process routing service
-        self.routing_service_helper.process_service()
-        LOG.debug(_("Processing services completed"))
-
-    def process_services_for_devices(self, devices):
-        """Process services on a list of hosting devices.
-
-        This method dictates the order of processing of services.
-        Any cross dependencies should be solved here, thus making it a
-        single point of change for interaction among services.
-
-        :param devices: List of hosting devices
-        :return: None
-        """
-        LOG.debug(_("Processing services started"))
-        self.routing_service_helper.process_service_for_devices(devices)
+        self.routing_service_helper.process_service(device_ids,
+                                                    removed_router_ids)
         LOG.debug(_("Processing services completed"))
 
     def _process_backlogged_hosting_devices(self, context):
@@ -209,12 +183,27 @@ class CiscoCfgAgent(manager.Manager):
         """
         res = self._dev_status.check_backlogged_hosting_devices()
         if res['reachable']:
-            self.process_services_for_devices(res['reachable'])
+            self.process_services(device_ids=res['reachable'])
         if res['dead']:
             LOG.debug(_("Reporting dead hosting devices: %s"),
                       res['dead'])
             self.devmgr_rpc.report_dead_hosting_devices(context,
                                                         hd_ids=res['dead'])
+
+    def hosting_devices_removed(self, context, payload):
+        """Deal with hosting device removed RPC message.
+        Payload format:
+        {
+             'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
+                              'hd_id2': {'routers': [id3, id4, ...]}, ... },
+             'deconfigure': True/False
+        }
+        """
+        removed_router_ids = []
+        for hd_id, resource_data in payload['hosting_data'].items():
+            removed_router_ids.append(resource_data.get('routers'), [])
+        if removed_router_ids:
+            self.process_services(removed_router_ids=removed_router_ids)
 
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):

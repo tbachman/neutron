@@ -182,22 +182,6 @@ class RoutingServiceHelper(ServiceHelperBase):
         LOG.debug(_('Got router added to agent :%r'), payload)
         self.routers_updated(context, payload)
 
-    def hosting_devices_removed(self, context, payload):
-        """Deal with hosting device removed RPC message.
-        Payload format:
-        {
-             'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
-                              'hd_id2': {'routers': [id3, id4, ...]}, ... },
-             'deconfigure': True/False
-        }
-        """
-        for hd_id, resource_data in payload['hosting_data'].items():
-            LOG.debug(_("Hosting device removal data: %s "),
-                      payload['hosting_data'])
-            for router_id in resource_data.get('routers', []):
-                self._router_removed(router_id, payload['deconfigure'])
-            self._drivermgr.pop(hd_id)
-
     def _router_added(self, router_id, router):
         """Operations when a router is added.
 
@@ -241,13 +225,14 @@ class RoutingServiceHelper(ServiceHelperBase):
                 driver.router_removed(ri, deconfigure)
                 self._drivermgr.remove_driver(router_id)
             del self.router_info[router_id]
+            self.removed_routers.discard(router_id)
         except DriverException:
             LOG.info(_("Router remove for router_id: %s was incomplete. "
                        "Adding the router to removed_routers list"), router_id)
-            self.agent.removed_routers.add(router_id)
+            self.removed_routers.add(router_id)
             # remove this router from updated_routers if it is there. It might
             # end up there too if exception was thrown inside `process_router`
-            self.agent.updated_routers.discard(router_id)
+            self.updated_routers.discard(router_id)
 
     def internal_network_added(self, ri, port, ex_gw_port):
         driver = self._drivermgr.get_driver(ri)
@@ -283,46 +268,98 @@ class RoutingServiceHelper(ServiceHelperBase):
         driver = self._drivermgr.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
 
-    def process_service(self, *args, **kwargs):
-        """Process changes to the routers managed by this connfig agent.
+    # def process_service_old(self, *args, **kwargs):
+    #     """Process changes to the routers managed by this connfig agent.
+    #
+    #     Entry point to the routing service helper. Config agent calls this
+    #     function periodically as part of the rpc_loop.
+    #     The latest state of any updated routers are fetched. If full sync,
+    #     data on all the routers are fetched.
+    #     The routers are then sorted on the hosting device where they are
+    #     configured. Then process_routers() is called on thread per device.
+    #
+    #     :param args:
+    #     :param kwargs:
+    #     :return: None
+    #     """
+    #     try:
+    #         LOG.debug(_("Starting processing routing service"))
+    #         resources = {}
+    #         if self.fullsync:
+    #             LOG.debug(_("FullSync flag is on. Starting fullsync"))
+    #             self.fullsync = False
+    #             self.updated_routers.clear()
+    #             self.removed_routers.clear()
+    #             routers = self.plugin_rpc.get_routers(self.context)
+    #             resources['routers'] = routers
+    #         else:
+    #             LOG.debug(_("Processing %(ur)d updated routers and %(rr)d "
+    #                         "removed routers"),
+    #                       {'ur': len(self.updated_routers),
+    #                        'rr': len(self.removed_routers)})
+    #             if self.updated_routers:
+    #                 router_ids = list(self.updated_routers)
+    #                 self.updated_routers.clear()
+    #                 routers = self.plugin_rpc.get_routers(
+    #                     self.context, router_ids)
+    #                 resources['routers'] = routers
+    #             if self.removed_routers:
+    #                 removed_routers = {}
+    #                 for r_id in self.removed_routers:
+    #                     removed_routers[r_id] = self.router_info[r_id]
+    #                 resources['removed_routers'] = removed_routers
+    #         # Sort on hosting device
+    #         hosting_devices = self._sort_resources_per_hosting_device(
+    #             resources)
+    #         # Dispatch process_services() for each hosting device
+    #         pool = eventlet.GreenPool()
+    #         for device_id, resources in hosting_devices.items():
+    #             routers = resources.get('routers')
+    #             removed_routers = resources.get('removed_routers')
+    #             pool.spawn_n(self.process_routers, routers, removed_routers,
+    #                          device_id, all_routers=self.fullsync)
+    #         pool.waitall()
+    #         LOG.debug(_("Routing service processing successfully completed"))
+    #     except rpc_common.RPCException:
+    #         LOG.exception(_("Failed processing routers due to RPC error"))
+    #         self.fullsync = True
+    #     except Exception:
+    #         LOG.exception(_("Failed processing routers"))
+    #         self.fullsync = True
 
-        Entry point to the routing service helper. Config agent calls this
-        function periodically as part of the rpc_loop.
-        The latest state of any updated routers are fetched. If full sync,
-        data on all the routers are fetched.
-        The routers are then sorted on the hosting device where they are
-        configured. Then process_routers() is called on thread per device.
-
-        :param args:
-        :param kwargs:
-        :return: None
-        """
+    def process_service(self, device_ids=None, removed_router_ids=None):
         try:
-            LOG.debug(_("Starting processing routing service"))
+            LOG.debug(_("Routing service processing started"))
             resources = {}
+            routers = {}
+            removed_routers = {}
             if self.fullsync:
                 LOG.debug(_("FullSync flag is on. Starting fullsync"))
                 self.fullsync = False
                 self.updated_routers.clear()
                 self.removed_routers.clear()
-                routers = self.plugin_rpc.get_routers(self.context)
-                resources['routers'] = routers
+                routers = self._fetch_router_info(all_routers=True)
             else:
-                LOG.debug(_("Processing %(ur)d updated routers and %(rr)d "
-                            "removed routers"),
-                          {'ur': len(self.updated_routers),
-                           'rr': len(self.removed_routers)})
+                if device_ids:
+                    LOG.debug(_("Processing routers on:%s"), device_ids)
+                    routers = self._fetch_router_info(device_ids)
                 if self.updated_routers:
                     router_ids = list(self.updated_routers)
+                    LOG.debug(_("Updated routers:%s"), list(router_ids))
                     self.updated_routers.clear()
-                    routers = self.plugin_rpc.get_routers(
-                        self.context, router_ids)
-                    resources['routers'] = routers
+                    routers.append(self._fetch_router_info(
+                        router_ids=router_ids))
+                if removed_router_ids:
+                    self.removed_routers.union(set(removed_router_ids))
                 if self.removed_routers:
-                    removed_routers = {}
+                    LOG.debug(_("Removed routers:%s"),
+                              list(self.removed_routers))
                     for r_id in self.removed_routers:
                         removed_routers[r_id] = self.router_info[r_id]
-                    resources['removed_routers'] = removed_routers
+            # Add everything to resource dict
+            resources['routers'] = routers
+            if removed_routers:
+                resources['removed_routers'] = removed_routers
             # Sort on hosting device
             hosting_devices = self._sort_resources_per_hosting_device(
                 resources)
@@ -335,36 +372,22 @@ class RoutingServiceHelper(ServiceHelperBase):
                              device_id, all_routers=self.fullsync)
             pool.waitall()
             LOG.debug(_("Routing service processing successfully completed"))
-        except rpc_common.RPCException:
-            LOG.exception(_("Failed processing routers due to RPC error"))
-            self.fullsync = True
         except Exception:
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
 
-    def process_service_for_devices(self, devices, *args, **kwargs):
+    def _fetch_router_info(self, router_ids=[], device_ids=[],
+                           all_routers=False):
         try:
-            LOG.debug(_("Starting processing routing for device %s"), devices)
-            resources = {}
-            routers = self.plugin_rpc.get_routers(self.context, hd_ids=devices)
-            resources['routers'] = routers
-            # Sort on hosting device
-            hosting_devices = self._sort_resources_per_hosting_device(
-                resources)
-            # Dispatch process_services() for each hosting device
-            pool = eventlet.GreenPool()
-            for device_id, resources in hosting_devices.items():
-                routers = resources.get('routers')
-                removed_routers = resources.get('removed_routers')
-                pool.spawn_n(self.process_routers, routers, removed_routers,
-                             device_id, all_routers=self.fullsync)
-            pool.waitall()
-            LOG.debug(_("Routing service processing successfully completed"))
+            if all_routers:
+                return self.plugin_rpc.get_routers(self.context)
+            if router_ids:
+                return self.plugin_rpc.get_routers(self.context, router_ids)
+            if device_ids:
+                return self.plugin_rpc.get_routers(self.context,
+                                                   hd_ids=device_ids)
         except rpc_common.RPCException:
-            LOG.exception(_("Failed processing routers due to RPC error"))
-            self.fullsync = True
-        except Exception:
-            LOG.exception(_("Failed processing routers"))
+            LOG.exception(_("RPC Error in fetching routers from plugin"))
             self.fullsync = True
 
     def process_routers(self, routers, removed_routers,
