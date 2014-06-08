@@ -42,6 +42,7 @@ from neutron.plugins.cisco.db.device_manager.hd_models import (
     HostedHostingPortBinding)
 from neutron.plugins.cisco.db.l3.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.db.l3.l3_models import RouterType
+from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
                                           l3_router_rpc_api)
@@ -114,7 +115,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         cls._heartbeat = None
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        l3.ROUTERS, ['_extend_router_dict_routertype'])
+        l3.ROUTERS, ['_extend_router_dict_routertype',
+                     '_extend_router_dict_routerhostingdevice'])
 
     def create_router(self, context, router):
         r = router['router']
@@ -558,8 +560,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         self._refresh_router_backlog = False
 
     def _extend_router_dict_routertype(self, router_res, router_db):
-        router_res[routertype.TYPE_ATTR] = (router_db.hosting_info
-                                            .router_type_id)
+        router_res[routertype.TYPE_ATTR] = (
+            router_db.hosting_info.router_type_id)
+
+    def _extend_router_dict_routerhostingdevice(self, router_res, router_db):
+        router_res[routerhostingdevice.HOSTING_DEVICE_ATTR] = (
+            (router_db.hosting_info or {}).get('hosting_device_id'))
 
     @property
     def _core_plugin(self):
