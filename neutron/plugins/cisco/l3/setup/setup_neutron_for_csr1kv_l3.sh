@@ -53,12 +53,13 @@ n1kvNwProfileTypes=(vlan trunk trunk)
 #n1kvNwSubprofileTypes=(None vlan vxlan)
 n1kvNwSubprofileTypes=(None vlan vlan)
 n1kvNwProfileSegRange=($mgmtProviderVlanId-$mgmtProviderVlanId 500-2000 2001-3000)
-n1kvPortPolicyProfileNames=(osn_mgmt_pp osn_t1_pp osn_t2_pp)
+n1kvPortPolicyProfileNames=(osn_mgmt_pp osn_t1_pp osn_t2_pp sys-uplink)
+n1kvPortPolicyProfileTypes=(vethernet vethernet vethernet ethernet)
 
 
 function _configure_vsm_port_profiles() {
     # Package 'expect' must be installed for this function to work
-    vsm_ip_addr=$1 user=$2 passwd=$3 profile_name=$4 expect -c '
+    vsm_ip_addr=$1 user=$2 passwd=$3 profile_name=$4 ptype=$5 expect -c '
 	spawn /usr/bin/telnet $env(vsm_ip_addr)
 	expect {
 	    -re "Trying.*Connected.*Escape.*Nexus .*login: " {
@@ -79,8 +80,13 @@ function _configure_vsm_port_profiles() {
 	send "feature network-segmentation-manager\n"
 	expect -re ".*# "
 
-    send "port-profile type vethernet $env(profile_name)\n"
+    send "port-profile type $env(ptype) $env(profile_name)\n"
 	expect -re ".*# "
+
+    if {$env(ptype) == "ethernet"} {
+        send "switchport mode trunk"
+        expect -re ".*# "
+    }
 
     send "no shut\n"
 	expect -re ".*# "
@@ -128,11 +134,12 @@ function get_network_profile_id() {
 
 function get_port_profile_id() {
     name=$1
+    porttype=$2
     local c=0
     pProfileId=`$osn cisco-policy-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
     if [ "$pProfileId" == "None" ]; then
         echo "   Port policy profile $name does not exist. Creating it."
-        _configure_vsm_port_profiles $vsmIP $vsmUsername $vsmPassword $name
+        _configure_vsm_port_profiles $vsmIP $vsmUsername $vsmPassword $name $porttype
     fi
     while [ $c -le 5 ] && [ "$pProfileId" == "None" ]; do
         pProfileId=`$osn cisco-policy-profile-list | awk 'BEGIN { res="No"; } /'"$name"'/ { res=$2; } END { print res;}'`
@@ -195,11 +202,11 @@ if [ "$plugin" == "n1kv" ]; then
     done
 
     echo "Verifying that required N1kv port policy profiles exist:"
-    for pn in ${n1kvPortPolicyProfileNames[@]}; do
-        echo "   Checking $pn ..."
-        get_port_profile_id $pn
+    for (( i=0; i<${#n1kvPortPolicyProfileNames[@]}; i++ )); do
+        echo "   Checking ${n1kvPortPolicyProfileNames[$i]} ..."
+        get_port_profile_id ${n1kvPortPolicyProfileNames[$i]} ${n1kvPortPolicyProfileTypes[$i]}
         if [ $pProfileId == "None" ]; then
-            echo "   Failed to verify port profile $pn, please check health of the VSM then re-run this script."
+            echo "   Failed to verify port profile ${n1kvPortPolicyProfileNames[$i]}, please check health of the VSM then re-run this script."
             echo "   Aborting!"
             exit 1
         else
