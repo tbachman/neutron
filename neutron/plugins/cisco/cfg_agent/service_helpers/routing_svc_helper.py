@@ -268,7 +268,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         driver = self._drivermgr.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
 
-    def process_service(self, device_ids=None, removed_router_ids=None):
+    def process_service(self, device_ids=None, removed_devices_info=None):
         try:
             LOG.debug(_("Routing service processing started"))
             resources = {}
@@ -289,9 +289,9 @@ class RoutingServiceHelper(ServiceHelperBase):
                 if device_ids:
                     LOG.debug(_("Adding Routers on:%s"), device_ids)
                     routers.append(self._fetch_router_info(device_ids))
-                if removed_router_ids:
+                if removed_devices_info:
                     self.removed_routers = self.removed_routers.union(set(
-                        removed_router_ids))
+                        self._get_router_ids_from_removed_devices_info()))
                 if self.removed_routers:
                     removed_routers_ids = list(self.removed_routers)
                     LOG.debug(_("Removed routers:%s"), removed_routers_ids)
@@ -341,6 +341,26 @@ class RoutingServiceHelper(ServiceHelperBase):
         except rpc_common.RPCException:
             LOG.exception(_("RPC Error in fetching routers from plugin"))
             self.fullsync = True
+
+    def _get_router_ids_from_removed_devices_info(self, removed_devices_info):
+        """Extract router_ids from the removed devices info dict
+
+        :param removed_devices_info: Dict of removed devices and their
+               associated resources.
+        Format:
+                {
+                  'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
+                                   'hd_id2': {'routers': [id3, id4, ...]},
+                                   ...
+                                  },
+                  'deconfigure': True/False
+                }
+        :return removed_router_ids: List of removed router ids
+        """
+        removed_router_ids = []
+        for hd_id, resources in removed_devices_info['hosting_data'].items():
+            removed_router_ids += resources.get('routers', [])
+        return removed_router_ids
 
     def process_routers(self, routers, removed_routers,
                         device_id=None, all_routers=False):

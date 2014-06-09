@@ -84,22 +84,28 @@ class CiscoCfgAgent(manager.Manager):
 
     This class defines a generic configuration agent for cisco devices which
     implement network services in the cloud backend. It is based on the
-    (reference) l3-agent, and tries to preserve code where possible.
+    (reference) l3-agent, but has been enhanced to support multiple services
+     in addition to routing.
 
-    The agent by itself does not do any configuration. All device specific
-    configurations are done by hosting device drivers which implement the
-    service api, (defined in service_api.py) for various services (eg: Routing)
+    The agent acts like as a container for services and does not do any
+    service specific processing or configuration itself.
+    All service specific processing is delegated to service helpers which
+    the agent loads. Thus routing specific updates are processed by the
+    routing service helper, firewall by firewall helper etc.
+    A further layer of abstraction is implemented by using device drivers for
+    encapsulating all configuration operations of a service on a device.
+    Device drivers are specific to a particular device/service VM eg: CSR1kv.
 
-    The main entry points in this class are the `_sync_task()` and
-    `_rpc_loop()` .
+    The main entry points in this class are the `process_services()` and
+    `_backlog_task()` .
     """
     RPC_API_VERSION = '1.1'
 
     OPTS = [
         cfg.IntOpt('rpc_loop_interval', default=10,
-                   help=_("Interval when the rpc loop executes. This is when "
-                          "agent fetches info about the updated or removed "
-                          "routers notified from a plugin side RPC.")),
+                   help=_("Interval when the process services loop executes."
+                          "This is when the config agent lets each service "
+                          "helper to process its neutron resources.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -139,7 +145,7 @@ class CiscoCfgAgent(manager.Manager):
 
     ## Main orchestrator ##
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
-    def process_services(self, device_ids=None, removed_router_ids=None):
+    def process_services(self, device_ids=None, removed_devices_info=None):
         """Process services associated with a hosting device.
 
         This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
@@ -167,15 +173,15 @@ class CiscoCfgAgent(manager.Manager):
         LOG.debug(_("Processing services started"))
         # First we process routing service
         self.routing_service_helper.process_service(device_ids,
-                                                    removed_router_ids)
+                                                    removed_devices_info)
         LOG.debug(_("Processing services completed"))
 
     def _process_backlogged_hosting_devices(self, context):
         """Process currently back logged devices.
 
         Go through the currently backlogged devices and process them.
-        For devices which are now reachable (compared to last time), we fetch
-        the routers they are hosting and process them.
+        For devices which are now reachable (compared to last time), we call
+        `process_services()` passing the now reachable device's id.
         For devices which have passed the `hosting_device_dead_timeout` and
         hence presumed dead, execute a RPC to the plugin informing that.
         :param context: RPC context
@@ -199,12 +205,15 @@ class CiscoCfgAgent(manager.Manager):
              'deconfigure': True/False
         }
         """
-        removed_router_ids = []
-        for hd_id, resource_data in payload['hosting_data'].items():
-            removed_router_ids += resource_data.get('routers', [])
-        if removed_router_ids:
-            self.process_services(removed_router_ids=removed_router_ids)
-
+        try:
+            if payload['hosting_data']:
+                if payload['hosting_data'].keys():
+                    self.process_services(removed_devices_info=payload)
+        except KeyError, e:
+            LOG.error(_("Invalid payload format for received RPC message "
+                        "`hosting_devices_removed`. Error is %{error}s. "
+                        "Payload is %(payload)s"),
+                      {'error': e, 'payload': payload})
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
@@ -229,6 +238,17 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             self.heartbeat.start(interval=report_interval)
 
     def _agent_registration(self):
+        """Register this agent with the server.
+
+         This method registers the config agent with the server so hosting
+         devices can be assigned to it. In case the server is not ready to
+         accept registration (it sends a False) then we retry registration
+         for `MAX_REGISTRATION_ATTEMPTS` with a delay of
+         `REGISTRATION_RETRY_DELAY`. If there is no server response or a
+         failure to register after the required number of attempts,
+         the agent stops itself.
+        :return:
+        """
         for attempts in xrange(MAX_REGISTRATION_ATTEMPTS):
             context = n_context.get_admin_context_without_session()
             self.send_agent_report(self.agent_state, context)
@@ -253,11 +273,9 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
     def _report_state(self):
         """Report state back to the plugin.
 
-        This is run every `report_interval` period. This attribute is part
-        of the agent's configuration.
-        Collects, creates and sends a RPC notification with a summary of
-        logical routers, hosting devices and other attributes which together
-        represent a snapshot of what this agent is managing.
+        This task run every `report_interval` period.
+        Collects, creates and sends a summary of the services currently
+        managed by this agent. Data is collected from the service helper(s).
         Look at the `configurations` dict for the parameters reported.
         :return: None
         """
@@ -267,6 +285,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         self.send_agent_report(self.agent_state, self.context)
 
     def send_agent_report(self, report, context):
+        """Send the agent report via RPC."""
         try:
             self.state_rpc.report_state(context, report, self.use_call)
             report.pop('start_flag', None)
@@ -280,17 +299,6 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             return
         except Exception:
             LOG.exception(_("Failed sending agent report!"))
-
-    def agent_updated(self, context, payload):
-        """Handle the agent_updated notification event.
-
-        Plugin sets the `admin_status_up` flag. If `admin-status-up` is set,
-        we set full_sync, which will cause a full refresh for routers
-        belonging to this agent.
-        Payload format : {'admin_state_up': admin_state_up}
-        """
-        #ToDo(Hareesh): Check if this is needed else remove
-        raise NotImplementedError
 
 
 def main(manager='neutron.plugins.cisco.cfg_agent.'
