@@ -84,7 +84,7 @@ function _configure_vsm_port_profiles() {
 	expect -re ".*# "
 
     if {$env(ptype) == "ethernet"} {
-        send "switchport mode trunk"
+        send "switchport mode trunk\n"
         expect -re ".*# "
     }
 
