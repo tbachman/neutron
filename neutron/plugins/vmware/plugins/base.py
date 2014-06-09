@@ -173,7 +173,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         self._is_default_net_gw_in_sync = False
         # Create a synchronizer instance for backend sync
         self._synchronizer = sync.NsxSynchronizer(
-            self, self.cluster,
+            self.safe_reference, self.cluster,
             self.nsx_sync_opts.state_sync_interval,
             self.nsx_sync_opts.min_sync_req_delay,
             self.nsx_sync_opts.min_chunk_size,
@@ -1005,11 +1005,15 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 isinstance(provider_type, bool)):
                 net_bindings = []
                 for tz in net_data[mpnet.SEGMENTS]:
+                    segmentation_id = tz.get(pnet.SEGMENTATION_ID, 0)
+                    segmentation_id_set = attr.is_attr_set(segmentation_id)
+                    if not segmentation_id_set:
+                        segmentation_id = 0
                     net_bindings.append(nsx_db.add_network_binding(
                         context.session, new_net['id'],
                         tz.get(pnet.NETWORK_TYPE),
                         tz.get(pnet.PHYSICAL_NETWORK),
-                        tz.get(pnet.SEGMENTATION_ID, 0)))
+                        segmentation_id))
                 if provider_type:
                     nsx_db.set_multiprovider_network(context.session,
                                                      new_net['id'])
@@ -1207,7 +1211,6 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         return port_data
 
     def update_port(self, context, id, port):
-        changed_fixed_ips = 'fixed_ips' in port['port']
         delete_security_groups = self._check_update_deletes_security_groups(
             port)
         has_security_groups = self._check_update_has_security_groups(port)
@@ -1249,9 +1252,6 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 self._delete_allowed_address_pairs(context, id)
                 self._process_create_allowed_address_pairs(
                     context, ret_port, ret_port[addr_pair.ADDRESS_PAIRS])
-            elif changed_fixed_ips:
-                self._check_fixed_ips_and_address_pairs_no_overlap(context,
-                                                                   ret_port)
             # checks if security groups were updated adding/modifying
             # security groups, port security is set and port has ip
             if not (has_ip and ret_port[psec.PORTSECURITY]):
@@ -2313,7 +2313,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
     def create_security_group(self, context, security_group, default_sg=False):
         """Create security group.
 
-        If default_sg is true that means a we are creating a default security
+        If default_sg is true that means we are creating a default security
         group and we don't need to check if one exists.
         """
         s = security_group.get('security_group')
@@ -2324,7 +2324,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         # NOTE(salv-orlando): Pre-generating Neutron ID for security group.
         neutron_id = str(uuid.uuid4())
         nsx_secgroup = secgrouplib.create_security_profile(
-            self.cluster, neutron_id, tenant_id, s)
+            self.cluster, tenant_id, neutron_id, s)
         with context.session.begin(subtransactions=True):
             s['id'] = neutron_id
             sec_group = super(NsxPluginV2, self).create_security_group(

@@ -14,7 +14,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
 # @author: Fumihiko Kakuma, VA Linux Systems Japan K.K.
+# @author: YAMAMOTO Takashi, VA Linux Systems Japan K.K.
 
 import contextlib
 
@@ -24,6 +26,7 @@ from oslo.config import cfg
 import testtools
 
 from neutron.agent.linux import ip_lib
+from neutron.agent.linux import ovs_lib
 from neutron.agent.linux import utils
 from neutron.openstack.common import importutils
 from neutron.plugins.common import constants as p_const
@@ -232,6 +235,9 @@ class TestOFANeutronAgent(OFAAgentTestCase):
                        new=MockFixedIntervalLoopingCall)):
             self.agent = self.mod_agent.OFANeutronAgent(self.ryuapp, **kwargs)
             self.agent.tun_br = mock.Mock()
+            self.agent.tun_br.ofparser = importutils.import_module(
+                'ryu.ofproto.ofproto_v1_3_parser')
+            self.agent.tun_br.datapath = 'tun_br'
             self.datapath = mock.Mock()
             self.ofparser = mock.Mock()
             self.datapath.ofparser = self.ofparser
@@ -310,9 +316,14 @@ class TestOFANeutronAgent(OFAAgentTestCase):
         self._test_port_dead(self.mod_agent.DEAD_VLAN_TAG)
 
     def mock_scan_ports(self, vif_port_set=None, registered_ports=None,
-                        updated_ports=None):
-        with mock.patch.object(self.agent.int_br, 'get_vif_port_set',
-                               return_value=vif_port_set):
+                        updated_ports=None, port_tags_dict=None):
+        port_tags_dict = port_tags_dict or {}
+        with contextlib.nested(
+            mock.patch.object(self.agent.int_br, 'get_vif_port_set',
+                              return_value=vif_port_set),
+            mock.patch.object(self.agent.int_br, 'get_port_tag_dict',
+                              return_value=port_tags_dict)
+        ):
             return self.agent.scan_ports(registered_ports, updated_ports)
 
     def test_scan_ports_returns_current_only_for_unchanged_ports(self):
@@ -365,9 +376,31 @@ class TestOFANeutronAgent(OFAAgentTestCase):
                                       updated_ports)
         self.assertEqual(expected, actual)
 
+    def test_update_ports_returns_lost_vlan_port(self):
+        br = self.mod_agent.OVSBridge('br-int', 'fake_helper', self.ryuapp)
+        mac = "ca:fe:de:ad:be:ef"
+        port = ovs_lib.VifPort(1, 1, 1, mac, br)
+        lvm = self.mod_agent.LocalVLANMapping(
+            1, '1', None, 1, {port.vif_id: port})
+        local_vlan_map = {'1': lvm}
+        vif_port_set = set([1, 3])
+        registered_ports = set([1, 2])
+        port_tags_dict = {1: []}
+        expected = dict(
+            added=set([3]), current=vif_port_set,
+            removed=set([2]), updated=set([1])
+        )
+        with mock.patch.dict(self.agent.local_vlan_map, local_vlan_map):
+            actual = self.mock_scan_ports(
+                vif_port_set, registered_ports, port_tags_dict=port_tags_dict)
+        self.assertEqual(expected, actual)
+
     def test_treat_devices_added_returns_true_for_missing_device(self):
-        with mock.patch.object(self.agent.plugin_rpc, 'get_device_details',
-                               side_effect=Exception()):
+        with contextlib.nested(
+            mock.patch.object(self.agent.plugin_rpc, 'get_device_details',
+                              side_effect=Exception()),
+            mock.patch.object(self.agent.int_br, 'get_vif_port_by_id',
+                              return_value=mock.Mock())):
             self.assertTrue(self.agent.treat_devices_added_or_updated([{}]))
 
     def _mock_treat_devices_added_updated(self, details, port, func_name):
@@ -401,6 +434,14 @@ class TestOFANeutronAgent(OFAAgentTestCase):
         port.ofport = 1
         self.assertTrue(self._mock_treat_devices_added_updated(
             mock.MagicMock(), port, 'port_dead'))
+
+    def test_treat_devices_added_does_not_process_missing_port(self):
+        with contextlib.nested(
+            mock.patch.object(self.agent.plugin_rpc, 'get_device_details'),
+            mock.patch.object(self.agent.int_br, 'get_vif_port_by_id',
+                              return_value=None)
+        ) as (get_dev_fn, get_vif_func):
+            self.assertFalse(get_dev_fn.called)
 
     def test_treat_devices_added_updated_updates_known_port(self):
         details = mock.MagicMock()
@@ -694,6 +735,29 @@ class TestOFANeutronAgent(OFAAgentTestCase):
         expected_calls = [mock.call(tun_name, tunnel_ip,
                                     self.agent.tunnel_types[0])]
         self.agent.setup_tunnel_port.assert_has_calls(expected_calls)
+
+    def test__provision_local_vlan_inbound_for_tunnel(self):
+        with mock.patch.object(self.agent, 'ryu_send_msg') as sendmsg:
+            self.agent._provision_local_vlan_inbound_for_tunnel(1, 'gre', 3)
+
+        ofp = importutils.import_module('ryu.ofproto.ofproto_v1_3')
+        ofpp = importutils.import_module('ryu.ofproto.ofproto_v1_3_parser')
+        expected_msg = ofpp.OFPFlowMod(
+            'tun_br',
+            instructions=[
+                ofpp.OFPInstructionActions(
+                    ofp.OFPIT_APPLY_ACTIONS,
+                    [
+                        ofpp.OFPActionPushVlan(),
+                        ofpp.OFPActionSetField(vlan_vid=1 |
+                                               ofp.OFPVID_PRESENT),
+                    ]),
+                ofpp.OFPInstructionGotoTable(table_id=10),
+            ],
+            match=ofpp.OFPMatch(tunnel_id=3),
+            priority=1,
+            table_id=2)
+        sendmsg.assert_has_calls([mock.call(expected_msg)])
 
 
 class AncillaryBridgesTest(OFAAgentTestCase):

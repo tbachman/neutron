@@ -41,7 +41,7 @@ SDNVE_URL = 'https://%s:%s%s'
 
 
 class RequestHandler(object):
-    '''Handles processeing requests to and responses from controller.'''
+    '''Handles processing requests to and responses from controller.'''
 
     def __init__(self, controller_ips=None, port=None, ssl=None,
                  base_url=None, userid=None, password=None,
@@ -53,7 +53,7 @@ class RequestHandler(object):
         :param port: Username for authentication.
         :param timeout: Time out for http requests.
         :param userid: User id for accessing controller.
-        :param password: Password for accessing the controlelr.
+        :param password: Password for accessing the controller.
         :param base_url: The base url for the controller.
         :param controller_ips: List of controller IP addresses.
         :param formats: Supported formats.
@@ -226,6 +226,7 @@ class Client(RequestHandler):
             body = dict(
                 (k.replace(':', '_'), v) for k, v in body.items()
                 if attributes.is_attr_set(v))
+        return body
 
     def sdnve_list(self, resource, **params):
         '''Fetches a list of resources.'''
@@ -255,7 +256,7 @@ class Client(RequestHandler):
             LOG.info(_("Bad resource for forming a create request"))
             return 0, ''
 
-        self.process_request(body)
+        body = self.process_request(body)
         status, data = self.post(res, body=body)
         return (status, data)
 
@@ -267,7 +268,7 @@ class Client(RequestHandler):
             LOG.info(_("Bad resource for forming a update request"))
             return 0, ''
 
-        self.process_request(body)
+        body = self.process_request(body)
         return self.put(res + specific, body=body)
 
     def sdnve_delete(self, resource, specific):

@@ -172,15 +172,17 @@ class DhcpLocalProcess(DhcpBase):
         """Disable DHCP for this network by killing the local process."""
         pid = self.pid
 
-        if self.active:
-            cmd = ['kill', '-9', pid]
-            utils.execute(cmd, self.root_helper)
+        if pid:
+            if self.active:
+                cmd = ['kill', '-9', pid]
+                utils.execute(cmd, self.root_helper)
+            else:
+                LOG.debug(_('DHCP for %(net_id)s is stale, pid %(pid)d '
+                            'does not exist, performing cleanup'),
+                          {'net_id': self.network.id, 'pid': pid})
             if not retain_port:
-                self.device_manager.destroy(self.network, self.interface_name)
-
-        elif pid:
-            LOG.debug(_('DHCP for %(net_id)s pid %(pid)d is stale, ignoring '
-                        'command'), {'net_id': self.network.id, 'pid': pid})
+                self.device_manager.destroy(self.network,
+                                            self.interface_name)
         else:
             LOG.debug(_('No DHCP started for %s'), self.network.id)
 
@@ -345,11 +347,15 @@ class Dnsmasq(DhcpLocalProcess):
 
             cidr = netaddr.IPNetwork(subnet.cidr)
 
-            cmd.append('--dhcp-range=%s%s,%s,%s,%ss' %
+            if self.conf.dhcp_lease_duration == -1:
+                lease = 'infinite'
+            else:
+                lease = '%ss' % self.conf.dhcp_lease_duration
+
+            cmd.append('--dhcp-range=%s%s,%s,%s,%s' %
                        (set_tag, self._TAG_PREFIX % i,
-                        cidr.network,
-                        mode,
-                        self.conf.dhcp_lease_duration))
+                        cidr.network, mode, lease))
+
             possible_leases += cidr.size
 
         # Cap the limit because creating lots of subnets can inflate
@@ -531,7 +537,8 @@ class Dnsmasq(DhcpLocalProcess):
             host_routes = []
             for hr in subnet.host_routes:
                 if hr.destination == "0.0.0.0/0":
-                    gateway = hr.nexthop
+                    if not gateway:
+                        gateway = hr.nexthop
                 else:
                     host_routes.append("%s,%s" % (hr.destination, hr.nexthop))
 
@@ -544,6 +551,8 @@ class Dnsmasq(DhcpLocalProcess):
                 )
 
             if host_routes:
+                if gateway and subnet.ip_version == 4:
+                    host_routes.append("%s,%s" % ("0.0.0.0/0", gateway))
                 options.append(
                     self._format_option(i, 'classless-static-route',
                                         ','.join(host_routes)))
@@ -765,7 +774,8 @@ class DeviceManager(object):
                     port_fixed_ips.extend(
                         [dict(subnet_id=s) for s in dhcp_enabled_subnet_ids])
                     dhcp_port = self.plugin.update_dhcp_port(
-                        port.id, {'port': {'fixed_ips': port_fixed_ips}})
+                        port.id, {'port': {'network_id': network.id,
+                                           'fixed_ips': port_fixed_ips}})
                     if not dhcp_port:
                         raise exceptions.Conflict()
                 else:
@@ -782,7 +792,8 @@ class DeviceManager(object):
                 port_device_id = getattr(port, 'device_id', None)
                 if port_device_id == constants.DEVICE_ID_RESERVED_DHCP_PORT:
                     dhcp_port = self.plugin.update_dhcp_port(
-                        port.id, {'port': {'device_id': device_id}})
+                        port.id, {'port': {'network_id': network.id,
+                                           'device_id': device_id}})
                     if dhcp_port:
                         break
 

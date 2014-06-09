@@ -71,35 +71,6 @@ class LocalVLANMapping:
                  self.segmentation_id))
 
 
-class Port(object):
-    """Represents a neutron port.
-
-    Class stores port data in a ORM-free way, so attributres are
-    still available even if a row has been deleted.
-    """
-
-    def __init__(self, p):
-        self.id = p.id
-        self.network_id = p.network_id
-        self.device_id = p.device_id
-        self.admin_state_up = p.admin_state_up
-        self.status = p.status
-
-    def __eq__(self, other):
-        """Compare only fields that will cause us to re-wire."""
-        try:
-            return (other and self.id == other.id
-                    and self.admin_state_up == other.admin_state_up)
-        except Exception:
-            return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return hash(self.id)
-
-
 class OVSBridge(ovs_lib.OVSBridge):
     def __init__(self, br_name, root_helper, ryuapp):
         super(OVSBridge, self).__init__(br_name, root_helper)
@@ -267,7 +238,6 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         self.local_ip = local_ip
         self.tunnel_count = 0
         self.vxlan_udp_port = cfg.CONF.AGENT.vxlan_udp_port
-        self._check_ovs_version()
         if self.enable_tunneling:
             self.setup_tunnel_br(tun_br)
         # Collect additional bridges to monitor
@@ -279,14 +249,6 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
                                               self.root_helper)
         # Initialize iteration counter
         self.iter_num = 0
-
-    def _check_ovs_version(self):
-        if p_const.TYPE_VXLAN in self.tunnel_types:
-            try:
-                ovs_lib.check_ovs_vxlan_version(self.root_helper)
-            except SystemError:
-                LOG.exception(_("Agent terminated"))
-                raise SystemExit(1)
 
     def _report_state(self):
         # How many devices are likely used by a VM
@@ -411,8 +373,10 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         br = self.tun_br
         match = br.ofparser.OFPMatch(
             tunnel_id=int(segmentation_id))
-        actions = [br.ofparser.OFPActionSetField(
-            vlan_vid=int(lvid) | ryu_ofp13.OFPVID_PRESENT)]
+        actions = [
+            br.ofparser.OFPActionPushVlan(),
+            br.ofparser.OFPActionSetField(
+                vlan_vid=int(lvid) | ryu_ofp13.OFPVID_PRESENT)]
         instructions = [
             br.ofparser.OFPInstructionActions(
                 ryu_ofp13.OFPIT_APPLY_ACTIONS, actions),
@@ -648,7 +612,7 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         if cur_tag != str(lvm.vlan):
             self.int_br.set_db_attribute("Port", port.port_name, "tag",
                                          str(lvm.vlan))
-            if int(port.ofport) != -1:
+            if port.ofport != -1:
                 match = self.int_br.ofparser.OFPMatch(in_port=port.ofport)
                 msg = self.int_br.ofparser.OFPFlowMod(
                     self.int_br.datapath,
@@ -956,6 +920,9 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         cur_ports = self.int_br.get_vif_port_set()
         self.int_br_device_count = len(cur_ports)
         port_info = {'current': cur_ports}
+        if updated_ports is None:
+            updated_ports = set()
+        updated_ports.update(self._find_lost_vlan_port(registered_ports))
         if updated_ports:
             # Some updated ports might have been removed in the
             # meanwhile, and therefore should not be processed.
@@ -974,6 +941,30 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         port_info['removed'] = registered_ports - cur_ports
         return port_info
 
+    def _find_lost_vlan_port(self, registered_ports):
+        """Return ports which have lost their vlan tag.
+
+        The returned value is a set of port ids of the ports concerned by a
+        vlan tag loss.
+        """
+        port_tags = self.int_br.get_port_tag_dict()
+        changed_ports = set()
+        for lvm in self.local_vlan_map.values():
+            for port in registered_ports:
+                if (
+                    port in lvm.vif_ports
+                    and lvm.vif_ports[port].port_name in port_tags
+                    and port_tags[lvm.vif_ports[port].port_name] != lvm.vlan
+                ):
+                    LOG.info(
+                        _("Port '%(port_name)s' has lost "
+                            "its vlan tag '%(vlan_tag)d'!"),
+                        {'port_name': lvm.vif_ports[port].port_name,
+                         'vlan_tag': lvm.vlan}
+                    )
+                    changed_ports.add(port)
+        return changed_ports
+
     def update_ancillary_ports(self, registered_ports):
         ports = set()
         for bridge in self.ancillary_brs:
@@ -990,6 +981,13 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
     def treat_vif_port(self, vif_port, port_id, network_id, network_type,
                        physical_network, segmentation_id, admin_state_up):
         if vif_port:
+            # When this function is called for a port, the port should have
+            # an OVS ofport configured, as only these ports were considered
+            # for being treated. If that does not happen, it is a potential
+            # error condition of which operators should be aware
+            if not vif_port.ofport:
+                LOG.warn(_("VIF port: %s has no ofport configured, and might "
+                           "not be able to transmit"), vif_port.vif_id)
             if admin_state_up:
                 self.port_bound(vif_port, network_id, network_type,
                                 physical_network, segmentation_id)
@@ -1060,6 +1058,14 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
         resync = False
         for device in devices:
             LOG.debug(_("Processing port %s"), device)
+            port = self.int_br.get_vif_port_by_id(device)
+            if not port:
+                # The port has disappeared and should not be processed
+                # There is no need to put the port DOWN in the plugin as
+                # it never went up in the first place
+                LOG.info(_("Port %s was not found on the integration bridge "
+                           "and will therefore not be processed"), device)
+                continue
             try:
                 details = self.plugin_rpc.get_device_details(self.context,
                                                              device,
@@ -1070,7 +1076,6 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
                           {'device': device, 'e': e})
                 resync = True
                 continue
-            port = self.int_br.get_vif_port_by_id(details['device'])
             if 'port_id' in details:
                 LOG.info(_("Port %(device)s updated. Details: %(details)s"),
                          {'device': device, 'details': details})
@@ -1093,7 +1098,7 @@ class OFANeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
                 LOG.info(_("Configuration for device %s completed."), device)
             else:
                 LOG.warn(_("Device %s not defined on plugin"), device)
-                if (port and int(port.ofport) != -1):
+                if (port and port.ofport != -1):
                     self.port_dead(port)
         return resync
 

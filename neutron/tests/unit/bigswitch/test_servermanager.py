@@ -102,8 +102,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             with self.network():
                 callheaders = rv.request.mock_calls[0][1][3]
                 self.assertIn('X-BSN-BVS-HASH-MATCH', callheaders)
-                # first call will be False to indicate no previous state hash
-                self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'], False)
+                # first call will be empty to indicate no previous state hash
+                self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'], '')
                 # change the header that will be received on delete call
                 rv.getresponse.return_value.getheader.return_value = 'HASH2'
 
@@ -173,6 +173,37 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         # verify new header made it in
         self.assertIn('EXTRA-HEADER', callheaders)
         self.assertEqual(callheaders['EXTRA-HEADER'], 'HI')
+
+    def test_capabilities_retrieval(self):
+        sp = servermanager.ServerPool()
+        with mock.patch(HTTPCON) as conmock:
+            rv = conmock.return_value.getresponse.return_value
+            rv.getheader.return_value = 'HASHHEADER'
+
+            # each server will get different capabilities
+            rv.read.side_effect = ['["a","b","c"]', '["b","c","d"]']
+            # pool capabilities is intersection between both
+            self.assertEqual(set(['b', 'c']), sp.get_capabilities())
+            self.assertEqual(2, rv.read.call_count)
+
+            # the pool should cache after the first call so no more
+            # HTTP calls should be made
+            rv.read.side_effect = ['["w","x","y"]', '["x","y","z"]']
+            self.assertEqual(set(['b', 'c']), sp.get_capabilities())
+            self.assertEqual(2, rv.read.call_count)
+
+    def test_capabilities_retrieval_failure(self):
+        sp = servermanager.ServerPool()
+        with mock.patch(HTTPCON) as conmock:
+            rv = conmock.return_value.getresponse.return_value
+            rv.getheader.return_value = 'HASHHEADER'
+            # a failure to parse should result in an empty capability set
+            rv.read.return_value = 'XXXXX'
+            self.assertEqual([], sp.servers[0].get_capabilities())
+
+            # One broken server should affect all capabilities
+            rv.read.side_effect = ['{"a": "b"}', '["b","c","d"]']
+            self.assertEqual(set(), sp.get_capabilities())
 
     def test_reconnect_on_timeout_change(self):
         sp = servermanager.ServerPool()
