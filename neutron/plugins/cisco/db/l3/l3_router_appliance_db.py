@@ -561,7 +561,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def _extend_router_dict_routertype(self, router_res, router_db):
         router_res[routertype.TYPE_ATTR] = (
-            router_db.hosting_info.router_type_id)
+            (router_db.hosting_info or {}).get('router_type_id'))
 
     def _extend_router_dict_routerhostingdevice(self, router_res, router_db):
         router_res[routerhostingdevice.HOSTING_DEVICE_ATTR] = (
