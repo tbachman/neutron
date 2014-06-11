@@ -6,7 +6,6 @@ from neutron.plugins.cisco.l3.scheduler import filters
 
 class AllHostsFilter(filters.BaseHostFilter):
 
-    run_filter_once_per_request = True
 
     def host_passes(self, host, resource, **kwargs):
         return True

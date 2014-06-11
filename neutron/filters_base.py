@@ -17,8 +17,6 @@ class BaseFilter(object):
             if self._filter_one(host, resource, **kwargs):
                 yield host
 
-    run_filter_once_per_request = False
-
 
 class BaseFilterHandler(loadables.BaseLoader):
 
