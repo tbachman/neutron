@@ -42,55 +42,57 @@ class DeviceDriverManager(object):
 
     def __init__(self):
         self._drivers = {}
-        self.router_id_hosting_devices = {}
+        self._hosting_device_routing_drivers_binding = {}
 
-    #ToDo(Hareesh): Change the signature of this function, as it is closely
-    # tied to routers now.
-    def get_driver(self, router_info):
-        router_id = router_info.router_id
-        hosting_device = self.router_id_hosting_devices.get(router_id, None)
-        if hosting_device is not None:
-            driver = self._drivers.get(hosting_device['id'], None)
-            if driver is None:
-                driver = self._set_driver(router_info)
-        else:
-            driver = self._set_driver(router_info)
-        return driver
-
-    def _set_driver(self, router_info):
+    def get_driver(self, resource_id):
         try:
-            _driver = None
-            router_id = router_info.router_id
-            router = router_info.router
+            return self._drivers[resource_id]
+        except KeyError:
+            raise cfg_exceptions.DriverNotFound(id=resource_id)
 
-            hosting_device = router['hosting_device']
-            _hd_id = hosting_device['id']
-            driver_class = router['router_type']['cfg_agent_driver']
+    def set_driver(self, resource):
+        """ Set the driver for a neutron resource
 
-            try:
-                _driver = importutils.import_object(
-                    driver_class,
-                    **hosting_device)
-            except ImportError:
-                LOG.exception(_("Error loading cfg agent driver for routing "
-                                "service %(driver)s for hosting device "
-                                "template  %(t_name)s(%(t_id)s)"),
-                              {'driver': driver_class,
-                               't_name': hosting_device['name'],
-                               't_id': _hd_id})
-                raise cfg_exceptions.DriverNotFound(driver=driver_class)
-            self.router_id_hosting_devices[router_id] = hosting_device
-            self._drivers[_hd_id] = _driver
-        except (AttributeError, KeyError) as e:
-            LOG.error(_("Cannot set driver for router. Reason: %s"), e)
-        return _driver
+        :param resource: Neutron resource in dict format. Expected keys:
+                        { 'id': <value>
+                          'hosting_device': { 'id': <value>, }
+                          'router_type': {'cfg_agent_driver': <value>,  }
+                        }
+        :return driver : driver object
+        """
+        try:
+            resource_id = resource['id']
+            hosting_device = resource['hosting_device']
+            hd_id = hosting_device['id']
+            if hd_id in self._hosting_device_routing_drivers_binding:
+                driver = self._hosting_device_routing_drivers_binding[hd_id]
+                self._drivers[resource_id] = driver
+            else:
+                driver_class = resource['router_type']['cfg_agent_driver']
+                try:
+                    driver = importutils.import_object(driver_class,
+                                                       **hosting_device)
+                except ImportError:
+                    LOG.exception(_("Error loading cfg agent driver %(driver)s"
+                                    " for hosting device template "
+                                    "%(t_name)s(%(t_id)s)"),
+                                  {'driver': driver_class,
+                                   't_name': hosting_device['name'],
+                                   't_id': hd_id})
+                    raise cfg_exceptions.DriverNotExist(driver=driver_class)
+                self._hosting_device_routing_drivers_binding[hd_id] = driver
+                self._drivers[resource_id] = driver
+            return driver
+        except (KeyError, AttributeError) as e:
+            raise cfg_exceptions.DriverNotSetForMissingParameter(e)
 
-    def remove_driver(self, router_id):
-        del self.router_id_hosting_devices[router_id]
-        for hd_id in self._drivers.keys():
-            if hd_id not in self.router_id_hosting_devices.values():
-                del self._drivers[hd_id]
+    def remove_driver(self, resource_id):
+        """ Remove driver associated to a particular resource."""
+        if resource_id in self._drivers:
+            del self._drivers[resource_id]
 
-    def pop(self, hd_id):
-        self._drivers.pop(hd_id, None)
+    def remove_driver_for_hosting_device(self, hd_id):
+        """ Remove driver associated to a particular hosting device."""
+        if hd_id in self._hosting_device_routing_drivers_binding:
+            del self._hosting_device_routing_drivers_binding[hd_id]
 

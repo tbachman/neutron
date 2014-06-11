@@ -72,6 +72,10 @@ class RouterInfo(object):
         return self._router
 
     @property
+    def id(self):
+        return self.router_id
+
+    @property
     def snat_enabled(self):
         return self._snat_enabled
 
@@ -140,15 +144,9 @@ class RoutingServiceHelper(ServiceHelperBase):
         self.removed_routers = set()
 
         self.fullsync = True
+        self.sync_devices = set()
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
         self._setup_rpc()
-        # self.agent = cfg_agent
-        # Short cut for attributes in agent
-        # self._dev_status = self.agent._dev_status
-        # self.plugin_rpc = self.agent.plugin_rpc
-        # self.conf = self.agent.conf
-        # self.context = self.agent.context
-        # self.router_info = self.agent.router_info
 
     def _setup_rpc(self):
         self.conn = rpc.create_connection(new=True)
@@ -182,91 +180,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         LOG.debug(_('Got router added to agent :%r'), payload)
         self.routers_updated(context, payload)
 
-    def _router_added(self, router_id, router):
-        """Operations when a router is added.
-
-        Create a new RouterInfo object for this router and add it to the
-        service helpers router_info dictionary.  Then `router_added()` is
-        called on the device driver.
-
-        :param router_id: id of the router
-        :param router: router dict
-        :return: None
-        """
-        ri = RouterInfo(router_id, router)
-        driver = self._drivermgr.get_driver(ri)
-        driver.router_added(ri)
-        self.router_info[router_id] = ri
-
-    def _router_removed(self, router_id, deconfigure=True):
-        """Operations when a router is removed.
-
-        Get the RouterInfo object corresponding to the router in the service
-        helpers's router_info dict. If deconfigure is set to True,
-        remove this router's configuration from the hosting device.
-        :param router_id: id of the router
-        :param deconfigure: if True, the router's configuration is deleted from
-        the hosting device.
-        :return:
-        """
-        ri = self.router_info.get(router_id)
-        if ri is None:
-            LOG.warn(_("Info for router %s was not found. "
-                       "Skipping router removal"), router_id)
-            return
-        ri.router['gw_port'] = None
-        ri.router[l3_constants.INTERFACE_KEY] = []
-        ri.router[l3_constants.FLOATINGIP_KEY] = []
-        try:
-            if deconfigure:
-                #ToDo: Check here
-                self.process_router(ri)
-                driver = self._drivermgr.get_driver(ri)
-                driver.router_removed(ri, deconfigure)
-                self._drivermgr.remove_driver(router_id)
-            del self.router_info[router_id]
-            self.removed_routers.discard(router_id)
-        except DriverException:
-            LOG.info(_("Router remove for router_id: %s was incomplete. "
-                       "Adding the router to removed_routers list"), router_id)
-            self.removed_routers.add(router_id)
-            # remove this router from updated_routers if it is there. It might
-            # end up there too if exception was thrown inside `process_router`
-            self.updated_routers.discard(router_id)
-
-    def internal_network_added(self, ri, port, ex_gw_port):
-        driver = self._drivermgr.get_driver(ri)
-        driver.internal_network_added(ri, port)
-        if ri.snat_enabled and ex_gw_port:
-            driver.enable_internal_network_NAT(ri, port, ex_gw_port)
-
-    def internal_network_removed(self, ri, port, ex_gw_port):
-        driver = self._drivermgr.get_driver(ri)
-        driver.internal_network_removed(ri, port)
-        if ri.snat_enabled and ex_gw_port:
-            driver.disable_internal_network_NAT(ri, port, ex_gw_port)
-
-    def external_gateway_added(self, ri, ex_gw_port):
-        driver = self._drivermgr.get_driver(ri)
-        driver.external_gateway_added(ri, ex_gw_port)
-        if ri.snat_enabled and ri.internal_ports:
-            for port in ri.internal_ports:
-                driver.enable_internal_network_NAT(ri, port, ex_gw_port)
-
-    def external_gateway_removed(self, ri, ex_gw_port):
-        driver = self._drivermgr.get_driver(ri)
-        if ri.snat_enabled and ri.internal_ports:
-            for port in ri.internal_ports:
-                driver.disable_internal_network_NAT(ri, port, ex_gw_port)
-        driver.external_gateway_removed(ri, ex_gw_port)
-
-    def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        driver = self._drivermgr.get_driver(ri)
-        driver.floating_ip_added(ri, ex_gw_port, floating_ip, fixed_ip)
-
-    def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        driver = self._drivermgr.get_driver(ri)
-        driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
+    # Routing service helper public methods
 
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
@@ -279,6 +193,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                 self.fullsync = False
                 self.updated_routers.clear()
                 self.removed_routers.clear()
+                self.sync_devices.clear()
                 routers = self._fetch_router_info(all_routers=True)
             else:
                 if self.updated_routers:
@@ -287,8 +202,13 @@ class RoutingServiceHelper(ServiceHelperBase):
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
                 if device_ids:
-                    LOG.debug(_("Adding Routers on:%s"), device_ids)
-                    routers.append(self._fetch_router_info(device_ids))
+                    LOG.debug(_("Adding new devices:%s"), device_ids)
+                    self.sync_devices = set(device_ids) | self.sync_devices
+                if self.sync_devices:
+                    sync_devices_list = list(self.sync_devices)
+                    LOG.debug(_("Fetching routers on:%s"), sync_devices_list)
+                    routers.append(self._fetch_router_info(sync_devices_list))
+                    self.sync_devices.clear()
                 if removed_devices_info:
                     self.removed_routers = self.removed_routers.union(set(
                         self._get_router_ids_from_removed_devices_info()))
@@ -312,17 +232,62 @@ class RoutingServiceHelper(ServiceHelperBase):
             for device_id, resources in hosting_devices.items():
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
-                pool.spawn_n(self.process_routers, routers, removed_routers,
+                pool.spawn_n(self._process_routers, routers, removed_routers,
                              device_id, all_routers=self.fullsync)
             pool.waitall()
+            if removed_devices_info:
+                for hd_id in removed_devices_info['hosting_data']:
+                    self._drivermgr.remove_driver_for_hosting_device(hd_id)
             LOG.debug(_("Routing service processing successfully completed"))
         except Exception:
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
 
+    def collect_state(self, configurations):
+        """
+        Collect state from this helper.
+
+        A set of attributes which summarizes the state of the routers and
+        configurations managed by this config agent.
+        :param configurations: dict of configuration values
+        :return dict of updated configuration values
+        """
+        num_ex_gw_ports = 0
+        num_interfaces = 0
+        num_floating_ips = 0
+        router_infos = self.router_info.values()
+        num_routers = len(router_infos)
+        num_hd_routers = {}
+        routers_per_hd = {}
+        for ri in router_infos:
+            ex_gw_port = ri.router.get('gw_port')
+            if ex_gw_port:
+                num_ex_gw_ports += 1
+            num_interfaces += len(ri.router.get(
+                l3_constants.INTERFACE_KEY, []))
+            num_floating_ips += len(ri.router.get(
+                l3_constants.FLOATINGIP_KEY, []))
+            hd = ri.router['hosting_device']
+            if hd:
+                num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
+        for (hd_id, num) in num_hd_routers.items():
+            routers_per_hd[hd_id] = {'routers': num}
+        non_responding = self._dev_status.get_backlogged_hosting_devices()
+        # configurations = self.agent_state['configurations']
+        configurations['total routers'] = num_routers
+        configurations['total ex_gw_ports'] = num_ex_gw_ports
+        configurations['total interfaces'] = num_interfaces
+        configurations['total floating_ips'] = num_floating_ips
+        configurations['hosting_devices'] = routers_per_hd
+        configurations['non_responding_hosting_devices'] = non_responding
+        return configurations
+
+    # Routing service helper internal methods
+
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):
-        """ Fetch router dict from the routing plugin
+        """ Fetch router dict from the routing plugin.
+
         :param router_ids: List of router_ids of routers to fetch
         :param device_ids: List of device_ids whose routers to fetch
         :param all_routers:  If True fetch all the routers for this agent.
@@ -362,8 +327,27 @@ class RoutingServiceHelper(ServiceHelperBase):
             removed_router_ids += resources.get('routers', [])
         return removed_router_ids
 
-    def process_routers(self, routers, removed_routers,
-                        device_id=None, all_routers=False):
+    def _sort_resources_per_hosting_device(self, resources):
+        """This function will sort the resources on hosting device.
+
+        Syntax of returned dict:
+        hosting_devices = {
+                            'hd_id1' : {'routers':[routers],
+                                        'removed_routers':[routers], .... }
+                            'hd_id2' : {'routers':[routers], .. }
+                            .......
+                            }
+        """
+        hosting_devices = {}
+        for key in resources.keys():
+            for r in resources.get(key) or []:
+                hd_id = r['hosting_device']['id']
+                hosting_devices.setdefault(hd_id, {})
+                hosting_devices[hd_id].setdefault(key, []).append(r)
+        return hosting_devices
+
+    def _process_routers(self, routers, removed_routers,
+                         device_id=None, all_routers=False):
         """Process the set of routers.
 
         Iterating on the set of routers received and comparing it with the
@@ -371,11 +355,14 @@ class RoutingServiceHelper(ServiceHelperBase):
         new routers which are added are identified. Then check the
         reachability (via ping) of hosting device where the router is hosted
         and backlogs it if necessary.
-        For routers which are only updated, call `process_router()` on them.
+        For routers which are only updated, call `_process_router()` on them.
 
         When all_routers is set to True (because of a full sync),
         this will result in the detection and deletion of routers which are
         to be removed.
+
+        Whether the router can only be assigned to a particular hosting device
+        is decided and enforced by the plugin. So no checks are done here.
 
         :param routers: The set of routers to be processed
         :param removed_routers: the set of routers which where removed
@@ -391,22 +378,23 @@ class RoutingServiceHelper(ServiceHelperBase):
                     [router['id'] for router in routers])
             cur_router_ids = set()
             for r in routers:
-                if not r['admin_state_up']:
+                try:
+                    if not r['admin_state_up']:
+                        continue
+                    cur_router_ids.add(r['id'])
+                    if not self._dev_status.is_hosting_device_reachable(r):
+                        LOG.info(_("Router: %(id)s is on an unreachable "
+                                   "hosting device. "), {'id': r['id']})
+                        continue
+                    if r['id'] not in self.router_info:
+                        self._router_added(r['id'], r)
+                    ri = self.router_info[r['id']]
+                    ri.router = r
+                    self._process_router(ri)
+                except DriverException, e:
+                    LOG.exception("Driver Exception %s", e)
+                    self.sync_devices.add(device_id)
                     continue
-                # Note: Whether the router can only be assigned to a particular
-                # hosting device is decided and enforced by the plugin.
-                # So no checks are done here.
-                cur_router_ids.add(r['id'])
-                if not self._dev_status.is_hosting_device_reachable(r):
-                    LOG.info(
-                        _("Router: %(id)s is on unreachable hosting device. "
-                          "Skip processing it."), {'id': r['id']})
-                    continue
-                if r['id'] not in self.router_info:
-                    self._router_added(r['id'], r)
-                ri = self.router_info[r['id']]
-                ri.router = r
-                self.process_router(ri)
             # identify and remove routers that no longer exist
             for router_id in prev_router_ids - cur_router_ids:
                 self._router_removed(router_id)
@@ -417,9 +405,9 @@ class RoutingServiceHelper(ServiceHelperBase):
         except:
             LOG.exception(_("Exception in processing routers on device:%s"),
                           device_id)
-            self.fullsync = True
+            self.sync_devices.add(device_id)
 
-    def process_router(self, ri):
+    def _process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
 
         Get the router dict from  RouterInfo and proceed to detect changes
@@ -451,29 +439,29 @@ class RoutingServiceHelper(ServiceHelperBase):
 
             for p in new_ports:
                 self._set_subnet_info(p)
-                self.internal_network_added(ri, p, ex_gw_port)
+                self._internal_network_added(ri, p, ex_gw_port)
                 ri.internal_ports.append(p)
 
             for p in old_ports:
-                self.internal_network_removed(ri, p, ri.ex_gw_port)
+                self._internal_network_removed(ri, p, ri.ex_gw_port)
                 ri.internal_ports.remove(p)
 
             if ex_gw_port and not ri.ex_gw_port:
                 self._set_subnet_info(ex_gw_port)
-                self.external_gateway_added(ri, ex_gw_port)
+                self._external_gateway_added(ri, ex_gw_port)
             elif not ex_gw_port and ri.ex_gw_port:
-                self.external_gateway_removed(ri, ri.ex_gw_port)
+                self._external_gateway_removed(ri, ri.ex_gw_port)
 
             if ex_gw_port:
-                self.process_router_floating_ips(ri, ex_gw_port)
+                self._process_router_floating_ips(ri, ex_gw_port)
 
             ri.ex_gw_port = ex_gw_port
-            self.routes_updated(ri)
+            self._routes_updated(ri)
         except DriverException as e:
             with excutils.save_and_reraise_exception():
                 LOG.error(e)
 
-    def process_router_floating_ips(self, ri, ex_gw_port):
+    def _process_router_floating_ips(self, ri, ex_gw_port):
         """Process a router's floating ips.
 
         Compare current floatingips (in ri.floating_ips) with the router's
@@ -502,35 +490,122 @@ class RoutingServiceHelper(ServiceHelperBase):
                 id_to_fip_map[fip['id']] = fip
                 if fip['id'] not in existing_floating_ip_ids:
                     ri.floating_ips.append(fip)
-                    self.floating_ip_added(ri, ex_gw_port,
-                                           fip['floating_ip_address'],
-                                           fip['fixed_ip_address'])
+                    self._floating_ip_added(ri, ex_gw_port,
+                                            fip['floating_ip_address'],
+                                            fip['fixed_ip_address'])
 
         floating_ip_ids_to_remove = (existing_floating_ip_ids -
                                      cur_floating_ip_ids)
         for fip in ri.floating_ips:
             if fip['id'] in floating_ip_ids_to_remove:
                 ri.floating_ips.remove(fip)
-                self.floating_ip_removed(ri, ri.ex_gw_port,
-                                         fip['floating_ip_address'],
-                                         fip['fixed_ip_address'])
+                self._floating_ip_removed(ri, ri.ex_gw_port,
+                                          fip['floating_ip_address'],
+                                          fip['fixed_ip_address'])
             else:
                 # handle remapping of a floating IP
                 new_fip = id_to_fip_map[fip['id']]
                 new_fixed_ip = new_fip['fixed_ip_address']
                 existing_fixed_ip = fip['fixed_ip_address']
                 if (new_fixed_ip and existing_fixed_ip and
-                        new_fixed_ip != existing_fixed_ip):
+                            new_fixed_ip != existing_fixed_ip):
                     floating_ip = fip['floating_ip_address']
-                    self.floating_ip_removed(ri, ri.ex_gw_port,
-                                             floating_ip,
-                                             existing_fixed_ip)
-                    self.floating_ip_added(ri, ri.ex_gw_port,
-                                           floating_ip, new_fixed_ip)
+                    self._floating_ip_removed(ri, ri.ex_gw_port,
+                                              floating_ip,
+                                              existing_fixed_ip)
+                    self._floating_ip_added(ri, ri.ex_gw_port,
+                                            floating_ip, new_fixed_ip)
                     ri.floating_ips.remove(fip)
                     ri.floating_ips.append(new_fip)
 
-    def routes_updated(self, ri):
+    def _router_added(self, router_id, router):
+        """Operations when a router is added.
+
+        Create a new RouterInfo object for this router and add it to the
+        service helpers router_info dictionary.  Then `router_added()` is
+        called on the device driver.
+
+        :param router_id: id of the router
+        :param router: router dict
+        :return: None
+        """
+        ri = RouterInfo(router_id, router)
+        driver = self._drivermgr.set_driver(router)
+        driver.router_added(ri)
+        self.router_info[router_id] = ri
+
+    def _router_removed(self, router_id, deconfigure=True):
+        """Operations when a router is removed.
+
+        Get the RouterInfo object corresponding to the router in the service
+        helpers's router_info dict. If deconfigure is set to True,
+        remove this router's configuration from the hosting device.
+        :param router_id: id of the router
+        :param deconfigure: if True, the router's configuration is deleted from
+        the hosting device.
+        :return:
+        """
+        ri = self.router_info.get(router_id)
+        if ri is None:
+            LOG.warn(_("Info for router %s was not found. "
+                       "Skipping router removal"), router_id)
+            return
+        ri.router['gw_port'] = None
+        ri.router[l3_constants.INTERFACE_KEY] = []
+        ri.router[l3_constants.FLOATINGIP_KEY] = []
+        try:
+            if deconfigure:
+                #ToDo: Check here
+                self._process_router(ri)
+                driver = self._drivermgr.get_driver(router_id)
+                driver.router_removed(ri, deconfigure)
+                self._drivermgr.remove_driver(router_id)
+            del self.router_info[router_id]
+            self.removed_routers.discard(router_id)
+        except DriverException:
+            LOG.info(_("Router remove for router_id: %s was incomplete. "
+                       "Adding the router to removed_routers list"), router_id)
+            self.removed_routers.add(router_id)
+            # remove this router from updated_routers if it is there. It might
+            # end up there too if exception was thrown inside
+            # `_process_router`
+            self.updated_routers.discard(router_id)
+
+    def _internal_network_added(self, ri, port, ex_gw_port):
+        driver = self._drivermgr.get_driver(ri.id)
+        driver.internal_network_added(ri, port)
+        if ri.snat_enabled and ex_gw_port:
+            driver.enable_internal_network_NAT(ri, port, ex_gw_port)
+
+    def _internal_network_removed(self, ri, port, ex_gw_port):
+        driver = self._drivermgr.get_driver(ri.id)
+        driver.internal_network_removed(ri, port)
+        if ri.snat_enabled and ex_gw_port:
+            driver.disable_internal_network_NAT(ri, port, ex_gw_port)
+
+    def _external_gateway_added(self, ri, ex_gw_port):
+        driver = self._drivermgr.get_driver(ri.id)
+        driver.external_gateway_added(ri, ex_gw_port)
+        if ri.snat_enabled and ri.internal_ports:
+            for port in ri.internal_ports:
+                driver.enable_internal_network_NAT(ri, port, ex_gw_port)
+
+    def _external_gateway_removed(self, ri, ex_gw_port):
+        driver = self._drivermgr.get_driver(ri.id)
+        if ri.snat_enabled and ri.internal_ports:
+            for port in ri.internal_ports:
+                driver.disable_internal_network_NAT(ri, port, ex_gw_port)
+        driver.external_gateway_removed(ri, ex_gw_port)
+
+    def _floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        driver = self._drivermgr.get_driver(ri.id)
+        driver.floating_ip_added(ri, ex_gw_port, floating_ip, fixed_ip)
+
+    def _floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        driver = self._drivermgr.get_driver(ri.id)
+        driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
+
+    def _routes_updated(self, ri):
         """Update the state of routes in the router.
 
          Compares the current routes with the (configured) existing routes
@@ -552,12 +627,12 @@ class RoutingServiceHelper(ServiceHelperBase):
                 if route['destination'] == del_route['destination']:
                     removes.remove(del_route)
                     #replace success even if there is no existing route
-            driver = self._drivermgr.get_driver(ri)
+            driver = self._drivermgr.get_driver(ri.id)
             driver.routes_updated(ri, 'replace', route)
 
         for route in removes:
             LOG.debug(_("Removed route entry is '%s'"), route)
-            driver = self._drivermgr.get_driver(ri)
+            driver = self._drivermgr.get_driver(ri.id)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes
 
@@ -571,53 +646,3 @@ class RoutingServiceHelper(ServiceHelperBase):
                       port['id'])
         prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
         port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
-
-    def collect_state(self, configurations):
-        num_ex_gw_ports = 0
-        num_interfaces = 0
-        num_floating_ips = 0
-        router_infos = self.router_info.values()
-        num_routers = len(router_infos)
-        num_hd_routers = {}
-        routers_per_hd = {}
-        for ri in router_infos:
-            ex_gw_port = ri.router.get('gw_port')
-            if ex_gw_port:
-                num_ex_gw_ports += 1
-            num_interfaces += len(ri.router.get(
-                l3_constants.INTERFACE_KEY, []))
-            num_floating_ips += len(ri.router.get(
-                l3_constants.FLOATINGIP_KEY, []))
-            hd = ri.router['hosting_device']
-            if hd:
-                num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
-        for (hd_id, num) in num_hd_routers.items():
-            routers_per_hd[hd_id] = {'routers': num}
-        non_responding = self._dev_status.get_backlogged_hosting_devices()
-        # configurations = self.agent_state['configurations']
-        configurations['total routers'] = num_routers
-        configurations['total ex_gw_ports'] = num_ex_gw_ports
-        configurations['total interfaces'] = num_interfaces
-        configurations['total floating_ips'] = num_floating_ips
-        configurations['hosting_devices'] = routers_per_hd
-        configurations['non_responding_hosting_devices'] = non_responding
-
-    def _sort_resources_per_hosting_device(self, resources):
-        """This function will sort the resources on hosting device.
-
-        Syntax of returned dict:
-        hosting_devices = {
-                            'hd_id1' : {'routers':[routers], 'vpns':[vpns],
-                             'fws': fws, 'removed_routers':[routers] }
-                            'hd_id2' : {'routers':[routers], 'vpns':[vpns],
-                             'fws': fws }
-                            .......
-                            }
-        """
-        hosting_devices = {}
-        for key in resources.keys():
-            for r in resources.get(key) or []:
-                hd_id = r['hosting_device']['id']
-                hosting_devices.setdefault(hd_id, {})
-                hosting_devices[hd_id].setdefault(key, []).append(r)
-        return hosting_devices

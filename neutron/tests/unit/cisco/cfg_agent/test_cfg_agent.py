@@ -359,7 +359,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
             {'id': _uuid(),
              'admin_state_up': False,
              'external_gateway_info': {}}]
-        routing_service_helper.process_routers(routers)
+        routing_service_helper._process_routers(routers)
         self.assertNotIn(routers[0]['id'], agent.router_info)
 
     def test_router_deleted(self):
@@ -425,7 +425,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
              'external_gateway_info': {'network_id': 'aaa'},
              'hosting_device': self.hosting_device}]
 
-        agent.routing_service_helper.process_routers(routers)
+        agent.routing_service_helper._process_routers(routers)
         self.assertIn(routers[0]['id'], agent.router_info)
 
     def test_process_routers_with_no_ext_net_in_conf_and_two_net_in_plugin(
@@ -443,7 +443,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self.plugin_api.get_external_network_id.side_effect = (
             n_exc.TooManyExternalNetworks())
         self.assertRaises(n_exc.TooManyExternalNetworks,
-                          agent.routing_service_helper.process_routers,
+                          agent.routing_service_helper._process_routers,
                           routers)
         self.assertNotIn(routers[0]['id'], agent.router_info)
 
@@ -466,7 +466,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         # agent.router_info = {}
         # self.conf.set_override('gateway_external_network_id', 'aaa')
-        agent.routing_service_helper.process_routers(routers)
+        agent.routing_service_helper._process_routers(routers)
         self.assertIn(routers[0]['id'], agent.router_info)
         self.assertNotIn(routers[1]['id'], agent.router_info)
 
@@ -489,7 +489,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         # agent.router_info = {}
         # self.conf.set_override('external_network_bridge', '')
-        agent.routing_service_helper.process_routers(routers)
+        agent.routing_service_helper._process_routers(routers)
         self.assertIn(routers[0]['id'], agent.router_info)
         self.assertIn(routers[1]['id'], agent.router_info)
 

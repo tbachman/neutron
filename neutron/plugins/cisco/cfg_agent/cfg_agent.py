@@ -15,6 +15,7 @@
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import eventlet
+import pprint
 import sys
 import time
 
@@ -146,32 +147,40 @@ class CiscoCfgAgent(manager.Manager):
     ## Main orchestrator ##
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def process_services(self, device_ids=None, removed_devices_info=None):
-        """Process services associated with a hosting device.
+        """Process services managed by this config agent.
 
-        This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
-        routers which have been notified via RPC from the plugin. Plugin sends
-        RPC messages for updated or removed routers, whose router_ids are kept
-        in `updated_routers` and `removed_routers` respectively. For router in
-        `updated_routers` we fetch the latest state for these routers from
-        the plugin and process them. Routers in `removed_routers` are
-        removed from the hosting device and from the set of routers which the
-        agent is tracking (router_info attribute).
+        This method is invoked by any of three scenarios.
 
-        Note that this will not be executed at the same time as the
-        `_sync_task()` because of the lock which avoids race conditions
-         on `updated_routers` and `removed_routers`
+        1. Invoked by a periodic task running every `RPC_LOOP_INTERVAL`
+        seconds. This is the most common scenario.
+        In this mode, the method is called without any arguments.
 
-        This method dictates the order of processing of services.
-        Any cross dependencies should be solved here, thus making it a
-        single point of change for interaction among services.
+        2. Called by the `_process_backlogged_hosting_devices()` as part of
+        the backlog processing task. In this mode, a list of device_ids
+        are passed as arguments. These are the list of backlogged
+        hosting devices that are now reachable.
 
-        :param device_ids: List of device_ids to process
-        :param removed_router_ids: List of router_ids which are removed
+        3. Called by the `hosting_devices_removed()` method. This is when
+        the config agent has received a notification from the plugin that
+        some hosting devices are going to be removed. The payload contains
+        the details of the hosting devices and the associated neutron
+        resources on them.
+
+        To avoid race conditions with these scenarios, this function is
+        protected by a lock.
+
+        This method goes on to invoke `process_service()` on the service
+        helpers.
+
+        :param device_ids : List of devices that are now available and needs
+         to be processed
+        :param removed_devices_info: Info about the hosting devices which
+        are going to be removed and details of the resources hosted on them.
         :return: None
         """
         #ToDo(Hareesh): Verify admin_up event
         LOG.debug(_("Processing services started"))
-        # First we process routing service
+        # Now we process only routing service
         self.routing_service_helper.process_service(device_ids,
                                                     removed_devices_info)
         LOG.debug(_("Processing services completed"))
@@ -280,8 +289,11 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         :return: None
         """
         LOG.debug(_("Report state task started"))
-        configurations = self.agent_state['configurations']
-        self.routing_service_helper.collect_state(configurations)
+        configurations = self.routing_service_helper.collect_state(
+            self.agent_state['configurations'])
+        self.agent_state['configurations'] = configurations
+        LOG.debug(_("State report data: %s"),
+                  pprint.pprint(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)
 
     def send_agent_report(self, report, context):

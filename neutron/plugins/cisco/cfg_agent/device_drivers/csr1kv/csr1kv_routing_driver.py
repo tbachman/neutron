@@ -266,7 +266,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             return self._csr_conn
         except Exception as e:
             conn_params = {'host': self._csr_host, 'port': self._csr_ssh_port,
-                           'user': self._csr_user, 'pass': self._csr_password,
+                           'user': self._csr_user,
                            'timeout': self._timeout, 'reason': e.message}
             raise cfg_exc.CSR1kvConnectionException(**conn_params)
 

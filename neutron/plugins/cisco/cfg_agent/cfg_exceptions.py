@@ -42,5 +42,13 @@ class CSR1kvConfigException(DriverException):
                  "ErrorType:%(type)s ErrorTag:%(tag)s"))
 
 
-class DriverNotFound(DriverException):
+class DriverNotExist(DriverException):
     message = _("Driver %(driver)s does not exist")
+
+
+class DriverNotFound(DriverException):
+    message = _("Driver for found for resource id:%(id)s")
+
+
+class DriverNotSetForMissingParameter(DriverException):
+    message = _("Driver cannot be set for missing parameter:%(p)s")

@@ -74,6 +74,7 @@ class ServiceHelperBase(object):
     def process_service(self, *args, **kwargs):
         raise NotImplementedError
 
+
 class QueueMixin(object):
     def __init__(self):
         super(QueueMixin, self).__init__()
@@ -86,8 +87,6 @@ class QueueMixin(object):
         with self._lock:
             queue = self._queues[qname]
             queue.put(data)
-            #LOG.debug(_("Thread [%(name)s]:Enqueued: %(data)s"),
-            #         {'name': threading.current_thread().name, 'data': data})
 
     def dequeue(self, qname):
         if qname not in self._queues:

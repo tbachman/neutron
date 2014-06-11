@@ -59,9 +59,12 @@ class DeviceStatus(object):
                 'affected routers': data['routers']}
         return backlogged_hosting_devices
 
-    def is_hosting_device_reachable(self, router):
-        router_id = router['id']
-        hd = router['hosting_device']
+    def is_hosting_device_reachable(self, resource):
+        """Check the hosting device which hosts this resource is reachable.
+        If the resource is not reachable,it is added to the backlog.
+        """
+        resource_id = resource['id']
+        hd = resource['hosting_device']
         hd_id = hd['id']
         hd_mgmt_ip = hd['management_ip_address']
         #Modifying the 'created_at' to a date time object
@@ -70,26 +73,26 @@ class DeviceStatus(object):
 
         if hd_id not in self.backlog_hosting_devices.keys():
             if self._is_pingable(hd_mgmt_ip):
-                LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for router: "
+                LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for resource: "
                             "%(id)s is reachable."),
                           {'hd_id': hd_id, 'ip': hd['management_ip_address'],
-                           'id': router_id})
+                           'id': resource_id})
                 return True
-            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for router: "
+            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for resource: "
                         "%(id)s is NOT reachable."),
                       {'hd_id': hd_id, 'ip': hd['management_ip_address'],
-                       'id': router_id, })
+                       'id': resource_id, })
             hd['backlog_insertion_ts'] = max(
                 timeutils.utcnow(),
                 hd['created_at'] +
                 datetime.timedelta(seconds=hd['booting_time']))
             self.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [router_id]}
+                                                   'routers': [resource_id]}
             LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
                         "to backlog"), {'hd_id': hd_id,
                                         'ip': hd['management_ip_address']})
         else:
-            self.backlog_hosting_devices[hd_id]['routers'].append(router_id)
+            self.backlog_hosting_devices[hd_id]['routers'].append(resource_id)
 
     def check_backlogged_hosting_devices(self):
         """"Checks the status of backlogged hosting devices.
