@@ -80,18 +80,18 @@ class FilterScheduler(object):
     def _schedule(self, context, instance, hosts,
                   weight_functions, filter_chain=None, no_weighing=False, **kwargs):
 
-        filtered_hosts = self.get_filtered_hosts(context, instance, hosts,
+        neutron_hosts = self.get_filtered_hosts(context, instance, hosts,
                                                  filter_chain, **kwargs)
-        if not filtered_hosts:
+        if not neutron_hosts:
             if no_weighing:
                 return 'No valid host'
             raise exceptions.NoValidHost(reason="")
 
         if not no_weighing:
-            filtered_hosts = self.get_weighed_hosts(filtered_hosts,
+            filtered_hosts = self.get_weighed_hosts(neutron_hosts,
                                                 weight_functions, **kwargs)
 
-        return filtered_hosts
+        return neutron_hosts
 
     def get_filtered_hosts(self, context, instance, hosts, filter_chain, **kwargs):
         """Filter hosts and return only ones passing all filters."""
