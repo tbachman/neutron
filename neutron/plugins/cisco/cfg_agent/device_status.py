@@ -53,56 +53,47 @@ class DeviceStatus(object):
         self.backlog_hosting_devices = {}
 
     def get_backlogged_hosting_devices(self):
-        backlogged_hosting_devices = {}
-        for (hd_id, data) in self.backlog_hosting_devices.items():
-            backlogged_hosting_devices[hd_id] = {
-                'affected routers': data['routers']}
-        return backlogged_hosting_devices
+        return self.backlog_hosting_devices.keys()
 
-    def is_hosting_device_reachable(self, resource):
+    def is_hosting_device_reachable(self, hosting_device):
         """Check the hosting device which hosts this resource is reachable.
-        If the resource is not reachable,it is added to the backlog.
+        If the resource is not reachable, it is added to the backlog.
+
+        :param hosting_device : dict of the hosting device
+        :return True if device is reachable, else None
         """
-        resource_id = resource['id']
-        hd = resource['hosting_device']
-        hd_id = hd['id']
-        hd_mgmt_ip = hd['management_ip_address']
-        #Modifying the 'created_at' to a date time object
-        hd['created_at'] = datetime.datetime.strptime(hd['created_at'],
-                                                      '%Y-%m-%d %H:%M:%S')
+        hd = hosting_device
+        hd_id = hosting_device['id']
+        hd_mgmt_ip = hosting_device['management_ip_address']
+        # Modifying the 'created_at' to a date time object
+        hosting_device['created_at'] = datetime.datetime.strptime(
+            hosting_device['created_at'],'%Y-%m-%d %H:%M:%S')
 
         if hd_id not in self.backlog_hosting_devices.keys():
             if self._is_pingable(hd_mgmt_ip):
-                LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for resource: "
-                            "%(id)s is reachable."),
-                          {'hd_id': hd_id, 'ip': hd['management_ip_address'],
-                           'id': resource_id})
+                LOG.debug(_("Hosting device: %(hd_id)s@%(ip)s is reachable."),
+                          {'hd_id': hd_id, 'ip': hd_mgmt_ip})
                 return True
-            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for resource: "
-                        "%(id)s is NOT reachable."),
-                      {'hd_id': hd_id, 'ip': hd['management_ip_address'],
-                       'id': resource_id, })
+            LOG.debug(_("Hosting device: %(hd_id)s@%(ip)s is NOT reachable."),
+                      {'hd_id': hd_id, 'ip': hd_mgmt_ip})
             hd['backlog_insertion_ts'] = max(
                 timeutils.utcnow(),
                 hd['created_at'] +
                 datetime.timedelta(seconds=hd['booting_time']))
-            self.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [resource_id]}
+            self.backlog_hosting_devices[hd_id] = {'hd': hd}
             LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
-                        "to backlog"), {'hd_id': hd_id,
-                                        'ip': hd['management_ip_address']})
-        else:
-            self.backlog_hosting_devices[hd_id]['routers'].append(resource_id)
+                        "to backlog"), {'hd_id': hd_id, 'ip': hd_mgmt_ip})
 
     def check_backlogged_hosting_devices(self):
         """"Checks the status of backlogged hosting devices.
 
-        Has the intelligence to give allowance for the booting time for
-        newly spun up instances. Sends back a response dict of the format:
+        Skips newly spun up instances during their booting time as specified
+         in the boot time parameter.
+
+        :return A dict of the format:
         {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..]}
         """
-        response_dict = {'reachable': [],
-                         'dead': []}
+        response_dict = {'reachable': [], 'dead': []}
         LOG.debug(_("Current Backlogged hosting devices: %s"),
                   self.backlog_hosting_devices.keys())
         for hd_id in self.backlog_hosting_devices.keys():

@@ -75,7 +75,3 @@ class DummyRoutingDriver(RoutingDriverBase):
     ##### Internal Functions  ####
     def clear_connection(self):
         LOG.debug("DummyDriver clear_connection() called.")
-
-
-if __name__ == '__main':
-    dd = DummyRoutingDriver({'name': 'DummyDriver', 'port': 22})

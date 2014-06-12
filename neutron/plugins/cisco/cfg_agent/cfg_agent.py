@@ -176,6 +176,12 @@ class CiscoCfgAgent(manager.Manager):
          to be processed
         :param removed_devices_info: Info about the hosting devices which
         are going to be removed and details of the resources hosted on them.
+        Expected Format:
+                {
+                 'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
+                                  'hd_id2': {'routers': [id3, id4, ...]}, ...},
+                 'deconfigure': True/False
+                }
         :return: None
         """
         #ToDo(Hareesh): Verify admin_up event
@@ -206,14 +212,7 @@ class CiscoCfgAgent(manager.Manager):
                                                         hd_ids=res['dead'])
 
     def hosting_devices_removed(self, context, payload):
-        """Deal with hosting device removed RPC message.
-        Payload format:
-        {
-             'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
-                              'hd_id2': {'routers': [id3, id4, ...]}, ... },
-             'deconfigure': True/False
-        }
-        """
+        """Deal with hosting device removed RPC message."""
         try:
             if payload['hosting_data']:
                 if payload['hosting_data'].keys():
@@ -280,12 +279,12 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         sys.exit(1)
 
     def _report_state(self):
-        """Report state back to the plugin.
+        """Report state to the plugin.
 
         This task run every `report_interval` period.
         Collects, creates and sends a summary of the services currently
         managed by this agent. Data is collected from the service helper(s).
-        Look at the `configurations` dict for the parameters reported.
+        Refer the `configurations` dict for the parameters reported.
         :return: None
         """
         LOG.debug(_("Report state task started"))

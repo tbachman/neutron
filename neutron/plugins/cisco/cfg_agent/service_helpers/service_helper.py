@@ -20,9 +20,9 @@ import Queue
 import six
 import threading
 
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.openstack.common import log as logging
-
+from neutron.openstack.common import rpc
 LOG = logging.getLogger(__name__)
 
 
@@ -68,7 +68,16 @@ class ServiceHelperBase(object):
 
     def create_rpc_dispatcher(self):
         """Get the rpc dispatcher for this service."""
-        return q_rpc.PluginRpcDispatcher([self])
+        return n_rpc.PluginRpcDispatcher([self])
+
+    # def setup_rpc_for_topic(self, topic):
+    #     self.conn = rpc.create_connection(new=True)
+    #     self.dispatcher = self.create_rpc_dispatcher()
+    #     self.conn.create_consumer(
+    #         topic,
+    #         self.dispatcher,
+    #         fanout=False)
+    #     self.conn.consume_in_thread()
 
     @abstractmethod
     def process_service(self, *args, **kwargs):

@@ -146,6 +146,8 @@ class RoutingServiceHelper(ServiceHelperBase):
         self.fullsync = True
         self.sync_devices = set()
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
+        # self.setup_rpc_for_topic(self.topic)
+
         self._setup_rpc()
 
     def _setup_rpc(self):
@@ -156,6 +158,7 @@ class RoutingServiceHelper(ServiceHelperBase):
             self.dispatcher,
             fanout=False)
         self.conn.consume_in_thread()
+
 
     ### Notifications from Plugin ####
     def router_deleted(self, context, router_id):
@@ -292,8 +295,8 @@ class RoutingServiceHelper(ServiceHelperBase):
         :param router_ids: List of router_ids of routers to fetch
         :param device_ids: List of device_ids whose routers to fetch
         :param all_routers:  If True fetch all the routers for this agent.
-        :return: List of router dicts
-        Format: [ {router_dict1}, {router_dict2},.....]
+        :return: List of router dicts of format:
+                 [ {router_dict1}, {router_dict2},.....]
         """
         try:
             if all_routers:
@@ -331,7 +334,8 @@ class RoutingServiceHelper(ServiceHelperBase):
     def _sort_resources_per_hosting_device(self, resources):
         """This function will sort the resources on hosting device.
 
-        Syntax of returned dict:
+        :param resources: a dict with key of resource name
+        :return dict sorted on the hosting device of input resource. Format:
         hosting_devices = {
                             'hd_id1' : {'routers':[routers],
                                         'removed_routers':[routers], .... }
@@ -352,10 +356,11 @@ class RoutingServiceHelper(ServiceHelperBase):
         """Process the set of routers.
 
         Iterating on the set of routers received and comparing it with the
-        set of routers already in the routing service helper,
-        new routers which are added are identified. Then check the
-        reachability (via ping) of hosting device where the router is hosted
-        and backlogs it if necessary.
+        set of routers already in the routing service helper, new routers
+        which are added are identified. Then check the reachability (via
+        ping) of hosting device where the router is hosted and backlogs it
+        if necessary.
+
         For routers which are only updated, call `_process_router()` on them.
 
         When all_routers is set to True (because of a full sync),
@@ -383,7 +388,8 @@ class RoutingServiceHelper(ServiceHelperBase):
                     if not r['admin_state_up']:
                         continue
                     cur_router_ids.add(r['id'])
-                    if not self._dev_status.is_hosting_device_reachable(r):
+                    hd = r['hosting_device']
+                    if not self._dev_status.is_hosting_device_reachable(hd):
                         LOG.info(_("Router: %(id)s is on an unreachable "
                                    "hosting device. "), {'id': r['id']})
                         continue
@@ -392,6 +398,10 @@ class RoutingServiceHelper(ServiceHelperBase):
                     ri = self.router_info[r['id']]
                     ri.router = r
                     self._process_router(ri)
+                except KeyError, e:
+                    LOG.exception("Key Error, missing key: %s", e)
+                    self.updated_routers.add(r['id'])
+                    continue
                 except DriverException, e:
                     LOG.exception("Driver Exception %s", e)
                     self.sync_devices.add(device_id)
