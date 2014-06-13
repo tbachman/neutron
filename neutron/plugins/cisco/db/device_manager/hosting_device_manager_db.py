@@ -444,14 +444,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         credentials = (None if hosting_device.credentials is None
                        else {'username': hosting_device.credentials.user_name,
                              'password': hosting_device.credentials.password})
+        mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
+                   if hosting_device.management_port else None)
         return {'id': hosting_device.id,
                 'name': template.name,
                 'template_id': template.id,
                 'credentials': credentials,
                 'host_category': template.host_category,
                 'service_types': template.service_types,
-                'management_ip_address': hosting_device.management_port[
-                    'fixed_ips'][0]['ip_address'],
+                'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
                 'booting_time': template.booting_time}
