@@ -38,12 +38,9 @@ from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.plugins.cisco.common import cisco_constants as c_const
-from neutron.plugins.cisco.db.device_manager.hd_models import (
-    HostedHostingPortBinding)
+from neutron.plugins.cisco.db.l3.l3_models import HostingDevice
+from neutron.plugins.cisco.db.l3.l3_models import HostedHostingPortBinding
 from neutron.plugins.cisco.db.l3.l3_models import RouterHostingDeviceBinding
-from neutron.plugins.cisco.db.l3.l3_models import RouterType
-from neutron.plugins.cisco.extensions import routerhostingdevice
-from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
                                           l3_router_rpc_api)
 from neutron.plugins.common import constants as svc_constants
@@ -52,18 +49,33 @@ LOG = logging.getLogger(__name__)
 
 
 ROUTER_APPLIANCE_OPTS = [
-    cfg.StrOpt('default_router_type',
-               default=c_const.CSR1KV_ROUTER_TYPE,
-               help=_("Default type of router to create")),
-    cfg.StrOpt('namespace_router_type_name',
-               default=c_const.NAMESPACE_ROUTER_TYPE,
-               help=_("Name of router type used for Linux network namespace "
-                      "routers (i.e., Neutron's legacy routers in Network "
-                      "nodes).")),
+    cfg.StrOpt('csr1kv_image',
+               default='csr1kv_openstack_img',
+               help=_('Name of Glance image for CSR1kv')),
+    cfg.StrOpt('csr1kv_flavor',
+               default=621,
+               help=_('UUID of Nova flavor for CSR1kv')),
+    cfg.StrOpt('csr1kv_plugging_driver',
+               default=('neutron.plugins.cisco.device_manager'
+                        '.plugging_drivers.n1kv_trunking_driver.'
+                        'N1kvTrunkingPlugDriver'),
+               help=_('Plugging driver for CSR1kv')),
+    cfg.StrOpt('csr1kv_device_driver',
+               default=('neutron.plugins.cisco.device_manager.'
+                        'hosting_device_drivers.csr1kv_hd_driver.'
+                        'CSR1kvHostingDeviceDriver'),
+               help=_('Hosting device driver for CSR1kv')),
+    cfg.StrOpt('csr1kv_cfgagent_router_driver',
+               default=('neutron.plugins.cisco.cfg_agent.device_drivers.'
+                        'csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver'),
+               help=_('Config agent driver for CSR1kv')),
     cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
                       'non-scheduled routers')),
+    cfg.IntOpt('cfg_agent_down_time', default=60,
+               help=_('Seconds of no status update until a cfg agent '
+                      'is considered down.')),
 ]
 
 cfg.CONF.register_opts(ROUTER_APPLIANCE_OPTS)
@@ -81,24 +93,8 @@ class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
 
-class RouterTypeNotFound(n_exc.NeutronException):
-    message = _("Could not find router type %(router_type)s.")
-
-
-class MultipleRouterTypes(n_exc.NeutronException):
-    message = _("Multiple router type with same name %(name)s exist. Id "
-                "must be used to specify router type.")
-
-
 class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     """Mixin class implementing Neutron's routing service using appliances."""
-
-    # Dictionary with loaded scheduler modules for different router types
-    _router_schedulers = {}
-
-    # Id of router type used to represent Neutron's "legacy" Linux network
-    # namespace routers
-    _namespace_router_type_id = None
 
     # Dictionary of routers for which new scheduling attempts should
     # be made and the refresh setting and heartbeat for that.
@@ -108,37 +104,20 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     @classmethod
     def reset_all(cls):
-        cls._router_schedulers = {}
-        cls._namespace_router_type_id = None
         cls._backlogged_routers = {}
         cls._refresh_router_backlog = True
         cls._heartbeat = None
 
-    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        l3.ROUTERS, ['_extend_router_dict_routertype',
-                     '_extend_router_dict_routerhostingdevice'])
-
     def create_router(self, context, router):
         r = router['router']
-        router_type_name = r[routertype.TYPE_ATTR]
-        if router_type_name is attributes.ATTR_NOT_SPECIFIED:
-            router_type_name = cfg.CONF.default_router_type
-        # bobmel: Hard coding to shared host for now
-        share_host = True
         with context.session.begin(subtransactions=True):
-            router_type_id = self.get_router_type(context,
-                                                  router_type_name)['id']
-            auto_schedule = cfg.CONF.router_auto_schedule
-            if (router_type_id != self.get_namespace_router_type_id(context)
-                    and self._dev_mgr.mgmt_nw_id() is None):
+            if self._dev_mgr.mgmt_nw_id() is None:
                 raise RouterCreateInternalError()
             router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
             r_hd_b_db = RouterHostingDeviceBinding(
                 router_id=router_created['id'],
-                router_type_id=router_type_id,
-                auto_schedule=auto_schedule,
-                share_hosting_device=share_host,
+                auto_schedule=True,
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
             #TODO(bobmel): Remove this line
@@ -178,16 +157,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     #Todo(bobmel): Move this to l3_routertype_aware_schedulers_db later
     def _check_router_needs_rescheduling(self, context, router_id, gw_info):
-        try:
-            ns_routertype_id = self.get_namespace_router_type_id(context)
-            router_type_id = self.get_router_type_id(context, router_id)
-        except AttributeError, n_exc.NeutronException:
-            return
-        if router_type_id != ns_routertype_id:
-            LOG.debug(_('Router %(r_id)s is of type %(t_id)s which is not '
-                        'hosted by l3 agents'),
-                      {'r_id': router_id, 't_id': router_type_id})
-            return
         return super(L3RouterTypeAwareSchedulerDbMixin,
                      self)._check_router_needs_rescheduling(context, router_id,
                                                             gw_info)
@@ -391,6 +360,30 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     self._add_hosting_port_info(context, router, plg_drv)
         return sync_data
 
+    def get_device_info_for_agent(self, hosting_device):
+        """ Returns information about <hosting_device> needed by config agent.
+
+            Convenience function that service plugins can use to populate
+            their resources with information about the device hosting their
+            logical resource.
+        """
+        template = hosting_device.template
+        credentials = (None if hosting_device.credentials is None
+                       else {'username': hosting_device.credentials.user_name,
+                             'password': hosting_device.credentials.password})
+        mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
+                   if hosting_device.management_port else None)
+        return {'id': hosting_device.id,
+                'name': template.name,
+                'template_id': template.id,
+                'credentials': credentials,
+                'host_category': template.host_category,
+                'service_types': template.service_types,
+                'management_ip_address': mgmt_ip,
+                'protocol_port': hosting_device.protocol_port,
+                'created_at': str(hosting_device.created_at),
+                'booting_time': template.booting_time}
+
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
         LOG.info(_('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
@@ -463,46 +456,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                      {'r_id': r_hd_binding['router']['id'],
                       'd_id': r_hd_binding.hosting_device_id})
 
-    def get_router_type_id(self, context, router_id):
-        r_hd_b = self._get_router_binding_info(context, router_id,
-                                               load_hd_info=False)
-        return r_hd_b['router_type_id']
-
-    def get_router_type(self, context, id_or_name):
-        query = context.session.query(RouterType)
-        query = query.filter(RouterType.id == id_or_name)
-        try:
-            return query.one()
-        except exc.MultipleResultsFound:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Database inconsistency: Multiple router types '
-                            'with same id %s'), id_or_name)
-                raise RouterTypeNotFound(router_type=id_or_name)
-        except exc.NoResultFound:
-            query = context.session.query(RouterType)
-            query = query.filter(RouterType.name == id_or_name)
-            try:
-                return query.one()
-            except exc.MultipleResultsFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.debug(_('Multiple router types with name %s found. '
-                                'Id must be specified to allow arbitration.'),
-                              id_or_name)
-                    raise MultipleRouterTypes(name=id_or_name)
-            except exc.NoResultFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.error(_('No router type with name %s found.'),
-                              id_or_name)
-                    raise RouterTypeNotFound(router_type=id_or_name)
-
-    def get_namespace_router_type_id(self, context):
-        if self._namespace_router_type_id is None:
-            try:
-                self._namespace_router_type_id = self.get_router_type(
-                    context, cfg.CONF.namespace_router_type_name)['id']
-            except n_exc.NeutronException:
-                return None
-        return self._namespace_router_type_id
 
     @lockutils.synchronized('routers', 'neutron-')
     def backlog_router(self, router):
@@ -559,22 +512,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             self._backlogged_routers[binding.router_id] = router
         self._refresh_router_backlog = False
 
-    def _extend_router_dict_routertype(self, router_res, router_db):
-        router_res[routertype.TYPE_ATTR] = (
-            (router_db.hosting_info or {}).get('router_type_id'))
-
-    def _extend_router_dict_routerhostingdevice(self, router_res, router_db):
-        router_res[routerhostingdevice.HOSTING_DEVICE_ATTR] = (
-            (router_db.hosting_info or {}).get('hosting_device_id'))
-
     @property
     def _core_plugin(self):
         return manager.NeutronManager.get_plugin()
-
-    @property
-    def _dev_mgr(self):
-        return manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
         query = context.session.query(RouterHostingDeviceBinding)
@@ -618,14 +558,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                         'router %s'), router['id'])
             return
         router['router_type'] = {
-            'id': binding_info.router_type.id,
-            'name': binding_info.router_type.name,
-            'cfg_agent_driver': binding_info.router_type.cfg_agent_driver}
-        router['share_host'] = binding_info['share_hosting_device']
-        if binding_info.router_type_id == self.get_namespace_router_type_id(
-                context):
-            router['hosting_device'] = None
-            return
+            'id': None,
+            'name': 'CSR1kv_router',
+            'cfg_agent_driver': cfg.CONF.csr1kv_cfgagent_router_driver}
         if binding_info.hosting_device is None and schedule:
             # This router has not been scheduled to a hosting device
             # so we try to do it now.
@@ -634,7 +569,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         if binding_info.hosting_device is None:
             router['hosting_device'] = None
         else:
-            router['hosting_device'] = self._dev_mgr.get_device_info_for_agent(
+            router['hosting_device'] = self.get_device_info_for_agent(
                 binding_info.hosting_device)
 
     def _add_hosting_port_info(self, context, router, plugging_driver):
@@ -722,18 +657,35 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         except exc.NoResultFound:
             return
 
-    def _get_router_type_scheduler(self, context, id):
-        """Returns the scheduler (instance) for a router type."""
-        if id is None:
-            return
-        try:
-            return self._router_schedulers[id]
-        except KeyError:
-            try:
-                router_type = self.get_router_type(context, id)
-                self._router_schedulers[id] = importutils.import_object(
-                    router_type['scheduler'])
-            except (ImportError, TypeError, n_exc.NeutronException):
-                LOG.exception(_("Error loading scheduler for router type %s"),
-                              id)
-            return self._router_schedulers.get(id)
+    def list_active_sync_routers_on_hosting_devices(self, context, host,
+                                                    router_ids=None,
+                                                    hosting_device_ids=None):
+        agent = self._get_agent_by_type_and_host(
+            context, c_constants.AGENT_TYPE_CFG, host)
+        if not agent.admin_state_up:
+            return []
+        query = context.session.query(RouterHostingDeviceBinding.router_id)
+        query = query.join(HostingDevice)
+        query = query.filter(HostingDevice.cfg_agent_id == agent.id)
+        if router_ids:
+            if len(router_ids) == 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.router_id == router_ids[0])
+            else:
+                query = query.filter(
+                    RouterHostingDeviceBinding.router_id.in_(router_ids))
+        if hosting_device_ids:
+            if len(hosting_device_ids) == 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.hosting_device_id ==
+                    hosting_device_ids[0])
+            elif len(hosting_device_ids) > 1:
+                query = query.filter(
+                    RouterHostingDeviceBinding.hosting_device_id.in_(
+                        hosting_device_ids))
+        router_ids = [item[0] for item in query]
+        if router_ids:
+            return self.get_sync_data_ext(context, router_ids=router_ids,
+                                          active=True)
+        else:
+            return []

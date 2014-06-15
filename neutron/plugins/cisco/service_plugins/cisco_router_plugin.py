@@ -16,24 +16,18 @@
 
 from oslo.config import cfg
 
-from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
-#from neutron.db import l3_gwmode_db
-from neutron.db import l3_rpc_base
 from neutron.db import model_base
 from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
-from neutron.plugins.cisco.db.l3 import routertype_db
-from neutron.plugins.cisco.db.scheduler import (
-    l3_routertype_aware_schedulers_db as router_sch_db)
-from neutron.plugins.cisco.extensions import routerhostingdevice
-from neutron.plugins.cisco.extensions import routertype
+from neutron.plugins.cisco.device_manager import service_vm_lib
+from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
 from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
@@ -41,8 +35,8 @@ from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.common import constants
 
 
-class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
-                                    l3_router_rpc.L3RouterCfgRpcCallbackMixin):
+class CiscoRouterPluginRpcCallbacks(l3_router_rpc.L3RouterCfgRpcCallbackMixin,
+                                    devices_rpc.DeviceCfgRpcCallbackMixin):
     RPC_API_VERSION = '1.1'
 
     def create_rpc_dispatcher(self):
@@ -55,10 +49,7 @@ class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
-                        routertype_db.RoutertypeDbMixin,
-                        l3_router_appliance_db.L3RouterApplianceDBMixin,
-                        #l3_gwmode_db.L3_NAT_db_mixin,
-                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
+                        l3_router_appliance_db.L3RouterApplianceDBMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
@@ -68,11 +59,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     All DB functionality is implemented in class
     l3_router_appliance_db.L3RouterApplianceDBMixin.
     """
-    supported_extension_aliases = [
-        "router",  # "ext-gw-mode",
-        "extraroute", "l3_agent_scheduler",
-        routerhostingdevice.ROUTERHOSTINGDEVICE_ALIAS,
-        routertype.ROUTERTYPE_ALIAS]
+    supported_extension_aliases = ["router", "extraroute"]
 
     def __init__(self):
         qdbapi.register_models(base=model_base.BASEV2)
@@ -92,16 +79,22 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
             cfg.CONF.router_scheduler_driver)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
+        auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
+                    cfg.CONF.keystone_authtoken.auth_host + ":" +
+                    str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
+        u_name = cfg.CONF.keystone_authtoken.admin_user
+        pw = cfg.CONF.keystone_authtoken.admin_password
+        tenant = cfg.CONF.l3_admin_tenant
+        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
+            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
+
 
     def setup_rpc(self):
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = rpc.create_connection(new=True)
-        self.agent_notifiers.update(
-            {q_const.AGENT_TYPE_L3:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify,
-             c_constants.AGENT_TYPE_CFG:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify})
+        self.agent_notifiers[c_constants.AGENT_TYPE_CFG] = (
+             l3_router_rpc_joint_agent_api.L3JointAgentNotify)
         # Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
         self.callbacks = CiscoRouterPluginRpcCallbacks()

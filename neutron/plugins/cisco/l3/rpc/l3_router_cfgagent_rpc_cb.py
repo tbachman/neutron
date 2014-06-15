@@ -45,18 +45,11 @@ class L3RouterCfgRpcCallbackMixin(object):
             svc_constants.L3_ROUTER_NAT)
         if l3plugin is None:
             routers = []
-            LOG.error(_('No L3 router service plugin registered! '
-                        'Will return empty router list to Cisco '
-                        'cfg agent@%s.'), host)
-        elif utils.is_extension_supported(
-                l3plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
-            try:
-                routers = l3plugin.list_active_sync_routers_on_hosting_devices(
-                    context, host, router_ids, hd_ids)
-            except AttributeError:
-                routers = []
+            LOG.error(_('No L3 router service plugin registered! Will return '
+                        'empty router list to Cisco cfg agent@%s.'), host)
         else:
-            routers = []
+            routers = l3plugin.list_active_sync_routers_on_hosting_devices(
+                context, host, router_ids, hd_ids)
         plugin = manager.NeutronManager.get_plugin()
         if utils.is_extension_supported(
                 plugin, constants.PORT_BINDING_EXT_ALIAS):

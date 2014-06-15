@@ -21,8 +21,8 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-class DeviceMgrCfgRpcCallbackMixin(object):
-    """Mixin for Cisco cfg agent rpc support in Device mgr service plugin."""
+class DeviceCfgRpcCallbackMixin(object):
+    """Mixin for Cisco cfg agent device reporting rpc support."""
 
     def report_non_responding_hosting_devices(self, context, **kwargs):
         """Report that a hosting device cannot be contacted.
@@ -36,9 +36,9 @@ class DeviceMgrCfgRpcCallbackMixin(object):
         hosting_device_ids = kwargs.get('hosting_device_ids', [])
         cfg_agent_host = kwargs.get('host', None)
         plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            svc_constants.L3_ROUTER_NAT)
         if plugin is None:
-            LOG.error(_('No Device manager service plugin registered!'
+            LOG.error(_('No router service plugin registered!'
                         'Cannot handle non-responding hosting device '
                         'callback'))
         else:
@@ -63,9 +63,9 @@ class DeviceMgrCfgRpcCallbackMixin(object):
         """
         agent_host = kwargs.get('host', None)
         plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            svc_constants.L3_ROUTER_NAT)
         if plugin is None:
-            LOG.error(_('No Device manager service plugin registered!'
+            LOG.error(_('No router service plugin registered!'
                         'Cannot handle Cisco configuration agent duty '
                         'readiness callback'))
             return
