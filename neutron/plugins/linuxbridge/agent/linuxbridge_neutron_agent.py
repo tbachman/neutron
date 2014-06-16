@@ -27,6 +27,8 @@ import sys
 import time
 
 import eventlet
+eventlet.monkey_patch()
+
 from oslo.config import cfg
 
 from neutron.agent import l2population_rpc as l2pop_rpc
@@ -37,12 +39,12 @@ from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import config as logging_config
 from neutron.common import constants
 from neutron.common import exceptions
+from neutron.common import rpc_compat
 from neutron.common import topics
 from neutron.common import utils as q_utils
 from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.linuxbridge.common import config  # noqa
@@ -725,7 +727,7 @@ class LinuxBridgeRpcCallbacks(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                                          tap_device_name,
                                                          self.agent.agent_id,
                                                          cfg.CONF.host)
-        except rpc_common.Timeout:
+        except rpc_compat.MessagingTimeout:
             LOG.error(_("RPC timeout while updating port %s"), port['id'])
 
     def fdb_add(self, context, fdb_entries):
@@ -1025,7 +1027,6 @@ class LinuxBridgeNeutronAgentRPC(sg_rpc.SecurityGroupAgentRpcMixin):
 
 
 def main():
-    eventlet.monkey_patch()
     cfg.CONF(project='neutron')
 
     logging_config.setup_logging(cfg.CONF)

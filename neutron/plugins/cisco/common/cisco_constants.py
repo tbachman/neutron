@@ -104,6 +104,11 @@ ENCAPSULATION_PROFILE_SUFFIX = '_profile'
 
 UUID_LENGTH = 36
 
+# Nexus vlan and vxlan segment range
+NEXUS_VLAN_RESERVED_MIN = 3968
+NEXUS_VLAN_RESERVED_MAX = 4047
+NEXUS_VXLAN_MIN = 4096
+NEXUS_VXLAN_MAX = 16000000
 
 # Type and topic for Cisco cfg agent
 # ==================================
@@ -113,40 +118,3 @@ AGENT_TYPE_CFG = 'Cisco cfg agent'
 CFG_AGENT = 'cisco_cfg_agent'
 # Topic for routing service helper in Cisco configuration agent
 CFG_AGENT_L3_ROUTING = 'cisco_cfg_agent_l3_routing'
-
-# Device manager and (hosting) devices
-# ====================================
-# Default name of hosting device template for network nodes
-# hosting Linux network namespace-based Neutron routers.
-NETWORK_NODE_TEMPLATE = 'NetworkNode_template'
-
-# Service VM status
-SVM_OK = 'OK'
-SVM_ERROR = 'ERROR'
-SVM_NON_RESPONSIVE = 'NON_RESPONSIVE'
-
-
-# Routing service
-# ==============
-# Default name of router type for Neutron routers implemented
-# as Linux network namespaces in network nodes.
-NAMESPACE_ROUTER_TYPE = 'NetworkNamespace_router'
-
-# Default name of router type for Neutron routers implemented
-# as VRFs inside a CSR1kv VM instance.
-CSR1KV_ROUTER_TYPE = 'CSR1kv_router'
-
-# The status of a Neutron Router created using the
-# Cisco service plugin is one of the following:
-# Created but not scheduled nor deployed
-ROUTER_PENDING_CREATE = "PENDING_CREATE"
-#  Scheduling in progress
-ROUTER_SCHEDULING = 'SCHEDULING'
-# Backlogged due to unsuccessful scheduling attempt
-ROUTER_BACKLOGGED = 'BACKLOGGED'
-# Backlogged due to non-ready hosting device (e.g., still booting)
-ROUTER_WAITING_HOST = 'AWAITING_HOST'
-# Deployed and configured
-ROUTER_ACTIVE = "ACTIVE"
-# Deletion in progress (by cfg agent)
-ROUTER_PENDING_DELETE = "PENDING_DELETE"

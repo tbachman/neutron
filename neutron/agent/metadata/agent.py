@@ -22,6 +22,8 @@ import os
 import socket
 
 import eventlet
+eventlet.monkey_patch()
+
 import httplib2
 from neutronclient.v2_0 import client
 from oslo.config import cfg
@@ -305,11 +307,11 @@ class UnixDomainMetadataProxy(object):
                    default='$state_path/metadata_proxy',
                    help=_('Location for Metadata Proxy UNIX domain socket')),
         cfg.IntOpt('metadata_workers',
-                   default=0,
+                   default=utils.cpu_count() // 2,
                    help=_('Number of separate worker processes for metadata '
                           'server')),
         cfg.IntOpt('metadata_backlog',
-                   default=128,
+                   default=4096,
                    help=_('Number of backlog requests to configure the '
                           'metadata server socket with'))
     ]
@@ -377,7 +379,6 @@ class UnixDomainMetadataProxy(object):
 
 
 def main():
-    eventlet.monkey_patch()
     cfg.CONF.register_opts(UnixDomainMetadataProxy.OPTS)
     cfg.CONF.register_opts(MetadataProxyHandler.OPTS)
     cache.register_oslo_configs(cfg.CONF)

@@ -18,6 +18,8 @@
 import os
 
 import eventlet
+eventlet.monkey_patch()
+
 import netaddr
 from oslo.config import cfg
 
@@ -29,6 +31,7 @@ from neutron.agent.linux import ovs_lib  # noqa
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants
 from neutron.common import exceptions
+from neutron.common import rpc_compat
 from neutron.common import topics
 from neutron.common import utils
 from neutron import context
@@ -36,8 +39,6 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import common
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron import service as neutron_service
 
@@ -136,7 +137,7 @@ class DhcpAgent(manager.Manager):
                         % {'net_id': network.id, 'action': action})
         except Exception as e:
             self.schedule_resync(e)
-            if (isinstance(e, common.RemoteError)
+            if (isinstance(e, rpc_compat.RemoteError)
                 and e.exc_type == 'NetworkNotFound'
                 or isinstance(e, exceptions.NetworkNotFound)):
                 LOG.warning(_("Network %s has been deleted."), network.id)
@@ -376,7 +377,7 @@ class DhcpAgent(manager.Manager):
         pm.disable()
 
 
-class DhcpPluginApi(proxy.RpcProxy):
+class DhcpPluginApi(rpc_compat.RpcProxy):
     """Agent side of the dhcp rpc API.
 
     API version history:
@@ -608,7 +609,6 @@ def register_options():
 
 
 def main():
-    eventlet.monkey_patch()
     register_options()
     cfg.CONF(project='neutron')
     config.setup_logging(cfg.CONF)

@@ -19,13 +19,15 @@
 import base64
 import copy
 import httplib
-import Queue
 import threading
 import time
 
 
 import eventlet
+eventlet.monkey_patch(thread=True)
+
 from oslo.config import cfg
+from six.moves import queue as Queue
 
 from neutron.api.v2 import attributes
 from neutron.common import log as call_log
@@ -38,8 +40,6 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services.loadbalancer.drivers import abstract_driver
 from neutron.services.loadbalancer.drivers.radware import exceptions as r_exc
-
-eventlet.monkey_patch(thread=True)
 
 LOG = logging.getLogger(__name__)
 
