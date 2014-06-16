@@ -21,29 +21,21 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import expression as expr
 
-from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
-from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_db
 from neutron.db import models_v2
-from neutron.extensions import l3
 from neutron.extensions import providernet as pr_net
 from neutron import manager
-from neutron.openstack.common import excutils
-from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.plugins.cisco.common import cisco_constants as c_const
-from neutron.plugins.cisco.db.l3.l3_models import HostingDevice
-from neutron.plugins.cisco.db.l3.l3_models import HostedHostingPortBinding
-from neutron.plugins.cisco.db.l3.l3_models import RouterHostingDeviceBinding
+from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
                                           l3_router_rpc_api)
-from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -109,13 +101,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         cls._heartbeat = None
 
     def create_router(self, context, router):
-        r = router['router']
         with context.session.begin(subtransactions=True):
             if self.mgmt_nw_id() is None:
                 raise RouterCreateInternalError()
             router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
-            r_hd_b_db = RouterHostingDeviceBinding(
+            r_hd_b_db = l3_models.RouterHostingDeviceBinding(
                 router_id=router_created['id'],
                 auto_schedule=True,
                 hosting_device_id=None)
@@ -360,7 +351,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         LOG.info(_('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
         with context.session.begin(subtransactions=True):
-            result = _create_csr1kv_vm_hosting_device(context)
+            result = self._create_csr1kv_vm_hosting_device(context)
             if result is None:
                 # CSR1kv hosting device creation was unsuccessful so backlog
                 # it for another scheduling attempt later.
@@ -368,7 +359,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 return False
             else:
                 router = r_hd_binding['router']
-                e_context = context.elevated()
                 r_hd_binding.hosting_device_id = result['id']
                 self.remove_router_from_backlog(router['id'])
                 LOG.info(_('Successfully scheduled router %(r_id)s to '
@@ -381,9 +371,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
         LOG.info(_('Un-schedule router %s.'),
                  r_hd_binding['router']['id'])
+        hosting_device = r_hd_binding['hosting_device']
         if r_hd_binding['hosting_device'] is None:
             return False
-        self_delete_service_vm_hosting_device(context, hosting_device)
+        self._delete_service_vm_hosting_device(context, hosting_device)
 
     @lockutils.synchronized('routers', 'neutron-')
     def backlog_router(self, router):
@@ -428,10 +419,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     def _sync_router_backlog(self):
         LOG.info(_('Synchronizing router (scheduling) backlog'))
         context = n_context.get_admin_context()
-        query = context.session.query(RouterHostingDeviceBinding)
+        query = context.session.query(l3_models.RouterHostingDeviceBinding)
         query = query.options(joinedload('router'))
         query = query.filter(
-            RouterHostingDeviceBinding.hosting_device_id == expr.null())
+            l3_models.RouterHostingDeviceBinding.hosting_device_id ==
+            expr.null())
         for binding in query:
             router = self._make_router_dict(binding.router,
                                             process_extensions=False)
@@ -443,10 +435,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         return manager.NeutronManager.get_plugin()
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
-        query = context.session.query(RouterHostingDeviceBinding)
+        query = context.session.query(l3_models.RouterHostingDeviceBinding)
         if load_hd_info:
             query = query.options(joinedload('hosting_device'))
-        query = query.filter(RouterHostingDeviceBinding.router_id == id)
+        query = query.filter(l3_models.RouterHostingDeviceBinding.router_id ==
+                             id)
         try:
             r_hd_b = query.one()
             return r_hd_b
@@ -463,13 +456,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
 
     def _get_hosting_device_bindings(self, context, id, load_routers=False,
                                      load_hosting_device=False):
-        query = context.session.query(RouterHostingDeviceBinding)
+        query = context.session.query(l3_models.RouterHostingDeviceBinding)
         if load_routers:
             query = query.options(joinedload('router'))
         if load_hosting_device:
             query = query.options(joinedload('hosting_device'))
         query = query.filter(
-            RouterHostingDeviceBinding.hosting_device_id == id)
+            l3_models.RouterHostingDeviceBinding.hosting_device_id == id)
         return query.all()
 
     def _add_type_and_hosting_device_info(self, context, router,
@@ -557,7 +550,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                       port_db['id'])
             return
         with context.session.begin(subtransactions=True):
-            h_info = HostedHostingPortBinding(
+            h_info = l3_models.HostedHostingPortBinding(
                 logical_resource_id=router_id,
                 logical_port_id=port_db['id'],
                 network_type=network_type,
@@ -590,24 +583,27 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             context, c_const.AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []
-        query = context.session.query(RouterHostingDeviceBinding.router_id)
-        query = query.join(HostingDevice)
-        query = query.filter(HostingDevice.cfg_agent_id == agent.id)
+        query = context.session.query(
+            l3_models.RouterHostingDeviceBinding.router_id)
+        query = query.join(l3_models.HostingDevice)
+        query = query.filter(l3_models.HostingDevice.cfg_agent_id == agent.id)
         if router_ids:
             if len(router_ids) == 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.router_id == router_ids[0])
+                    l3_models.RouterHostingDeviceBinding.router_id ==
+                    router_ids[0])
             else:
                 query = query.filter(
-                    RouterHostingDeviceBinding.router_id.in_(router_ids))
+                    l3_models.RouterHostingDeviceBinding.router_id.in_(
+                        router_ids))
         if hosting_device_ids:
             if len(hosting_device_ids) == 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.hosting_device_id ==
+                    l3_models.RouterHostingDeviceBinding.hosting_device_id ==
                     hosting_device_ids[0])
             elif len(hosting_device_ids) > 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.hosting_device_id.in_(
+                    l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
                         hosting_device_ids))
         router_ids = [item[0] for item in query]
         if router_ids:

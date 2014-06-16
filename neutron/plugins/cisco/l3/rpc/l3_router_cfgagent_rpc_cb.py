@@ -76,4 +76,3 @@ class L3RouterCfgRpcCallbackMixin(object):
              portbindings.VIF_TYPE_BINDING_FAILED)):
             plugin.update_port(context, port['id'],
                                {'port': {portbindings.HOST_ID: host}})
-

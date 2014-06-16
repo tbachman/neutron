@@ -26,11 +26,12 @@ from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
-from neutron.plugins.cisco.l3 import service_vm_lib
-from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
+from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
+
+from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.common import constants
 
 
@@ -84,7 +85,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         tenant = cfg.CONF.l3_admin_tenant
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
             user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
-
 
     def setup_rpc(self):
         # RPC support

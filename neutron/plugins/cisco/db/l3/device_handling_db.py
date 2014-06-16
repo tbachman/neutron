@@ -14,29 +14,25 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import eventlet
-import math
 import random
-import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from oslo.config import cfg
-from sqlalchemy import func
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
-from sqlalchemy.sql import expression as expr
 
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
-from neutron.db import agents_db
 from neutron import context as neutron_context
+from neutron.db import agents_db
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
+from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.db.l3.l3_models import HostingDevice
+from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
                                           rpcapi)
 from neutron.plugins.common import constants as svc_constants
@@ -167,7 +163,6 @@ class DeviceHandlingMixin(object):
             return self._hosting_device_driver
         else:
             try:
-                template = self._get_hosting_device_template(context, id)
                 self._hosting_device_driver = importutils.import_object(
                     cfg.CONF.csr1kv_device_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
@@ -180,7 +175,6 @@ class DeviceHandlingMixin(object):
             return self._plugging_driver
         else:
             try:
-                template = self._get_hosting_device_template(context, id)
                 self._plugging_driver = importutils.import_object(
                     cfg.CONF.csr1kv_plugging_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
@@ -190,13 +184,15 @@ class DeviceHandlingMixin(object):
     def get_hosting_devices_qry(self, context, hosting_device_ids,
                                 load_agent=True):
         """Returns hosting devices with <hosting_device_ids>."""
-        query = context.session.query(HostingDevice)
+        query = context.session.query(l3_models.HostingDevice)
         if load_agent:
             query = query.options(joinedload('cfg_agent'))
         if len(hosting_device_ids) > 1:
-            query = query.filter(HostingDevice.id.in_(hosting_device_ids))
+            query = query.filter(l3_models.HostingDevice.id.in_(
+                hosting_device_ids))
         else:
-            query = query.filter(HostingDevice.id == hosting_device_ids[0])
+            query = query.filter(l3_models.HostingDevice.id ==
+                                 hosting_device_ids[0])
         return query
 
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
@@ -228,7 +224,7 @@ class DeviceHandlingMixin(object):
                         context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):
-        """ Returns information about <hosting_device> needed by config agent.
+        """Returns information about <hosting_device> needed by config agent.
 
             Convenience function that service plugins can use to populate
             their resources with information about the device hosting their
@@ -294,7 +290,6 @@ class DeviceHandlingMixin(object):
 
     def _create_csr1kv_vm_hosting_device(self, context):
         """Creates a CSR1kv VM instance."""
-        hosting_devices = []
         plugging_drv = self.get_hosting_device_plugging_driver()
         hosting_device_drv = self.get_hosting_device_driver()
         if plugging_drv is None or hosting_device_drv is None:
@@ -353,9 +348,6 @@ class DeviceHandlingMixin(object):
         plugging_drv.delete_hosting_device_resources(
             context, self.l3_tenant_id(), **res)
         with context.session.begin(subtransactions=True):
-            # remove all allocations in this hosting device
-            context.session.query(SlotAllocation).filter_by(
-                hosting_device_id=hosting_device['id']).delete()
             context.session.delete(hosting_device)
 
     def _create_hosting_device(self, context, hosting_device):
@@ -363,7 +355,7 @@ class DeviceHandlingMixin(object):
         hd = hosting_device['hosting_device']
         tenant_id = self._get_tenant_id_for_create(context, hd)
         with context.session.begin(subtransactions=True):
-            hd_db = HostingDevice(
+            hd_db = l3_models.HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
                 device_id=hd.get('device_id'),
@@ -419,7 +411,7 @@ class DeviceHandlingMixin(object):
             if self.is_agent_down(
                     cfg_agent.heartbeat_timestamp):
                 LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
-            query = context.session.query(HostingDevice)
+            query = context.session.query(l3_models.HostingDevice)
             query = query.filter_by(cfg_agent_id=None)
             for hd in query:
                 hd.cfg_agent = cfg_agent

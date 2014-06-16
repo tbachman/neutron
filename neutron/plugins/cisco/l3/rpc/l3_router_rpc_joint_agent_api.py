@@ -63,7 +63,8 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
                            'method': method})
                 self.cast(context,
                           self.make_msg(method, routers=[router['id']]),
-                          topic='%s.%s' % (topic, agent.host),
+                          topic='%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING,
+                                           agent.host),
                           version=version)
 
     def _notification(self, context, method, routers, operation, data):
