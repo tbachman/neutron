@@ -29,26 +29,22 @@ from sqlalchemy.sql import expression as expr
 
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
+from neutron.db import agents_db
 from neutron import context as neutron_context
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
-from neutron.plugins.cisco.db.device_manager.hd_models import (
-    HostingDeviceTemplate)
-from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
-from neutron.plugins.cisco.db.device_manager.hd_models import SlotAllocation
-from neutron.plugins.cisco.db.device_manager import hosting_devices_db
-from neutron.plugins.cisco.device_manager.rpc import (devmgr_rpc_cfgagent_api
-                                                      as devmgr_rpc)
-from neutron.plugins.cisco.device_manager import service_vm_lib
-from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
+from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.db.l3.l3_models import HostingDevice
+from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
+                                          rpcapi)
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
-HOSTING_DEVICE_MANAGER_OPTS = [
+DEVICE_HANDLING_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
                help=_("Name of the L3 admin tenant")),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
@@ -57,9 +53,12 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
                       "Default value is mgmt_sec_grp")),
+    cfg.IntOpt('cfg_agent_down_time', default=60,
+               help=_('Seconds of no status update until a cfg agent '
+                      'is considered down.')),
 ]
 
-cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
+cfg.CONF.register_opts(DEVICE_HANDLING_OPTS)
 
 
 class DeviceHandlingMixin(object):
@@ -225,7 +224,7 @@ class DeviceHandlingMixin(object):
                 pass
             for hd in hosting_devices:
                 if self._process_non_responsive_hosting_device(e_context, hd):
-                    devmgr_rpc.DeviceMgrCfgAgentNotify.hosting_devices_removed(
+                    rpcapi.L3RouterJointAgentNotifyAPI.hosting_devices_removed(
                         context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):
@@ -251,7 +250,6 @@ class DeviceHandlingMixin(object):
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
                 'booting_time': template.booting_time}
-
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
@@ -290,12 +288,9 @@ class DeviceHandlingMixin(object):
         :param hosting_device: db object for hosting device
         :return: True if hosting_device has been deleted, otherwise False
         """
-        if (hosting_device['template']['host_category'] == VM_CATEGORY and
-                hosting_device['auto_delete']):
-            self._delete_dead_service_vm_hosting_device(context,
-                                                        hosting_device)
-            return True
-        return False
+
+        self._delete_service_vm_hosting_device(context, hosting_device)
+        return True
 
     def _create_csr1kv_vm_hosting_device(self, context):
         """Creates a CSR1kv VM instance."""
@@ -335,7 +330,7 @@ class DeviceHandlingMixin(object):
         LOG.info(_('Created a CSR1kv hosting device VM'))
         return hosting_device
 
-    def _delete_dead_service_vm_hosting_device(self, context, hosting_device):
+    def _delete_service_vm_hosting_device(self, context, hosting_device):
         """Deletes a <hosting_device> service VM.
 
         This will indirectly make all of its hosted resources unscheduled.
@@ -404,3 +399,29 @@ class DeviceHandlingMixin(object):
             hosting_device.cfg_agent = chosen_agent
             context.session.add(hosting_device)
             return chosen_agent
+
+    def auto_schedule_hosting_devices(self, context, agent_host):
+        """Schedules unassociated hosting devices to Cisco cfg agent.
+
+        Schedules hosting devices to agent running on <agent_host>.
+        """
+        with context.session.begin(subtransactions=True):
+            # Check if there is a valid Cisco cfg agent on the host
+            query = context.session.query(agents_db.Agent)
+            query = query.filter_by(agent_type=c_constants.AGENT_TYPE_CFG,
+                                    host=agent_host, admin_state_up=True)
+            try:
+                cfg_agent = query.one()
+            except (exc.MultipleResultsFound, exc.NoResultFound):
+                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
+                          agent_host)
+                return False
+            if self.is_agent_down(
+                    cfg_agent.heartbeat_timestamp):
+                LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
+            query = context.session.query(HostingDevice)
+            query = query.filter_by(cfg_agent_id=None)
+            for hd in query:
+                hd.cfg_agent = cfg_agent
+                context.session.add(hd)
+            return True

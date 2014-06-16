@@ -30,6 +30,17 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
         super(L3RouterJointAgentNotifyAPI, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
 
+    def _notification_host(self, context, method, payload, host,
+                           topic=None):
+        """Notify the cfg agent that is handling the hosting device."""
+
+        LOG.debug(_('Notify Cisco cfg agent at %(host)s the message '
+                    '%(method)s'), {'host': host, 'method': method})
+        self.cast(context,
+                  self.make_msg(method, payload=payload),
+                  topic='%s.%s' % (self.topic if topic is None else topic,
+                                   host))
+
     def _agent_notification(self, context, method, routers, operation, data):
         """Notify individual Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()

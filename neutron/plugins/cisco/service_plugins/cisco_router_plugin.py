@@ -18,19 +18,18 @@ from oslo.config import cfg
 
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
+from neutron.db import agents_db
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
-from neutron.openstack.common import importutils
 from neutron.openstack.common import rpc
 import neutron.plugins
-from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
-from neutron.plugins.cisco.device_manager import service_vm_lib
+from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
-from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.common import constants
 
@@ -49,7 +48,9 @@ class CiscoRouterPluginRpcCallbacks(l3_router_rpc.L3RouterCfgRpcCallbackMixin,
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
-                        l3_router_appliance_db.L3RouterApplianceDBMixin):
+                        agents_db.AgentDbMixin,
+                        l3_router_appliance_db.L3RouterApplianceDBMixin,
+                        device_handling_db.DeviceHandlingMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
@@ -73,10 +74,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                 to_add += ':' + ext_path
         if to_add != "":
             cfg.CONF.set_override('api_extensions_path', cp + to_add)
-        self.router_scheduler = importutils.import_object(
-            cfg.CONF.router_type_aware_scheduler_driver)
-        self.l3agent_scheduler = importutils.import_object(
-            cfg.CONF.router_scheduler_driver)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
         auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
@@ -93,8 +90,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = rpc.create_connection(new=True)
-        self.agent_notifiers[c_constants.AGENT_TYPE_CFG] = (
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify)
         # Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
         self.callbacks = CiscoRouterPluginRpcCallbacks()
