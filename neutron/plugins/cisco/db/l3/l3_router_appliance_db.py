@@ -255,35 +255,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 l3_router_rpc_api.L3JointAgentNotify.routers_updated(
                     context, routers)
 
-    def handle_non_responding_hosting_devices(self, context, cfg_agent,
-                                              hosting_device_ids):
-        with context.session.begin(subtransactions=True):
-            e_context = context.elevated()
-            hosting_devices = self.get_hosting_devices_qry(
-                e_context, hosting_device_ids).all()
-            # 'hosting_info' is dictionary with ids of removed hosting
-            # devices and the affected logical resources for each
-            # removed hosting device:
-            #    {'hd_id1': {'routers': [id1, id2, ...],
-            #                'fw': [id1, ...],
-            #                 ...},
-            #     'hd_id2': {'routers': [id3, id4, ...]},
-            #                'fw': [id1, ...],
-            #                ...},
-            #     ...}
-            hosting_info = {id: {} for id in hosting_device_ids}
-            #TODO(bobmel): Modify so service plugins register themselves
-            try:
-                self._handle_non_responding_hosting_devices(
-                    context, hosting_devices, hosting_info)
-            except AttributeError:
-                pass
-            for hd in hosting_devices:
-                if self._process_non_responsive_hosting_device(e_context, hd):
-                    (l3_router_rpc_api.L3RouterJointAgentNotifyAPI
-                     .hosting_devices_removed)(context, hosting_info, False,
-                                               cfg_agent)
-
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _handle_non_responding_hosting_devices(self, context, hosting_devices,
                                                affected_resources):

@@ -233,7 +233,7 @@ class DeviceHandlingMixin(object):
             hosting_info = {id: {} for id in hosting_device_ids}
             try:
                 #TODO(bobmel): Modify so service plugins register themselves
-                self.handle_non_responding_hosting_devices(
+                self._handle_non_responding_hosting_devices(
                     context, hosting_devices, hosting_info)
             except AttributeError:
                 pass
