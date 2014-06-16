@@ -41,22 +41,6 @@ LOG = logging.getLogger(__name__)
 
 
 ROUTER_APPLIANCE_OPTS = [
-    cfg.StrOpt('csr1kv_image',
-               default='csr1kv_openstack_img',
-               help=_('Name of Glance image for CSR1kv')),
-    cfg.StrOpt('csr1kv_flavor',
-               default=621,
-               help=_('UUID of Nova flavor for CSR1kv')),
-    cfg.StrOpt('csr1kv_plugging_driver',
-               default=('neutron.plugins.cisco.device_manager'
-                        '.plugging_drivers.n1kv_trunking_driver.'
-                        'N1kvTrunkingPlugDriver'),
-               help=_('Plugging driver for CSR1kv')),
-    cfg.StrOpt('csr1kv_device_driver',
-               default=('neutron.plugins.cisco.device_manager.'
-                        'hosting_device_drivers.csr1kv_hd_driver.'
-                        'CSR1kvHostingDeviceDriver'),
-               help=_('Hosting device driver for CSR1kv')),
     cfg.StrOpt('csr1kv_cfgagent_router_driver',
                default=('neutron.plugins.cisco.cfg_agent.device_drivers.'
                         'csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver'),
@@ -65,9 +49,6 @@ ROUTER_APPLIANCE_OPTS = [
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
                       'non-scheduled routers')),
-    cfg.IntOpt('cfg_agent_down_time', default=60,
-               help=_('Seconds of no status update until a cfg agent '
-                      'is considered down.')),
 ]
 
 cfg.CONF.register_opts(ROUTER_APPLIANCE_OPTS)
@@ -111,11 +92,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 auto_schedule=True,
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
-            # backlog so this new router gets scheduled asynchronously
-            self.backlog_router(r_hd_b_db)
-#            #TODO(bobmel): Remove this line
-#            self._add_type_and_hosting_device_info(context.elevated(),
-#                                                   router_created)
+        # backlog so this new router gets scheduled asynchronously
+        self.backlog_router(r_hd_b_db['router'])
         return router_created
 
     def update_router(self, context, id, router):
@@ -134,9 +112,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 # already scheduled.
                 self._add_type_and_hosting_device_info(e_context, o_r,
                                                        schedule=False)
-                p_drv = self.get_hosting_device_plugging_driver(
-                    e_context,
-                    (o_r['hosting_device'] or {}).get('template_id'))
+                p_drv = self.get_hosting_device_plugging_driver()
                 if p_drv is not None:
                     p_drv.teardown_logical_port_connectivity(e_context,
                                                              o_r_db.gw_port)
@@ -157,9 +133,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             self._add_type_and_hosting_device_info(
                 e_context, router, binding_info=r_hd_binding, schedule=False)
             if router_db.gw_port is not None:
-                p_drv = self.get_hosting_device_plugging_driver(
-                    e_context,
-                    (router['hosting_device'] or {}).get('template_id'))
+                p_drv = self.get_hosting_device_plugging_driver()
                 if p_drv is not None:
                     p_drv.teardown_logical_port_connectivity(e_context,
                                                              router_db.gw_port)
@@ -199,9 +173,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         with context.session.begin(subtransactions=True):
             e_context = context.elevated()
             self._add_type_and_hosting_device_info(e_context, routers[0])
-            p_drv = self.get_hosting_device_plugging_driver(
-                e_context,
-                (routers[0]['hosting_device'] or {}).get('template_id'))
+            p_drv = self.get_hosting_device_plugging_driver()
             if p_drv is not None:
                 p_drv.teardown_logical_port_connectivity(e_context, port_db)
             info = (super(L3RouterApplianceDBMixin, self).
@@ -283,9 +255,38 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 l3_router_rpc_api.L3JointAgentNotify.routers_updated(
                     context, routers)
 
+    def handle_non_responding_hosting_devices(self, context, cfg_agent,
+                                              hosting_device_ids):
+        with context.session.begin(subtransactions=True):
+            e_context = context.elevated()
+            hosting_devices = self.get_hosting_devices_qry(
+                e_context, hosting_device_ids).all()
+            # 'hosting_info' is dictionary with ids of removed hosting
+            # devices and the affected logical resources for each
+            # removed hosting device:
+            #    {'hd_id1': {'routers': [id1, id2, ...],
+            #                'fw': [id1, ...],
+            #                 ...},
+            #     'hd_id2': {'routers': [id3, id4, ...]},
+            #                'fw': [id1, ...],
+            #                ...},
+            #     ...}
+            hosting_info = {id: {} for id in hosting_device_ids}
+            #TODO(bobmel): Modify so service plugins register themselves
+            try:
+                self._handle_non_responding_hosting_devices(
+                    context, hosting_devices, hosting_info)
+            except AttributeError:
+                pass
+            for hd in hosting_devices:
+                if self._process_non_responsive_hosting_device(e_context, hd):
+                    (l3_router_rpc_api.L3RouterJointAgentNotifyAPI
+                     .hosting_devices_removed)(context, hosting_info, False,
+                                               cfg_agent)
+
     @lockutils.synchronized('routerbacklog', 'neutron-')
-    def handle_non_responding_hosting_devices(self, context, hosting_devices,
-                                              affected_resources):
+    def _handle_non_responding_hosting_devices(self, context, hosting_devices,
+                                               affected_resources):
         """Handle hosting devices determined to be "dead".
 
         This function is called by the hosting device manager.
@@ -340,9 +341,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                          get_sync_data(context, router_ids, active))
             for router in sync_data:
                 self._add_type_and_hosting_device_info(context, router)
-                plg_drv = self.get_hosting_device_plugging_driver(
-                    context,
-                    (router.get('hosting_device') or {}).get('template_id'))
+                plg_drv = self.get_hosting_device_plugging_driver()
                 if plg_drv is not None:
                     self._add_hosting_port_info(context, router, plg_drv)
         return sync_data
@@ -351,7 +350,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         LOG.info(_('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
         with context.session.begin(subtransactions=True):
-            result = self._create_csr1kv_vm_hosting_device(context)
+            result = self._create_csr1kv_vm_hosting_device(context.elevated())
             if result is None:
                 # CSR1kv hosting device creation was unsuccessful so backlog
                 # it for another scheduling attempt later.
@@ -374,7 +373,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         hosting_device = r_hd_binding['hosting_device']
         if r_hd_binding['hosting_device'] is None:
             return False
-        self._delete_service_vm_hosting_device(context, hosting_device)
+        self._delete_service_vm_hosting_device(context.elevated(),
+                                               hosting_device)
 
     @lockutils.synchronized('routers', 'neutron-')
     def backlog_router(self, router):

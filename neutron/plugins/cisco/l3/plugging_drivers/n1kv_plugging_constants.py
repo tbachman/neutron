@@ -13,17 +13,22 @@
 #    under the License.
 #
 # @author: Bob Melander, Cisco Systems, Inc.
+# @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-from neutron.plugins.cisco.l3 import hosting_device_drivers
+# Constants for the N1kv plugging drivers.
 
+# These prefix defines will go away when Nova allows spinning up
+# VMs with vifs on networks without subnet(s).
+SUBNET_PREFIX = '172.16.1.0/24'
 
-class NoopHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
+# T1 port/network is for VXLAN
+T1_PORT_NAME = 't1_p:'
+# T2 port/network is for VLAN
+T2_PORT_NAME = 't2_p:'
+T1_NETWORK_NAME = 't1_n:'
+T2_NETWORK_NAME = 't2_n:'
+T1_SUBNET_NAME = 't1_sn:'
+T2_SUBNET_NAME = 't2_sn:'
 
-    def hosting_device_name(self):
-        return "No_Name"
-
-    def create_configdrive_files(self, context, mgmtport):
-        return {}
-
-    def delete_configdrive_files(self, context, mgmtport):
-        pass
+T1_SUBNET_START_PREFIX = '172.16.'
+T2_SUBNET_START_PREFIX = '172.32.'

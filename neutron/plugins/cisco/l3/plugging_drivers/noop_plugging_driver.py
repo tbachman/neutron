@@ -14,7 +14,7 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-import neutron.plugins.cisco.device_manager.plugging_drivers as plug
+import neutron.plugins.cisco.l3.plugging_drivers as plug
 
 
 class NoopPluggingDriver(plug.PluginSidePluggingDriver):

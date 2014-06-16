@@ -69,10 +69,6 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
 
     def _notification(self, context, method, routers, operation, data):
         """Notify all or individual Cisco cfg agents."""
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
-        adm_context = (context.is_admin and context or context.elevated())
-        plugin.schedule_routers(adm_context, routers)
         self._agent_notification(context, method, routers, operation, data)
 
     def router_deleted(self, context, router):

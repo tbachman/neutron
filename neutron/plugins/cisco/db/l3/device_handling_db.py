@@ -44,7 +44,7 @@ DEVICE_HANDLING_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
                help=_("Name of the L3 admin tenant")),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
-               help=_("Name of management network for CSR VM configuration. "
+               help=_("Name of management network for device configuration. "
                       "Default value is osn_mgmt_nw")),
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
@@ -52,6 +52,25 @@ DEVICE_HANDLING_OPTS = [
     cfg.IntOpt('cfg_agent_down_time', default=60,
                help=_('Seconds of no status update until a cfg agent '
                       'is considered down.')),
+    cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
+               help=_('Name of Glance image for CSR1kv')),
+    cfg.StrOpt('csr1kv_flavor', default=621,
+               help=_('UUID of Nova flavor for CSR1kv')),
+    cfg.StrOpt('csr1kv_plugging_driver',
+               default=('neutron.plugins.cisco.l3.plugging_drivers.'
+                        'n1kv_trunking_driver.N1kvTrunkingPlugDriver'),
+               help=_('Plugging driver for CSR1kv')),
+    cfg.StrOpt('csr1kv_device_driver',
+               default=('neutron.plugins.cisco.l3.hosting_device_drivers.'
+                        'csr1kv_hd_driver.CSR1kvHostingDeviceDriver'),
+               help=_('Hosting device driver for CSR1kv')),
+    cfg.IntOpt('csr1kv_booting_time', default=420,
+               help=_('Booting time in seconds before a CSR1kv '
+                      'becomes operational')),
+    cfg.StrOpt('csr1kv_username', default='stack',
+               help=_('Username to use for CSR1kv configurations')),
+    cfg.StrOpt('csr1kv_password', default='cisco',
+               help=_('Password to use for CSR1kv configurations')),
 ]
 
 cfg.CONF.register_opts(DEVICE_HANDLING_OPTS)
@@ -230,22 +249,16 @@ class DeviceHandlingMixin(object):
             their resources with information about the device hosting their
             logical resource.
         """
-        template = hosting_device.template
-        credentials = (None if hosting_device.credentials is None
-                       else {'username': hosting_device.credentials.user_name,
-                             'password': hosting_device.credentials.password})
+        credentials = {'username': cfg.CONF.csr1kv_username,
+                       'password': cfg.CONF.csr1kv_password}
         mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
                    if hosting_device.management_port else None)
         return {'id': hosting_device.id,
-                'name': template.name,
-                'template_id': template.id,
                 'credentials': credentials,
-                'host_category': template.host_category,
-                'service_types': template.service_types,
                 'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
-                'booting_time': template.booting_time}
+                'booting_time': cfg.CONF.csr1kv_booting_time}
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
@@ -277,6 +290,32 @@ class DeviceHandlingMixin(object):
             agents = [agent for agent in agents if not
                       self.is_agent_down(agent['heartbeat_timestamp'])]
         return agents
+
+    def auto_schedule_hosting_devices(self, context, agent_host):
+        """Schedules unassociated hosting devices to Cisco cfg agent.
+
+        Schedules hosting devices to agent running on <agent_host>.
+        """
+        with context.session.begin(subtransactions=True):
+            # Check if there is a valid Cisco cfg agent on the host
+            query = context.session.query(agents_db.Agent)
+            query = query.filter_by(agent_type=c_constants.AGENT_TYPE_CFG,
+                                    host=agent_host, admin_state_up=True)
+            try:
+                cfg_agent = query.one()
+            except (exc.MultipleResultsFound, exc.NoResultFound):
+                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
+                          agent_host)
+                return False
+            if self.is_agent_down(
+                    cfg_agent.heartbeat_timestamp):
+                LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
+            query = context.session.query(l3_models.HostingDevice)
+            query = query.filter_by(cfg_agent_id=None)
+            for hd in query:
+                hd.cfg_agent = cfg_agent
+                context.session.add(hd)
+            return True
 
     def _process_non_responsive_hosting_device(self, context, hosting_device):
         """Host type specific processing of non responsive hosting devices.
@@ -380,7 +419,7 @@ class DeviceHandlingMixin(object):
                           {'hd_id': id,
                            'agent_id': hosting_device.cfg_agent.id})
                 return
-            active_cfg_agents = self.get_cfg_agents(context, active=True)
+            active_cfg_agents = self._get_cfg_agents(context, active=True)
             if not active_cfg_agents:
                 LOG.warn(_('There are no active Cisco cfg agents'))
                 # No worries, once a Cisco cfg agent is started and
@@ -392,28 +431,20 @@ class DeviceHandlingMixin(object):
             context.session.add(hosting_device)
             return chosen_agent
 
-    def auto_schedule_hosting_devices(self, context, agent_host):
-        """Schedules unassociated hosting devices to Cisco cfg agent.
-
-        Schedules hosting devices to agent running on <agent_host>.
-        """
-        with context.session.begin(subtransactions=True):
-            # Check if there is a valid Cisco cfg agent on the host
-            query = context.session.query(agents_db.Agent)
-            query = query.filter_by(agent_type=c_constants.AGENT_TYPE_CFG,
-                                    host=agent_host, admin_state_up=True)
-            try:
-                cfg_agent = query.one()
-            except (exc.MultipleResultsFound, exc.NoResultFound):
-                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
-                          agent_host)
-                return False
-            if self.is_agent_down(
-                    cfg_agent.heartbeat_timestamp):
-                LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
-            query = context.session.query(l3_models.HostingDevice)
-            query = query.filter_by(cfg_agent_id=None)
-            for hd in query:
-                hd.cfg_agent = cfg_agent
-                context.session.add(hd)
-            return True
+    def _get_cfg_agents(self, context, active=None, filters=None):
+        query = context.session.query(agents_db.Agent)
+        query = query.filter(
+            agents_db.Agent.agent_type == c_constants.AGENT_TYPE_CFG)
+        if active is not None:
+            query = (query.filter(agents_db.Agent.admin_state_up == active))
+        if filters:
+            for key, value in filters.iteritems():
+                column = getattr(agents_db.Agent, key, None)
+                if column:
+                    query = query.filter(column.in_(value))
+        cfg_agents = query.all()
+        if active is not None:
+            cfg_agents = [cfg_agent for cfg_agent in cfg_agents
+                          if not self.is_agent_down(
+                              cfg_agent['heartbeat_timestamp'])]
+        return cfg_agents

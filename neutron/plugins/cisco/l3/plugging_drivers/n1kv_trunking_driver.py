@@ -27,11 +27,11 @@ from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.db.l3 import l3_router_appliance_db as l3db
-from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
-                                                  n1kv_const)
-import neutron.plugins.cisco.device_manager.plugging_drivers as plug
+from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.extensions import n1kv
+import neutron.plugins.cisco.l3.plugging_drivers as plug
+from neutron.plugins.cisco.l3.plugging_drivers import (n1kv_plugging_constants
+                                                       as n1kv_const)
 from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
@@ -431,9 +431,10 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 {'network': {action: trunk_spec}})
 
     def _get_trunk_mappings(self, context, hosting_port_id):
-        query = context.session.query(l3db.HostedHostingPortBinding)
+        query = context.session.query(l3_models.HostedHostingPortBinding)
         query = query.filter(
-            l3db.HostedHostingPortBinding.hosting_port_id == hosting_port_id)
+            l3_models.HostedHostingPortBinding.hosting_port_id ==
+            hosting_port_id)
         return dict((hhpb.logical_port['network_id'], hhpb.segmentation_tag)
                     for hhpb in query)
 
@@ -448,7 +449,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             # name LIKE '%t1%'
             # ORDER BY name;
             stmt = context.session.query(
-                l3db.HostedHostingPortBinding.hosting_port_id).subquery()
+                l3_models.HostedHostingPortBinding.hosting_port_id).subquery()
             query = context.session.query(models_v2.Port.id)
             query = query.filter(and_(models_v2.Port.device_id == hd_id,
                                       ~models_v2.Port.id.in_(stmt),
@@ -482,14 +483,15 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         # Query for a router's ports that have trunking information
         query = context.session.query(models_v2.Port)
         query = query.join(
-            l3db.HostedHostingPortBinding,
-            models_v2.Port.id == l3db.HostedHostingPortBinding.logical_port_id)
+            l3_models.HostedHostingPortBinding,
+            models_v2.Port.id ==
+            l3_models.HostedHostingPortBinding.logical_port_id)
         query = query.filter(models_v2.Port.device_id == router_id)
         if device_owner is not None:
             query = query.filter(models_v2.Port.device_owner == device_owner)
         if hosting_port_id is not None:
             query = query.filter(
-                l3db.HostedHostingPortBinding.hosting_port_id ==
+                l3_models.HostedHostingPortBinding.hosting_port_id ==
                 hosting_port_id)
         return query
 

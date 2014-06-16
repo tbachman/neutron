@@ -30,7 +30,7 @@ class PluginSidePluggingDriver(object):
     in a plugin compatible way.
     """
 
-    @abc.abc.abstractmethod
+    @abc.abstractmethod
     def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
         """Create resources for a hosting device in a plugin specific way.
@@ -51,7 +51,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abc.abc.abstractmethod
+    @abc.abstractmethod
     def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device.
 
