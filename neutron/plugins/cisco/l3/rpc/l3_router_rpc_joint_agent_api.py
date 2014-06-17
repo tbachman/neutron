@@ -54,7 +54,6 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
             else:
                 agents = []
             for agent in agents:
-                version = '1.0'
                 LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
                             'message %(method)s'),
                           {'agent_type': agent.agent_type,
@@ -64,8 +63,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
                 self.cast(context,
                           self.make_msg(method, routers=[router['id']]),
                           topic='%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING,
-                                           agent.host),
-                          version=version)
+                                           agent.host))
 
     def _notification(self, context, method, routers, operation, data):
         """Notify all or individual Cisco cfg agents."""
@@ -108,6 +106,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
         if hosting_data:
             self._notification_host(context, 'hosting_devices_removed',
                                     {'hosting_data': hosting_data,
-                                     'deconfigure': deconfigure}, host)
+                                     'deconfigure': deconfigure}, host,
+                                    topic=c_constants.CFG_AGENT)
 
 L3JointAgentNotify = L3RouterJointAgentNotifyAPI()
