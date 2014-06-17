@@ -211,7 +211,8 @@ class RoutingServiceHelper(ServiceHelperBase):
                     self.sync_devices.clear()
                 if removed_devices_info:
                     self.removed_routers = self.removed_routers.union(set(
-                        self._get_router_ids_from_removed_devices_info()))
+                        self._get_router_ids_from_removed_devices_info(
+                            removed_devices_info)))
                 if self.removed_routers:
                     removed_routers_ids = list(self.removed_routers)
                     LOG.debug(_("Removed routers:%s"), removed_routers_ids)
