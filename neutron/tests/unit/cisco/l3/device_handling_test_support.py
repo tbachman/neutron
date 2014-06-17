@@ -17,32 +17,22 @@
 import mock
 from oslo.config import cfg
 
-from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
-from neutron.db import agents_db
 from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.db.l3 import device_handling_db
 import neutron.plugins
-from neutron.plugins.cisco.db.device_manager import hosting_device_manager_db
-from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
-                                              ciscodevmgr)
 from neutron.plugins.common import constants
-from neutron.tests.unit import test_l3_plugin
 
 LOG = logging.getLogger(__name__)
 
 
 _uuid = uuidutils.generate_uuid
 
-CORE_PLUGIN_KLASS = (
-    'neutron.tests.unit.cisco.device_manager.device_manager_test_support.'
-    'TestCorePlugin')
-extensions_path = ':' + neutron.plugins.__path__[0] + '/cisco/extensions'
 
-
-class DeviceManagerTestSupportMixin:
+class DeviceHandlingTestSupportMixin:
 
     @property
     def _core_plugin(self):
@@ -51,8 +41,8 @@ class DeviceManagerTestSupportMixin:
     def _mock_l3_admin_tenant(self):
         # Mock l3 admin tenant
         self.tenant_id_fcn_p = mock.patch(
-            'neutron.plugins.cisco.db.device_manager.'
-            'hosting_device_manager_db.HostingDeviceManagerMixin.l3_tenant_id')
+            'neutron.plugins.cisco.db.l3.device_handling_db.'
+            'DeviceHandlingMixin.l3_tenant_id')
         self.tenant_id_fcn = self.tenant_id_fcn_p.start()
         self.tenant_id_fcn.return_value = "L3AdminTenantId"
 
@@ -72,8 +62,6 @@ class DeviceManagerTestSupportMixin:
                 self._delete('ports', p['id'])
             self._delete('subnets', self._mgmt_subnet['subnet']['id'])
             self._delete('networks', self._mgmt_nw['network']['id'])
-        hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = (
-            None)
 
     # Functions to mock service VM creation.
     def _dispatch_service_vm_mock(self, context, instance_name, vm_image,
@@ -133,30 +121,23 @@ class DeviceManagerTestSupportMixin:
     def _mock_svc_vm_create_delete(self):
         # Mock creation/deletion of service VMs
         self.dispatch_svc_vm_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.service_vm_lib'
+            'neutron.plugins.cisco.l3.service_vm_lib'
             '.ServiceVMManager.dispatch_service_vm',
             self._dispatch_service_vm_mock)
         self.dispatch_svc_vm_fcn_p.start()
 
         self.delete_svc_vm_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.service_vm_lib'
+            'neutron.plugins.cisco.l3.service_vm_lib'
             '.ServiceVMManager.delete_service_vm',
             self._delete_service_vm_mock)
         self.delete_svc_vm_fcn_p.start()
 
-    def _mock_dispatch_pool_maintenance(self):
-        # Mock creation/deletion of service VMs
-        self.dispatch_pool_maintenance_job_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.hosting_device_manager_db'
-            '.HostingDeviceManagerMixin._dispatch_pool_maintenance_job')
-        self.dispatch_pool_maintenance_job_fcn_p .start()
-
     def _test_remove_all_hosting_devices(self):
         """Removes all hosting devices created during a test."""
-        devmgr = NeutronManager.get_service_plugins()[
-            constants.DEVICE_MANAGER]
+        plugin = NeutronManager.get_service_plugins()[
+            constants.L3_ROUTER_NAT]
         context = n_context.get_admin_context()
-        devmgr.delete_all_hosting_devices(context, True)
+        plugin.delete_all_hosting_devices(context, True)
 
     def _get_fake_resource(self, tenant_id=None, id=None):
         return {'id': id or _uuid(),
@@ -167,28 +148,4 @@ class DeviceManagerTestSupportMixin:
                                  load_admin_roles=True)
 
 
-class TestDeviceManagerExtensionManager(object):
 
-    def get_resources(self):
-        res = ciscodevmgr.Ciscohostingdevicemanager.get_resources()
-        # Add the resources to the global attribute map
-        # This is done here as the setup process won't
-        # initialize the main API router which extends
-        # the global attribute map
-        attributes.RESOURCE_ATTRIBUTE_MAP.update(
-            ciscodevmgr.RESOURCE_ATTRIBUTE_MAP)
-        return res
-
-    def get_actions(self):
-        return []
-
-    def get_request_extensions(self):
-        return []
-
-
-# A core plugin supporting Cisco device manager functionality
-class TestCorePlugin(test_l3_plugin.TestNoL3NatPlugin, agents_db.AgentDbMixin,
-                     hosting_device_manager_db.HostingDeviceManagerMixin):
-
-    supported_extension_aliases = ["external-net",
-                                   ciscodevmgr.HOSTING_DEVICE_MANAGER_ALIAS]

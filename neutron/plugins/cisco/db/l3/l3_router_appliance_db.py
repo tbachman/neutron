@@ -102,7 +102,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         # update trunking
         o_r_db = self._get_router(context, id)
         old_ext_gw = (o_r_db.gw_port or {}).get('network_id')
-        new_ext_gw = r.get('external_gateway_info', {}).get('network_id')
+        new_ext_gw = (r.get('external_gateway_info', {}) or {}).get(
+            'network_id')
         with context.session.begin(subtransactions=True):
             e_context = context.elevated()
             if old_ext_gw is not None and old_ext_gw != new_ext_gw:
@@ -234,26 +235,26 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     context, routers, 'delete_floatingip')
 
     def disassociate_floatingips(self, context, port_id):
+        router_ids = set()
+
         with context.session.begin(subtransactions=True):
-            try:
-                fip_qry = context.session.query(l3_db.FloatingIP)
-                floating_ip = fip_qry.filter_by(fixed_port_id=port_id).one()
-                router_id = floating_ip['router_id']
+            fip_qry = context.session.query(l3_db.FloatingIP)
+            floating_ips = fip_qry.filter_by(fixed_port_id=port_id)
+            for floating_ip in floating_ips:
+                router_ids.add(floating_ip['router_id'])
                 floating_ip.update({'fixed_port_id': None,
                                     'fixed_ip_address': None,
                                     'router_id': None})
-            except exc.NoResultFound:
-                return
-            except exc.MultipleResultsFound:
-                # should never happen
-                raise Exception(_('Multiple floating IPs found for port %s')
-                                % port_id)
-            if router_id:
-                routers = [self.get_router(context, router_id)]
-                self._add_type_and_hosting_device_info(context.elevated(),
-                                                       routers[0])
+
+            if router_ids:
+                routers = []
+                for router_id in router_ids:
+                    router = self.get_router(context, router_id)
+                    self._add_type_and_hosting_device_info(context.elevated(),
+                                                           router)
+                    routers.append(router)
                 l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-                    context, routers)
+                    context, routers, 'disassociate_floatingips')
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _handle_non_responding_hosting_devices(self, context, hosting_devices,
