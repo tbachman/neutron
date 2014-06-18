@@ -33,7 +33,7 @@ class L3RouterCfgRpcCallbackMixin(object):
         """Sync routers according to filters to a specific Cisco cfg agent.
 
         @param context: contains user information
-        @param kwargs: host, or router_ids
+        @param kwargs: host, router_ids, and hosting_device_ids
         @return: a list of routers
                  with their hosting devices, interfaces and floating_ips
         """

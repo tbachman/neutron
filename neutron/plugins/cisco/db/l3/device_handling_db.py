@@ -258,7 +258,8 @@ class DeviceHandlingMixin(object):
                 'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
-                'booting_time': cfg.CONF.csr1kv_booting_time}
+                'booting_time': cfg.CONF.csr1kv_booting_time,
+                'cfg_agent_id': hosting_device.cfg_agent_id}
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,

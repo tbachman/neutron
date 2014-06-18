@@ -22,8 +22,6 @@ from neutron import context as n_context
 from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.db.l3 import device_handling_db
-import neutron.plugins
 from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
@@ -146,6 +144,3 @@ class DeviceHandlingTestSupportMixin:
     def _get_test_context(self, user_id=None, tenant_id=None, is_admin=False):
         return n_context.Context(user_id, tenant_id, is_admin,
                                  load_admin_roles=True)
-
-
-

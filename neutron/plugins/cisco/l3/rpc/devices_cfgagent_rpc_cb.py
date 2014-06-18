@@ -53,9 +53,7 @@ class DeviceCfgRpcCallbackMixin(object):
         logical resources are issued.
 
         @param: context - contains user information
-        @param: kwargs - hosting_device_ids: list of non-responding
-                                             hosting devices
-                         host: originator of callback
+        @param: kwargs - host: originator of callback
         @return: True if succesfully registered, False if not successfully
                  registered, None if no handler found
                  If unsuccessful the agent should retry registration a few
