@@ -26,6 +26,7 @@ from neutron.extensions import providernet
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.common import config as c_conf
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
 from neutron.plugins.cisco.common import cisco_exceptions as c_exc
 from neutron.plugins.cisco.common import config as c_conf

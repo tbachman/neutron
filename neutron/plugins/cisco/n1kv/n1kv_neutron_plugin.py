@@ -119,7 +119,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         3. Establish communication with Cisco Nexus1000V
         """
         super(N1kvNeutronPluginV2, self).__init__()
-        self.pool = eventlet.GreenPool(c_const.HTTP_POOL_SIZE)
+        self.pool = eventlet.GreenPool(c_conf.CISCO_N1K.http_pool_size)
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
             portbindings.VIF_DETAILS: {
@@ -180,7 +180,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 self._populate_policy_profiles()
             except Exception as e:
                 LOG.error(_("Policy profile thread: %s"), e)
-            eventlet.sleep(int(c_conf.CISCO_N1K.poll_duration))
+            eventlet.sleep(c_conf.CISCO_N1K.poll_duration)
 
     def _sync_vsm(self):
         """Start a green thread to sync neutron resources with VSM."""
@@ -228,7 +228,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             except Exception as e:
                 LOG.error(_("VSM SYNC thread exception: %s"), e) 
             # Sleep for a predefined interval
-            eventlet.sleep(int(c_conf.CISCO_N1K.poll_duration))
+            eventlet.sleep(c_conf.CISCO_N1K.poll_duration)
 
     def _get_vsm_resource(self, resource):
         """Retrieve a list of resource from the VSM."""
