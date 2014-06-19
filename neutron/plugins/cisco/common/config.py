@@ -78,8 +78,13 @@ cisco_n1k_opts = [
                help=_("N1K default policy profile")),
     cfg.StrOpt('network_node_policy_profile', default='dhcp_pp',
                help=_("N1K policy profile for network node")),
-    cfg.StrOpt('poll_duration', default='10',
+    cfg.IntOpt('poll_duration', default=10,
                help=_("N1K Policy profile polling duration in seconds")),
+    cfg.IntOpt('http_pool_size', default=4,
+               help=_("Number of threads to use to make HTTP requests")),
+    cfg.IntOpt('http_timeout', default=30,
+               help=_("Time(in seconds) for which client waits for the "
+                      "VSM to respond")),
     cfg.BoolOpt('restrict_policy_profiles', default=False,
                 help=_("Restrict the visibility of policy profiles to the "
                        "tenants")),
