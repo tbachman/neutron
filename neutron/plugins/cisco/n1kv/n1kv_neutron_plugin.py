@@ -1583,15 +1583,11 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _delete_port_db(self, context, port, vm_network):
         with context.session.begin(subtransactions=True):
-            LOG.warning(_("Abhishek vmn 1 %s"), vm_network)
             vm_network['port_count'] -= 1
-            LOG.warning(_("Abhishek vmn 2 %s"), vm_network)
             n1kv_db_v2.update_vm_network_port_count(context.session,
                                                     vm_network['name'],
                                                     vm_network['port_count'])
-            LOG.warning(_("Abhishek vmn 3 %s"), vm_network)
             if vm_network['port_count'] == 0:
-                LOG.warning(_("Abhishek vmn 4 %s"), vm_network)
                 n1kv_db_v2.delete_vm_network(context.session,
                                              port[n1kv.PROFILE_ID],
                                              port['network_id'])
