@@ -101,4 +101,12 @@ class QueueMixin(object):
         if qname not in self._queues:
             raise ValueError(_("queue %s is not defined"), qname)
         with self._lock:
-            return self._queues[qname].get()
+            try:
+                return self._queues[qname].get(block=False)
+            except Queue.Empty:
+                return None
+
+    def qsize(self, qname):
+        """Return the approximate size of the queue."""
+        if qname in self._queues:
+            return self._queues[qname].qsize()
