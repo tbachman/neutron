@@ -194,8 +194,8 @@ SNAT_CFG = "ip nat inside source list %s interface %s vrf %s overload"
 SET_DYN_SRC_TRL_INTFC = """
 <config>
         <cli-config-data>
-            <cmd>ip nat inside source list %s interface %s
-            vrf %s overload</cmd>
+            <cmd>ip nat inside source list %s interface %s vrf %s
+            overload</cmd>
         </cli-config-data>
 </config>
 
@@ -211,8 +211,8 @@ SET_DYN_SRC_TRL_INTFC = """
 REMOVE_DYN_SRC_TRL_INTFC = """
 <config>
         <cli-config-data>
-            <cmd>no ip nat inside source list %s interface %s
-            vrf %s overload</cmd>
+            <cmd>no ip nat inside source list %s interface %s vrf %s
+            overload</cmd>
         </cli-config-data>
 </config>
 

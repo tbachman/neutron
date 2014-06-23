@@ -166,8 +166,8 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         inner_intfc = self._get_interface_name_from_hosting_port(port)
         outer_intfc = self._get_interface_name_from_hosting_port(ex_port)
         self._nat_rules_for_internet_access(acl_no, internal_net,
-                                           netmask, inner_intfc,
-                                           outer_intfc, vrf_name)
+                                            netmask, inner_intfc,
+                                            outer_intfc, vrf_name)
 
     def _csr_remove_internalnw_nat_rules(self, ri, ports, ex_port):
         acls = []

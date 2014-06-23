@@ -115,19 +115,6 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
                                        hosting_device_ids=hd_ids),
                          topic=self.topic)
 
-    def get_external_network_id(self, context):
-        """Make a remote process call to retrieve the external network id.
-
-        :param context : session context
-        :raise common.RemoteError: with TooManyExternalNetworks
-                                   as exc_type if there are
-                                   more than one external network
-        """
-        return self.call(context,
-                         self.make_msg('get_external_network_id',
-                                       host=self.host),
-                         topic=self.topic)
-
 
 class RoutingServiceHelper(ServiceHelperBase):
 
@@ -191,8 +178,11 @@ class RoutingServiceHelper(ServiceHelperBase):
             resources = {}
             routers = []
             removed_routers = []
+            all_routers_flag = False
             if self.fullsync:
                 LOG.debug(_("FullSync flag is on. Starting fullsync"))
+                # Setting all_routers_flag and clear the global full_sync flag
+                all_routers_flag = True
                 self.fullsync = False
                 self.updated_routers.clear()
                 self.removed_routers.clear()
@@ -238,7 +228,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
                 pool.spawn_n(self._process_routers, routers, removed_routers,
-                             device_id, all_routers=self.fullsync)
+                             device_id, all_routers=all_routers_flag)
             pool.waitall()
             if removed_devices_info:
                 for hd_id in removed_devices_info['hosting_data']:
@@ -471,6 +461,7 @@ class RoutingServiceHelper(ServiceHelperBase):
             self._routes_updated(ri)
         except DriverException as e:
             with excutils.save_and_reraise_exception():
+                self.updated_routers.update(ri.router_id)
                 LOG.error(e)
 
     def _process_router_floating_ips(self, ri, ex_gw_port):

@@ -24,9 +24,8 @@ from neutron.openstack.common import uuidutils
 
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.device_status import (
-    DeviceDriverManager)
-from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
+from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
+# from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
 from neutron.tests import base
 
 _uuid = uuidutils.generate_uuid
@@ -37,13 +36,13 @@ class TestHostingDevice(base.BaseTestCase):
 
     def setUp(self):
         super(TestHostingDevice, self).setUp()
-        self.hdm = DeviceDriverManager()
-        self.hdm._is_pingable = mock.MagicMock()
-        self.hdm._is_pingable.return_value = True
+        self.status = DeviceStatus()
+        self.status._is_pingable = mock.MagicMock()
+        self.status._is_pingable.return_value = True
 
         self.hosting_device = {'id': 123,
                                'host_type': 'CSR1kv',
-                               'ip_address': '10.0.0.1',
+                               'management_ip_address': '10.0.0.1',
                                'port': '22',
                                'booting_time': 420}
         self.created_at_str = datetime.datetime.utcnow().strftime(
@@ -54,56 +53,43 @@ class TestHostingDevice(base.BaseTestCase):
                        'hosting_device': self.hosting_device}
 
     def test_hosting_devices_object(self):
-
-        self.assertEqual(self.hdm.backlog_hosting_devices, {})
-        self.assertEqual(self.hdm.router_id_hosting_devices, {})
-        self.assertEqual(self.hdm._drivers, {})
-
-    def test_set_driver(self):
-        ri = RouterInfo(self.router_id, self.router)
-        _driver = self.hdm._set_driver(ri)
-
-        klass = importutils.import_class('neutron.plugins.cisco.cfg_agent.'
-                                         'csr1kv.csr1kv_routing_driver.'
-                                         'CSR1kvRoutingDriver')
-        self.assertTrue(isinstance(_driver, klass))
+        self.assertEqual(self.status.backlog_hosting_devices, {})
 
     def test_is_hosting_device_reachable_positive(self):
-        self.assertTrue(self.hdm.is_hosting_device_reachable(self.router_id,
-                                                             self.router))
+        self.assertTrue(self.status.is_hosting_device_reachable(
+            self.hosting_device))
 
     def test_is_hosting_device_reachable_negative(self):
-        self.assertEqual(len(self.hdm.backlog_hosting_devices), 0)
+        self.assertEqual(len(self.status.backlog_hosting_devices), 0)
         self.hosting_device['created_at'] = self.created_at_str  # Back to str
-        self.hdm._is_pingable.return_value = False
+        self.status._is_pingable.return_value = False
 
-        self.assertFalse(self.hdm._is_pingable('1.2.3.4'))
-        self.assertEqual(self.hdm.is_hosting_device_reachable(
-            self.router_id, self.router), None)
-        self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
-        self.assertTrue(123 in self.hdm.backlog_hosting_devices.keys())
-        self.assertEqual(self.hdm.backlog_hosting_devices[123]['routers'],
-                         [self.router_id])
+        self.assertFalse(self.status._is_pingable('1.2.3.4'))
+        self.assertEqual(self.status.is_hosting_device_reachable(
+            self.hosting_device), None)
+        self.assertEqual(len(self.status.get_backlogged_hosting_devices()), 1)
+        self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
+        self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
+                         self.hosting_device)
 
     def test_test_is_hosting_device_reachable_negative_exisiting_hd(self):
-        self.hdm.backlog_hosting_devices.clear()
-        self.hdm.backlog_hosting_devices[123] = {'hd': None,
-                                                 'routers': [_uuid()]}
+        self.status.backlog_hosting_devices.clear()
+        self.status.backlog_hosting_devices[123] = {'hd': self.hosting_device}
 
-        self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
-        self.assertEqual(self.hdm.is_hosting_device_reachable(
-            self.router_id, self.router), None)
-        self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
-        self.assertTrue(123 in self.hdm.backlog_hosting_devices.keys())
-        self.assertEqual(len(
-            self.hdm.backlog_hosting_devices[123]['routers']), 2)
+        self.assertEqual(len(self.status.backlog_hosting_devices), 1)
+        self.assertEqual(self.status.is_hosting_device_reachable(
+            self.hosting_device), None)
+        self.assertEqual(len(self.status.get_backlogged_hosting_devices()), 1)
+        self.assertTrue(123 in self.status.backlog_hosting_devices.keys())
+        self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
+                         self.hosting_device)
 
     def test_check_backlog_empty(self):
 
         expected = {'reachable': [],
                     'dead': []}
 
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_below_booting_time(self):
@@ -115,10 +101,11 @@ class TestHostingDevice(base.BaseTestCase):
         self.hosting_device['created_at'] = created_at_str_now
         hd = self.hosting_device
         hd_id = hd['id']
-        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [self.router_id]}
+        self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
+                                                      'routers': [self
+                                                                .router_id]}
 
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
         #Simulate after 100 seconds
@@ -128,7 +115,7 @@ class TestHostingDevice(base.BaseTestCase):
             "%Y-%m-%dT%H:%M:%S.%f")
 
         self.hosting_device['created_at'] = created_at_100sec_str
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
         #Boundary test : 419 seconds : default 420 seconds
@@ -138,7 +125,7 @@ class TestHostingDevice(base.BaseTestCase):
             "%Y-%m-%dT%H:%M:%S.%f")
 
         self.hosting_device['created_at'] = created_at_419sec_str
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_above_booting_time_pingable(self):
@@ -154,12 +141,12 @@ class TestHostingDevice(base.BaseTestCase):
         self.hosting_device['created_at'] = created_at_430sec_str
         hd = self.hosting_device
         hd_id = hd['id']
-        self.hdm._is_pingable.return_value = True
-        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
+        self.status._is_pingable.return_value = True
+        self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
         expected = {'reachable': [hd_id],
                     'dead': []}
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_above_BT_not_pingable_below_deadtime(self):
@@ -180,12 +167,12 @@ class TestHostingDevice(base.BaseTestCase):
                                       # - datetime.timedelta(seconds=360))
 
         hd_id = hd['id']
-        self.hdm._is_pingable.return_value = False
-        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
+        self.status._is_pingable.return_value = False
+        self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
         expected = {'reachable': [],
                     'dead': []}
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_above_BT_not_pingable_aboveDeadTime(self):
@@ -207,10 +194,10 @@ class TestHostingDevice(base.BaseTestCase):
                                       datetime.timedelta(seconds=425))
 
         hd_id = hd['id']
-        self.hdm._is_pingable.return_value = False
-        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
+        self.status._is_pingable.return_value = False
+        self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
         expected = {'reachable': [],
                     'dead': [hd_id]}
-        self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
+        self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
