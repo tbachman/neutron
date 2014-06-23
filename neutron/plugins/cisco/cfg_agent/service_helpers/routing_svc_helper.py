@@ -210,7 +210,8 @@ class RoutingServiceHelper(ServiceHelperBase):
                 if self.sync_devices:
                     sync_devices_list = list(self.sync_devices)
                     LOG.debug(_("Fetching routers on:%s"), sync_devices_list)
-                    routers.append(self._fetch_router_info(sync_devices_list))
+                    routers.append(self._fetch_router_info(
+                        device_ids=sync_devices_list))
                     self.sync_devices.clear()
                 if removed_devices_info:
                     self.removed_routers = self.removed_routers.union(set(
