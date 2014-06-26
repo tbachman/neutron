@@ -23,13 +23,13 @@ from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
-import neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv.cisco_csr1kv_snippets as snippets
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+    cisco_csr1kv_snippets as snippets)
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv.csr1kv_routing_driver import (
-    CSR1kvRoutingDriver)
-from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
-    RouterInfo)
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+    csr1kv_routing_driver as csr_driver)
+from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
 
 _uuid = uuidutils.generate_uuid
 FAKE_ID = _uuid()
@@ -45,13 +45,15 @@ class TestCSR1kvRouting(base.BaseTestCase):
                          'protocol_port': 22,
                          'credentials': {"username": "stack",
                                          "password": "cisco"},
-                        }
-        self.driver = CSR1kvRoutingDriver(**device_params)
+                         }
+        self.driver = csr_driver.CSR1kvRoutingDriver(
+            **device_params)
         self.mock_conn = mock.MagicMock()
         self.driver._csr_conn = self.mock_conn
         self.driver._check_response = mock.MagicMock(return_value=True)
 
-        self.vrf = ('nrouter-' + FAKE_ID)[:CSR1kvRoutingDriver.DEV_NAME_LEN]
+        self.vrf = ('nrouter-' + FAKE_ID)[:csr_driver.CSR1kvRoutingDriver.
+                                          DEV_NAME_LEN]
         self.driver._get_vrfs = mock.Mock(return_value=[self.vrf])
         self.ex_gw_ip = '20.0.0.30'
         self.ex_gw_cidr = '20.0.0.30/24'
@@ -85,7 +87,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
             'routes': [],
             'gw_port': self.ex_gw_port}
 
-        self.ri = RouterInfo(FAKE_ID, self.router)
+        self.ri = routing_svc_helper.RouterInfo(FAKE_ID, self.router)
         self.ri.internal_ports = int_ports
 
     def test_csr_get_vrf_name(self):
@@ -163,7 +165,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
 
         self.driver.routes_updated(self.ri, 'delete', route)
         self.driver._remove_static_route.called_once_with(dest, destmask,
-                                                         next_hop, self.vrf)
+                                                          next_hop, self.vrf)
 
     def test_floatingip(self):
         floating_ip = '15.1.2.3'

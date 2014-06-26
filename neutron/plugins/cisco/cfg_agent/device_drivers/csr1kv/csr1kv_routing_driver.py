@@ -20,12 +20,12 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
-from ciscoconfparse import CiscoConfParse
+import ciscoconfparse
 from ncclient import manager
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
-from neutron.plugins.cisco.cfg_agent.services_api import RoutingDriverBase
+from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
 from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
                                                   n1kv_constants)
 from oslo.config import cfg
@@ -33,7 +33,7 @@ from oslo.config import cfg
 LOG = logging.getLogger(__name__)
 
 
-class CSR1kvRoutingDriver(RoutingDriverBase):
+class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     """CSR1kv Routing Driver.
 
     This driver encapsulates the configuration logic via NETCONF protocol to
@@ -48,7 +48,6 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         try:
             self._csr_host = device_params['management_ip_address']
             self._csr_ssh_port = device_params['protocol_port']
-            # Using defaults for user/password if not in device params
             credentials = device_params['credentials']
             if credentials:
                 self._csr_user = credentials['username']
@@ -119,7 +118,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         subinterface = self._get_interface_name_from_hosting_port(port)
         vlan = self._get_interface_vlan_from_hosting_port(port)
         self._create_subinterface(subinterface, vlan, vrf_name,
-                                 gateway_ip, netmask)
+                                  gateway_ip, netmask)
 
     def _csr_remove_subinterface(self, ri, port):
         vrf_name = self._csr_get_vrf_name(ri)
@@ -298,10 +297,10 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return: List of the interfaces
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface GigabitEthernet")
         intfs = [l.strip().split(' ')[1] for l in intfs_raw]
-        LOG.info("Interfaces:%s" % intfs)
+        LOG.info(_("Interfaces:%s"), intfs)
         return intfs
 
     def _get_interface_ip(self, interface_name):
@@ -311,20 +310,20 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return: ip address of interface as a string
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         children = parse.find_children("^interface %s" % interface_name)
         for line in children:
             if 'ip address' in line:
                 ip_address = line.strip().split(' ')[2]
-                LOG.info("IP Address:%s" % ip_address)
+                LOG.info(_("IP Address:%s"), ip_address)
                 return ip_address
-        LOG.warn("Cannot find interface:" % interface_name)
+        LOG.warn(_("Cannot find interface: %s"), interface_name)
         return None
 
     def _interface_exists(self, interface):
         """Check whether interface exists."""
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface " + interface)
         return len(intfs_raw) > 0
 
@@ -353,7 +352,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
                 confstr = snippets.ENABLE_INTF % i
                 rpc_obj = conn.edit_config(target='running', config=confstr)
                 if self._check_response(rpc_obj, 'ENABLE_INTF'):
-                    LOG.info("Enabled interface %s " % i)
+                    LOG.info(_("Enabled interface %s "), i)
                     time.sleep(1)
         except Exception:
             return False
@@ -366,13 +365,13 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         """
         vrfs = []
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         vrfs_raw = parse.find_lines("^ip vrf")
         for line in vrfs_raw:
             #  raw format ['ip vrf <vrf-name>',....]
             vrf_name = line.strip().split(' ')[2]
             vrfs.append(vrf_name)
-        LOG.info("VRFs:%s" % vrfs)
+        LOG.info(_("VRFs:%s"), vrfs)
         return vrfs
 
     def _get_capabilities(self):
@@ -384,7 +383,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         capabilities = []
         for c in conn.server_capabilities:
             capabilities.append(c)
-        LOG.debug("Server capabilities: %s" % capabilities)
+        LOG.debug(_("Server capabilities: %s"), capabilities)
         return capabilities
 
     def _get_running_config(self):
@@ -412,14 +411,14 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         exp_cfg_lines = ['ip access-list standard ' + str(acl_no),
                          ' permit ' + str(network) + ' ' + str(netmask)]
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         acls_raw = parse.find_children(exp_cfg_lines[0])
         if acls_raw:
             if exp_cfg_lines[1] in acls_raw:
                 return True
-            LOG.error("Mismatch in ACL configuration for %s" % acl_no)
+            LOG.error(_("Mismatch in ACL configuration for %s"), acl_no)
             return False
-        LOG.debug("%s is not present in config" % acl_no)
+        LOG.debug(_("%s is not present in config"), acl_no)
         return False
 
     def _cfg_exists(self, cfg_str):
@@ -429,9 +428,9 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return : True or False
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         cfg_raw = parse.find_lines("^" + cfg_str)
-        LOG.debug("_cfg_exists(): Found lines %s " % cfg_raw)
+        LOG.debug(_("_cfg_exists(): Found lines %s"), cfg_raw)
         return len(cfg_raw) > 0
 
     def _set_interface(self, name, ip_address, mask):
@@ -446,9 +445,9 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             confstr = snippets.CREATE_VRF % vrf_name
             rpc_obj = conn.edit_config(target='running', config=confstr)
             if self._check_response(rpc_obj, 'CREATE_VRF'):
-                LOG.info("VRF %s successfully created" % vrf_name)
+                LOG.info(_("VRF %s successfully created"), vrf_name)
         except Exception:
-            LOG.exception("Failed creating VRF %s" % vrf_name)
+            LOG.exception(_("Failed creating VRF %s"), vrf_name)
 
     def _remove_vrf(self, vrf_name):
         if vrf_name in self._get_vrfs():
@@ -456,13 +455,13 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             confstr = snippets.REMOVE_VRF % vrf_name
             rpc_obj = conn.edit_config(target='running', config=confstr)
             if self._check_response(rpc_obj, 'REMOVE_VRF'):
-                LOG.info("VRF %s removed" % vrf_name)
+                LOG.info(_("VRF %s removed"), vrf_name)
         else:
-            LOG.warning("VRF %s not present" % vrf_name)
+            LOG.warning(_("VRF %s not present"), vrf_name)
 
     def _create_subinterface(self, subinterface, vlan_id, vrf_name, ip, mask):
         if vrf_name not in self._get_vrfs():
-            LOG.error("VRF %s not present" % vrf_name)
+            LOG.error(_("VRF %s not present"), vrf_name)
         confstr = snippets.CREATE_SUBINTERFACE % (subinterface, vlan_id,
                                                   vrf_name, ip, mask)
         self._edit_running_config(confstr, 'CREATE_SUBINTERFACE')
@@ -477,7 +476,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _set_ha_HSRP(self, subinterface, vrf_name, priority, group, ip):
         if vrf_name not in self._get_vrfs():
-            LOG.error("VRF %s not present" % vrf_name)
+            LOG.error(_("VRF %s not present"), vrf_name)
         confstr = snippets.SET_INTC_HSRP % (subinterface, vrf_name, group,
                                             priority, group, ip)
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
@@ -491,15 +490,15 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _get_interface_cfg(self, interface):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         res = parse.find_children('interface ' + interface)
         return res
 
     def _nat_rules_for_internet_access(self, acl_no, network,
-                                      netmask,
-                                      inner_intfc,
-                                      outer_intfc,
-                                      vrf_name):
+                                       netmask,
+                                       inner_intfc,
+                                       outer_intfc,
+                                       vrf_name):
         """Configure the NAT rules for an internal network.
 
         Configuring NAT rules in the CSR1kv is a four step process. First
@@ -517,7 +516,8 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         network
         :param vrf_name: VRF corresponding to this virtual router
         :return: True if configuration succeeded
-        :raises: neutron.plugins.cisco.l3.exceptions.CSR1kvConfigException
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
+        CSR1kvConfigException
         """
         conn = self._get_connection()
         # Duplicate ACL creation throws error, so checking
@@ -587,7 +587,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _get_floating_ip_cfg(self):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         res = parse.find_lines('ip nat inside source static')
         return res
 
@@ -605,7 +605,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _get_static_route_cfg(self):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         return parse.find_lines('ip route')
 
     def _add_default_static_route(self, gw_ip, vrf):
@@ -655,7 +655,8 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
                 </rpc-error>
             </rpc-reply>
         :return: True if the config operation completed successfully
-        :raises: neutron.plugins.cisco.l3.exceptions.CSR1kvConfigException
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
+        CSR1kvConfigException
         """
         LOG.debug(_("RPCReply for %(snippet_name)s is %(rpc_obj)s"),
                   {'snippet_name': snippet_name, 'rpc_obj': rpc_obj.xml})

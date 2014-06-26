@@ -67,7 +67,7 @@ class DeviceStatus(object):
         hd_mgmt_ip = hosting_device['management_ip_address']
         # Modifying the 'created_at' to a date time object
         hosting_device['created_at'] = datetime.datetime.strptime(
-            hosting_device['created_at'],'%Y-%m-%d %H:%M:%S')
+            hosting_device['created_at'], '%Y-%m-%d %H:%M:%S')
 
         if hd_id not in self.backlog_hosting_devices.keys():
             if self._is_pingable(hd_mgmt_ip):

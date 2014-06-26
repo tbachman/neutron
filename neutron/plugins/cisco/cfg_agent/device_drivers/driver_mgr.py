@@ -26,16 +26,16 @@ class DeviceDriverManager(object):
 
     The device driver manager  maintains the relationship between the
     different neutron logical resource (eg: routers, firewalls, vpns etc.) and
-    where they are hosted. For configuring these logical resources in a
-    hosting device, a set of device driver objects are used. Device drivers
-    encapsulate the necessary configuration information to configure a
-    logical resource (eg: routers, firewalls, vpns etc.) on a
+    where they are hosted. For configuring a logical resource (router) in a
+    hosting device, a corresponding device driver object is used.
+    Device drivers encapsulate the necessary configuration information to
+    configure a logical resource (eg: routers, firewalls, vpns etc.) on a
     hosting device (eg: CSR1kv).
 
     The device driver class loads one driver object per hosting device.
     The loaded drivers are cached in memory, so when a request is made to
-    get a driver object for the same hosting device and service,
-    the driver object is reused.
+    get driver object for the same hosting device and resource (like router),
+    the existing driver object is reused.
 
     This class is used by the service helper classes.
     """
@@ -51,7 +51,7 @@ class DeviceDriverManager(object):
             raise cfg_exceptions.DriverNotFound(id=resource_id)
 
     def set_driver(self, resource):
-        """ Set the driver for a neutron resource
+        """Set the driver for a neutron resource.
 
         :param resource: Neutron resource in dict format. Expected keys:
                         { 'id': <value>
@@ -87,12 +87,11 @@ class DeviceDriverManager(object):
             raise cfg_exceptions.DriverNotSetForMissingParameter(e)
 
     def remove_driver(self, resource_id):
-        """ Remove driver associated to a particular resource."""
+        """Remove driver associated to a particular resource."""
         if resource_id in self._drivers:
             del self._drivers[resource_id]
 
     def remove_driver_for_hosting_device(self, hd_id):
-        """ Remove driver associated to a particular hosting device."""
+        """Remove driver associated to a particular hosting device."""
         if hd_id in self._hosting_device_routing_drivers_binding:
             del self._hosting_device_routing_drivers_binding[hd_id]
-

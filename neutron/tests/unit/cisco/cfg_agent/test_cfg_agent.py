@@ -15,7 +15,6 @@
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import mock
-from mock import patch
 from oslo.config import cfg
 import sys
 
@@ -25,9 +24,6 @@ from neutron.common import constants as l3_constants
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.cfg_agent import cfg_agent
-from neutron.plugins.cisco.cfg_agent.cfg_agent import (
-    CiscoCfgAgentWithStateReport)
-from neutron.plugins.cisco.cfg_agent.cfg_agent import CiscoCfgAgent
 from neutron.tests import base
 
 _uuid = uuidutils.generate_uuid
@@ -78,7 +74,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         config.register_agent_state_opts_helper(cfg.CONF)
         # self.conf.register_group(cfg.OptGroup(name='AGENT'))
         self.conf.register_opts(base_config.core_opts)
-        self.conf.register_opts(CiscoCfgAgent.OPTS)
+        self.conf.register_opts(cfg_agent.CiscoCfgAgent.OPTS)
         cfg.CONF.set_override('report_interval', 0, 'AGENT')
         # cfg.CONF.set_override('rpc_loop_interval', 0)
         super(TestCiscoCfgAgentWIthStateReporting, self).setUp()
@@ -113,7 +109,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.addCleanup(mock.patch.stopall)
 
     def test_agent_registration_success(self):
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         self.assertTrue(agent.devmgr_rpc.register_for_duty(agent.context))
 
     def test_agent_registration_success_after_2_tries(self):
@@ -125,33 +121,33 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.devmgr_plugin_api.register_for_duty = mock.Mock(
             side_effect=side_effect)
         cfg_agent.REGISTRATION_RETRY_DELAY = 0.01
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         self.assertEqual(agent.devmgr_rpc.register_for_duty.call_count, 3)
 
-    @patch.object(sys, 'exit')
+    @mock.patch.object(sys, 'exit')
     def test_agent_registration_fail_always(self, mock_exit):
         self.devmgr_plugin_api.register_for_duty = mock.Mock(
             return_value=False)
         cfg_agent.REGISTRATION_RETRY_DELAY = 0.01
         cfg_agent.MAX_REGISTRATION_ATTEMPTS = 3
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         self.assertEqual(agent.devmgr_rpc.register_for_duty.call_count, 3)
         self.assertTrue(mock_exit.called)
 
-    @patch.object(sys, 'exit')
+    @mock.patch.object(sys, 'exit')
     def test_agent_registration_no_device_mgr(self, mock_exit):
         #mock_exit.side_effect = SystemExit()
         self.devmgr_plugin_api.register_for_duty = mock.Mock(
             return_value=None)
         cfg_agent.REGISTRATION_RETRY_DELAY = 0.01
         cfg_agent.MAX_REGISTRATION_ATTEMPTS = 3
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         #ToDo: How to make this call only once?
         self.assertEqual(agent.devmgr_rpc.register_for_duty.call_count, 3)
         self.assertTrue(mock_exit.called)
 
     def test_report_state(self):
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         agent._report_state()
         self.assertIn('total routers', agent.agent_state['configurations'])
         self.assertEqual(0, agent.agent_state[
@@ -169,12 +165,12 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
     #     self.assertEqual(1, agent.agent_state[
     #         'configurations']['total routers'])
 
-    @patch('neutron.plugins.cisco.cfg_agent.'
-           'cfg_agent.CiscoCfgAgentWithStateReport._agent_registration')
+    @mock.patch('neutron.plugins.cisco.cfg_agent.'
+                'cfg_agent.CiscoCfgAgentWithStateReport._agent_registration')
     def test_report_state_attribute_error(self, agent_registration):
         cfg.CONF.set_override('report_interval', 1, 'AGENT')
         self.pluginreportstateAPI.report_state.side_effect = AttributeError
-        agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
+        agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         agent.heartbeat = mock.Mock()
         agent.send_agent_report(None, None)
         self.assertTrue(agent.heartbeat.stop.called)

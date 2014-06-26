@@ -16,22 +16,15 @@
 
 import copy
 import mock
-from mock import call
-from mock import patch
 from oslo.config import cfg
-import sys
 
-from neutron.agent.common import config
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
-from neutron.common import exceptions as n_exc
 from neutron.openstack.common import log as logging
+from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.cfg_agent.cfg_agent import CiscoCfgAgent
-from neutron.plugins.cisco.cfg_agent.cfg_exceptions import (
-    CSR1kvConfigException)
-# from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
-#     CiscoRoutingPluginApi)
+from neutron.plugins.cisco.cfg_agent import cfg_agent
+from neutron.plugins.cisco.cfg_agent import cfg_exceptions
 from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
     RouterInfo)
 from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
@@ -78,6 +71,7 @@ def prepare_router_data(enable_snat=None, num_internal_ports=1):
                       }
     router = {
         'id': router_id,
+        'admin_state_up': True,
         l3_constants.INTERFACE_KEY: int_ports,
         'routes': [],
         'gw_port': ex_gw_port,
@@ -101,7 +95,6 @@ class TestRouterInfo(base.BaseTestCase):
                        'enable_snat': True,
                        'routes': [],
                        'gw_port': self.ex_gw_port}
-
 
     def test_router_info_create(self):
         id = _uuid()
@@ -132,7 +125,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         super(TestBasicRoutingOperations, self).setUp()
         self.conf = cfg.ConfigOpts()
         self.conf.register_opts(base_config.core_opts)
-        self.conf.register_opts(CiscoCfgAgent.OPTS)
+        self.conf.register_opts(cfg_agent.CiscoCfgAgent.OPTS)
         self.ex_gw_port = {'id': _uuid(),
                            'network_id': _uuid(),
                            'fixed_ips': [{'ip_address': '19.4.4.4',
@@ -175,8 +168,10 @@ class TestBasicRoutingOperations(base.BaseTestCase):
     def _mock_driver_and_hosting_device(self, svc_helper):
         svc_helper._dev_status.is_hosting_device_reachable = mock.MagicMock(
             return_value=True)
-        svc_helper._drivermgr.get_driver = mock.MagicMock()
-        svc_helper._drivermgr.set_driver = mock.MagicMock()
+        driver = mock.MagicMock()
+        svc_helper._drivermgr.get_driver = mock.Mock(return_value=driver)
+        svc_helper._drivermgr.set_driver = mock.Mock(return_value=driver)
+        return driver
 
     def test_process_router_throw_config_error(self):
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
@@ -187,10 +182,10 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         e_tag = 'Fake error tag'
         params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
         routing_svc_helper._internal_network_added.side_effect = (
-            CSR1kvConfigException(**params))
+            cfg_exceptions.CSR1kvConfigException(**params))
         router, ports = prepare_router_data()
         ri = RouterInfo(router['id'], router)
-        self.assertRaises(CSR1kvConfigException,
+        self.assertRaises(cfg_exceptions.CSR1kvConfigException,
                           routing_svc_helper._process_router, ri)
         routing_svc_helper._internal_network_added.reset_mock()
 
@@ -400,7 +395,8 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
     def test_removed_from_agent(self):
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.router_removed_from_agent(None, {'router_id': FAKE_ID})
+        routing_svc_helper.router_removed_from_agent(None,
+                                                     {'router_id': FAKE_ID})
         self.assertIn(FAKE_ID, routing_svc_helper.removed_routers)
 
     def test_added_to_agent(self):
@@ -430,12 +426,12 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         configurations = routing_svc_helper.collect_state(configurations)
         hd_exp_result = {
             router['hosting_device']['id']: {'routers': 1}}
-        self.assertEquals(1, configurations['total routers'])
-        self.assertEquals(1, configurations['total ex_gw_ports'])
-        self.assertEquals(2, configurations['total interfaces'])
-        self.assertEquals(0, configurations['total floating_ips'])
-        self.assertEquals(hd_exp_result, configurations['hosting_devices'])
-        self.assertEquals([], configurations['non_responding_hosting_devices'])
+        self.assertEqual(1, configurations['total routers'])
+        self.assertEqual(1, configurations['total ex_gw_ports'])
+        self.assertEqual(2, configurations['total interfaces'])
+        self.assertEqual(0, configurations['total floating_ips'])
+        self.assertEqual(hd_exp_result, configurations['hosting_devices'])
+        self.assertEqual([], configurations['non_responding_hosting_devices'])
 
     def test_sort_resources_per_hosting_device(self):
         router1, port = prepare_router_data()
@@ -452,14 +448,14 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         resources = {'routers': [router1, router2, router4],
                      'removed_routers': [router3]}
-        devices = (routing_svc_helper
-                  ._sort_resources_per_hosting_device(resources))
+        devices = (
+            routing_svc_helper._sort_resources_per_hosting_device(resources))
 
-        self.assertEquals(2, len(devices.keys()))  # Two devices
+        self.assertEqual(2, len(devices.keys()))  # Two devices
         hd1_routers = [router1, router2]
-        self.assertEquals(hd1_routers, devices[hd1_id]['routers'])
-        self.assertEquals([router3], devices[hd1_id]['removed_routers'])
-        self.assertEquals([router4], devices[hd2_id]['routers'])
+        self.assertEqual(hd1_routers, devices[hd1_id]['routers'])
+        self.assertEqual([router3], devices[hd1_id]['removed_routers'])
+        self.assertEqual([router4], devices[hd2_id]['routers'])
 
     def test_get_router_ids_from_removed_devices_info(self):
         removed_devices_info = {
@@ -472,7 +468,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             removed_devices_info)
         self.assertItemsEqual(['id1', 'id2', 'id3', 'id4'], resp)
 
-    @patch("eventlet.GreenPool.spawn_n")
+    @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_full_sync_different_devices(self, mock_spawn):
         router1, port = prepare_router_data()
         router2, port = prepare_router_data()
@@ -480,7 +476,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             return_value=[router1, router2])
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         routing_svc_helper.process_service()
-        self.assertEquals(2, mock_spawn.call_count)
+        self.assertEqual(2, mock_spawn.call_count)
         call1 = mock.call(routing_svc_helper._process_routers, [router1],
                           None, router1['hosting_device']['id'],
                           all_routers=True)
@@ -489,7 +485,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                           all_routers=True)
         mock_spawn.assert_has_calls([call1, call2], any_order=True)
 
-    @patch("eventlet.GreenPool.spawn_n")
+    @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_full_sync_same_device(self, mock_spawn):
         router1, port = prepare_router_data()
         router2, port = prepare_router_data()
@@ -498,17 +494,18 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                                                               router2])
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         routing_svc_helper.process_service()
-        self.assertEquals(1, mock_spawn.call_count)
+        self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(routing_svc_helper._process_routers,
                                       [router1, router2],
                                       None,
                                       router1['hosting_device']['id'],
                                       all_routers=True)
 
-    @patch("eventlet.GreenPool.spawn_n")
+    @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_with_updated_routers(self, mock_spawn):
 
         router1, port = prepare_router_data()
+
         def routers_data(context, router_ids=None, hd_ids=[]):
             if router_ids:
                 return [router1]
@@ -518,41 +515,125 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         routing_svc_helper.fullsync = False
         routing_svc_helper.updated_routers.add(router1['id'])
         routing_svc_helper.process_service()
-        self.assertEquals(1, self.plugin_api.get_routers.call_count)
+        self.assertEqual(1, self.plugin_api.get_routers.call_count)
         self.plugin_api.get_routers.assert_called_with(
             routing_svc_helper.context,
             router_ids=[router1['id']])
-        self.assertEquals(1, mock_spawn.call_count)
+        self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(routing_svc_helper._process_routers,
                                       [router1],
                                       None,
                                       router1['hosting_device']['id'],
                                       all_routers=False)
 
-    @patch("eventlet.GreenPool.spawn_n")
+    @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_with_deviceid(self, mock_spawn):
 
-        router1, port = prepare_router_data()
-        device_id = router1['hosting_device']['id']
+        router, port = prepare_router_data()
+        device_id = router['hosting_device']['id']
 
         def routers_data(context, router_ids=None, hd_ids=[]):
             if hd_ids:
                 self.assertEqual([device_id], hd_ids)
-                return [router1]
+                return [router]
 
         self.plugin_api.get_routers.side_effect = routers_data
 
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         routing_svc_helper.fullsync = False
-        # routing_svc_helper.updated_routers.add(router1['id'])
         routing_svc_helper.process_service(device_ids=[device_id])
-        self.assertEquals(1, self.plugin_api.get_routers.call_count)
+        self.assertEqual(1, self.plugin_api.get_routers.call_count)
         self.plugin_api.get_routers.assert_called_with(
             routing_svc_helper.context,
             hd_ids=[device_id])
-        self.assertEquals(1, mock_spawn.call_count)
+        self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(routing_svc_helper._process_routers,
-                                      [router1],
+                                      [router],
                                       None,
-                                      router1['hosting_device']['id'],
+                                      device_id,
                                       all_routers=False)
+
+    @mock.patch("eventlet.GreenPool.spawn_n")
+    def test_process_services_with_removed_routers(self, mock_spawn):
+        router, port = prepare_router_data()
+        device_id = router['hosting_device']['id']
+
+        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
+        self._mock_driver_and_hosting_device(routing_svc_helper)
+        routing_svc_helper.fullsync = False
+        # Emulate router added for setting up internal structures
+        routing_svc_helper._router_added(router['id'], router)
+        # Add router to removed routers list and process it
+        routing_svc_helper.removed_routers.add(router['id'])
+        routing_svc_helper.process_service()
+
+        self.assertEqual(1, mock_spawn.call_count)
+        mock_spawn.assert_called_with(routing_svc_helper._process_routers,
+                                      None,
+                                      [router],
+                                      device_id,
+                                      all_routers=False)
+
+    @mock.patch("eventlet.GreenPool.spawn_n")
+    def test_process_services_with_removed_routers_info(self, mock_spawn):
+        router1, port = prepare_router_data()
+        device_id = router1['hosting_device']['id']
+        router2, port = prepare_router_data()
+        router2['hosting_device']['id'] = _uuid()
+
+        removed_devices_info = {
+            'hosting_data': {device_id: {'routers': [router1['id']]}},
+            'deconfigure': True
+        }
+
+        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
+        self._mock_driver_and_hosting_device(routing_svc_helper)
+        routing_svc_helper.fullsync = False
+        # Emulate router added for setting up internal structures
+        routing_svc_helper._router_added(router1['id'], router1)
+        routing_svc_helper._router_added(router2['id'], router2)
+        # Add router to removed routers list and process it
+        routing_svc_helper.removed_routers.add(router2['id'])
+        routing_svc_helper.process_service(
+            removed_devices_info=removed_devices_info)
+
+        self.assertEqual(2, mock_spawn.call_count)
+        call1 = mock.call(routing_svc_helper._process_routers,
+                          None,
+                          [router1],
+                          router1['hosting_device']['id'],
+                          all_routers=False)
+        call2 = mock.call(routing_svc_helper._process_routers,
+                          None,
+                          [router2],
+                          router2['hosting_device']['id'],
+                          all_routers=False)
+        mock_spawn.assert_has_calls([call1, call2], any_order=True)
+
+    @mock.patch("eventlet.GreenPool.spawn_n")
+    def test_process_services_with_rpc_error(self, mock_spawn):
+        router, port = prepare_router_data()
+        self.plugin_api.get_routers.side_effect = rpc_common.RPCException
+        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
+        routing_svc_helper.fullsync = False
+        routing_svc_helper.updated_routers.add(router['id'])
+        routing_svc_helper.process_service()
+        self.assertEqual(1, self.plugin_api.get_routers.call_count)
+        self.plugin_api.get_routers.assert_called_with(
+            routing_svc_helper.context,
+            router_ids=[router['id']])
+        self.assertRaises(rpc_common.RPCException,
+                          self.plugin_api.get_routers)
+        self.assertFalse(mock_spawn.called)
+        self.assertTrue(routing_svc_helper.fullsync)
+        self.plugin_api.get_routers.reset_mock()
+
+    def test_process_routers(self):
+        router, port = prepare_router_data()
+        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
+        driver = self._mock_driver_and_hosting_device(routing_svc_helper)
+        routing_svc_helper._process_router = mock.Mock()
+        routing_svc_helper._process_routers([router], None)
+        ri = routing_svc_helper.router_info[router['id']]
+        driver.router_added.assert_called_with(ri)
+        routing_svc_helper._process_router.assert_called_with(ri)

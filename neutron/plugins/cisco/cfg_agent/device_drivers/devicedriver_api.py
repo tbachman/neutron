@@ -14,13 +14,11 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
-from abc import ABCMeta
-from abc import abstractmethod
-
+import abc
 import six
 
 
-@six.add_metaclass(ABCMeta)
+@six.add_metaclass(abc.ABCMeta)
 class RoutingDriverBase(object):
     """Base class that defines an abstract interface for the Routing Driver.
 
@@ -32,7 +30,7 @@ class RoutingDriverBase(object):
     to parameters.
     """
 
-    @abstractmethod
+    @abc.abstractmethod
     def router_added(self, router_info):
         """A logical router is assigned to the hosting device
 
@@ -41,7 +39,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def router_removed(self, router_info):
         """A logical router is de-assigned from the hosting device
 
@@ -51,7 +49,7 @@ class RoutingDriverBase(object):
 
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def internal_network_added(self, router_info, port):
         """An internal network is connected to a router
 
@@ -62,7 +60,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def internal_network_removed(self, router_info, port):
         """An internal network is removed from a router
 
@@ -73,7 +71,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def external_gateway_added(self, router_info, ex_gw_port):
         """An external network is added to a router
 
@@ -84,7 +82,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def external_gateway_removed(self, router_info, ex_gw_port):
         """An external network is removed from the router
 
@@ -95,7 +93,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def enable_internal_network_NAT(self, router_info, port, ex_gw_port):
         """Enable NAT on an internal network
 
@@ -108,7 +106,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def disable_internal_network_NAT(self, router_info, port, ex_gw_port):
         """Diable NAT on an internal network
 
@@ -121,7 +119,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def floating_ip_added(self, router_info, ex_gw_port,
                           floating_ip, fixed_ip):
         """A floating IP is added
@@ -136,7 +134,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def floating_ip_removed(self, router_info, ex_gw_port,
                             floating_ip, fixed_ip):
         """A floating IP is removed
@@ -150,7 +148,7 @@ class RoutingDriverBase(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def routes_updated(self, router_info, action, route):
         """Routes are updated for router
 

@@ -17,15 +17,16 @@
 import json
 import logging
 
-from neutron.plugins.cisco.cfg_agent.services_api import RoutingDriverBase
+from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
 
 LOG = logging.getLogger(__name__)
 
 
-class DummyRoutingDriver(RoutingDriverBase):
-    """Dummy Routing Driver."""
+class DummyRoutingDriver(devicedriver_api.RoutingDriverBase):
+    """Dummy Routing Driver.
 
-    DEV_NAME_LEN = 14
+    This class emulates a routing driver without a real backing device.
+    """
 
     def __init__(self, **device_params):
         my_device_params = device_params
@@ -72,6 +73,5 @@ class DummyRoutingDriver(RoutingDriverBase):
     def routes_updated(self, ri, action, route):
         LOG.debug("DummyDriver routes_updated() called.")
 
-    ##### Internal Functions  ####
     def clear_connection(self):
         LOG.debug("DummyDriver clear_connection() called.")

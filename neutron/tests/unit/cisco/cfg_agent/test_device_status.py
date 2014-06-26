@@ -18,14 +18,12 @@ import sys
 import datetime
 import mock
 
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
-# from neutron.plugins.cisco.cfg_agent.router_info import RouterInfo
+from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.tests import base
 
 _uuid = uuidutils.generate_uuid
@@ -36,7 +34,7 @@ class TestHostingDevice(base.BaseTestCase):
 
     def setUp(self):
         super(TestHostingDevice, self).setUp()
-        self.status = DeviceStatus()
+        self.status = device_status.DeviceStatus()
         self.status._is_pingable = mock.MagicMock()
         self.status._is_pingable.return_value = True
 
@@ -102,8 +100,9 @@ class TestHostingDevice(base.BaseTestCase):
         hd = self.hosting_device
         hd_id = hd['id']
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                      'routers': [self
-                                                                .router_id]}
+                                                      'routers': [
+                                                          self.router_id]
+                                                      }
 
         self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
@@ -143,7 +142,8 @@ class TestHostingDevice(base.BaseTestCase):
         hd_id = hd['id']
         self.status._is_pingable.return_value = True
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [self.router_id]}
+                                                      'routers': [
+                                                          self.router_id]}
         expected = {'reachable': [hd_id],
                     'dead': []}
         self.assertEqual(self.status.check_backlogged_hosting_devices(),
@@ -169,7 +169,8 @@ class TestHostingDevice(base.BaseTestCase):
         hd_id = hd['id']
         self.status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [self.router_id]}
+                                                      'routers': [
+                                                          self.router_id]}
         expected = {'reachable': [],
                     'dead': []}
         self.assertEqual(self.status.check_backlogged_hosting_devices(),
@@ -196,7 +197,8 @@ class TestHostingDevice(base.BaseTestCase):
         hd_id = hd['id']
         self.status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                   'routers': [self.router_id]}
+                                                      'routers': [
+                                                          self.router_id]}
         expected = {'reachable': [],
                     'dead': [hd_id]}
         self.assertEqual(self.status.check_backlogged_hosting_devices(),

@@ -34,10 +34,9 @@ from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
 from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
-from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
+from neutron.plugins.cisco.cfg_agent import device_status
+from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
-    RoutingServiceHelper)
 from neutron import service as neutron_service
 
 LOG = logging.getLogger(__name__)
@@ -111,7 +110,7 @@ class CiscoCfgAgent(manager.Manager):
 
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
-        self._dev_status = DeviceStatus()
+        self._dev_status = device_status.DeviceStatus()
         self.context = n_context.get_admin_context_without_session()
 
         self._initialize_rpc(host)
@@ -124,8 +123,8 @@ class CiscoCfgAgent(manager.Manager):
             topics.DEVICE_MANAGER_PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
-        self.routing_service_helper = RoutingServiceHelper(host, self.conf,
-                                                           self)
+        self.routing_service_helper = routing_svc_helper.RoutingServiceHelper(
+            host, self.conf, self)
 
     def _start_periodic_tasks(self):
         self.loop = loopingcall.FixedIntervalLoopingCall(self.process_services)
@@ -158,19 +157,20 @@ class CiscoCfgAgent(manager.Manager):
         2. Called by the `_process_backlogged_hosting_devices()` as part of
         the backlog processing task. In this mode, a list of device_ids
         are passed as arguments. These are the list of backlogged
-        hosting devices that are now reachable.
+        hosting devices that are now reachable and we want to sync services
+        on them.
 
         3. Called by the `hosting_devices_removed()` method. This is when
         the config agent has received a notification from the plugin that
         some hosting devices are going to be removed. The payload contains
         the details of the hosting devices and the associated neutron
-        resources on them.
+        resources on them which should be processed and removed.
 
         To avoid race conditions with these scenarios, this function is
         protected by a lock.
 
-        This method goes on to invoke `process_service()` on the service
-        helpers.
+        This method goes on to invoke `process_service()` on the
+        different service helpers.
 
         :param device_ids : List of devices that are now available and needs
          to be processed
@@ -217,11 +217,12 @@ class CiscoCfgAgent(manager.Manager):
             if payload['hosting_data']:
                 if payload['hosting_data'].keys():
                     self.process_services(removed_devices_info=payload)
-        except KeyError, e:
+        except KeyError as e:
             LOG.error(_("Invalid payload format for received RPC message "
                         "`hosting_devices_removed`. Error is %{error}s. "
                         "Payload is %(payload)s"),
                       {'error': e, 'payload': payload})
+
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
@@ -248,14 +249,13 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
     def _agent_registration(self):
         """Register this agent with the server.
 
-         This method registers the config agent with the server so hosting
+         This method registers the cfg agent with the neutron server so hosting
          devices can be assigned to it. In case the server is not ready to
          accept registration (it sends a False) then we retry registration
          for `MAX_REGISTRATION_ATTEMPTS` with a delay of
          `REGISTRATION_RETRY_DELAY`. If there is no server response or a
          failure to register after the required number of attempts,
          the agent stops itself.
-        :return:
         """
         for attempts in xrange(MAX_REGISTRATION_ATTEMPTS):
             context = n_context.get_admin_context_without_session()
@@ -292,7 +292,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             self.agent_state['configurations'])
         self.agent_state['configurations'] = configurations
         LOG.debug(_("State report data: %s"),
-                  pprint.pprint(self.agent_state))
+                  pprint.pformat(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)
 
     def send_agent_report(self, report, context):
