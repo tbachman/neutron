@@ -16,13 +16,12 @@
 
 from oslo.config import cfg
 
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as qdbapi
 
 from neutron.db import model_base
 from neutron.openstack.common import importutils
-from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
@@ -36,17 +35,10 @@ from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
 
 
-class CiscoDevMgrPluginRpcCallbacks(devices_rpc.DeviceMgrCfgRpcCallbackMixin):
+class CiscoDevMgrPluginRpcCallbacks(n_rpc.RpcCallback,
+                                    devices_rpc.DeviceMgrCfgRpcCallbackMixin):
     # Set RPC API version to 1.0 by default.
     RPC_API_VERSION = '1.0'
-
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        """
-        return q_rpc.PluginRpcDispatcher([self])
 
 
 class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
@@ -81,11 +73,10 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
     def setup_rpc(self):
         # RPC support
         self.topic = topics.DEVICE_MANAGER_PLUGIN
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.agent_notifiers.update(
             {c_constants.AGENT_TYPE_CFG:
              l3_router_rpc_joint_agent_api.L3JointAgentNotify})
-        self.callbacks = CiscoDevMgrPluginRpcCallbacks()
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher, fanout=False)
+        self.endpoints = [CiscoDevMgrPluginRpcCallbacks()]
+        self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
         self.conn.consume_in_threads()
