@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2012 OpenStack Foundation.
+# Copyright (C) 2014 VA Linux Systems Japan K.K.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,7 +12,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# @author: YAMAMOTO Takashi, VA Linux Systems Japan K.K.
 
-from oslo.rootwrap import cmd
 
-cmd.main()
+class Port(object):
+    def __init__(self, port_name, ofport):
+        self.port_name = port_name
+        self.ofport = ofport
+
+    @classmethod
+    def from_ofp_port(cls, ofp_port):
+        """Convert from ryu OFPPort."""
+        return cls(port_name=ofp_port.name, ofport=ofp_port.port_no)

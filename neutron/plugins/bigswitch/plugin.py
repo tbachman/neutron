@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -57,8 +56,7 @@ from neutron.api import extensions as neutron_extensions
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import context as qcontext
@@ -96,7 +94,7 @@ SYNTAX_ERROR_MESSAGE = _('Syntax error in server config file, aborting plugin')
 METADATA_SERVER_IP = '169.254.169.254'
 
 
-class AgentNotifierApi(rpc_compat.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin):
 
     BASE_RPC_API_VERSION = '1.1'
@@ -114,15 +112,11 @@ class AgentNotifierApi(rpc_compat.RpcProxy,
                          topic=self.topic_port_update)
 
 
-class RestProxyCallbacks(rpc_compat.RpcCallback,
+class RestProxyCallbacks(n_rpc.RpcCallback,
                          sg_rpc_base.SecurityGroupServerRpcCallbackMixin,
                          dhcp_rpc_base.DhcpRpcCallbackMixin):
 
     RPC_API_VERSION = '1.1'
-
-    def create_rpc_dispatcher(self):
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
     def get_port_from_device(self, device):
         port_id = re.sub(r"^tap", "", device)
@@ -499,7 +493,7 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         LOG.debug(_("NeutronRestProxyV2: initialization done"))
 
     def _setup_rpc(self):
-        self.conn = rpc_compat.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.topic = topics.PLUGIN
         self.notifier = AgentNotifierApi(topics.AGENT)
         # init dhcp agent support
@@ -507,12 +501,12 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         self.agent_notifiers[const.AGENT_TYPE_DHCP] = (
             self._dhcp_agent_notifier
         )
-        self.callbacks = RestProxyCallbacks()
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher,
+        self.endpoints = [RestProxyCallbacks(),
+                          agents_db.AgentExtRpcCallback()]
+        self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def create_network(self, context, network):
         """Create a network.

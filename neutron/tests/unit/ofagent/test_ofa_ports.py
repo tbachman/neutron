@@ -1,4 +1,4 @@
-# Copyright 2012 Red Hat, Inc.
+# Copyright (C) 2014 VA Linux Systems Japan K.K.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,18 +12,21 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# @author: YAMAMOTO Takashi, VA Linux Systems Japan K.K.
 
 
-from neutron.openstack.common.gettextutils import _
-from neutron.openstack.common import log as logging
-from neutron.openstack.common.notifier import rpc_notifier
+import mock
 
-LOG = logging.getLogger(__name__)
+from neutron.plugins.ofagent.agent import ports
+from neutron.tests import base
 
 
-def notify(context, message):
-    """Deprecated in Grizzly. Please use rpc_notifier instead."""
-
-    LOG.deprecated(_("The rabbit_notifier is now deprecated."
-                     " Please use rpc_notifier instead."))
-    rpc_notifier.notify(context, message)
+class TestOFAgentPorts(base.BaseTestCase):
+    def test_port(self):
+        p1 = ports.Port(port_name='foo', ofport=999)
+        ryu_ofp_port = mock.Mock(port_no=999)
+        ryu_ofp_port.name = 'foo'
+        p2 = ports.Port.from_ofp_port(ofp_port=ryu_ofp_port)
+        self.assertEqual(p1.port_name, p2.port_name)
+        self.assertEqual(p1.ofport, p2.ofport)

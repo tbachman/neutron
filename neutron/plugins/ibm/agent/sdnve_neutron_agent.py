@@ -31,13 +31,12 @@ from neutron.agent.linux import ovs_lib
 from neutron.agent import rpc as agent_rpc
 from neutron.common import config as common_config
 from neutron.common import constants as n_const
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils as n_utils
 from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.ibm.common import config  # noqa
 from neutron.plugins.ibm.common import constants
 
@@ -53,7 +52,7 @@ class SdnvePluginApi(agent_rpc.PluginApi):
                          topic=self.topic)
 
 
-class SdnveNeutronAgent(rpc_compat.RpcCallback):
+class SdnveNeutronAgent(n_rpc.RpcCallback):
 
     RPC_API_VERSION = '1.1'
 
@@ -124,10 +123,10 @@ class SdnveNeutronAgent(rpc_compat.RpcCallback):
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
         self.context = context.get_admin_context_without_session()
-        self.dispatcher = self.create_rpc_dispatcher()
+        self.endpoints = [self]
         consumers = [[constants.INFO, topics.UPDATE]]
 
-        self.connection = agent_rpc.create_consumers(self.dispatcher,
+        self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers)
         if self.polling_interval:
@@ -154,9 +153,6 @@ class SdnveNeutronAgent(rpc_compat.RpcCallback):
                                              self.int_bridge_name,
                                              "connection-mode",
                                              "out-of-band")
-
-    def create_rpc_dispatcher(self):
-        return dispatcher.RpcDispatcher([self])
 
     def setup_integration_br(self, bridge_name, reset_br, out_of_band,
                              controller_ip=None):

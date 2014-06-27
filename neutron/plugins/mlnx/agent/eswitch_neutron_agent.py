@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Mellanox Technologies, Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,13 +27,12 @@ from neutron.agent import rpc as agent_rpc
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import config as common_config
 from neutron.common import constants as q_constants
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils as q_utils
 from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.mlnx.agent import utils
 from neutron.plugins.mlnx.common import config  # noqa
@@ -146,7 +143,7 @@ class EswitchManager(object):
         self.network_map[network_id] = data
 
 
-class MlnxEswitchRpcCallbacks(rpc_compat.RpcCallback,
+class MlnxEswitchRpcCallbacks(n_rpc.RpcCallback,
                               sg_rpc.SecurityGroupAgentRpcCallbackMixin):
 
     # Set RPC API version to 1.0 by default.
@@ -206,19 +203,10 @@ class MlnxEswitchRpcCallbacks(rpc_compat.RpcCallback,
                         port['mac_address'],
                         self.agent.agent_id,
                         cfg.CONF.host)
-            except rpc_compat.MessagingTimeout:
+            except n_rpc.MessagingTimeout:
                 LOG.error(_("RPC timeout while updating port %s"), port['id'])
         else:
             LOG.debug(_("No port %s defined on agent."), port['id'])
-
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version,
-        or support more than one class as the target of rpc messages,
-        override this method.
-        """
-        return dispatcher.RpcDispatcher([self])
 
 
 class MlnxEswitchPluginApi(agent_rpc.PluginApi,
@@ -269,14 +257,12 @@ class MlnxEswitchNeutronAgent(sg_rpc.SecurityGroupAgentRpcMixin):
         # RPC network init
         self.context = context.get_admin_context_without_session()
         # Handle updates from service
-        self.callbacks = MlnxEswitchRpcCallbacks(self.context,
-                                                 self)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [MlnxEswitchRpcCallbacks(self.context, self)]
         # Define the listening consumers for the agent
         consumers = [[topics.PORT, topics.UPDATE],
                      [topics.NETWORK, topics.DELETE],
                      [topics.SECURITY_GROUP, topics.UPDATE]]
-        self.connection = agent_rpc.create_consumers(self.dispatcher,
+        self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers)
 
@@ -326,20 +312,22 @@ class MlnxEswitchNeutronAgent(sg_rpc.SecurityGroupAgentRpcMixin):
             LOG.debug(_("No port %s defined on agent."), port_id)
 
     def treat_devices_added(self, devices):
-        resync = False
-        for device in devices:
+        try:
+            devs_details_list = self.plugin_rpc.get_devices_details_list(
+                self.context,
+                devices,
+                self.agent_id)
+        except Exception as e:
+            LOG.debug("Unable to get device details for devices "
+                      "with MAC address %(devices)s: due to %(exc)s",
+                      {'devices': devices, 'exc': e})
+            # resync is needed
+            return True
+
+        for dev_details in devs_details_list:
+            device = dev_details['device']
             LOG.info(_("Adding port with mac %s"), device)
-            try:
-                dev_details = self.plugin_rpc.get_device_details(
-                    self.context,
-                    device,
-                    self.agent_id)
-            except Exception as e:
-                LOG.debug(_("Unable to get device dev_details for device "
-                          "with mac_address %(device)s: due to %(exc)s"),
-                          {'device': device, 'exc': e})
-                resync = True
-                continue
+
             if 'port_id' in dev_details:
                 LOG.info(_("Port %s updated"), device)
                 LOG.debug(_("Device details %s"), str(dev_details))
@@ -357,7 +345,7 @@ class MlnxEswitchNeutronAgent(sg_rpc.SecurityGroupAgentRpcMixin):
             else:
                 LOG.debug(_("Device with mac_address %s not defined "
                           "on Neutron Plugin"), device)
-        return resync
+        return False
 
     def treat_devices_removed(self, devices):
         resync = False

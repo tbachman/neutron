@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -28,7 +27,6 @@ OPTS = [
 ]
 
 
-VETH_MAX_NAME_LENGTH = 15
 LOOPBACK_DEVNAME = 'lo'
 # NOTE(ethuleau): depend of the version of iproute2, the vlan
 # interface details vary.

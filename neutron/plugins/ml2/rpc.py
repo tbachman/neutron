@@ -15,10 +15,8 @@
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as q_const
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.db import agents_db
 from neutron.db import api as db_api
 from neutron.db import dhcp_rpc_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
@@ -37,32 +35,20 @@ TAP_DEVICE_PREFIX = 'tap'
 TAP_DEVICE_PREFIX_LENGTH = 3
 
 
-class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
+class RpcCallbacks(n_rpc.RpcCallback,
+                   dhcp_rpc_base.DhcpRpcCallbackMixin,
                    sg_db_rpc.SecurityGroupServerRpcCallbackMixin,
                    type_tunnel.TunnelRpcCallbackMixin):
 
-    RPC_API_VERSION = '1.1'
+    RPC_API_VERSION = '1.2'
     # history
     #   1.0 Initial version (from openvswitch/linuxbridge)
     #   1.1 Support Security Group RPC
+    #   1.2 Support get_devices_details_list
 
     def __init__(self, notifier, type_manager):
-        # REVISIT(kmestery): This depends on the first three super classes
-        # not having their own __init__ functions. If an __init__() is added
-        # to one, this could break. Fix this and add a unit test to cover this
-        # test in H3.
-        # FIXME(ihrachys): we can't use rpc_compat.RpcCallback here due
-        # to inheritance problems
-        super(RpcCallbacks, self).__init__(notifier, type_manager)
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
+        self.setup_tunnel_callback_mixin(notifier, type_manager)
+        super(RpcCallbacks, self).__init__()
 
     @classmethod
     def _device_to_port_id(cls, device):
@@ -156,6 +142,16 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
             LOG.debug(_("Returning: %s"), entry)
             return entry
 
+    def get_devices_details_list(self, rpc_context, **kwargs):
+        return [
+            self.get_device_details(
+                rpc_context,
+                device=device,
+                **kwargs
+            )
+            for device in kwargs.pop('devices', [])
+        ]
+
     def _find_segment(self, segments, segment_id):
         for segment in segments:
             if segment[api.ID] == segment_id:
@@ -205,7 +201,7 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                                   q_const.PORT_STATUS_ACTIVE)
 
 
-class AgentNotifierApi(rpc_compat.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin,
                        type_tunnel.TunnelAgentRpcApiMixin):
     """Agent side of the openvswitch rpc API.

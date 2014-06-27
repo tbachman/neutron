@@ -17,7 +17,6 @@ from netaddr import core as net_exc
 
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
-from neutron.common import rpc_compat
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
@@ -41,7 +40,7 @@ class CsrValidationFailure(exceptions.BadRequest):
                 "with value '%(value)s'")
 
 
-class CiscoCsrIPsecVpnDriverCallBack(rpc_compat.RpcCallback):
+class CiscoCsrIPsecVpnDriverCallBack(n_rpc.RpcCallback):
 
     """Handler for agent to plugin RPC messaging."""
 
@@ -53,9 +52,6 @@ class CiscoCsrIPsecVpnDriverCallBack(rpc_compat.RpcCallback):
     def __init__(self, driver):
         super(CiscoCsrIPsecVpnDriverCallBack, self).__init__()
         self.driver = driver
-
-    def create_rpc_dispatcher(self):
-        return n_rpc.PluginRpcDispatcher([self])
 
     def get_vpn_services_on_host(self, context, host=None):
         """Retuns info on the vpnservices on the host."""
@@ -72,7 +68,7 @@ class CiscoCsrIPsecVpnDriverCallBack(rpc_compat.RpcCallback):
 
 
 class CiscoCsrIPsecVpnAgentApi(service_drivers.BaseIPsecVpnAgentApi,
-                               rpc_compat.RpcCallback):
+                               n_rpc.RpcCallback):
 
     """API and handler for Cisco IPSec plugin to agent RPC messaging."""
 
@@ -89,13 +85,11 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
     def __init__(self, service_plugin):
         super(CiscoCsrIPsecVPNDriver, self).__init__(service_plugin)
-        self.callbacks = CiscoCsrIPsecVpnDriverCallBack(self)
-        self.conn = rpc_compat.create_connection(new=True)
+        self.endpoints = [CiscoCsrIPsecVpnDriverCallBack(self)]
+        self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(
-            topics.CISCO_IPSEC_DRIVER_TOPIC,
-            self.callbacks.create_rpc_dispatcher(),
-            fanout=False)
-        self.conn.consume_in_thread()
+            topics.CISCO_IPSEC_DRIVER_TOPIC, self.endpoints, fanout=False)
+        self.conn.consume_in_threads()
         self.agent_rpc = CiscoCsrIPsecVpnAgentApi(
             topics.CISCO_IPSEC_AGENT_TOPIC, BASE_IPSEC_VERSION)
 

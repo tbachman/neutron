@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 Isaku Yamahata <yamahata at private email ne jp>
 #                               <yamahata at valinux co jp>
 # All Rights Reserved.
@@ -23,8 +22,7 @@ from ryu.app import rest_nw_id
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
@@ -47,7 +45,7 @@ from neutron.plugins.ryu.db import api_v2 as db_api_v2
 LOG = logging.getLogger(__name__)
 
 
-class RyuRpcCallbacks(rpc_compat.RpcCallback,
+class RyuRpcCallbacks(n_rpc.RpcCallback,
                       dhcp_rpc_base.DhcpRpcCallbackMixin,
                       l3_rpc_base.L3RpcCallbackMixin,
                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
@@ -57,9 +55,6 @@ class RyuRpcCallbacks(rpc_compat.RpcCallback,
     def __init__(self, ofp_rest_api_addr):
         super(RyuRpcCallbacks, self).__init__()
         self.ofp_rest_api_addr = ofp_rest_api_addr
-
-    def create_rpc_dispatcher(self):
-        return q_rpc.PluginRpcDispatcher([self])
 
     def get_ofp_rest_api(self, context, **kwargs):
         LOG.debug(_("get_ofp_rest_api: %s"), self.ofp_rest_api_addr)
@@ -73,7 +68,7 @@ class RyuRpcCallbacks(rpc_compat.RpcCallback,
         return port
 
 
-class AgentNotifierApi(rpc_compat.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin):
 
     BASE_RPC_API_VERSION = '1.0'
@@ -142,13 +137,12 @@ class RyuNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def _setup_rpc(self):
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
-        self.conn = rpc_compat.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.notifier = AgentNotifierApi(topics.AGENT)
-        self.callbacks = RyuRpcCallbacks(self.ofp_api_host)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [RyuRpcCallbacks(self.ofp_api_host)]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        self.conn.consume_in_threads()
 
     def _create_all_tenant_network(self):
         for net in db_api_v2.network_all_tenant_list():

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -16,8 +14,9 @@
 #    under the License.
 
 import itertools
+from oslo import messaging
 
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 
 from neutron.openstack.common import log as logging
@@ -27,10 +26,10 @@ from neutron.openstack.common import timeutils
 LOG = logging.getLogger(__name__)
 
 
-def create_consumers(dispatcher, prefix, topic_details):
+def create_consumers(endpoints, prefix, topic_details):
     """Create agent RPC consumers.
 
-    :param dispatcher: The dispatcher to process the incoming messages.
+    :param endpoints: The list of endpoints to process the incoming messages.
     :param prefix: Common prefix for the plugin/agent message queues.
     :param topic_details: A list of topics. Each topic has a name, an
                           operation, and an optional host param keying the
@@ -39,23 +38,23 @@ def create_consumers(dispatcher, prefix, topic_details):
     :returns: A common Connection.
     """
 
-    connection = rpc_compat.create_connection(new=True)
+    connection = n_rpc.create_connection(new=True)
     for details in topic_details:
         topic, operation, node_name = itertools.islice(
             itertools.chain(details, [None]), 3)
 
         topic_name = topics.get_topic_name(prefix, topic, operation)
-        connection.create_consumer(topic_name, dispatcher, fanout=True)
+        connection.create_consumer(topic_name, endpoints, fanout=True)
         if node_name:
             node_topic_name = '%s.%s' % (topic_name, node_name)
             connection.create_consumer(node_topic_name,
-                                       dispatcher,
+                                       endpoints,
                                        fanout=False)
-    connection.consume_in_thread()
+    connection.consume_in_threads()
     return connection
 
 
-class PluginReportStateAPI(rpc_compat.RpcProxy):
+class PluginReportStateAPI(n_rpc.RpcProxy):
     BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, topic):
@@ -73,7 +72,7 @@ class PluginReportStateAPI(rpc_compat.RpcProxy):
             return self.cast(context, msg, topic=self.topic)
 
 
-class PluginApi(rpc_compat.RpcProxy):
+class PluginApi(n_rpc.RpcProxy):
     '''Agent side of the rpc API.
 
     API version history:
@@ -92,6 +91,24 @@ class PluginApi(rpc_compat.RpcProxy):
                          self.make_msg('get_device_details', device=device,
                                        agent_id=agent_id),
                          topic=self.topic)
+
+    def get_devices_details_list(self, context, devices, agent_id):
+        res = []
+        try:
+            res = self.call(context,
+                            self.make_msg('get_devices_details_list',
+                                          devices=devices,
+                                          agent_id=agent_id),
+                            topic=self.topic, version='1.2')
+        except messaging.UnsupportedVersion:
+            res = [
+                self.call(context,
+                          self.make_msg('get_device_details', device=device,
+                                        agent_id=agent_id),
+                          topic=self.topic)
+                for device in devices
+            ]
+        return res
 
     def update_device_down(self, context, device, agent_id, host=None):
         return self.call(context,

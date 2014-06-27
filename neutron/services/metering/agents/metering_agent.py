@@ -26,7 +26,7 @@ from neutron.agent.common import config
 from neutron.agent import rpc as agent_rpc
 from neutron.common import config as common_config
 from neutron.common import constants as constants
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import context
@@ -34,7 +34,6 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common import periodic_task
 from neutron.openstack.common import service
 from neutron import service as neutron_service
@@ -43,7 +42,7 @@ from neutron import service as neutron_service
 LOG = logging.getLogger(__name__)
 
 
-class MeteringPluginRpc(rpc_compat.RpcProxy):
+class MeteringPluginRpc(n_rpc.RpcProxy):
 
     BASE_RPC_API_VERSION = '1.0'
 
@@ -114,11 +113,8 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
                     'host': self.host}
 
             LOG.debug(_("Send metering report: %s"), data)
-            notifier_api.notify(self.context,
-                                notifier_api.publisher_id('metering'),
-                                'l3.meter',
-                                notifier_api.CONF.default_notification_level,
-                                data)
+            notifier = n_rpc.get_notifier('metering')
+            notifier.info(self.context, 'l3.meter', data)
             info['pkts'] = 0
             info['bytes'] = 0
             info['time'] = 0

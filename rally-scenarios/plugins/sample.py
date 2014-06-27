@@ -1,4 +1,4 @@
-# Copyright 2011 OpenStack Foundation.
+# Copyright 2014: Mirantis Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,6 +14,17 @@
 #    under the License.
 
 
-def notify(_context, message):
-    """Notifies the recipient of the desired event given the model."""
-    pass
+from rally.benchmark.scenarios.neutron import utils
+
+
+class NeutronListNetworks(utils.NeutronScenario):
+
+    @base.scenario()
+    def list_networks(self):
+        """Test listing all networks.
+
+        This scenario is a very useful tool to measure
+        the "neutron net-list" command performance.
+
+        """
+        self._list_networks()

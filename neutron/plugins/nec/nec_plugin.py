@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012-2013 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -22,8 +20,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes as attrs
 from neutron.common import constants as const
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
@@ -136,7 +133,7 @@ class NECPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def setup_rpc(self):
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
-        self.conn = rpc_compat.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.notifier = NECPluginV2AgentNotifierApi(topics.AGENT)
         self.agent_notifiers[const.AGENT_TYPE_DHCP] = (
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
@@ -147,16 +144,16 @@ class NECPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         # NOTE: callback_sg is referred to from the sg unit test.
         self.callback_sg = SecurityGroupServerRpcCallback()
-        callbacks = [NECPluginV2RPCCallbacks(self.safe_reference),
-                     DhcpRpcCallback(),
-                     L3RpcCallback(),
-                     self.callback_sg,
-                     agents_db.AgentExtRpcCallback()]
-        self.dispatcher = q_rpc.PluginRpcDispatcher(callbacks)
+        self.endpoints = [
+            NECPluginV2RPCCallbacks(self.safe_reference),
+            DhcpRpcCallback(),
+            L3RpcCallback(),
+            self.callback_sg,
+            agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def _update_resource_status(self, context, resource, id, status):
         """Update status of specified resource."""
@@ -660,7 +657,7 @@ class NECPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.notify_security_groups_member_updated(context, port)
 
 
-class NECPluginV2AgentNotifierApi(rpc_compat.RpcProxy,
+class NECPluginV2AgentNotifierApi(n_rpc.RpcProxy,
                                   sg_rpc.SecurityGroupAgentRpcApiMixin):
     '''RPC API for NEC plugin agent.'''
 
@@ -679,20 +676,20 @@ class NECPluginV2AgentNotifierApi(rpc_compat.RpcProxy,
                          topic=self.topic_port_update)
 
 
-class DhcpRpcCallback(rpc_compat.RpcCallback,
+class DhcpRpcCallback(n_rpc.RpcCallback,
                       dhcp_rpc_base.DhcpRpcCallbackMixin):
     # DhcpPluginApi BASE_RPC_API_VERSION
     RPC_API_VERSION = '1.1'
 
 
-class L3RpcCallback(rpc_compat.RpcCallback, l3_rpc_base.L3RpcCallbackMixin):
+class L3RpcCallback(n_rpc.RpcCallback, l3_rpc_base.L3RpcCallbackMixin):
     # 1.0  L3PluginApi BASE_RPC_API_VERSION
     # 1.1  Support update_floatingip_statuses
     RPC_API_VERSION = '1.1'
 
 
 class SecurityGroupServerRpcCallback(
-    rpc_compat.RpcCallback,
+    n_rpc.RpcCallback,
     sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
     RPC_API_VERSION = sg_rpc.SG_RPC_VERSION
@@ -708,21 +705,13 @@ class SecurityGroupServerRpcCallback(
         return port
 
 
-class NECPluginV2RPCCallbacks(rpc_compat.RpcCallback):
+class NECPluginV2RPCCallbacks(n_rpc.RpcCallback):
 
     RPC_API_VERSION = '1.0'
 
     def __init__(self, plugin):
         super(NECPluginV2RPCCallbacks, self).__init__()
         self.plugin = plugin
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self])
 
     def update_ports(self, rpc_context, **kwargs):
         """Update ports' information and activate/deavtivate them.

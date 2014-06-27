@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cisco Systems, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,8 +25,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
@@ -58,22 +55,13 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-class N1kvRpcCallbacks(rpc_compat.RpcCallback,
+class N1kvRpcCallbacks(n_rpc.RpcCallback,
                        dhcp_rpc_base.DhcpRpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
     # Set RPC API version to 1.1 by default.
     RPC_API_VERSION = '1.1'
-
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this rpc manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        """
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
@@ -127,10 +115,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def _setup_rpc(self):
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}
-        self.conn = rpc_compat.create_connection(new=True)
-        self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
+        self.conn = n_rpc.create_connection(new=True)
+        self.endpoints = [N1kvRpcCallbacks(), agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
@@ -152,7 +140,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """Start a green thread to pull policy profiles from VSM."""
         while True:
             self._populate_policy_profiles()
-            eventlet.sleep(int(c_conf.CISCO_N1K.poll_duration))
+            eventlet.sleep(c_conf.CISCO_N1K.poll_duration)
 
     def _populate_policy_profiles(self):
         """

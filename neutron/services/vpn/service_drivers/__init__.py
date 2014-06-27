@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
@@ -19,7 +17,7 @@ import abc
 
 import six
 
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
@@ -51,7 +49,7 @@ class VpnDriver(object):
         pass
 
 
-class BaseIPsecVpnAgentApi(rpc_compat.RpcProxy):
+class BaseIPsecVpnAgentApi(n_rpc.RpcProxy):
     """Base class for IPSec API to agent."""
 
     def __init__(self, to_agent_topic, topic, default_version):

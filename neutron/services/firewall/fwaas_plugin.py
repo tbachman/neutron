@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -20,8 +18,7 @@
 from oslo.config import cfg
 
 from neutron.common import exceptions as n_exception
-from neutron.common import rpc as q_rpc
-from neutron.common import rpc_compat
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as neutron_context
 from neutron.db import api as qdbapi
@@ -34,15 +31,12 @@ from neutron.plugins.common import constants as const
 LOG = logging.getLogger(__name__)
 
 
-class FirewallCallbacks(rpc_compat.RpcCallback):
+class FirewallCallbacks(n_rpc.RpcCallback):
     RPC_API_VERSION = '1.0'
 
     def __init__(self, plugin):
         super(FirewallCallbacks, self).__init__()
         self.plugin = plugin
-
-    def create_rpc_dispatcher(self):
-        return q_rpc.PluginRpcDispatcher([self])
 
     def set_firewall_status(self, context, firewall_id, status, **kwargs):
         """Agent uses this to set a firewall's status."""
@@ -107,7 +101,7 @@ class FirewallCallbacks(rpc_compat.RpcCallback):
         return fw_tenant_list
 
 
-class FirewallAgentApi(rpc_compat.RpcProxy):
+class FirewallAgentApi(n_rpc.RpcProxy):
     """Plugin side of plugin to agent RPC API."""
 
     API_VERSION = '1.0'
@@ -166,14 +160,12 @@ class FirewallPlugin(firewall_db.Firewall_db_mixin):
         """Do the initialization for the firewall service plugin here."""
         qdbapi.register_models()
 
-        self.callbacks = FirewallCallbacks(self)
+        self.endpoints = [FirewallCallbacks(self)]
 
-        self.conn = rpc_compat.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(
-            topics.FIREWALL_PLUGIN,
-            self.callbacks.create_rpc_dispatcher(),
-            fanout=False)
-        self.conn.consume_in_thread()
+            topics.FIREWALL_PLUGIN, self.endpoints, fanout=False)
+        self.conn.consume_in_threads()
 
         self.agent_rpc = FirewallAgentApi(
             topics.L3_AGENT,
