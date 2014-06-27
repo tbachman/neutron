@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 New Dream Network, LLC (DreamHost)
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -551,18 +549,16 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
 
     def test_main(self):
         with mock.patch.object(agent, 'UnixDomainMetadataProxy') as proxy:
-            with mock.patch('eventlet.monkey_patch') as eventlet:
-                with mock.patch.object(agent, 'config') as config:
-                    with mock.patch.object(agent, 'cfg') as cfg:
-                        with mock.patch.object(utils, 'cfg'):
-                            agent.main()
+            with mock.patch.object(agent, 'config') as config:
+                with mock.patch.object(agent, 'cfg') as cfg:
+                    with mock.patch.object(utils, 'cfg'):
+                        agent.main()
 
-                            self.assertTrue(eventlet.called)
-                            self.assertTrue(config.setup_logging.called)
-                            proxy.assert_has_calls([
-                                mock.call(cfg.CONF),
-                                mock.call().run()]
-                            )
+                        self.assertTrue(config.setup_logging.called)
+                        proxy.assert_has_calls([
+                            mock.call(cfg.CONF),
+                            mock.call().run()]
+                        )
 
     def test_init_state_reporting(self):
         with mock.patch('os.makedirs'):

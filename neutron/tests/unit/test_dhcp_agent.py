@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -28,9 +26,10 @@ from neutron.agent.common import config
 from neutron.agent import dhcp_agent
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import interface
+from neutron.common import config as common_config
 from neutron.common import constants as const
 from neutron.common import exceptions
-from neutron.openstack.common.rpc import common
+from neutron.common import rpc as n_rpc
 from neutron.tests import base
 
 
@@ -157,7 +156,7 @@ class TestDhcpAgent(base.BaseTestCase):
                         config.register_root_helper(cfg.CONF)
                         cfg.CONF.register_opts(dhcp.OPTS)
                         cfg.CONF.register_opts(interface.OPTS)
-                        cfg.CONF(project='neutron')
+                        common_config.init(sys.argv[1:])
                         agent_mgr = dhcp_agent.DhcpAgentWithStateReport(
                             'testhost')
                         eventlet.greenthread.sleep(1)
@@ -227,7 +226,7 @@ class TestDhcpAgent(base.BaseTestCase):
 
     def test_call_driver_remote_error_net_not_found(self):
         self._test_call_driver_failure(
-            exc=common.RemoteError(exc_type='NetworkNotFound'),
+            exc=n_rpc.RemoteError(exc_type='NetworkNotFound'),
             trace_level='warning')
 
     def test_call_driver_network_not_found(self):
@@ -781,7 +780,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                                  fake_network)
 
     def test_port_update_end(self):
-        payload = dict(port=vars(fake_port2))
+        payload = dict(port=fake_port2)
         self.cache.get_network_by_id.return_value = fake_network
         self.cache.get_port_by_id.return_value = fake_port2
         self.dhcp.port_update_end(None, payload)
@@ -792,7 +791,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                                  fake_network)
 
     def test_port_update_change_ip_on_port(self):
-        payload = dict(port=vars(fake_port1))
+        payload = dict(port=fake_port1)
         self.cache.get_network_by_id.return_value = fake_network
         updated_fake_port1 = copy.deepcopy(fake_port1)
         updated_fake_port1.fixed_ips[0].ip_address = '172.9.9.99'

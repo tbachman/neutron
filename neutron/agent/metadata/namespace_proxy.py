@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 New Dream Network, LLC (DreamHost)
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -20,6 +18,8 @@ import httplib
 import socket
 
 import eventlet
+eventlet.monkey_patch()
+
 import httplib2
 from oslo.config import cfg
 import six.moves.urllib.parse as urlparse
@@ -144,7 +144,6 @@ class ProxyDaemon(daemon.Daemon):
 
 
 def main():
-    eventlet.monkey_patch()
     opts = [
         cfg.StrOpt('network_id',
                    help=_('Network that will have instance metadata '

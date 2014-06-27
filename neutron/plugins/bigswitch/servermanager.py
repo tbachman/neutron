@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2014 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -33,7 +32,6 @@ The following functionality is handled by this module:
 """
 import base64
 import httplib
-import json
 import os
 import socket
 import ssl
@@ -44,6 +42,7 @@ from oslo.config import cfg
 from neutron.common import exceptions
 from neutron.common import utils
 from neutron.openstack.common import excutils
+from neutron.openstack.common import jsonutils as json
 from neutron.openstack.common import log as logging
 from neutron.plugins.bigswitch.db import consistency_db as cdb
 
@@ -550,13 +549,21 @@ class ServerPool(object):
             LOG.warning(_("Backend server(s) do not support automated "
                           "consitency checks."))
             return
+        if not polling_interval:
+            LOG.warning(_("Consistency watchdog disabled by polling interval "
+                          "setting of %s."), polling_interval)
+            return
         while True:
             # If consistency is supported, all we have to do is make any
             # rest call and the consistency header will be added. If it
             # doesn't match, the backend will return a synchronization error
-            # that will be handled by the rest_call.
+            # that will be handled by the rest_action.
             eventlet.sleep(polling_interval)
-            self.rest_call('GET', HEALTH_PATH)
+            try:
+                self.rest_action('GET', HEALTH_PATH)
+            except Exception:
+                LOG.exception(_("Encountered an error checking controller "
+                                "health."))
 
 
 class HTTPSConnectionWithValidation(httplib.HTTPSConnection):

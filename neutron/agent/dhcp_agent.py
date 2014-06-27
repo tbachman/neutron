@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -16,8 +14,11 @@
 #    under the License.
 
 import os
+import sys
 
 import eventlet
+eventlet.monkey_patch()
+
 import netaddr
 from oslo.config import cfg
 
@@ -27,8 +28,10 @@ from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent.linux import ovs_lib  # noqa
 from neutron.agent import rpc as agent_rpc
+from neutron.common import config as common_config
 from neutron.common import constants
 from neutron.common import exceptions
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import context
@@ -36,8 +39,6 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import common
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron import service as neutron_service
 
@@ -136,7 +137,7 @@ class DhcpAgent(manager.Manager):
                         % {'net_id': network.id, 'action': action})
         except Exception as e:
             self.schedule_resync(e)
-            if (isinstance(e, common.RemoteError)
+            if (isinstance(e, n_rpc.RemoteError)
                 and e.exc_type == 'NetworkNotFound'
                 or isinstance(e, exceptions.NetworkNotFound)):
                 LOG.warning(_("Network %s has been deleted."), network.id)
@@ -376,7 +377,7 @@ class DhcpAgent(manager.Manager):
         pm.disable()
 
 
-class DhcpPluginApi(proxy.RpcProxy):
+class DhcpPluginApi(n_rpc.RpcProxy):
     """Agent side of the dhcp rpc API.
 
     API version history:
@@ -608,9 +609,8 @@ def register_options():
 
 
 def main():
-    eventlet.monkey_patch()
     register_options()
-    cfg.CONF(project='neutron')
+    common_config.init(sys.argv[1:])
     config.setup_logging(cfg.CONF)
     server = neutron_service.Service.create(
         binary='neutron-dhcp-agent',

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -41,7 +39,7 @@ class TestFirewallCallbacks(test_db_firewall.FirewallPluginDbTestCase):
     def setUp(self):
         super(TestFirewallCallbacks,
               self).setUp(fw_plugin=FW_PLUGIN_KLASS)
-        self.callbacks = self.plugin.callbacks
+        self.callbacks = self.plugin.endpoints[0]
 
     def test_set_firewall_status(self):
         ctx = context.get_admin_context()
@@ -61,6 +59,24 @@ class TestFirewallCallbacks(test_db_firewall.FirewallPluginDbTestCase):
                                                          const.ERROR)
                 fw_db = self.plugin.get_firewall(ctx, fw_id)
                 self.assertEqual(fw_db['status'], const.ERROR)
+                self.assertFalse(res)
+
+    def test_set_firewall_status_pending_delete(self):
+        ctx = context.get_admin_context()
+        with self.firewall_policy() as fwp:
+            fwp_id = fwp['firewall_policy']['id']
+            with self.firewall(firewall_policy_id=fwp_id,
+                               admin_state_up=
+                               test_db_firewall.ADMIN_STATE_UP) as fw:
+                fw_id = fw['firewall']['id']
+                fw_db = self.plugin._get_firewall(ctx, fw_id)
+                fw_db['status'] = const.PENDING_DELETE
+                ctx.session.flush()
+                res = self.callbacks.set_firewall_status(ctx, fw_id,
+                                                         const.ACTIVE,
+                                                         host='dummy')
+                fw_db = self.plugin.get_firewall(ctx, fw_id)
+                self.assertEqual(fw_db['status'], const.PENDING_DELETE)
                 self.assertFalse(res)
 
     def test_firewall_deleted(self):
@@ -192,7 +208,7 @@ class TestFirewallPluginBase(test_db_firewall.TestFirewallDBPlugin):
 
     def setUp(self):
         super(TestFirewallPluginBase, self).setUp(fw_plugin=FW_PLUGIN_KLASS)
-        self.callbacks = self.plugin.callbacks
+        self.callbacks = self.plugin.endpoints[0]
 
     def test_create_second_firewall_not_permitted(self):
         with self.firewall():
@@ -324,7 +340,7 @@ class TestFirewallPluginBase(test_db_firewall.TestFirewallDBPlugin):
                 for k, v in attrs.iteritems():
                     self.assertEqual(fw_db[k], v)
             # cleanup the pending firewall
-            self.plugin.callbacks.firewall_deleted(ctx, fw_id)
+            self.plugin.endpoints[0].firewall_deleted(ctx, fw_id)
 
     def test_delete_firewall_after_agent_delete(self):
         ctx = context.get_admin_context()

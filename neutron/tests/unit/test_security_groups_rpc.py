@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012, Nachi Ueno, NTT MCL, Inc.
 # All Rights Reserved.
 #
@@ -29,12 +27,12 @@ from neutron.agent import rpc as agent_rpc
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as const
 from neutron.common import ipv6_utils as ipv6
+from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import allowedaddresspairs as addr_pair
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
-from neutron.openstack.common.rpc import proxy
 from neutron.tests import base
 from neutron.tests.unit import test_extension_security_group as test_sg
 
@@ -1102,7 +1100,7 @@ class SecurityGroupServerRpcApiTestCase(base.BaseTestCase):
              topic='fake_topic')])
 
 
-class FakeSGNotifierAPI(proxy.RpcProxy,
+class FakeSGNotifierAPI(n_rpc.RpcProxy,
                         sg_rpc.SecurityGroupAgentRpcApiMixin):
     pass
 

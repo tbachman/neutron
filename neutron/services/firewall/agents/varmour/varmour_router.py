@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 vArmour Networks Inc.
 # All Rights Reserved.
 #
@@ -18,7 +16,11 @@
 # @author: Gary Duan, vArmour Networks Inc.
 #
 
+import sys
+
 import eventlet
+eventlet.monkey_patch()
+
 import netaddr
 from oslo.config import cfg
 
@@ -27,6 +29,7 @@ from neutron.agent import l3_agent
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
+from neutron.common import config as common_config
 from neutron.common import constants as l3_constants
 from neutron.common import topics
 from neutron.openstack.common import log as logging
@@ -327,7 +330,6 @@ class vArmourL3NATAgentWithStateReport(vArmourL3NATAgent,
 
 
 def main():
-    eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(vArmourL3NATAgent.OPTS)
     config.register_interface_driver_opts_helper(conf)
@@ -336,7 +338,7 @@ def main():
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)
     conf.register_opts(external_process.OPTS)
-    conf(project='neutron')
+    common_config.init(sys.argv[1:])
     config.setup_logging(conf)
     server = neutron_service.Service.create(
         binary='neutron-l3-agent',

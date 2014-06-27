@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cisco Systems, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,7 +25,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
@@ -42,7 +40,6 @@ from neutron.extensions import providernet
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
 from neutron.openstack.common import uuidutils as uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
@@ -58,22 +55,14 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
+class N1kvRpcCallbacks(n_rpc.RpcCallback,
+                       dhcp_rpc_base.DhcpRpcCallbackMixin):
 #                       l3_rpc_base.L3RpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
     # Set RPC API version to 1.1 by default.
     RPC_API_VERSION = '1.1'
-
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this rpc manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        """
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
@@ -127,10 +116,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def _setup_rpc(self):
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}
-        self.conn = rpc.create_connection(new=True)
-        self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
+        self.conn = n_rpc.create_connection(new=True)
+        self.endpoints = [N1kvRpcCallbacks(), agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
@@ -152,7 +141,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """Start a green thread to pull policy profiles from VSM."""
         while True:
             self._populate_policy_profiles()
-            eventlet.sleep(int(c_conf.CISCO_N1K.poll_duration))
+            eventlet.sleep(c_conf.CISCO_N1K.poll_duration)
 
     def _populate_policy_profiles(self):
         """
@@ -167,29 +156,25 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             n1kvclient = n1kv_client.Client()
             policy_profiles = n1kvclient.list_port_profiles()
             vsm_profiles = {}
-            plugin_profiles = {}
+            plugin_profiles_set = set()
             # Fetch policy profiles from VSM
-            if policy_profiles:
-                for profile in policy_profiles['body'][c_const.SET]:
-                    profile_name = (profile[c_const.PROPERTIES].
-                                    get(c_const.NAME, None))
-                    profile_id = (profile[c_const.PROPERTIES].
-                                  get(c_const.ID, None))
-                    if profile_id and profile_name:
-                        vsm_profiles[profile_id] = profile_name
-                # Fetch policy profiles previously populated
-                for profile in n1kv_db_v2.get_policy_profiles():
-                    plugin_profiles[profile.id] = profile.name
-                vsm_profiles_set = set(vsm_profiles)
-                plugin_profiles_set = set(plugin_profiles)
-                # Update database if the profile sets differ.
-                if vsm_profiles_set ^ plugin_profiles_set:
+            for profile_name in policy_profiles:
+                profile_id = (policy_profiles
+                              [profile_name][c_const.PROPERTIES][c_const.ID])
+                vsm_profiles[profile_id] = profile_name
+            # Fetch policy profiles previously populated
+            for profile in n1kv_db_v2.get_policy_profiles():
+                plugin_profiles_set.add(profile.id)
+            vsm_profiles_set = set(vsm_profiles)
+            # Update database if the profile sets differ.
+            if vsm_profiles_set ^ plugin_profiles_set:
                 # Add profiles in database if new profiles were created in VSM
-                    for pid in vsm_profiles_set - plugin_profiles_set:
-                        self._add_policy_profile(vsm_profiles[pid], pid)
+                for pid in vsm_profiles_set - plugin_profiles_set:
+                    self._add_policy_profile(vsm_profiles[pid], pid)
+
                 # Delete profiles from database if profiles were deleted in VSM
-                    for pid in plugin_profiles_set - vsm_profiles_set:
-                        self._delete_policy_profile(pid)
+                for pid in plugin_profiles_set - vsm_profiles_set:
+                    self._delete_policy_profile(pid)
             self._remove_all_fake_policy_profiles()
         except (cisco_exceptions.VSMError,
                 cisco_exceptions.VSMConnectionFailed):

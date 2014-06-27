@@ -38,9 +38,9 @@ from neutron.extensions import l3
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as service_constants
+from neutron.tests import fake_notifier
 from neutron.tests.unit import test_agent_ext_plugin
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension
@@ -660,7 +660,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                              'subnet.create.end',
                              'router.interface.create',
                              'router.interface.delete']
-        test_notifier.NOTIFICATIONS = []
+        fake_notifier.reset()
         with self.router() as r:
             with self.subnet() as s:
                 body = self._router_interface_action('add',
@@ -683,9 +683,9 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
                 self.assertEqual(
                     set(exp_notifications),
-                    set(n['event_type'] for n in test_notifier.NOTIFICATIONS))
+                    set(n['event_type'] for n in fake_notifier.NOTIFICATIONS))
 
-                for n in test_notifier.NOTIFICATIONS:
+                for n in fake_notifier.NOTIFICATIONS:
                     if n['event_type'].startswith('router.interface.'):
                         payload = n['payload']['router_interface']
                         self.assertIn('id', payload)
@@ -1897,9 +1897,8 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
         ext_mgr = ext_mgr or L3TestExtensionManager()
 
         if self.mock_rescheduling:
-            rescheduling_patcher = mock.patch(
-                '%s._check_router_needs_rescheduling' % plugin)
-            rescheduling_patcher.start().return_value = False
+            mock.patch('%s._check_router_needs_rescheduling' % plugin,
+                       new=lambda *a: False).start()
 
         super(L3BaseForIntTests, self).setUp(plugin=plugin, ext_mgr=ext_mgr,
                                              service_plugins=service_plugins)

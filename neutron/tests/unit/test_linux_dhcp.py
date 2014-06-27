@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -49,7 +47,8 @@ class FakePort1:
     id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
     admin_state_up = True
     device_owner = 'foo1'
-    fixed_ips = [FakeIPAllocation('192.168.0.2')]
+    fixed_ips = [FakeIPAllocation('192.168.0.2',
+                                  'dddddddd-dddd-dddd-dddd-dddddddddddd')]
     mac_address = '00:00:80:aa:bb:cc'
 
     def __init__(self):
@@ -60,7 +59,8 @@ class FakePort2:
     id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
     admin_state_up = False
     device_owner = 'foo2'
-    fixed_ips = [FakeIPAllocation('fdca:3ba5:a17a:4ba3::2')]
+    fixed_ips = [FakeIPAllocation('fdca:3ba5:a17a:4ba3::2',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff')]
     mac_address = '00:00:f3:aa:bb:cc'
 
     def __init__(self):
@@ -71,9 +71,24 @@ class FakePort3:
     id = '44444444-4444-4444-4444-444444444444'
     admin_state_up = True
     device_owner = 'foo3'
-    fixed_ips = [FakeIPAllocation('192.168.0.3'),
-                 FakeIPAllocation('fdca:3ba5:a17a:4ba3::3')]
+    fixed_ips = [FakeIPAllocation('192.168.0.3',
+                                  'dddddddd-dddd-dddd-dddd-dddddddddddd'),
+                 FakeIPAllocation('fdca:3ba5:a17a:4ba3::3',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff')]
     mac_address = '00:00:0f:aa:bb:cc'
+
+    def __init__(self):
+        self.extra_dhcp_opts = []
+
+
+class FakePort4:
+
+    id = 'gggggggg-gggg-gggg-gggg-gggggggggggg'
+    admin_state_up = False
+    device_owner = 'foo3'
+    fixed_ips = [FakeIPAllocation('192.168.0.4',
+                                  'ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
+    mac_address = '00:16:3E:C2:77:1D'
 
     def __init__(self):
         self.extra_dhcp_opts = []
@@ -126,8 +141,8 @@ class FakeV4HostRouteGateway:
 
 
 class FakeV6HostRoute:
-    destination = 'gdca:3ba5:a17a:4ba3::/64'
-    nexthop = 'gdca:3ba5:a17a:4ba3::1'
+    destination = '2001:0200:feed:7ac0::/64'
+    nexthop = '2001:0200:feed:7ac0::1'
 
 
 class FakeV4Subnet:
@@ -193,7 +208,9 @@ class FakeV6Subnet:
     gateway_ip = 'fdca:3ba5:a17a:4ba3::1'
     enable_dhcp = True
     host_routes = [FakeV6HostRoute]
-    dns_nameservers = ['gdca:3ba5:a17a:4ba3::1']
+    dns_nameservers = ['2001:0200:feed:7ac0::1']
+    ipv6_ra_mode = None
+    ipv6_address_mode = None
 
 
 class FakeV4SubnetNoDHCP:
@@ -204,6 +221,17 @@ class FakeV4SubnetNoDHCP:
     enable_dhcp = False
     host_routes = []
     dns_nameservers = []
+
+
+class FakeV6SubnetSlaac:
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+    ip_version = 6
+    cidr = 'ffda:3ba5:a17a:4ba3::/64'
+    gateway_ip = 'ffda:3ba5:a17a:4ba3::1'
+    enable_dhcp = True
+    host_routes = [FakeV6HostRoute]
+    ipv6_address_mode = constants.IPV6_SLAAC
+    ipv6_ra_mode = None
 
 
 class FakeV4SubnetNoGateway:
@@ -368,6 +396,13 @@ class FakeV4NetworkPxe3Ports:
                 DhcpOpt(opt_name='tftp-server', opt_value='192.168.0.7'),
                 DhcpOpt(opt_name='server-ip-address', opt_value='192.168.0.7'),
                 DhcpOpt(opt_name='bootfile-name', opt_value='pxelinux3.0')]
+
+
+class FakeDualStackNetworkSingleDHCP:
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+
+    subnets = [FakeV4Subnet(), FakeV6SubnetSlaac()]
+    ports = [FakePort1(), FakePort4(), FakeRouterPort()]
 
 
 class LocalChild(dhcp.DhcpLocalProcess):
@@ -750,8 +785,8 @@ class TestDnsmasq(TestBase):
             max_leases=256)
 
     def test_output_opts_file(self):
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
         expected = (
             'tag:tag0,option:dns-server,8.8.8.8\n'
             'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
@@ -773,8 +808,8 @@ class TestDnsmasq(TestBase):
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_gateway_route(self):
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
         expected = """
 tag:tag0,option:dns-server,8.8.8.8
 tag:tag0,option:router,192.168.0.1
@@ -1043,8 +1078,8 @@ tag:tag0,option:router""".lstrip()
             'host-192-168-0-1\n'
         ).lstrip()
         exp_opt_name = '/dhcp/cccccccc-cccc-cccc-cccc-cccccccccccc/opts'
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
         exp_opt_data = (
             'tag:tag0,option:dns-server,8.8.8.8\n'
             'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
@@ -1250,3 +1285,17 @@ tag:tag0,option:router""".lstrip()
 
     def test_check_version_failed_cmd_execution(self):
         self._check_version('Error while executing command', 0)
+
+    def test_only_populates_dhcp_enabled_subnets(self):
+        exp_host_name = '/dhcp/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/host'
+        exp_host_data = ('00:00:80:aa:bb:cc,host-192-168-0-2.openstacklocal,'
+                         '192.168.0.2\n'
+                         '00:16:3E:C2:77:1D,host-192-168-0-4.openstacklocal,'
+                         '192.168.0.4\n'
+                         '00:00:0f:rr:rr:rr,host-192-168-0-1.openstacklocal,'
+                         '192.168.0.1\n').lstrip()
+        dm = dhcp.Dnsmasq(self.conf, FakeDualStackNetworkSingleDHCP(),
+                          version=float(2.59))
+        dm._output_hosts_file()
+        self.safe.assert_has_calls([mock.call(exp_host_name,
+                                              exp_host_data)])

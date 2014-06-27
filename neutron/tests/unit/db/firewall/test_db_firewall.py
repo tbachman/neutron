@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -577,6 +575,24 @@ class TestFirewallDBPlugin(FirewallPluginDbTestCase):
         attrs['destination_port'] = '80'
         with self.firewall_rule(source_port='10000',
                                 destination_port='80') as firewall_rule:
+            for k, v in attrs.iteritems():
+                self.assertEqual(firewall_rule['firewall_rule'][k], v)
+
+    def test_create_firewall_rule_icmp_with_port(self):
+        attrs = self._get_test_firewall_rule_attrs()
+        attrs['protocol'] = 'icmp'
+        res = self._create_firewall_rule(self.fmt, **attrs)
+        self.assertEqual(400, res.status_int)
+
+    def test_create_firewall_rule_icmp_without_port(self):
+        attrs = self._get_test_firewall_rule_attrs()
+
+        attrs['protocol'] = 'icmp'
+        attrs['source_port'] = None
+        attrs['destination_port'] = None
+        with self.firewall_rule(source_port=None,
+                                destination_port=None,
+                                protocol='icmp') as firewall_rule:
             for k, v in attrs.iteritems():
                 self.assertEqual(firewall_rule['firewall_rule'][k], v)
 
