@@ -25,6 +25,7 @@ from neutron.agent.common import config
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent import rpc as agent_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as n_context
 from neutron import manager
@@ -32,7 +33,6 @@ from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
@@ -46,13 +46,13 @@ REGISTRATION_RETRY_DELAY = 2
 MAX_REGISTRATION_ATTEMPTS = 30
 
 
-class CiscoDeviceManagerPluginApi(proxy.RpcProxy):
+class CiscoDeviceManagementApi(n_rpc.RpcProxy):
     """Agent side of the device manager RPC API."""
 
     BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, topic, host):
-        super(CiscoDeviceManagerPluginApi, self).__init__(
+        super(CiscoDeviceManagementApi, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
@@ -119,8 +119,7 @@ class CiscoCfgAgent(manager.Manager):
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
 
     def _initialize_rpc(self, host):
-        self.devmgr_rpc = CiscoDeviceManagerPluginApi(
-            topics.DEVICE_MANAGER_PLUGIN, host)
+        self.devmgr_rpc = CiscoDeviceManagementApi(topics.L3PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
         self.routing_service_helper = routing_svc_helper.RoutingServiceHelper(

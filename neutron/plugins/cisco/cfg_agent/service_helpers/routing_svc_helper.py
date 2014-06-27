@@ -16,6 +16,7 @@
 
 import eventlet
 import netaddr
+from oslo import messaging
 
 from neutron.common import constants as l3_constants
 from neutron.common import topics
@@ -24,9 +25,6 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import common as rpc_common
-from neutron.openstack.common.rpc import proxy
 
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
 from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
@@ -89,7 +87,7 @@ class RouterInfo(object):
         return N_ROUTER_PREFIX + self.router_id
 
 
-class CiscoRoutingPluginApi(proxy.RpcProxy):
+class CiscoRoutingPluginApi(n_rpc.RpcProxy):
     """RoutingServiceHelper(Agent) side of the  routing RPC API."""
 
     BASE_RPC_API_VERSION = '1.1'
@@ -132,15 +130,12 @@ class RoutingServiceHelper():
         self.sync_devices = set()
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
 
-        self._setup_rpc()
+        self._setup_rpc(self.topic, host)
 
-    def _setup_rpc(self):
-        self.conn = rpc.create_connection(new=True)
-        self.dispatcher = n_rpc.PluginRpcDispatcher([self])
-        self.conn.create_consumer(
-            self.topic,
-            self.dispatcher,
-            fanout=False)
+    def _setup_rpc(self, topic, host):
+        self.conn = n_rpc.create_connection(new=True)
+        self.endpoints = [CiscoRoutingPluginApi(topic, host)]
+        self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
         self.conn.consume_in_thread()
 
     ### Notifications from Plugin ####
@@ -295,7 +290,7 @@ class RoutingServiceHelper():
             if device_ids:
                 return self.plugin_rpc.get_routers(self.context,
                                                    hd_ids=device_ids)
-        except rpc_common.RPCException:
+        except n_rpc.RPCException:
             LOG.exception(_("RPC Error in fetching routers from plugin"))
             self.fullsync = True
 

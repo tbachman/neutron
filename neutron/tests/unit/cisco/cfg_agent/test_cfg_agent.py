@@ -80,7 +80,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         super(TestCiscoCfgAgentWIthStateReporting, self).setUp()
         self.devmgr_pluginApi_cls_p = mock.patch(
             'neutron.plugins.cisco.cfg_agent.cfg_agent.'
-            'CiscoDeviceManagerPluginApi')
+            'CiscoDeviceManagementApi')
         devmgr_pluginApi_cls = self.devmgr_pluginApi_cls_p.start()
         self.devmgr_plugin_api = mock.Mock()
         devmgr_pluginApi_cls.return_value = self.devmgr_plugin_api
@@ -96,15 +96,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
 
-        # self.routing_svc_cls_p = mock.patch(
-        #     'neutron.plugins.cisco.cfg_agent.'
-        #     '.routing_svc_helper.RoutingServiceHelper')
-        # routing_svc_cls = self.routing_svc_cls_p.start()
-        # self.routing_svc_helper = mock.Mock()
-        # routing_svc_cls.return_value = self.routing_svc_helper
-
-        #ToDo(Hareesh): Check this
-        mock.patch('neutron.openstack.common.rpc.create_connection').start()
+        mock.patch('neutron.common.rpc.create_connection').start()
 
         self.addCleanup(mock.patch.stopall)
 
