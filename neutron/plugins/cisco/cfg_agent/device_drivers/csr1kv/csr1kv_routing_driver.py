@@ -26,11 +26,14 @@ from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
-from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
-                                                  n1kv_constants)
 from oslo.config import cfg
 
 LOG = logging.getLogger(__name__)
+
+
+# N1kv constants
+T1_PORT_NAME = 't1_p:'  # T1 port/network is for VXLAN
+T2_PORT_NAME = 't2_p:'  # T2 port/network is for VLAN
 
 
 class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
@@ -283,9 +286,9 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _get_interface_no_from_hosting_port(self, port):
         _name = port['hosting_info']['hosting_port_name']
         if_type = _name.split(':')[0] + ':'
-        if if_type == n1kv_constants.T1_PORT_NAME:
+        if if_type == T1_PORT_NAME:
             no = str(int(_name.split(':')[1]) * 2)
-        elif if_type == n1kv_constants.T2_PORT_NAME:
+        elif if_type == T2_PORT_NAME:
             no = str(int(_name.split(':')[1]) * 2 + 1)
         else:
             LOG.error(_('Unknown interface name: %s'), if_type)

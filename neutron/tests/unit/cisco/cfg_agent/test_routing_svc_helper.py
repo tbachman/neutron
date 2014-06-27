@@ -20,8 +20,8 @@ from oslo.config import cfg
 
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
+from neutron.common import rpc as n_rpc
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.rpc import common as rpc_common
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.cfg_agent import cfg_agent
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
@@ -161,7 +161,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.looping_call_p = mock.patch(
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
-        mock.patch('neutron.openstack.common.rpc.create_connection').start()
+        mock.patch('neutron.common.rpc.create_connection').start()
 
         self.addCleanup(mock.patch.stopall)
 
@@ -613,7 +613,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
     @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_with_rpc_error(self, mock_spawn):
         router, port = prepare_router_data()
-        self.plugin_api.get_routers.side_effect = rpc_common.RPCException
+        self.plugin_api.get_routers.side_effect = n_rpc.RPCException
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         routing_svc_helper.fullsync = False
         routing_svc_helper.updated_routers.add(router['id'])
@@ -622,8 +622,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.plugin_api.get_routers.assert_called_with(
             routing_svc_helper.context,
             router_ids=[router['id']])
-        self.assertRaises(rpc_common.RPCException,
-                          self.plugin_api.get_routers)
+        self.assertRaises(n_rpc.RPCException, self.plugin_api.get_routers)
         self.assertFalse(mock_spawn.called)
         self.assertTrue(routing_svc_helper.fullsync)
         self.plugin_api.get_routers.reset_mock()
