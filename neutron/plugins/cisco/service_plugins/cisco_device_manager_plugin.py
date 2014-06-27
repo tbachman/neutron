@@ -88,4 +88,4 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
         self.callbacks = CiscoDevMgrPluginRpcCallbacks()
         self.dispatcher = self.callbacks.create_rpc_dispatcher()
         self.conn.create_consumer(self.topic, self.dispatcher, fanout=False)
-        self.conn.consume_in_thread()
+        self.conn.consume_in_threads()

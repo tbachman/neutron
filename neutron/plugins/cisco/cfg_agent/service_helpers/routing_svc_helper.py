@@ -136,7 +136,7 @@ class RoutingServiceHelper():
         self.conn = n_rpc.create_connection(new=True)
         self.endpoints = [CiscoRoutingPluginApi(topic, host)]
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
-        self.conn.consume_in_thread()
+        self.conn.consume_in_threads()
 
     ### Notifications from Plugin ####
 
