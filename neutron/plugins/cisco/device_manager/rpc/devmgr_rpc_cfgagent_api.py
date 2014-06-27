@@ -13,10 +13,10 @@
 #    under the License.
 #
 
+from neutron.common import rpc as n_rpc
 from neutron.common import utils
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.common import constants as service_constants
@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
 
-class DeviceMgrCfgAgentNotifyAPI(proxy.RpcProxy):
+class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
     """API for Device manager service plugin to notify Cisco cfg agent."""
     BASE_RPC_API_VERSION = '1.0'
 

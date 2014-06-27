@@ -14,11 +14,11 @@
 #
 
 from neutron.common import constants
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.common import constants as svc_constants
@@ -30,7 +30,7 @@ L3AGENT_SCHED = constants.L3_AGENT_SCHEDULER_EXT_ALIAS
 CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
 
-class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
+class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
     """API for plugin to notify Cisco cfg agent and L3 agent."""
     BASE_RPC_API_VERSION = '1.0'
 
