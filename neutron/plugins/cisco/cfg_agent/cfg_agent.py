@@ -15,6 +15,7 @@
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import eventlet
+eventlet.monkey_patch()
 import pprint
 import sys
 import time
@@ -25,6 +26,7 @@ from neutron.agent.common import config
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent import rpc as agent_rpc
+from neutron.common import config as common_config
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as n_context
@@ -314,13 +316,13 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
 def main(manager='neutron.plugins.cisco.cfg_agent.'
                  'cfg_agent.CiscoCfgAgentWithStateReport'):
-    eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(CiscoCfgAgent.OPTS)
     config.register_agent_state_opts_helper(conf)
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)
     conf.register_opts(external_process.OPTS)
+    common_config.init(sys.argv[1:])
     conf(project='neutron')
     config.setup_logging(conf)
     server = neutron_service.Service.create(
