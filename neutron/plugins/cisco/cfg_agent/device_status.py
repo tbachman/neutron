@@ -61,8 +61,7 @@ class DeviceStatus(object):
         resp = []
         for hd_id in self.backlog_hosting_devices.keys():
             hd = self.backlog_hosting_devices[hd_id]['hd']
-            created_time = datetime.datetime.strptime(hd['created_at'],
-                                                      '%Y-%m-%d %H:%M:%S')
+            created_time = hd['created_at']
             boottime = datetime.timedelta(seconds=hd['booting_time'])
             time_when_booted = created_time + boottime
             time_when_dead = created_time + boottime + wait_time
