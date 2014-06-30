@@ -291,6 +291,8 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         LOG.debug(_("Report state task started"))
         configurations = self.routing_service_helper.collect_state(
             self.agent_state['configurations'])
+        non_responding = self._dev_status.get_backlogged_hosting_devices_info()
+        configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
         LOG.debug(_("State report data: %s"),
                   pprint.pformat(self.agent_state))

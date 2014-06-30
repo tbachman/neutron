@@ -130,11 +130,11 @@ class RoutingServiceHelper():
         self.fullsync = True
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
 
-        self._setup_rpc(self.topic, host)
+        self._setup_rpc()
 
-    def _setup_rpc(self, topic, host):
+    def _setup_rpc(self):
         self.conn = n_rpc.create_connection(new=True)
-        self.endpoints = [CiscoRoutingPluginApi(topic, host)]
+        self.endpoints = [self]
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
         self.conn.consume_in_threads()
 

@@ -55,6 +55,20 @@ class DeviceStatus(object):
     def get_backlogged_hosting_devices(self):
         return self.backlog_hosting_devices.keys()
 
+    def get_backlogged_hosting_devices_info(self):
+        wait_time = datetime.timedelta(
+            seconds=cfg.CONF.hosting_device_dead_timeout)
+        resp = []
+        for hd in self.backlog_hosting_devices:
+            created_time = hd['created_at']
+            boottime = datetime.timedelta(seconds=hd['booting_time'])
+            time_when_booted = created_time + boottime
+            time_when_dead = created_time + boottime + wait_time
+            resp.append({'host id': hd['id'],
+                         'finished booting at': time_when_booted,
+                         'considered dead at': time_when_dead})
+        return resp
+
     def is_hosting_device_reachable(self, hosting_device):
         """Check the hosting device which hosts this resource is reachable.
         If the resource is not reachable, it is added to the backlog.
