@@ -469,9 +469,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         return False
 
     def _setup_device_manager(self):
-        auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
-                    cfg.CONF.keystone_authtoken.auth_host + ":" +
-                    str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
+        auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
         u_name = cfg.CONF.keystone_authtoken.admin_user
         pw = cfg.CONF.keystone_authtoken.admin_password
         tenant = cfg.CONF.l3_admin_tenant

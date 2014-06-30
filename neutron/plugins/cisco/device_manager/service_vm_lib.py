@@ -93,8 +93,8 @@ class ServiceVMManager:
         try:
             image = n_utils.find_resource(self._nclient.images, vm_image)
             flavor = n_utils.find_resource(self._nclient.flavors, vm_flavor)
-        except nova_exc.CommandError as e:
-            LOG.error(_('Failure: %s'), e)
+        except (nova_exc.CommandError, Exception) as e:
+            LOG.error(_('Failure to find resources: %s'), e)
             return None
 
         try:
