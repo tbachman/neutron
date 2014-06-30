@@ -58,7 +58,7 @@ class CiscoDeviceManagementApi(n_rpc.RpcProxy):
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
-    def report_dead_hosting_devices(self, context, hd_ids=[]):
+    def report_dead_hosting_devices(self, context, hd_ids=None):
         """Report that a hosting device cannot be contacted (presumed dead).
 
         :param: context: session context
@@ -73,11 +73,10 @@ class CiscoDeviceManagementApi(n_rpc.RpcProxy):
                   topic=self.topic)
 
     def register_for_duty(self, context):
-        """Report that a config agent is ready for duty.
-        """
-        # Cast since we don't expect a return value.
-        return self.call(context, self.make_msg('register_for_duty',
-                                                host=self.host),
+        """Report that a config agent is ready for duty."""
+        return self.call(context,
+                         self.make_msg('register_for_duty',
+                                       host=self.host),
                          topic=self.topic)
 
 
@@ -186,9 +185,9 @@ class CiscoCfgAgent(manager.Manager):
                 }
         :return: None
         """
-        #ToDo(Hareesh): Verify admin_up event
         LOG.debug(_("Processing services started"))
-        # Now we process only routing service
+        # Now we process only routing service, additional services will be
+        # added in future
         self.routing_service_helper.process_service(device_ids,
                                                     removed_devices_info)
         LOG.debug(_("Processing services completed"))

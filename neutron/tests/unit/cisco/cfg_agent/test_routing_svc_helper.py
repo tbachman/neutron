@@ -466,7 +466,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         resp = routing_svc_helper._get_router_ids_from_removed_devices_info(
             removed_devices_info)
-        self.assertItemsEqual(['id1', 'id2', 'id3', 'id4'], resp)
+        self.assertEqual(sorted(['id1', 'id2', 'id3', 'id4']), sorted(resp))
 
     @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_full_sync_different_devices(self, mock_spawn):

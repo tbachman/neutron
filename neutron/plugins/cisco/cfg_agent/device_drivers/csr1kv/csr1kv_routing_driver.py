@@ -22,11 +22,13 @@ import xml.etree.ElementTree as ET
 
 import ciscoconfparse
 from ncclient import manager
+
+from oslo.config import cfg
+
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
-from oslo.config import cfg
 
 LOG = logging.getLogger(__name__)
 
@@ -218,8 +220,6 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         self._add_interface_nat(out_intfc_name, 'outside')
 
     def _csr_update_routing_table(self, ri, action, route):
-        #cmd = ['ip', 'route', operation, 'to', route['destination'],
-        #       'via', route['nexthop']]
         vrf_name = self._csr_get_vrf_name(ri)
         destination_net = netaddr.IPNetwork(route['destination'])
         dest = destination_net.network
