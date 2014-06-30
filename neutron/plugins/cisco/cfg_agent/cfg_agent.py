@@ -36,6 +36,7 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
 from neutron.openstack.common import service
+from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -294,6 +295,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
+        self.agent_state['agent_local_time'] = str(timeutils.utcnow())
         LOG.debug(_("State report data: %s"),
                   pprint.pformat(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)
