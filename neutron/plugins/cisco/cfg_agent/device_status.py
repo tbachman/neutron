@@ -64,11 +64,13 @@ class DeviceStatus(object):
             hd = self.backlog_hosting_devices[hd_id]['hd']
             created_time = hd['created_at']
             boottime = datetime.timedelta(seconds=hd['booting_time'])
-            time_when_booted = created_time + boottime
-            time_when_dead = created_time + boottime + wait_time
+            backlogged_at = hd['backlog_insertion_ts']
+            booted_at = created_time + boottime
+            time_when_dead = backlogged_at + wait_time
             resp.append({'host id': hd['id'],
-                         'backlogged at': str(hd['backlog_insertion_ts']),
-                         'estimate booted at': str(time_when_booted),
+                         'created at': str(created_time),
+                         'backlogged at': str(backlogged_at),
+                         'estimate booted at': str(booted_at),
                          'considered dead at': str(time_when_dead)})
         return resp
 
