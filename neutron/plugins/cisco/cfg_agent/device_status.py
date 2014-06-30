@@ -59,7 +59,8 @@ class DeviceStatus(object):
         wait_time = datetime.timedelta(
             seconds=cfg.CONF.hosting_device_dead_timeout)
         resp = []
-        for hd in self.backlog_hosting_devices:
+        for hd_id in self.backlog_hosting_devices.keys():
+            hd = self.backlog_hosting_devices[hd_id]['hd']
             created_time = datetime.datetime.strptime(hd['created_at'],
                                                       '%Y-%m-%d %H:%M:%S')
             boottime = datetime.timedelta(seconds=hd['booting_time'])
