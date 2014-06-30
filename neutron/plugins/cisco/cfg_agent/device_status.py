@@ -66,8 +66,8 @@ class DeviceStatus(object):
             time_when_booted = created_time + boottime
             time_when_dead = created_time + boottime + wait_time
             resp.append({'host id': hd['id'],
-                         'finished booting at': time_when_booted,
-                         'considered dead at': time_when_dead})
+                         'finished booting at': str(time_when_booted),
+                         'considered dead at': str(time_when_dead)})
         return resp
 
     def is_hosting_device_reachable(self, hosting_device):
