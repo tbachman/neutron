@@ -16,11 +16,10 @@
 
 import eventlet
 import netaddr
-from oslo import messaging
 
 from neutron.common import constants as l3_constants
-from neutron.common import topics
 from neutron.common import rpc as n_rpc
+from neutron.common import topics
 from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.openstack.common import excutils

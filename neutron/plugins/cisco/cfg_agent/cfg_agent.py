@@ -295,7 +295,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
-        self.agent_state['agent_local_time'] = str(timeutils.utcnow())
+        self.agent_state['local_time'] = str(timeutils.utcnow())
         LOG.debug(_("State report data: %s"),
                   pprint.pformat(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)

@@ -56,7 +56,6 @@ class DeviceStatus(object):
         return self.backlog_hosting_devices.keys()
 
     def get_backlogged_hosting_devices_info(self):
-        LOG.debug(_("Agent local time: %s"), str(timeutils.utcnow()))
         wait_time = datetime.timedelta(
             seconds=cfg.CONF.hosting_device_dead_timeout)
         resp = []
@@ -66,12 +65,12 @@ class DeviceStatus(object):
             boottime = datetime.timedelta(seconds=hd['booting_time'])
             backlogged_at = hd['backlog_insertion_ts']
             booted_at = created_time + boottime
-            time_when_dead = backlogged_at + wait_time
+            dead_at = backlogged_at + wait_time
             resp.append({'host id': hd['id'],
                          'created at': str(created_time),
                          'backlogged at': str(backlogged_at),
                          'estimate booted at': str(booted_at),
-                         'considered dead at': str(time_when_dead)})
+                         'considered dead at': str(dead_at)})
         return resp
 
     def is_hosting_device_reachable(self, hosting_device):
