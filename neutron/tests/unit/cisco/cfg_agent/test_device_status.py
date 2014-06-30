@@ -162,10 +162,8 @@ class TestHostingDevice(base.BaseTestCase):
 
         hd = self.hosting_device
         hd['created_at'] = created_at_430sec_str
-        #Inserted in backlog after 60 seconds
+        #Inserted in backlog now
         hd['backlog_insertion_ts'] = (datetime.datetime.utcnow())
-                                      # - datetime.timedelta(seconds=360))
-
         hd_id = hd['id']
         self.status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,

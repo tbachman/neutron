@@ -97,7 +97,7 @@ class CiscoRoutingPluginApi(n_rpc.RpcProxy):
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
-    def get_routers(self, context, router_ids=None, hd_ids=[]):
+    def get_routers(self, context, router_ids=None, hd_ids=None):
         """Make a remote process call to retrieve the sync data for routers.
 
         :param context: session context
@@ -106,7 +106,8 @@ class CiscoRoutingPluginApi(n_rpc.RpcProxy):
                         hosting devices will be returned.
         """
         return self.call(context,
-                         self.make_msg('cfg_sync_routers', host=self.host,
+                         self.make_msg('cfg_sync_routers',
+                                       host=self.host,
                                        router_ids=router_ids,
                                        hosting_device_ids=hd_ids),
                          topic=self.topic)
@@ -125,9 +126,8 @@ class RoutingServiceHelper():
         self.router_info = {}
         self.updated_routers = set()
         self.removed_routers = set()
-
-        self.fullsync = True
         self.sync_devices = set()
+        self.fullsync = True
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
 
         self._setup_rpc(self.topic, host)
@@ -260,7 +260,6 @@ class RoutingServiceHelper():
         for (hd_id, num) in num_hd_routers.items():
             routers_per_hd[hd_id] = {'routers': num}
         non_responding = self._dev_status.get_backlogged_hosting_devices()
-        # configurations = self.agent_state['configurations']
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
         configurations['total interfaces'] = num_interfaces
@@ -551,7 +550,6 @@ class RoutingServiceHelper():
         ri.router[l3_constants.FLOATINGIP_KEY] = []
         try:
             if deconfigure:
-                #ToDo: Check here
                 self._process_router(ri)
                 driver = self._drivermgr.get_driver(router_id)
                 driver.router_removed(ri, deconfigure)
