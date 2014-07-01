@@ -46,7 +46,7 @@ class HostingDeviceCfgAgentScheduler(object):
             try:
                 cfg_agent = query.one()
             except (exc.MultipleResultsFound, exc.NoResultFound):
-                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
+                LOG.debug('No enabled Cisco cfg agent on host %s',
                           agent_host)
                 return False
             if agents_db.AgentDbMixin.is_agent_down(
@@ -63,11 +63,11 @@ class HostingDeviceCfgAgentScheduler(object):
         """Selects Cisco cfg agent that will configure <hosting_device>."""
         with context.session.begin(subtransactions=True):
             if not hosting_device:
-                LOG.debug(_('Hosting device to schedule not specified'))
+                LOG.debug('Hosting device to schedule not specified')
                 return
             elif hosting_device.cfg_agent:
-                LOG.debug(_('Hosting device %(hd_id)s has already been '
-                            'assigned to Cisco cfg agent %(agent_id)s'),
+                LOG.debug('Hosting device %(hd_id)s has already been '
+                          'assigned to Cisco cfg agent %(agent_id)s',
                           {'hd_id': id,
                            'agent_id': hosting_device.cfg_agent.id})
                 return

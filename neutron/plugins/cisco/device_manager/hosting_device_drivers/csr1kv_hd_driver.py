@@ -33,7 +33,7 @@ CFG_DRIVE_UUID_LEN = 12
 
 CSR1KV_HD_DRIVER_OPTS = [
     cfg.StrOpt('csr1kv_configdrive_template', default='csr1kv_cfg_template',
-               help=_("CSR1kv configdrive template file")),
+               help=_("CSR1kv configdrive template file.")),
 ]
 
 cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
@@ -61,17 +61,14 @@ class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
             cfg_template_filename = (cfg.CONF.templates_path + "/" +
                                      cfg.CONF.csr1kv_configdrive_template)
             vm_cfg_filename = self._unique_cfgdrive_filename(mgmtport['id'])
-            cfg_template_file = open(cfg_template_filename, 'r')
-            vm_cfg_file = open(vm_cfg_filename, "w")
-            # insert proper instance values in the template
-            for line in cfg_template_file:
-                tokens = line.strip('\n').split(' ')
-                result = [params[token] if token in params.keys()
-                          else token for token in tokens]
-                line = ' '.join(map(str, result)) + '\n'
-                vm_cfg_file.write(line)
-            vm_cfg_file.close()
-            cfg_template_file.close()
+            with open(cfg_template_filename, 'r') as cfg_template_file:
+                with open(vm_cfg_filename, "w") as vm_cfg_file:
+                    # insert proper instance values in the template
+                    for line in cfg_template_file:
+                        tokens = line.strip('\n').split(' ')
+                        line = ' '.join(map(lambda x: params.get(x, x),
+                                            tokens)) + '\n'
+                        vm_cfg_file.write(line)
             return {'iosxe_config.txt': vm_cfg_filename}
         except IOError as e:
             LOG.error(_('Failed to create config file: %s. Trying to'

@@ -38,8 +38,7 @@ from neutron.plugins.cisco.db.device_manager.hd_models import (
 from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
 from neutron.plugins.cisco.db.device_manager.hd_models import SlotAllocation
 from neutron.plugins.cisco.db.device_manager import hosting_devices_db
-from neutron.plugins.cisco.device_manager.rpc import (devmgr_rpc_cfgagent_api
-                                                      as devmgr_rpc)
+from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
@@ -97,6 +96,17 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     # Service VM manager object that interacts with Nova
     _svc_vm_mgr = None
+
+    @property
+    def dm_cfg_rpc_notifier(self):
+        if not hasattr(self, '_l3_cfg_rpc_notifier'):
+            self._dm_cfg_rpc_notifier = (devmgr_rpc_cfgagent_api.
+                                         DeviceMgrCfgAgentNotifyAPI(self))
+        return self._dm_cfg_rpc_notifier
+
+    @dm_cfg_rpc_notifier.setter
+    def dm_cfg_rpc_notifier(self, value):
+        self._dm_cfg_rpc_notifier = value
 
     @classmethod
     def l3_tenant_id(cls):
@@ -428,7 +438,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 pass
             for hd in hosting_devices:
                 if self._process_non_responsive_hosting_device(e_context, hd):
-                    devmgr_rpc.DeviceMgrCfgAgentNotify.hosting_devices_removed(
+                    self.dm_cfg_rpc_notifier.hosting_devices_removed(
                         context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):
@@ -480,10 +490,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         ctx = neutron_context.get_admin_context()
         for template in ctx.session.query(HostingDeviceTemplate):
             self._dispatch_pool_maintenance_job(template)
-
-    @property
-    def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
 
     def _dispatch_pool_maintenance_job(self, template):
         mgr_context = neutron_context.get_admin_context()

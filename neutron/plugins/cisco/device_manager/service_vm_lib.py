@@ -32,10 +32,10 @@ LOG = logging.getLogger(__name__)
 SERVICE_VM_LIB_OPTS = [
     cfg.StrOpt('templates_path',
                default='/opt/stack/data/neutron/cisco/templates',
-               help=_("Path to templates for hosting devices")),
+               help=_("Path to templates for hosting devices.")),
     cfg.StrOpt('service_vm_config_path',
                default='/opt/stack/data/neutron/cisco/config_drive',
-               help=_("Path to config drive files for service VM instances")),
+               help=_("Path to config drive files for service VM instances.")),
 ]
 
 cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS)
@@ -94,8 +94,8 @@ class ServiceVMManager:
             image = n_utils.find_resource(self._nclient.images, vm_image)
             flavor = n_utils.find_resource(self._nclient.flavors, vm_flavor)
         except (nova_exc.CommandError, Exception) as e:
-            LOG.error(_('Failure to find resources: %s'), e)
-            return None
+            LOG.error(_('Failure finding needed Nova resource: %s'), e)
+            return
 
         try:
             # Assumption for now is that this does not need to be
@@ -105,7 +105,7 @@ class ServiceVMManager:
             files = dict((label, open(name)) for label, name in
                          cfg_files.items())
         except IOError:
-            return None
+            return
 
         try:
             server = self._nclient.servers.create(
@@ -121,7 +121,7 @@ class ServiceVMManager:
                 Exception) as e:
             LOG.error(_('Failed to create service VM instance: %s'), e)
             hosting_device_drv.delete_configdrive_files(context, mgmt_port)
-            return None
+            return
         return {'id': server.id}
 
     #TODO(remove fake function later)

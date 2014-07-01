@@ -14,12 +14,9 @@
 #
 
 from neutron.common import rpc as n_rpc
-from neutron.common import utils
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
-from neutron.plugins.common import constants as service_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -31,16 +28,16 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
     """API for Device manager service plugin to notify Cisco cfg agent."""
     BASE_RPC_API_VERSION = '1.0'
 
-    def __init__(self, topic=c_constants.CFG_AGENT):
+    def __init__(self, devmgr_plugin, topic=c_constants.CFG_AGENT):
         super(DeviceMgrCfgAgentNotifyAPI, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
+        self._dmplugin = devmgr_plugin
 
-    def _notification_host(self, context, method, payload, host,
+    def _host_notification(self, context, method, payload, host,
                            topic=None):
-        """Notify the agent that is handling the hosting device."""
-
-        LOG.debug(_('Notify Cisco cfg agent at %(host)s the message '
-                    '%(method)s'), {'host': host, 'method': method})
+        """Notify the cfg agent that is handling the hosting device."""
+        LOG.debug('Notify Cisco cfg agent at %(host)s the message '
+                  '%(method)s', {'host': host, 'method': method})
         self.cast(context,
                   self.make_msg(method, payload=payload),
                   topic='%s.%s' % (self.topic if topic is None else topic,
@@ -49,20 +46,16 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
     def _agent_notification(self, context, method, hosting_devices,
                             operation, data):
         """Notify individual Cisco cfg agents."""
-        adminContext = context.is_admin and context or context.elevated()
-        dmplugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.DEVICE_MANAGER)
+        admin_context = context.is_admin and context or context.elevated()
         for hosting_device in hosting_devices:
-            if (utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
-                agents = dmplugin.get_cfg_agents_for_hosting_devices(
-                    adminContext, hosting_device['id'], admin_state_up=True,
+            agents = self._dmplugin.get_cfg_agents_for_hosting_devices(
+                    admin_context, hosting_device['id'], admin_state_up=True,
                     active=True, schedule=True)
-            else:
-                agents = []
             for agent in agents:
-                LOG.debug(_('Notify Cisco cfg agent at %(topic)s.%(host)s '
-                            'the message %(method)s'),
-                          {'topic': agent.topic,
+                LOG.debug('Notify %(agent_type)s at %(topic)s.%(host)s the '
+                          'message %(method)s',
+                          {'agent_type': agent.agent_type,
+                           'topic': agent.topic,
                            'host': agent.host,
                            'method': method})
                 self.cast(context,
@@ -72,8 +65,8 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
 
     # def _notification_fanout(self, context, method, router_id):
     #     """Fanout the deleted router to all L3 agents."""
-    #     LOG.debug(_('Fanout notify agent at %(topic)s the message '
-    #                 '%(method)s on router %(router_id)s'),
+    #     LOG.debug('Fanout notify agent at %(topic)s the message '
+    #               '%(method)s on router %(router_id)s',
     #               {'topic': topics.DHCP_AGENT,
     #                'method': method,
     #                'router_id': router_id})
@@ -83,7 +76,7 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
 
     def agent_updated(self, context, admin_state_up, host):
         """Updates cfg agent on <host> to enable or disable it."""
-        self._notification_host(context, 'agent_updated',
+        self._host_notification(context, 'agent_updated',
                                 {'admin_state_up': admin_state_up}, host)
 
     def hosting_devices_unassigned_from_cfg_agent(self, context, ids, host):
@@ -92,7 +85,7 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
         This notification relieves the cfg agent in <host> of responsibility
         to monitor and configure hosting devices with id specified in <ids>.
         """
-        self._notification_host(context, 'devices_unassigned_from_cfg_agent',
+        self._host_notification(context, 'devices_unassigned_from_cfg_agent',
                                 {'hosting_device_ids': ids}, host)
 
     def hosting_devices_assigned_to_cfg_agent(self, context, ids, host):
@@ -101,7 +94,7 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
         This notification relieves the cfg agent in <host> of responsibility
         to monitor and configure hosting devices with id specified in <ids>.
         """
-        self._notification_host(context, 'devices_assigned_to_cfg_agent',
+        self._host_notification(context, 'devices_assigned_to_cfg_agent',
                                 {'hosting_device_ids': ids}, host)
 
     def hosting_devices_removed(self, context, hosting_data, deconfigure,
@@ -124,9 +117,6 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
         logical resources should be removed from the hosting devices
         """
         if hosting_data:
-            self._notification_host(context, 'hosting_devices_removed',
+            self._host_notification(context, 'hosting_devices_removed',
                                     {'hosting_data': hosting_data,
                                      'deconfigure': deconfigure}, host)
-
-
-DeviceMgrCfgAgentNotify = DeviceMgrCfgAgentNotifyAPI()

@@ -29,46 +29,35 @@ LOG = logging.getLogger(__name__)
 class L3RouterCfgRpcCallbackMixin(object):
     """Mixin for Cisco cfg agent rpc support in L3 routing service plugin."""
 
-    def cfg_sync_routers(self, context, **kwargs):
+    def cfg_sync_routers(self, context, host, router_ids=None,
+                         hosting_device_ids=None):
         """Sync routers according to filters to a specific Cisco cfg agent.
 
         @param context: contains user information
-        @param kwargs: host, or router_ids
+        @param host - originator of callback
+        @param router_ids - list of router ids to return information about
+        @param hosting_device_ids - list of hosting device ids to get
+        routers for.
         @return: a list of routers
                  with their hosting devices, interfaces and floating_ips
         """
-        router_ids = kwargs.get('router_ids')
-        host = kwargs.get('host')
-        hd_ids = kwargs.get('hosting_device_ids', [])
         context = neutron_context.get_admin_context()
-        l3plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
-        if l3plugin is None:
-            routers = []
-            LOG.error(_('No L3 router service plugin registered! '
-                        'Will return empty router list to Cisco '
-                        'cfg agent@%s.'), host)
-        elif utils.is_extension_supported(
-                l3plugin, constants.L3_AGENT_SCHEDULER_EXT_ALIAS):
-            try:
-                routers = l3plugin.list_active_sync_routers_on_hosting_devices(
-                    context, host, router_ids, hd_ids)
-            except AttributeError:
-                routers = []
-        else:
+        try:
+            routers = self._plugin.list_active_sync_routers_on_hosting_devices(
+                context, host, router_ids, hosting_device_ids)
+        except AttributeError:
             routers = []
         plugin = manager.NeutronManager.get_plugin()
-        if utils.is_extension_supported(
+        if routers and utils.is_extension_supported(
                 plugin, constants.PORT_BINDING_EXT_ALIAS):
             self._ensure_host_set_on_ports(context, plugin, host, routers)
-        LOG.debug(_("Routers returned to Cisco cfg agent@%(agt)s:\n "
-                    "%(routers)s"),
+        LOG.debug('Routers returned to Cisco cfg agent@%(agt)s:\n %(routers)s',
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
     def _ensure_host_set_on_ports(self, context, plugin, host, routers):
         for router in routers:
-            LOG.debug(_("Checking router: %(id)s for host: %(host)s"),
+            LOG.debug('Checking router: %(id)s for host: %(host)s',
                       {'id': router['id'], 'host': host})
             self._ensure_host_set_on_port(context, plugin, host,
                                           router.get('gw_port'))

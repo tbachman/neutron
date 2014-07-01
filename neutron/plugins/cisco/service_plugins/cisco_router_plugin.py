@@ -26,7 +26,6 @@ from neutron.db import l3_rpc_base
 from neutron.db import model_base
 from neutron.openstack.common import importutils
 import neutron.plugins
-from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
@@ -44,6 +43,10 @@ class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
                                     l3_rpc_base.L3RpcCallbackMixin,
                                     l3_router_rpc.L3RouterCfgRpcCallbackMixin):
     RPC_API_VERSION = '1.1'
+
+    def __init__(self, plugin):
+        super(CiscoRouterPluginRpcCallbacks, self).__init__()
+        self._plugin = plugin
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
@@ -89,15 +92,14 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = n_rpc.create_connection(new=True)
-        self.agent_notifiers.update(
-            {q_const.AGENT_TYPE_L3:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify,
-             c_constants.AGENT_TYPE_CFG:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify})
+        self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
+            l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self))
         # Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
-        self.endpoints = [CiscoRouterPluginRpcCallbacks()]
-        self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
+        self.endpoints = [CiscoRouterPluginRpcCallbacks(self)]
+        self.conn.create_consumer(self.topic, self.endpoints,
+                                  fanout=False)
+        # Consume from all consumers in threads
         self.conn.consume_in_threads()
 
     def get_plugin_type(self):
