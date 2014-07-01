@@ -31,6 +31,7 @@ from neutron.common import exceptions
 from neutron.common import legacy
 from neutron.common import topics
 from neutron.common import utils
+from neutron.common import exceptions as q_exc
 from neutron import context
 from neutron import manager
 from neutron.openstack.common import importutils
@@ -284,6 +285,17 @@ class DhcpAgent(manager.Manager):
     @utils.synchronized('dhcp-agent')
     def subnet_update_end(self, context, payload):
         """Handle the subnet.update.end notification event."""
+        try:
+            ip = netaddr.IPNetwork(payload['subnet']['cidr'])
+            if ip.size < 4:
+                msg = _("%s has size %d") % (payload['subnet']['cidr'], ip.size)
+                raise q_exc.BadRequest(resource='subnet', msg=msg)
+            gw = netaddr.IPAddress(payload['subnet']['gateway_ip'])            
+            if gw not in ip:
+                msg = _("%s is not in network %s") % (payload['subnet']['gateway_ip'], payload['subnet']['cidr'])
+                raise q_exc.BadRequest(resource='subnet', msg=msg)
+        except:
+            raise
         network_id = payload['subnet']['network_id']
         self.refresh_dhcp_helper(network_id)
 
