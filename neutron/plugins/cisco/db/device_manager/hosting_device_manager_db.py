@@ -504,6 +504,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
+                LOG.info(_('Not all Nova services are up and running. '
+                           'Skipping this service vm pool management '
+                           'request.'))
                 return
         mgr_context = neutron_context.get_admin_context()
         mgr_context.tenant_id = self.l3_tenant_id()
