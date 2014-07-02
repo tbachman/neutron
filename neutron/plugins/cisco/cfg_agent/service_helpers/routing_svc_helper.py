@@ -141,12 +141,12 @@ class RoutingServiceHelper():
 
     def router_deleted(self, context, router_id):
         """Deal with router deletion RPC message."""
-        LOG.debug(_('Got router deleted notification for %s'), router_id)
+        LOG.debug('Got router deleted notification for %s', router_id)
         self.removed_routers.add(router_id)
 
     def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""
-        LOG.debug(_('Got routers updated notification :%s'), routers)
+        LOG.debug('Got routers updated notification :%s', routers)
         if routers:
             # This is needed for backward compatibility
             if isinstance(routers[0], dict):
@@ -154,24 +154,24 @@ class RoutingServiceHelper():
             self.updated_routers.update(routers)
 
     def router_removed_from_agent(self, context, payload):
-        LOG.debug(_('Got router removed from agent :%r'), payload)
+        LOG.debug('Got router removed from agent :%r', payload)
         self.removed_routers.add(payload['router_id'])
 
     def router_added_to_agent(self, context, payload):
-        LOG.debug(_('Got router added to agent :%r'), payload)
+        LOG.debug('Got router added to agent :%r', payload)
         self.routers_updated(context, payload)
 
     # Routing service helper public methods
 
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
-            LOG.debug(_("Routing service processing started"))
+            LOG.debug("Routing service processing started")
             resources = {}
             routers = []
             removed_routers = []
             all_routers_flag = False
             if self.fullsync:
-                LOG.debug(_("FullSync flag is on. Starting fullsync"))
+                LOG.debug("FullSync flag is on. Starting fullsync")
                 # Setting all_routers_flag and clear the global full_sync flag
                 all_routers_flag = True
                 self.fullsync = False
@@ -182,15 +182,15 @@ class RoutingServiceHelper():
             else:
                 if self.updated_routers:
                     router_ids = list(self.updated_routers)
-                    LOG.debug(_("Updated routers:%s"), router_ids)
+                    LOG.debug("Updated routers:%s", router_ids)
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
                 if device_ids:
-                    LOG.debug(_("Adding new devices:%s"), device_ids)
+                    LOG.debug("Adding new devices:%s", device_ids)
                     self.sync_devices = set(device_ids) | self.sync_devices
                 if self.sync_devices:
                     sync_devices_list = list(self.sync_devices)
-                    LOG.debug(_("Fetching routers on:%s"), sync_devices_list)
+                    LOG.debug("Fetching routers on:%s", sync_devices_list)
                     routers.extend(self._fetch_router_info(
                         device_ids=sync_devices_list))
                     self.sync_devices.clear()
@@ -201,7 +201,7 @@ class RoutingServiceHelper():
                         self.removed_routers = self.removed_routers | set(ids)
                 if self.removed_routers:
                     removed_routers_ids = list(self.removed_routers)
-                    LOG.debug(_("Removed routers:%s"), removed_routers_ids)
+                    LOG.debug("Removed routers:%s", removed_routers_ids)
                     for r in removed_routers_ids:
                         if r in self.router_info:
                             removed_routers.append(self.router_info[r].router)
@@ -225,7 +225,7 @@ class RoutingServiceHelper():
             if removed_devices_info:
                 for hd_id in removed_devices_info['hosting_data']:
                     self._drivermgr.remove_driver_for_hosting_device(hd_id)
-            LOG.debug(_("Routing service processing successfully completed"))
+            LOG.debug("Routing service processing successfully completed")
         except Exception:
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
@@ -614,7 +614,7 @@ class RoutingServiceHelper():
         adds, removes = common_utils.diff_list_of_dict(old_routes,
                                                        new_routes)
         for route in adds:
-            LOG.debug(_("Added route entry is '%s'"), route)
+            LOG.debug("Added route entry is '%s'", route)
             # remove replaced route from deleted route
             for del_route in removes:
                 if route['destination'] == del_route['destination']:
@@ -624,7 +624,7 @@ class RoutingServiceHelper():
             driver.routes_updated(ri, 'replace', route)
 
         for route in removes:
-            LOG.debug(_("Removed route entry is '%s'"), route)
+            LOG.debug("Removed route entry is '%s'", route)
             driver = self._drivermgr.get_driver(ri.id)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes

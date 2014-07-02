@@ -183,7 +183,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             self._remove_interface_nat(in_intfc_name, 'inside')
 
         #Wait for two second
-        LOG.debug(_("Sleep for 2 seconds before clearing NAT rules"))
+        LOG.debug("Sleep for 2 seconds before clearing NAT rules")
         time.sleep(2)
 
         #Clear the NAT translation table
@@ -386,7 +386,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         capabilities = []
         for c in conn.server_capabilities:
             capabilities.append(c)
-        LOG.debug(_("Server capabilities: %s"), capabilities)
+        LOG.debug("Server capabilities: %s", capabilities)
         return capabilities
 
     def _get_running_config(self):
@@ -421,7 +421,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
                 return True
             LOG.error(_("Mismatch in ACL configuration for %s"), acl_no)
             return False
-        LOG.debug(_("%s is not present in config"), acl_no)
+        LOG.debug("%s is not present in config", acl_no)
         return False
 
     def _cfg_exists(self, cfg_str):
@@ -433,7 +433,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         ioscfg = self._get_running_config()
         parse = ciscoconfparse.CiscoConfParse(ioscfg)
         cfg_raw = parse.find_lines("^" + cfg_str)
-        LOG.debug(_("_cfg_exists(): Found lines %s"), cfg_raw)
+        LOG.debug("_cfg_exists(): Found lines %s", cfg_raw)
         return len(cfg_raw) > 0
 
     def _set_interface(self, name, ip_address, mask):
@@ -661,11 +661,11 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
         CSR1kvConfigException
         """
-        LOG.debug(_("RPCReply for %(snippet_name)s is %(rpc_obj)s"),
+        LOG.debug("RPCReply for %(snippet_name)s is %(rpc_obj)s",
                   {'snippet_name': snippet_name, 'rpc_obj': rpc_obj.xml})
         xml_str = rpc_obj.xml
         if "<ok />" in xml_str:
-            LOG.debug(_("RPCReply for %s is OK"), snippet_name)
+            LOG.debug("RPCReply for %s is OK", snippet_name)
             return True
         # Not Ok, we throw a ConfigurationException
         e_type = rpc_obj._root[0][0].text

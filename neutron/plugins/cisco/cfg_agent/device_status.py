@@ -89,18 +89,18 @@ class DeviceStatus(object):
 
         if hd_id not in self.backlog_hosting_devices.keys():
             if self._is_pingable(hd_mgmt_ip):
-                LOG.debug(_("Hosting device: %(hd_id)s@%(ip)s is reachable."),
+                LOG.debug("Hosting device: %(hd_id)s@%(ip)s is reachable.",
                           {'hd_id': hd_id, 'ip': hd_mgmt_ip})
                 return True
-            LOG.debug(_("Hosting device: %(hd_id)s@%(ip)s is NOT reachable."),
+            LOG.debug("Hosting device: %(hd_id)s@%(ip)s is NOT reachable.",
                       {'hd_id': hd_id, 'ip': hd_mgmt_ip})
             hd['backlog_insertion_ts'] = max(
                 timeutils.utcnow(),
                 hd['created_at'] +
                 datetime.timedelta(seconds=hd['booting_time']))
             self.backlog_hosting_devices[hd_id] = {'hd': hd}
-            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
-                        "to backlog"), {'hd_id': hd_id, 'ip': hd_mgmt_ip})
+            LOG.debug("Hosting device: %(hd_id)s @ %(ip)s is now added "
+                      "to backlog", {'hd_id': hd_id, 'ip': hd_mgmt_ip})
 
     def check_backlogged_hosting_devices(self):
         """"Checks the status of backlogged hosting devices.
@@ -112,7 +112,7 @@ class DeviceStatus(object):
         {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..]}
         """
         response_dict = {'reachable': [], 'dead': []}
-        LOG.debug(_("Current Backlogged hosting devices: %s"),
+        LOG.debug("Current Backlogged hosting devices: %s",
                   self.backlog_hosting_devices.keys())
         for hd_id in self.backlog_hosting_devices.keys():
             hd = self.backlog_hosting_devices[hd_id]['hd']
@@ -139,16 +139,16 @@ class DeviceStatus(object):
                 if timeutils.is_older_than(
                         hd['backlog_insertion_ts'],
                         cfg.CONF.hosting_device_dead_timeout):
-                    LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s hasn't "
-                                "been reachable for the last %(time)d "
-                                "seconds. Marking it dead."),
+                    LOG.debug("Hosting device: %(hd_id)s @ %(ip)s hasn't "
+                              "been reachable for the last %(time)d seconds. "
+                              "Marking it dead.",
                               {'hd_id': hd_id,
                                'ip': hd['management_ip_address'],
                                'time': cfg.CONF.hosting_device_dead_timeout})
                     response_dict['dead'].append(hd_id)
                     hd.pop('backlog_insertion_ts', None)
                     del self.backlog_hosting_devices[hd_id]
-        LOG.debug(_("Response: %s"), response_dict)
+        LOG.debug("Response: %s", response_dict)
         return response_dict
 
     def _is_pingable(self, ip):

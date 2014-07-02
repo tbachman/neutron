@@ -142,7 +142,7 @@ class CiscoCfgAgent(manager.Manager):
     @periodic_task.periodic_task
     def _backlog_task(self, context):
         """Process backlogged devices."""
-        LOG.debug(_("Processing backlog."))
+        LOG.debug("Processing backlog.")
         self._process_backlogged_hosting_devices(context)
 
     ## Main orchestrator ##
@@ -186,12 +186,12 @@ class CiscoCfgAgent(manager.Manager):
                 }
         :return: None
         """
-        LOG.debug(_("Processing services started"))
+        LOG.debug("Processing services started")
         # Now we process only routing service, additional services will be
         # added in future
         self.routing_service_helper.process_service(device_ids,
                                                     removed_devices_info)
-        LOG.debug(_("Processing services completed"))
+        LOG.debug("Processing services completed")
 
     def _process_backlogged_hosting_devices(self, context):
         """Process currently back logged devices.
@@ -208,8 +208,7 @@ class CiscoCfgAgent(manager.Manager):
         if res['reachable']:
             self.process_services(device_ids=res['reachable'])
         if res['dead']:
-            LOG.debug(_("Reporting dead hosting devices: %s"),
-                      res['dead'])
+            LOG.debug("Reporting dead hosting devices: %s", res['dead'])
             self.devmgr_rpc.report_dead_hosting_devices(context,
                                                         hd_ids=res['dead'])
 
@@ -289,15 +288,14 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         Refer the `configurations` dict for the parameters reported.
         :return: None
         """
-        LOG.debug(_("Report state task started"))
+        LOG.debug("Report state task started")
         configurations = self.routing_service_helper.collect_state(
             self.agent_state['configurations'])
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
         self.agent_state['local_time'] = str(timeutils.utcnow())
-        LOG.debug(_("State report data: %s"),
-                  pprint.pformat(self.agent_state))
+        LOG.debug("State report data: %s", pprint.pformat(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)
 
     def send_agent_report(self, report, context):
@@ -306,7 +304,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             self.state_rpc.report_state(context, report, self.use_call)
             report.pop('start_flag', None)
             self.use_call = False
-            LOG.debug(_("Send agent report successfully completed"))
+            LOG.debug("Send agent report successfully completed")
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_("Neutron server does not support state report. "
