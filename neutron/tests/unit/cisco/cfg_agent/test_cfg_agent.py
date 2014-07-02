@@ -145,18 +145,6 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.assertEqual(0, agent.agent_state[
             'configurations']['total routers'])
 
-    # def test_report_state_with_router_info(self):
-    #     router, ports = prepare_router_data()
-    #     agent = CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
-    #     ri = RouterInfo(router['id'], router)
-    #     agent.router_info[router['id']] = ri
-    #
-    #     agent._report_state()
-    #
-    #     self.assertIn('total routers', agent.agent_state['configurations'])
-    #     self.assertEqual(1, agent.agent_state[
-    #         'configurations']['total routers'])
-
     @mock.patch('neutron.plugins.cisco.cfg_agent.'
                 'cfg_agent.CiscoCfgAgentWithStateReport._agent_registration')
     def test_report_state_attribute_error(self, agent_registration):
