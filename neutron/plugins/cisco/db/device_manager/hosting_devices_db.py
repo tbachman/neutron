@@ -14,11 +14,11 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
+from oslo.db import exception as db_exc
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
 from neutron.db import db_base_plugin_v2 as base_db
-from neutron.openstack.common.db import exception as db_exc
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
