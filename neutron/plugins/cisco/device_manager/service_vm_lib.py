@@ -74,7 +74,7 @@ class ServiceVMManager:
         for service in services:
             if (service.binary in required and service.status == 'enabled' and
                     service.state == 'up'):
-                required.remove(service)
+                required.remove(service.binary)
             if len(required) == 0:
                 return True
         return False
