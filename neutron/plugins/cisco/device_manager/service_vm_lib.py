@@ -72,7 +72,7 @@ class ServiceVMManager:
             LOG.error(_('Failure determining running Nova services: %s'), e)
             return False
         for service in services:
-            if (service in required and service.status == 'enabled' and
+            if (service.binary in required and service.status == 'enabled' and
                     service.state == 'up'):
                 required.remove(service)
             if len(required) == 0:
