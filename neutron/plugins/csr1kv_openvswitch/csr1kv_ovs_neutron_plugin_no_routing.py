@@ -65,10 +65,12 @@ class CSR1kv_OVSRpcCallbacks(n_rpc.RpcCallback,
     # history
     #   1.0 Initial version
     #   1.1 Support Security Group RPC
+    #   1.2 Support get_devices_details_list
 
     RPC_API_VERSION = '1.2'
 
     def __init__(self, notifier, tunnel_type, plugin):
+        super(CSR1kv_OVSRpcCallbacks, self).__init__()
         self.notifier = notifier
         self.tunnel_type = tunnel_type
         # Bob - Patch to handle trunk ports.
@@ -244,6 +246,7 @@ class AgentNotifierApi(n_rpc.RpcProxy,
 MIN_VLAN=100
 MAX_VLAN=4000
 
+
 class TrunkMapping(model_base.BASEV2):
     """Represents a vlan to network mapping."""
     __tablename__ = 'csr1kv_ovs_trunk_mappings'
@@ -386,8 +389,9 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         )
-        self.endpoints = [CSR1kv_OVSRpcCallbacks(self.notifier, self.tunnel_type),
-                                                 agents_db.AgentExtRpcCallback()]
+        self.endpoints = [
+            CSR1kv_OVSRpcCallbacks(self.notifier, self.tunnel_type, self),
+            agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
         # Consume from all consumers in threads

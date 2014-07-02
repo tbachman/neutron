@@ -84,8 +84,8 @@ class LocalVLANMapping:
                  self.segmentation_id))
 
 
-class OVSPluginApi(agent_rpc.PluginApi,
-                   sg_rpc.SecurityGroupServerRpcApiMixin):
+class CSR1kvOVSPluginApi(agent_rpc.PluginApi,
+                         sg_rpc.SecurityGroupServerRpcApiMixin):
     pass
 
 
@@ -163,7 +163,7 @@ class CSR1kvOVSNeutronAgent(n_rpc.RpcCallback,
         :param use_veth_interconnection: use veths instead of patch ports to
                interconnect the integration bridge to physical bridges.
         '''
-        super(OVSNeutronAgent, self).__init__()
+        super(CSR1kvOVSNeutronAgent, self).__init__()
         self.use_veth_interconnection = use_veth_interconnection
         self.veth_mtu = veth_mtu
         self.root_helper = root_helper
@@ -258,7 +258,7 @@ class CSR1kvOVSNeutronAgent(n_rpc.RpcCallback,
     def setup_rpc(self):
         self.agent_id = 'ovs-agent-%s' % cfg.CONF.host
         self.topic = topics.AGENT
-        self.plugin_rpc = OVSPluginApi(topics.PLUGIN)
+        self.plugin_rpc = CSR1kvOVSPluginApi(topics.PLUGIN)
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
         # RPC network init
