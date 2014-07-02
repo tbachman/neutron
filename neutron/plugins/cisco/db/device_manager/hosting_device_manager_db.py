@@ -97,6 +97,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     # Service VM manager object that interacts with Nova
     _svc_vm_mgr = None
 
+    # Flag indicating is needed Nova services are reported as up.
+    _nova_running = False
+
     @property
     def dm_cfg_rpc_notifier(self):
         if not hasattr(self, '_l3_cfg_rpc_notifier'):
@@ -492,6 +495,16 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             self._dispatch_pool_maintenance_job(template)
 
     def _dispatch_pool_maintenance_job(self, template):
+        # Note(bobmel): Nova does not handle VM dispatching well before all
+        # its services have started. This creates problems for the Neutron
+        # devstack script that creates a Neutron router, which in turn
+        # triggers service VM dispatching.
+        # Only perform pool maintenance if needed Nova services have started
+        if not self._nova_running:
+            if self._svc_vm_mgr.nova_services_up():
+                self._nova_running = True
+            else:
+                return
         mgr_context = neutron_context.get_admin_context()
         mgr_context.tenant_id = self.l3_tenant_id()
         self._gt_pool.spawn_n(self._maintain_hosting_device_pool, mgr_context,

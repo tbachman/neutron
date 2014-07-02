@@ -52,11 +52,38 @@ class ServiceVMManager:
     def _core_plugin(self):
         return manager.NeutronManager.get_plugin()
 
+    def nova_services_up(self):
+        """Checks if required Nova services are up and running.
+
+        returns: True if all needed Nova services are up, False otherwise
+        """
+        required = set(['nova-conductor', 'nova-cert', 'nova-scheduler',
+                        'nova-compute', 'nova-consoleauth'])
+        try:
+            services = self._nclient.services.list()
+        # There are several individual Nova client exceptions but they have
+        # no other common base than Exception, hence the long list.
+        except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
+                nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
+                nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
+                nova_exc.EndpointNotFound, nova_exc.AmbiguousEndpoints,
+                nova_exc.ConnectionRefused, nova_exc.ClientException,
+                Exception) as e:
+            LOG.error(_('Failure determining running Nova services: %s'), e)
+            return False
+        for service in services:
+            if (service in required and service.status == 'enabled' and
+                    service.state == 'up'):
+                required.remove(service)
+            if len(required) == 0:
+                return True
+        return False
+
     def get_service_vm_status(self, vm_id):
         try:
             status = self._nclient.servers.get(vm_id).status
         # There are several individual Nova client exceptions but they have
-        # no other common base than Exception, therefore the long list.
+        # no other common base than Exception, hence the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
                 nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
                 nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
