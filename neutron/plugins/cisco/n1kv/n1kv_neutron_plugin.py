@@ -164,7 +164,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         eventlet.spawn(self._poll_policy_profiles)
         # Maintain a flag that tracks whether a full sync is required
         # Set the flag to True to sync with VSM on neutron restarts
-        self.full_sync = True
+        self.full_sync = c_conf.CISCO_N1K.enable_sync_on_start
         # Maintain a dict to track whether a resource needs to be synced
         self.sync_resource = {"network_profiles": False,
                               "networks": False,
