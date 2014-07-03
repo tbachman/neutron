@@ -20,14 +20,14 @@ import neutron.plugins.cisco.device_manager.plugging_drivers as plug
 class NoopPluggingDriver(plug.PluginSidePluggingDriver):
     """This class defines a no-op plugging driver."""
 
-    def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
+    def create_hosting_device_resources(self, context, complementary_id,
+                                        tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
-        return {'mgmt_port': None,
-                'ports': []}
+        return {'mgmt_port': None, 'ports': []}
 
-    def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
-        return {'mgmt_port': None,
-                'ports': []}
+    def get_hosting_device_resources(self, context, id, complementary_id,
+                                     tenant_id, mgmt_nw_id):
+        return {'mgmt_port': None, 'ports': []}
 
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,
                                         **kwargs):

@@ -18,6 +18,7 @@ import eventlet
 
 from oslo.config import cfg
 from sqlalchemy import and_
+from sqlalchemy import or_
 from sqlalchemy.orm import exc
 
 from neutron.api.v2 import attributes
@@ -159,8 +160,9 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 cfg.CONF.t2_network_profile)
         return cls._t2_network_profile_id
 
-    def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted, **kwargs):
+    def create_hosting_device_resources(self, context, complementary_id,
+                                        tenant_id, mgmt_nw_id,
+                                        mgmt_sec_grp_id, max_hosted):
         mgmt_port = None
         t1_n, t1_sn, t2_n, t2_sn, t_p = [], [], [], [], []
         if mgmt_nw_id is not None and tenant_id is not None:
@@ -174,7 +176,9 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
                 'n1kv:profile_id': self.mgmt_port_profile_id(),
                 'device_id': "",
-                'device_owner': ""}}
+                # Use device_owner attribute to ensure we can query for these
+                # ports even before Nova has set device_id attribute.
+                'device_owner': complementary_id}}
             try:
                 mgmt_port = self._core_plugin.create_port(context,
                                                           p_spec)
@@ -252,11 +256,19 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                    'id': t_n[resource_index]['id'],
                    'subnet': t_sn[resource_index]['id']})
 
-    def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
+    def get_hosting_device_resources(self, context, id, complementary_id,
+                                     tenant_id, mgmt_nw_id):
         ports, nets, subnets = [], [], []
         mgmt_port = None
-        for port in self._core_plugin.get_ports(context,
-                                                filters={'device_id': [id]}):
+        # Ports for hosting device may not yet have 'device_id' set to
+        # Nova assigned uuid of VM instance. However, those ports will still
+        # have 'device_owner' attribute set to complementary_id. Hence, we
+        # use both attributes in the query to ensure we find all ports.
+        query = context.session.query(models_v2.Port)
+        query = query.filter(or_(
+            models_v2.Port.device_id == id,
+            models_v2.Port.device_owner == complementary_id))
+        for port in query:
             if port['network_id'] != mgmt_nw_id:
                 ports.append(port)
                 nets.append({'id': port['network_id']})

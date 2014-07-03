@@ -34,8 +34,9 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
     It is used together with a patched version of the Openvswitch plugin that
     supports VLAN trunking.
     """
-    def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted, **kwargs):
+    def create_hosting_device_resources(self, context, complementary_id,
+                                        tenant_id, mgmt_nw_id,
+                                        mgmt_sec_grp_id, max_hosted):
         mgmt_port = None
         t1_n, t1_sn, t2_n, t2_sn, t_p = [], [], [], [], []
         if mgmt_nw_id is not None and tenant_id is not None:
@@ -49,7 +50,9 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
                 'security_groups': [mgmt_sec_grp_id],
                 'device_id': "",
-                'device_owner': ""}}
+                # Use device_owner attribute to ensure we can query for these
+                # ports even before Nova has set device_id attribute.
+                'device_owner': complementary_id}}
             try:
                 mgmt_port = self._core_plugin.create_port(context, p_spec)
                 # No security groups on the trunk ports since

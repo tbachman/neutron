@@ -33,6 +33,7 @@ from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
+from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.device_manager.hd_models import (
     HostingDeviceTemplate)
 from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
@@ -139,7 +140,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         if cls._mgmt_nw_uuid is None:
             tenant_id = cls.l3_tenant_id()
             if not tenant_id:
-                return None
+                return
             net = manager.NeutronManager.get_plugin().get_networks(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
@@ -170,7 +171,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         """Returns id of security group used by the management network."""
         if not utils.is_extension_supported(
                 manager.NeutronManager.get_plugin(), "security-group"):
-            return None
+            return
         if cls._mgmt_sec_grp_id is None:
             # Get the id for the _mgmt_security_group_id
             tenant_id = cls.l3_tenant_id()
@@ -403,7 +404,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     # management of this hosting device.
                     continue
                 res = plugging_drv.get_hosting_device_resources(
-                    context, hd.id, self.l3_tenant_id(), self.mgmt_nw_id())
+                    context, hd.id, hd.complementary_id, self.l3_tenant_id(),
+                    self.mgmt_nw_id())
                 if is_vm:
                     self._svc_vm_mgr.delete_service_vm(
                         context, hd.id, hosting_device_drv, self.mgmt_nw_id())
@@ -591,9 +593,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         #TODO(bobmel): Determine value for max_hosted properly
         max_hosted = 1  # template['slot_capacity']
         for i in xrange(num):
+            complementary_id = uuidutils.generate_uuid()
             res = plugging_drv.create_hosting_device_resources(
-                context, self.l3_tenant_id(), self.mgmt_nw_id(),
-                self.mgmt_sec_grp_id(), max_hosted)
+                context, complementary_id, self.l3_tenant_id(),
+                self.mgmt_nw_id(), self.mgmt_sec_grp_id(), max_hosted)
             if res.get('mgmt_port') is None:
                 # Required ports could not be created
                 return hosting_devices
@@ -605,6 +608,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 if vm_instance is not None:
                     dev_data.update(
                         {'id': vm_instance['id'],
+                         'complementary_id': complementary_id,
                          'management_port_id': res['mgmt_port']['id']})
                     self.create_hosting_device(context,
                                                {'hosting_device': dev_data})
@@ -652,7 +656,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         with context.session.begin(subtransactions=True):
             for i in xrange(num_possible_to_delete):
                 res = plugging_drv.get_hosting_device_resources(
-                    context, hd_candidates[i]['id'], self.l3_tenant_id(),
+                    context, hd_candidates[i]['id'],
+                    hd_candidates[i]['complementary_id'], self.l3_tenant_id(),
                     self.mgmt_nw_id())
                 if self._svc_vm_mgr.delete_service_vm(
                         context, hd_candidates[i]['id'], hosting_device_drv,
@@ -679,8 +684,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         if plugging_drv is None or hosting_device_drv is None:
             return
         res = plugging_drv.get_hosting_device_resources(
-            context, hosting_device['id'], self.l3_tenant_id(),
-            self.mgmt_nw_id())
+            context, hosting_device['id'], hosting_device['complementary_id'],
+            self.l3_tenant_id(), self.mgmt_nw_id())
         if not self._svc_vm_mgr.delete_service_vm(
                 context, hosting_device['id'], hosting_device_drv,
                 self.mgmt_nw_id()):

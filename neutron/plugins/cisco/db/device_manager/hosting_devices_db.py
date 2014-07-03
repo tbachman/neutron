@@ -52,6 +52,7 @@ class HostingDeviceDBMixin(
                 credentials_id = hdt_db['default_credentials_id']
             hd_db = HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
+                complementary_id=hd.get('complementary_id'),
                 tenant_id=tenant_id,
                 template_id=hd['template_id'],
                 credentials_id=credentials_id,
@@ -181,6 +182,7 @@ class HostingDeviceDBMixin(
 
     def _make_hosting_device_dict(self, hd, fields=None):
         res = {'id': hd['id'],
+               'complementary_id': hd['complementary_id'],
                'tenant_id': hd['tenant_id'],
                'template_id': hd['template_id'],
                'credentials_id': hd['credentials_id'],
