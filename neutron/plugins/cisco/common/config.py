@@ -85,6 +85,8 @@ cisco_n1k_opts = [
     cfg.IntOpt('http_timeout', default=30,
                help=_("Time(in seconds) for which client waits for the "
                       "VSM to respond")),
+    cfg.BoolOpt('enable_sync_on_start', default=False,
+                help=_("Initiate full sync with VSM on neutron start.")),
     cfg.BoolOpt('restrict_policy_profiles', default=False,
                 help=_("Restrict the visibility of policy profiles to the "
                        "tenants")),
