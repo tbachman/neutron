@@ -45,6 +45,7 @@ COMP_HOST_NAME_2 = 'testhost_2'
 VLAN_START = 1000
 VLAN_END = 1100
 NEXUS_IP_ADDR = '1.1.1.1'
+NEXUS_IP_ADDR_2 = '2.2.2.2'
 NETWORK_NAME = 'test_network'
 NETWORK_NAME_2 = 'test_network_2'
 NEXUS_INTERFACE = '1/1'
@@ -96,7 +97,11 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
             (NEXUS_IP_ADDR, 'password'): 'mySecretPassword',
             (NEXUS_IP_ADDR, 'ssh_port'): 22,
             (NEXUS_IP_ADDR, COMP_HOST_NAME): NEXUS_INTERFACE,
-            (NEXUS_IP_ADDR, COMP_HOST_NAME_2): NEXUS_INTERFACE_2}
+            (NEXUS_IP_ADDR, COMP_HOST_NAME_2): NEXUS_INTERFACE_2,
+            (NEXUS_IP_ADDR_2, 'username'): 'admin',
+            (NEXUS_IP_ADDR_2, 'password'): 'mySecretPassword',
+            (NEXUS_IP_ADDR_2, 'ssh_port'): 22,
+            (NEXUS_IP_ADDR_2, COMP_HOST_NAME): NEXUS_INTERFACE}
         nexus_patch = mock.patch.dict(
             cisco_config.ML2MechCiscoConfig.nexus_dict,
             nexus_config)

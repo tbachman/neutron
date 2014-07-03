@@ -1,4 +1,4 @@
-# Copyright 2013 OpenStack Foundation
+# Copyright 2013-2014 OpenStack Foundation
 # All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -16,6 +16,8 @@
 """
 Implements a Nexus-OS NETCONF over SSHv2 API Client
 """
+
+import re
 
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
@@ -75,6 +77,18 @@ class CiscoNexusDriver(object):
                 # the original ncclient exception.
                 raise cexc.NexusConfigFailed(config=config, exc=e)
 
+    def _get_config(self, nexus_host, filter=''):
+        """Get Nexus switch configuration.
+
+        :param nexus_host: IP address of switch
+        :param filter: Filter string in XML format
+
+        :returns: configuration requested in string format
+
+        """
+        mgr = self.nxos_connect(nexus_host)
+        return mgr.get(filter=('subtree', filter)).data_xml
+
     def nxos_connect(self, nexus_host):
         """Make SSH connection to the Nexus Switch."""
         if getattr(self.connections.get(nexus_host), 'connected', None):
@@ -106,10 +120,38 @@ class CiscoNexusDriver(object):
         conf_xml_snippet = snipp.EXEC_CONF_SNIPPET % (customized_config)
         return conf_xml_snippet
 
-    def create_vlan(self, nexus_host, vlanid, vlanname):
-        """Create a VLAN on Nexus Switch given the VLAN ID and Name."""
-        confstr = self.create_xml_snippet(
-            snipp.CMD_VLAN_CONF_SNIPPET % (vlanid, vlanname))
+    def get_chassis_version(self, nexus_host):
+        """Get "show version" results."""
+        # TODO(rcurran) - not completed.
+        try:
+            response = self._get_config(nexus_host,
+                                        snipp.SHOW_VERSION_GET_SNIPPET)
+            words = re.split('[ ><:]', response)
+            chassis_str = words[words.index('chassis_id') + 1]
+            for chassis in const.SUPPORTED_CHASSIS:
+                if chassis in chassis_str:
+                    chassis_version = chassis
+                    break
+        except Exception:
+            # TODO(rcurran): do we want a default?
+            chassis_version = const.N3K_CHASSIS
+            pass
+
+        return chassis_version
+
+    def create_vlan(self, nexus_host, vlanid, vlanname, vni=None):
+        """Create a VLAN on a Nexus Switch.
+
+        Creates a VLAN given the VLAN ID, name and possible VxLAN ID.
+        """
+        if vni is not None:
+            snippet = (snipp.CMD_VLAN_CONF_VNSEGMENT_SNIPPET %
+                       (vlanid, vlanname, vni))
+        else:
+            snippet = snipp.CMD_VLAN_CONF_SNIPPET % (vlanid, vlanname)
+
+        confstr = self.create_xml_snippet(snippet)
+
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, target='running', config=confstr)
 
@@ -169,3 +211,16 @@ class CiscoNexusDriver(object):
         if nexus_port:
             self.enable_vlan_on_trunk_int(nexus_host, vlan_id, intf_type,
                                           nexus_port)
+
+    def enable_vxlan_feature(self, nexus_host):
+        """Enable VXLAN on the switch."""
+        confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)
+
+    def create_nve_int(self, nexus_host, src_intf, vni, mcast_group=None):
+        """Create Network Virtualization Edge (NVE) interface."""
+        confstr = (snipp.CMD_INT_NVE_SNIPPET % (src_intf, vni, mcast_group))
+        confstr = self.create_xml_snippet(confstr)
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)

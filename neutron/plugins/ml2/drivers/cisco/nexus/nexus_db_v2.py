@@ -39,13 +39,15 @@ def get_nexusvlan_binding(vlan_id, switch_ip):
     LOG.debug(_("get_nexusvlan_binding() called"))
     return _lookup_all_nexus_bindings(vlan_id=vlan_id, switch_ip=switch_ip)
 
-
+#TODO(rcurran - update once vxlan code in place
+#def add_nexusport_binding(port_id, vlan_id, vxlan_id, switch_ip, instance_id):
 def add_nexusport_binding(port_id, vlan_id, switch_ip, instance_id):
     """Adds a nexusport binding."""
     LOG.debug(_("add_nexusport_binding() called"))
     session = db.get_session()
     binding = nexus_models_v2.NexusPortBinding(port_id=port_id,
                                                vlan_id=vlan_id,
+#TODO(rcurran)                                 vxlan_id=vxlan_id,
                                                switch_ip=switch_ip,
                                                instance_id=instance_id)
     session.add(binding)
