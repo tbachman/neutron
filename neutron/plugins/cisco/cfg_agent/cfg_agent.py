@@ -105,9 +105,10 @@ class CiscoCfgAgent(manager.Manager):
 
     OPTS = [
         cfg.IntOpt('rpc_loop_interval', default=10,
-                   help=_("Interval when the process services loop executes."
-                          "This is when the config agent lets each service "
-                          "helper to process its neutron resources.")),
+                   help=_("Interval when the process_services() loop "
+                          "executes in seconds. This is when the config agent "
+                          "lets each service helper to process its neutron "
+                          "resources.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -194,7 +195,7 @@ class CiscoCfgAgent(manager.Manager):
         LOG.debug("Processing services completed")
 
     def _process_backlogged_hosting_devices(self, context):
-        """Process currently back logged devices.
+        """Process currently backlogged devices.
 
         Go through the currently backlogged devices and process them.
         For devices which are now reachable (compared to last time), we call
@@ -250,13 +251,13 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
     def _agent_registration(self):
         """Register this agent with the server.
 
-         This method registers the cfg agent with the neutron server so hosting
-         devices can be assigned to it. In case the server is not ready to
-         accept registration (it sends a False) then we retry registration
-         for `MAX_REGISTRATION_ATTEMPTS` with a delay of
-         `REGISTRATION_RETRY_DELAY`. If there is no server response or a
-         failure to register after the required number of attempts,
-         the agent stops itself.
+        This method registers the cfg agent with the neutron server so hosting
+        devices can be assigned to it. In case the server is not ready to
+        accept registration (it sends a False) then we retry registration
+        for `MAX_REGISTRATION_ATTEMPTS` with a delay of
+        `REGISTRATION_RETRY_DELAY`. If there is no server response or a
+        failure to register after the required number of attempts,
+        the agent stops itself.
         """
         for attempts in xrange(MAX_REGISTRATION_ATTEMPTS):
             context = n_context.get_admin_context_without_session()
@@ -273,11 +274,12 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                 time.sleep(REGISTRATION_RETRY_DELAY)
             elif res is None:
                 LOG.error(_("[Agent registration] Neutron server said that no "
-                            "device manager was found. Exiting!"))
-                sys.exit(1)
+                            "device manager was found. Cannot "
+                            "continue. Exiting!"))
+                raise SystemExit("Cfg Agent exiting")
         LOG.error(_("[Agent registration] %d unsuccessful registration "
                     "attempts. Exiting!"), MAX_REGISTRATION_ATTEMPTS)
-        sys.exit(1)
+        raise SystemExit("Cfg Agent exiting")
 
     def _report_state(self):
         """Report state to the plugin.

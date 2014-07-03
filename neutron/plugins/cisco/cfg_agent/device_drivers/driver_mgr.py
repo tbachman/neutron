@@ -14,6 +14,7 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
@@ -48,7 +49,8 @@ class DeviceDriverManager(object):
         try:
             return self._drivers[resource_id]
         except KeyError:
-            raise cfg_exceptions.DriverNotFound(id=resource_id)
+            with excutils.save_and_reraise_exception(reraise=False):
+                raise cfg_exceptions.DriverNotFound(id=resource_id)
 
     def set_driver(self, resource):
         """Set the driver for a neutron resource.
@@ -79,12 +81,15 @@ class DeviceDriverManager(object):
                                   {'driver': driver_class,
                                    't_name': hosting_device['name'],
                                    't_id': hd_id})
-                    raise cfg_exceptions.DriverNotExist(driver=driver_class)
+                    with excutils.save_and_reraise_exception(reraise=False):
+                        raise cfg_exceptions.DriverNotExist(
+                            driver=driver_class)
                 self._hosting_device_routing_drivers_binding[hd_id] = driver
                 self._drivers[resource_id] = driver
             return driver
         except (KeyError, AttributeError) as e:
-            raise cfg_exceptions.DriverNotSetForMissingParameter(e)
+            with excutils.save_and_reraise_exception(reraise=False):
+                raise cfg_exceptions.DriverNotSetForMissingParameter(e)
 
     def remove_driver(self, resource_id):
         """Remove driver associated to a particular resource."""

@@ -109,14 +109,14 @@ class TestRouterInfo(base.BaseTestCase):
         self.assertTrue(ri.router_name().endswith(id))
         self.assertEqual(ri.router, self.router)
         self.assertEqual(ri._router, self.router)
-        self.assertEqual(ri.snat_enabled, True)
-        self.assertEqual(ri.ex_gw_port, None)
+        self.assertTrue(ri.snat_enabled)
+        self.assertIsNone(ri.ex_gw_port)
 
     def test_router_info_create_snat_disabled(self):
         id = _uuid()
         self.router['enable_snat'] = False
         ri = RouterInfo(id, self.router)
-        self.assertEqual(ri.snat_enabled, False)
+        self.assertFalse(ri.snat_enabled)
 
 
 class TestBasicRoutingOperations(base.BaseTestCase):
@@ -162,8 +162,6 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
         mock.patch('neutron.common.rpc.create_connection').start()
-
-        self.addCleanup(mock.patch.stopall)
 
     def _mock_driver_and_hosting_device(self, svc_helper):
         svc_helper._dev_status.is_hosting_device_reachable = mock.MagicMock(
@@ -622,7 +620,6 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.plugin_api.get_routers.assert_called_with(
             routing_svc_helper.context,
             router_ids=[router['id']])
-        self.assertRaises(n_rpc.RPCException, self.plugin_api.get_routers)
         self.assertFalse(mock_spawn.called)
         self.assertTrue(routing_svc_helper.fullsync)
         self.plugin_api.get_routers.reset_mock()

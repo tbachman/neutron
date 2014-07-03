@@ -26,29 +26,35 @@ class DriverException(exceptions.NeutronException):
 class CSR1kvInitializationException(DriverException):
     """Exception when initialization of CSR1kv Routing Driver object."""
     message = (_("Critical device parameter missing. Failed initializing "
-                 "CSR1kv routing driver"))
+                 "CSR1kv routing driver."))
 
 
 class CSR1kvConnectionException(DriverException):
     """Connection exception when connecting to CSR1kv hosting device."""
     message = (_("Failed connecting to CSR1kv. Reason: %(reason)s. "
                  "Connection params are Host:%(host)s, "
-                 "Port:%(port)s, Device timeout:%(timeout)s"))
+                 "Port:%(port)s, Device timeout:%(timeout)s."))
 
 
 class CSR1kvConfigException(DriverException):
     """Configuration exception thrown when modifying the running config."""
     message = (_("Error executing snippet:%(snippet)s. "
-                 "ErrorType:%(type)s ErrorTag:%(tag)s"))
+                 "ErrorType:%(type)s ErrorTag:%(tag)s."))
+
+
+class CSR1kvUnknownValueException(DriverException):
+    """CSR1kv Exception thrown when an unknown value is received."""
+    message = (_("Data in attribute: %(attribute)s does not correspond to "
+                 "expected value. Value received is %(value)s. "))
 
 
 class DriverNotExist(DriverException):
-    message = _("Driver %(driver)s does not exist")
+    message = _("Driver %(driver)s does not exist.")
 
 
 class DriverNotFound(DriverException):
-    message = _("Driver for found for resource id:%(id)s")
+    message = _("Driver not found for resource id:%(id)s.")
 
 
 class DriverNotSetForMissingParameter(DriverException):
-    message = _("Driver cannot be set for missing parameter:%(p)s")
+    message = _("Driver cannot be set for missing parameter:%(p)s.")

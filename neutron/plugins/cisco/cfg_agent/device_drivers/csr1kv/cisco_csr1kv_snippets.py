@@ -178,7 +178,7 @@ REMOVE_ACL = """
 <config>
         <cli-config-data>
             <cmd>no ip access-list standard %s</cmd>
-            </cli-config-data>
+        </cli-config-data>
 </config>
 """
 

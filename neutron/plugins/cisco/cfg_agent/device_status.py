@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 
 STATUS_OPTS = [
     cfg.IntOpt('device_connection_timeout', default=30,
-               help=_("Timeout value for connecting to a hosting device")),
+               help=_("Time in seconds for connecting to a hosting device")),
     cfg.IntOpt('hosting_device_dead_timeout', default=300,
                help=_("The time in seconds until a backlogged hosting device "
                       "is presumed dead. This value should be set up high "
@@ -75,6 +75,7 @@ class DeviceStatus(object):
 
     def is_hosting_device_reachable(self, hosting_device):
         """Check the hosting device which hosts this resource is reachable.
+
         If the resource is not reachable, it is added to the backlog.
 
         :param hosting_device : dict of the hosting device
@@ -106,7 +107,7 @@ class DeviceStatus(object):
         """"Checks the status of backlogged hosting devices.
 
         Skips newly spun up instances during their booting time as specified
-         in the boot time parameter.
+        in the boot time parameter.
 
         :return A dict of the format:
         {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..]}
@@ -167,7 +168,7 @@ class DeviceStatus(object):
                     ip]
         try:
             linux_utils.execute(ping_cmd, check_exit_code=True)
+            return True
         except RuntimeError:
             LOG.warn(_("Cannot ping ip address: %s"), ip)
             return False
-        return True

@@ -29,14 +29,29 @@ from neutron.tests import base
 _uuid = uuidutils.generate_uuid
 LOG = logging.getLogger(__name__)
 
+TYPE_STRING = 'string'
+TYPE_DATETIME = 'datetime'
+NOW = 0
+BOOT_TIME = 420
+DEAD_TIME = 300
+BELOW_BOOT_TIME = 100
+
+
+def create_timestamp(seconds_from_now, type=TYPE_STRING):
+    timedelta = datetime.timedelta(seconds=seconds_from_now)
+    past_time = datetime.datetime.utcnow() - timedelta
+    if type is TYPE_STRING:
+        return past_time.strftime("%Y-%m-%dT%H:%M:%S.%f")
+    if type is TYPE_DATETIME:
+        return past_time
+
 
 class TestHostingDevice(base.BaseTestCase):
 
     def setUp(self):
         super(TestHostingDevice, self).setUp()
         self.status = device_status.DeviceStatus()
-        self.status._is_pingable = mock.MagicMock()
-        self.status._is_pingable.return_value = True
+        self.status._is_pingable = mock.MagicMock(return_value=True)
 
         self.hosting_device = {'id': 123,
                                'host_type': 'CSR1kv',
@@ -51,21 +66,21 @@ class TestHostingDevice(base.BaseTestCase):
                        'hosting_device': self.hosting_device}
 
     def test_hosting_devices_object(self):
-        self.assertEqual(self.status.backlog_hosting_devices, {})
+        self.assertEqual({}, self.status.backlog_hosting_devices)
 
     def test_is_hosting_device_reachable_positive(self):
         self.assertTrue(self.status.is_hosting_device_reachable(
             self.hosting_device))
 
     def test_is_hosting_device_reachable_negative(self):
-        self.assertEqual(len(self.status.backlog_hosting_devices), 0)
+        self.assertEqual(0, len(self.status.backlog_hosting_devices))
         self.hosting_device['created_at'] = self.created_at_str  # Back to str
         self.status._is_pingable.return_value = False
 
         self.assertFalse(self.status._is_pingable('1.2.3.4'))
-        self.assertEqual(self.status.is_hosting_device_reachable(
-            self.hosting_device), None)
-        self.assertEqual(len(self.status.get_backlogged_hosting_devices()), 1)
+        self.assertEqual(None, self.status.is_hosting_device_reachable(
+            self.hosting_device))
+        self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
         self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
         self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
                          self.hosting_device)
@@ -74,10 +89,10 @@ class TestHostingDevice(base.BaseTestCase):
         self.status.backlog_hosting_devices.clear()
         self.status.backlog_hosting_devices[123] = {'hd': self.hosting_device}
 
-        self.assertEqual(len(self.status.backlog_hosting_devices), 1)
-        self.assertEqual(self.status.is_hosting_device_reachable(
-            self.hosting_device), None)
-        self.assertEqual(len(self.status.get_backlogged_hosting_devices()), 1)
+        self.assertEqual(1, len(self.status.backlog_hosting_devices))
+        self.assertEqual(None, self.status.is_hosting_device_reachable(
+            self.hosting_device))
+        self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
         self.assertTrue(123 in self.status.backlog_hosting_devices.keys())
         self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
                          self.hosting_device)
@@ -87,16 +102,14 @@ class TestHostingDevice(base.BaseTestCase):
         expected = {'reachable': [],
                     'dead': []}
 
-        self.assertEqual(self.status.check_backlogged_hosting_devices(),
-                         expected)
+        self.assertEqual(expected,
+                         self.status.check_backlogged_hosting_devices())
 
     def test_check_backlog_below_booting_time(self):
         expected = {'reachable': [],
                     'dead': []}
-        created_at_str_now = datetime.datetime.utcnow().strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
 
-        self.hosting_device['created_at'] = created_at_str_now
+        self.hosting_device['created_at'] = create_timestamp(NOW)
         hd = self.hosting_device
         hd_id = hd['id']
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
@@ -104,40 +117,26 @@ class TestHostingDevice(base.BaseTestCase):
                                                           self.router_id]
                                                       }
 
+        self.assertEqual(expected,
+                         self.status.check_backlogged_hosting_devices())
+
+        #Simulate 20 seconds before boot time finishes
+        self.hosting_device['created_at'] = create_timestamp(BOOT_TIME - 20)
         self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
-        #Simulate after 100 seconds
-        timedelta_100 = datetime.timedelta(seconds=100)
-        created_at_100sec = datetime.datetime.utcnow() - timedelta_100
-        created_at_100sec_str = created_at_100sec.strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
-
-        self.hosting_device['created_at'] = created_at_100sec_str
-        self.assertEqual(self.status.check_backlogged_hosting_devices(),
-                         expected)
-
-        #Boundary test : 419 seconds : default 420 seconds
-        timedelta_419 = datetime.timedelta(seconds=419)
-        created_at_419sec = datetime.datetime.utcnow() - timedelta_419
-        created_at_419sec_str = created_at_419sec.strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
-
-        self.hosting_device['created_at'] = created_at_419sec_str
+        #Simulate 1 second before boot time
+        self.hosting_device['created_at'] = create_timestamp(BOOT_TIME - 1)
         self.assertEqual(self.status.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_above_booting_time_pingable(self):
-        """This test simulates a hosting device which has passed the
-           created time. Device is now pingable.
-        """
-        #Created time : current time - 430 seconds
-        timedelta_430 = datetime.timedelta(seconds=430)
-        created_at_430sec = datetime.datetime.utcnow() - timedelta_430
-        created_at_430sec_str = created_at_430sec.strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
+        """Test for backlog processing after booting.
 
-        self.hosting_device['created_at'] = created_at_430sec_str
+        Simulates a hosting device which has passed the created time.
+        The device should now be pingable.
+        """
+        self.hosting_device['created_at'] = create_timestamp(BOOT_TIME + 10)
         hd = self.hosting_device
         hd_id = hd['id']
         self.status._is_pingable.return_value = True
@@ -146,24 +145,20 @@ class TestHostingDevice(base.BaseTestCase):
                                                           self.router_id]}
         expected = {'reachable': [hd_id],
                     'dead': []}
-        self.assertEqual(self.status.check_backlogged_hosting_devices(),
-                         expected)
+        self.assertEqual(expected,
+                         self.status.check_backlogged_hosting_devices())
 
     def test_check_backlog_above_BT_not_pingable_below_deadtime(self):
-        """This test simulates a hosting device which has passed the created
-           time but less than the 'declared dead' time.
-           Hosting device is still not pingable.
-        """
-        #Created time : current time - 430 seconds
-        timedelta_430 = datetime.timedelta(seconds=430)
-        created_at_430sec = datetime.datetime.utcnow() - timedelta_430
-        created_at_430sec_str = created_at_430sec.strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
+        """Test for backlog processing in dead time interval.
 
+        This test simulates a hosting device which has passed the created
+        time but less than the 'declared dead' time.
+        Hosting device is still not pingable.
+        """
         hd = self.hosting_device
-        hd['created_at'] = created_at_430sec_str
+        hd['created_at'] = create_timestamp(BOOT_TIME + 10)
         #Inserted in backlog now
-        hd['backlog_insertion_ts'] = (datetime.datetime.utcnow())
+        hd['backlog_insertion_ts'] = create_timestamp(NOW, type=TYPE_DATETIME)
         hd_id = hd['id']
         self.status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
@@ -171,26 +166,21 @@ class TestHostingDevice(base.BaseTestCase):
                                                           self.router_id]}
         expected = {'reachable': [],
                     'dead': []}
-        self.assertEqual(self.status.check_backlogged_hosting_devices(),
-                         expected)
+        self.assertEqual(expected,
+                         self.status.check_backlogged_hosting_devices())
 
     def test_check_backlog_above_BT_not_pingable_aboveDeadTime(self):
-        """This test simulates a hosting device which has passed the
-           created time but greater than the 'declared dead' time.
-           Hosting device is still not pingable
-        """
-        #Created time: Current time - 420(Booting time) - 300(Dead time)seconds
-        # Calculated as 730 adding a margin of 10 seconds
-        timedelta_730 = datetime.timedelta(seconds=730)
-        created_at_730sec = datetime.datetime.utcnow() - timedelta_730
-        created_at_730sec_str = created_at_730sec.strftime(
-            "%Y-%m-%dT%H:%M:%S.%f")
+        """Test for backlog processing after dead time interval.
 
+        This test simulates a hosting device which has passed the
+        created time but greater than the 'declared dead' time.
+        Hosting device is still not pingable.
+        """
         hd = self.hosting_device
-        hd['created_at'] = created_at_730sec_str
+        hd['created_at'] = create_timestamp(BOOT_TIME + DEAD_TIME + 10)
         #Inserted in backlog 5 seconds after booting time
-        hd['backlog_insertion_ts'] = (datetime.datetime.utcnow() -
-                                      datetime.timedelta(seconds=425))
+        hd['backlog_insertion_ts'] = create_timestamp(BOOT_TIME + 5,
+                                                      type=TYPE_DATETIME)
 
         hd_id = hd['id']
         self.status._is_pingable.return_value = False
@@ -199,5 +189,5 @@ class TestHostingDevice(base.BaseTestCase):
                                                           self.router_id]}
         expected = {'reachable': [],
                     'dead': [hd_id]}
-        self.assertEqual(self.status.check_backlogged_hosting_devices(),
-                         expected)
+        self.assertEqual(expected,
+                         self.status.check_backlogged_hosting_devices())

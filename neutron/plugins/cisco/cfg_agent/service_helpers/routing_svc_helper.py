@@ -14,6 +14,7 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
+import collections
 import eventlet
 import netaddr
 
@@ -57,10 +58,7 @@ class RouterInfo(object):
         self.floating_ips = []
         self.router = router
         self.routes = []
-        self.ha_info = None
-        # Set 'ha_info' if present
-        if router.get('ha_info') is not None:
-            self.ha_info = router['ha_info']
+        self.ha_info = router.get('ha_info')
 
     @property
     def router(self):
@@ -243,7 +241,7 @@ class RoutingServiceHelper():
         num_floating_ips = 0
         router_infos = self.router_info.values()
         num_routers = len(router_infos)
-        num_hd_routers = {}
+        num_hd_routers = collections.defaultdict(int)
         routers_per_hd = {}
         for ri in router_infos:
             ex_gw_port = ri.router.get('gw_port')
@@ -255,9 +253,9 @@ class RoutingServiceHelper():
                 l3_constants.FLOATINGIP_KEY, []))
             hd = ri.router['hosting_device']
             if hd:
-                num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
-        for (hd_id, num) in num_hd_routers.items():
-            routers_per_hd[hd_id] = {'routers': num}
+                num_hd_routers[hd['id']] += 1
+        routers_per_hd = dict((hd_id, {'routers': num})
+                              for hd_id, num in num_hd_routers.items())
         non_responding = self._dev_status.get_backlogged_hosting_devices()
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
@@ -293,7 +291,7 @@ class RoutingServiceHelper():
             self.fullsync = True
 
     def _get_router_ids_from_removed_devices_info(self, removed_devices_info):
-        """Extract router_ids from the removed devices info dict
+        """Extract router_ids from the removed devices info dict.
 
         :param removed_devices_info: Dict of removed devices and their
                associated resources.
@@ -601,9 +599,9 @@ class RoutingServiceHelper():
     def _routes_updated(self, ri):
         """Update the state of routes in the router.
 
-         Compares the current routes with the (configured) existing routes
-         and detect what was removed or added. Then configure the
-         logical router in the hosting device accordingly.
+        Compares the current routes with the (configured) existing routes
+        and detect what was removed or added. Then configure the
+        logical router in the hosting device accordingly.
         :param ri: RouterInfo corresponding to the router.
         :return: None
         :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.DriverException

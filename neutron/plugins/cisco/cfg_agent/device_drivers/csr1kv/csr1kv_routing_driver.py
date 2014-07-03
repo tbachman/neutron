@@ -34,8 +34,8 @@ LOG = logging.getLogger(__name__)
 
 
 # N1kv constants
-T1_PORT_NAME = 't1_p:'  # T1 port/network is for VXLAN
-T2_PORT_NAME = 't2_p:'  # T2 port/network is for VLAN
+T1_PORT_NAME_PREFIX = 't1_p:'  # T1 port/network is for VXLAN
+T2_PORT_NAME_PREFIX = 't2_p:'  # T2 port/network is for VLAN
 
 
 class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
@@ -275,24 +275,41 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _get_interface_name_from_hosting_port(self, port):
         vlan = self._get_interface_vlan_from_hosting_port(port)
         int_no = self._get_interface_no_from_hosting_port(port)
-        intfc_name = 'GigabitEthernet' + str(int_no) + '.' + str(vlan)
+        intfc_name = 'GigabitEthernet%s.%s' % (int_no, vlan)
         return intfc_name
 
     def _get_interface_vlan_from_hosting_port(self, port):
-        hosting_info = port['hosting_info']
-        vlan = hosting_info['segmentation_id']
-        return vlan
+        return port['hosting_info']['segmentation_id']
 
     def _get_interface_no_from_hosting_port(self, port):
+        """Calculate interface number from the hosting port's name.
+
+         Interfaces in the CSR1kv are created in pairs (T1 and T2) where
+         T1 interface is used for VLAN and T2 interface for VXLAN traffic
+         respectively. In neutron side these are named as T1 and T2 ports and
+         follows the naming convention: <Tx_PORT_NAME_PREFIX>:<PAIR_INDEX>
+         where the `PORT_NAME_PREFIX` indicates either VLAN or VXLAN and
+         `PAIR_INDEX` is the pair number. `PAIR_INDEX` starts at 1.
+
+         In CSR1kv, GigabitEthernet 0 is not present and GigabitEthernet 1
+         is used as a management interface (Note: this might change in
+         future). So the first (T1,T2) pair corresponds to
+         (GigabitEthernet 2, GigabitEthernet 3) and so forth. This function
+         extracts the `PAIR_INDEX` and calculates the corresponding interface
+         number.
+
+        :param port: neutron port corresponding to the interface.
+        :return: number of the interface (eg: 1 in case of GigabitEthernet1)
+        """
         _name = port['hosting_info']['hosting_port_name']
         if_type = _name.split(':')[0] + ':'
-        if if_type == T1_PORT_NAME:
-            no = str(int(_name.split(':')[1]) * 2)
-        elif if_type == T2_PORT_NAME:
-            no = str(int(_name.split(':')[1]) * 2 + 1)
+        if if_type == T1_PORT_NAME_PREFIX:
+            return str(int(_name.split(':')[1]) * 2)
+        elif if_type == T2_PORT_NAME_PREFIX:
+            return str(int(_name.split(':')[1]) * 2 + 1)
         else:
-            LOG.error(_('Unknown interface name: %s'), if_type)
-        return no
+            params = {'attribute': 'hosting_port_name', 'value': _name}
+            raise cfg_exc.CSR1kvUnknownValueException(**params)
 
     def _get_interfaces(self):
         """Get a list of interfaces on this hosting device.
@@ -302,7 +319,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         ioscfg = self._get_running_config()
         parse = ciscoconfparse.CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface GigabitEthernet")
-        intfs = [l.strip().split(' ')[1] for l in intfs_raw]
+        intfs = [raw_if.strip().split(' ')[1] for raw_if in intfs_raw]
         LOG.info(_("Interfaces:%s"), intfs)
         return intfs
 
@@ -335,20 +352,20 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
         When the virtual router first boots up, all interfaces except
         management are down. This method will enable all data interfaces.
-        Only the second and third Gig interfaces are enabled now, as these are
-        configured as trunk for VLAN and VXLAN and hence the only ones
-        needed now.
 
-        Note: CSR1kv, in release 3.11 GigabitEthernet 0 is no longer
-        present. So GigabitEthernet 1 is used as management and
-        GigabitEthernet 2 and up are used for data. This might
-        change on future releases.
+        Note: In CSR1kv, GigabitEthernet 0 is not present. GigabitEthernet 1
+        is used as management and GigabitEthernet 2 and up are used for data.
+        This might change in future releases.
+
+        Currently only the second and third Gig interfaces corresponding to a
+        single (T1,T2) pair and configured as trunk for VLAN and VXLAN
+        is enabled.
 
         :param conn: Connection object
         :return: True or False
         """
 
-        #ToDo(Hareesh): Interfaces are hard coded for now.
+        #ToDo(Hareesh): Interfaces are hard coded for now. Make it dynamic.
         interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
         try:
             for i in interfaces:
@@ -494,8 +511,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _get_interface_cfg(self, interface):
         ioscfg = self._get_running_config()
         parse = ciscoconfparse.CiscoConfParse(ioscfg)
-        res = parse.find_children('interface ' + interface)
-        return res
+        return parse.find_children('interface ' + interface)
 
     def _nat_rules_for_internet_access(self, acl_no, network,
                                        netmask,
@@ -504,11 +520,12 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
                                        vrf_name):
         """Configure the NAT rules for an internal network.
 
-        Configuring NAT rules in the CSR1kv is a four step process. First
+        Configuring NAT rules in the CSR1kv is a three step process. First
         create an ACL for the IP range of the internal network. Then enable
         dynamic source NATing on the external interface of the CSR for this
-        ACL and VRF of the neutron router. Then enable NAT on the interfaces
-        of the CSR where the internal and external networks are connected.
+        ACL and VRF of the neutron router. Finally enable NAT on the
+        interfaces of the CSR where the internal and external networks are
+        connected.
 
         :param acl_no: ACL number of the internal network.
         :param network: internal network
@@ -630,10 +647,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _edit_running_config(self, confstr, snippet):
         conn = self._get_connection()
         rpc_obj = conn.edit_config(target='running', config=confstr)
-        if self._check_response(rpc_obj, snippet):
-            LOG.info(_("%s successfully executed"), snippet)
-        else:
-            LOG.exception(_("Failed executing %s"), snippet)
+        self._check_response(rpc_obj, snippet)
 
     def _check_response(self, rpc_obj, snippet_name):
         """This function checks the rpc response object for status.
@@ -666,6 +680,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         xml_str = rpc_obj.xml
         if "<ok />" in xml_str:
             LOG.debug("RPCReply for %s is OK", snippet_name)
+            LOG.info(_("%s successfully executed"), snippet_name)
             return True
         # Not Ok, we throw a ConfigurationException
         e_type = rpc_obj._root[0][0].text
