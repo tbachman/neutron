@@ -31,6 +31,7 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as n_context
 from neutron import manager
+from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -38,7 +39,6 @@ from neutron.openstack.common import periodic_task
 from neutron.openstack.common import service
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.cfg_agent import device_status
-from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron import service as neutron_service
 
@@ -109,6 +109,10 @@ class CiscoCfgAgent(manager.Manager):
                           "executes in seconds. This is when the config agent "
                           "lets each service helper to process its neutron "
                           "resources.")),
+        cfg.StrOpt('routing_svc_helper_class',
+                   default='neutron.plugins.cisco.cfg_agent.service_helpers'
+                           '.routing_svc_helper.RoutingServiceHelper',
+                   help=_("path of the routing service helper class")),
     ]
 
     def __init__(self, host, conf=None):
@@ -126,8 +130,16 @@ class CiscoCfgAgent(manager.Manager):
             topics.DEVICE_MANAGER_PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
-        self.routing_service_helper = routing_svc_helper.RoutingServiceHelper(
-            host, self.conf, self)
+        svc_helper_class = self.conf.routing_svc_helper_class
+        try:
+            self.routing_service_helper = importutils.import_object(
+                svc_helper_class, host, self.conf, self)
+        except ImportError as e:
+            LOG.warn(_("Error in loading routing service helper. Class "
+                       "specified is %(class)s. Reason:%(reason)s"),
+                     {'class': self.conf.routing_svc_helper_class,
+                      'reason': e})
+            self.routing_service_helper = None
 
     def _start_periodic_tasks(self):
         self.loop = loopingcall.FixedIntervalLoopingCall(self.process_services)
@@ -190,8 +202,11 @@ class CiscoCfgAgent(manager.Manager):
         LOG.debug("Processing services started")
         # Now we process only routing service, additional services will be
         # added in future
-        self.routing_service_helper.process_service(device_ids,
-                                                    removed_devices_info)
+        if self.routing_service_helper:
+            self.routing_service_helper.process_service(device_ids,
+                                                        removed_devices_info)
+        else:
+            LOG.warn(_("No routing service helper loaded"))
         LOG.debug("Processing services completed")
 
     def _process_backlogged_hosting_devices(self, context):
@@ -291,8 +306,10 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         :return: None
         """
         LOG.debug("Report state task started")
-        configurations = self.routing_service_helper.collect_state(
-            self.agent_state['configurations'])
+        configurations = {}
+        if self.routing_service_helper:
+            configurations = self.routing_service_helper.collect_state(
+                self.agent_state['configurations'])
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
