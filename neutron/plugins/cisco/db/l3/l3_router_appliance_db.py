@@ -512,7 +512,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 self._namespace_router_type_id = self.get_router_type(
                     context, cfg.CONF.namespace_router_type_name)['id']
             except n_exc.NeutronException:
-                return None
+                return
         return self._namespace_router_type_id
 
     @lockutils.synchronized('routers', 'neutron-')

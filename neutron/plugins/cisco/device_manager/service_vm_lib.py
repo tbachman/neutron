@@ -191,7 +191,6 @@ class ServiceVMManager:
                                  vm_flavor, hosting_device_drv, mgmt_port,
                                  ports=None):
         vm_id = uuidutils.generate_uuid()
-
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
@@ -203,7 +202,7 @@ class ServiceVMManager:
                        'config drive'),
                      {'files': cfg_files.values(), 'keys': files.keys()})
         except IOError:
-            return None
+            return
 
         if mgmt_port is not None:
             p_dict = {'port': {'device_id': vm_id,

@@ -84,6 +84,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
        When the hosting device is a Nova VM 'id' is uuid of that VM.
     """
+    # complementary id to enable identification of associated Neutron resources
+    complementary_id = sa.Column(sa.String(36))
     # id of hosting device template used to create the hosting device
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('hostingdevicetemplates.id'),
