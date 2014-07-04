@@ -335,7 +335,7 @@ class DeviceHandlingMixin(object):
             return
         # These resources are owned by the L3AdminTenant
         complementary_id = uuidutils.generate_uuid()
-        dev_data = {'complementary_id': complementary_id
+        dev_data = {'complementary_id': complementary_id,
                     'device_id': 'CSR1kv',
                     'admin_state_up': True,
                     'protocol_port': 22,
