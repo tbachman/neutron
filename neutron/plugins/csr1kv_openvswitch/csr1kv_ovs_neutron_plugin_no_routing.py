@@ -12,14 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Somik Behera, Nicira Networks, Inc.
-# @author: Brad Hall, Nicira Networks, Inc.
-# @author: Dan Wendlandt, Nicira Networks, Inc.
-# @author: Dave Lapsley, Nicira Networks, Inc.
-# @author: Aaron Rosen, Nicira Networks, Inc.
-# @author: Bob Kukura, Red Hat, Inc.
-# @author: Seetharama Ayyadevara, Freescale Semiconductor, Inc.
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import sys
 
@@ -32,7 +24,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
@@ -54,8 +46,6 @@ from neutron.extensions import providernet as provider
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 import neutron.plugins
 from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.common import utils as plugin_utils
@@ -64,33 +54,28 @@ from neutron.plugins.csr1kv_openvswitch.common import constants
 from neutron.plugins.csr1kv_openvswitch.extensions import trunkport
 from neutron.plugins.openvswitch import ovs_db_v2
 
+
 LOG = logging.getLogger(__name__)
 
 
-class CSR1kv_OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
+class CSR1kv_OVSRpcCallbacks(n_rpc.RpcCallback,
+                             dhcp_rpc_base.DhcpRpcCallbackMixin,
                              sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
     # history
     #   1.0 Initial version
     #   1.1 Support Security Group RPC
+    #   1.2 Support get_devices_details_list
 
-    RPC_API_VERSION = '1.1'
+    RPC_API_VERSION = '1.2'
 
     def __init__(self, notifier, tunnel_type, plugin):
+        super(CSR1kv_OVSRpcCallbacks, self).__init__()
         self.notifier = notifier
         self.tunnel_type = tunnel_type
         # Bob - Patch to handle trunk ports.
         self.plugin = plugin
         # Bob - End of patch
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
     @classmethod
     def get_port_from_device(cls, device):
@@ -128,6 +113,16 @@ class CSR1kv_OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
             entry = {'device': device}
             LOG.debug(_("%s can not be found in database"), device)
         return entry
+
+    def get_devices_details_list(self, rpc_context, **kwargs):
+        return [
+            self.get_device_details(
+                rpc_context,
+                device=device,
+                **kwargs
+            )
+            for device in kwargs.pop('devices', [])
+        ]
 
     def update_device_down(self, rpc_context, **kwargs):
         """Device no longer exists on agent."""
@@ -197,7 +192,7 @@ class CSR1kv_OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         return entry
 
 
-class AgentNotifierApi(proxy.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin):
     '''Agent side of the openvswitch rpc API.
 
@@ -250,6 +245,7 @@ class AgentNotifierApi(proxy.RpcProxy,
 
 MIN_VLAN=100
 MAX_VLAN=4000
+
 
 class TrunkMapping(model_base.BASEV2):
     """Represents a vlan to network mapping."""
@@ -338,7 +334,8 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             portbindings.VIF_DETAILS: {
                 # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
-                'security-group' in self.supported_extension_aliases}}
+                'security-group' in self.supported_extension_aliases,
+                portbindings.OVS_HYBRID_PLUG: True}}
         self._parse_network_vlan_ranges()
         ovs_db_v2.sync_vlan_allocations(self.network_vlan_ranges)
         self.tenant_network_type = cfg.CONF.OVS.tenant_network_type
@@ -387,18 +384,18 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def setup_rpc(self):
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.notifier = AgentNotifierApi(topics.AGENT)
         self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         )
-        self.callbacks = CSR1kv_OVSRpcCallbacks(self.notifier, self.tunnel_type,
-                                                self)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [
+            CSR1kv_OVSRpcCallbacks(self.notifier, self.tunnel_type, self),
+            agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     # Bob - Patch to handle trunk ports
     #
@@ -776,6 +773,7 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         session = context.session
         with session.begin(subtransactions=True):
             binding = ovs_db_v2.get_network_binding(session, id)
+            self._process_l3_delete(context, id)
             super(CSR1kv_OVSNeutronPluginV2, self).delete_network(context, id)
             if binding.network_type in constants.TUNNEL_NETWORK_TYPES:
                 ovs_db_v2.release_tunnel(session, binding.segmentation_id,
@@ -842,7 +840,6 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     def update_port(self, context, id, port):
         session = context.session
         need_port_update_notify = False
-        changed_fixed_ips = 'fixed_ips' in port['port']
         with session.begin(subtransactions=True):
             original_port = super(CSR1kv_OVSNeutronPluginV2, self).get_port(
                 context, id)
@@ -853,9 +850,6 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                     self.update_address_pairs_on_port(context, id, port,
                                                       original_port,
                                                       updated_port))
-            elif changed_fixed_ips:
-                self._check_fixed_ips_and_address_pairs_no_overlap(
-                    context, updated_port)
             need_port_update_notify |= self.update_security_group_on_port(
                 context, id, port, original_port, updated_port)
             self._process_portbindings_create_and_update(context,
@@ -887,6 +881,7 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
+
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
         l3plugin = manager.NeutronManager.get_service_plugins().get(

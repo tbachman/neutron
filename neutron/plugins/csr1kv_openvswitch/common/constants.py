@@ -25,13 +25,14 @@ TUNNEL = 'tunnel'
 # Values for network_type
 VXLAN_UDP_PORT = 4789
 
-# Name prefixes for veth device pair linking the integration bridge
-# with the physical bridge for a physical network
-VETH_INTEGRATION_PREFIX = 'int-'
-VETH_PHYSICAL_PREFIX = 'phy-'
+# Name prefixes for veth device or patch port pair linking the integration
+# bridge with the physical bridge for a physical network
+PEER_INTEGRATION_PREFIX = 'int-'
+PEER_PHYSICAL_PREFIX = 'phy-'
 
-# The minimum version of OVS which supports VXLAN tunneling
-MINIMUM_OVS_VXLAN_VERSION = "1.10"
+# Nonexistent peer used to create patch ports without associating them, it
+# allows to define flows before association
+NONEXISTENT_PEER = 'nonexistent-peer'
 
 # The different types of tunnels
 TUNNEL_NETWORK_TYPES = [p_const.TYPE_GRE, p_const.TYPE_VXLAN]
@@ -42,10 +43,16 @@ GRE_TUN_TO_LV = 2
 VXLAN_TUN_TO_LV = 3
 LEARN_FROM_TUN = 10
 UCAST_TO_TUN = 20
-FLOOD_TO_TUN = 21
+ARP_RESPONDER = 21
+FLOOD_TO_TUN = 22
+CANARY_TABLE = 23
+
 # Map tunnel types to tables number
 TUN_TABLE = {p_const.TYPE_GRE: GRE_TUN_TO_LV,
              p_const.TYPE_VXLAN: VXLAN_TUN_TO_LV}
 
 # The default respawn interval for the ovsdb monitor
 DEFAULT_OVSDBMON_RESPAWN = 30
+
+# Special return value for an invalid OVS ofport
+INVALID_OFPORT = '-1'

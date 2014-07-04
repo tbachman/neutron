@@ -1,5 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-# Copyright 2011 Nicira Networks, Inc.
+# Copyright 2011 VMware, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,13 +12,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Aaron Rosen, Nicira Networks, Inc.
-# @author: Bob Kukura, Red Hat, Inc.
 
+from six import moves
 from sqlalchemy import func
 from sqlalchemy.orm import exc
 
-from neutron.common import exceptions as q_exc
+from neutron.common import exceptions as n_exc
 import neutron.db.api as db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db as sg_db
@@ -31,10 +29,6 @@ from neutron.plugins.openvswitch.common import constants
 from neutron.plugins.openvswitch import ovs_models_v2
 
 LOG = logging.getLogger(__name__)
-
-
-def initialize():
-    db.configure_db()
 
 
 def get_network_binding(session, network_id):
@@ -78,7 +72,7 @@ def sync_vlan_allocations(network_vlan_ranges):
             # physical network
             vlan_ids = set()
             for vlan_range in vlan_ranges:
-                vlan_ids |= set(xrange(vlan_range[0], vlan_range[1] + 1))
+                vlan_ids |= set(moves.xrange(vlan_range[0], vlan_range[1] + 1))
 
             # remove from table unallocated vlans not currently allocatable
             if physical_network in allocations:
@@ -140,7 +134,7 @@ def reserve_vlan(session):
                        'physical_network': alloc.physical_network})
             alloc.allocated = True
             return (alloc.physical_network, alloc.vlan_id)
-    raise q_exc.NoNetworkAvailable()
+    raise n_exc.NoNetworkAvailable()
 
 
 def reserve_specific_vlan(session, physical_network, vlan_id):
@@ -153,10 +147,10 @@ def reserve_specific_vlan(session, physical_network, vlan_id):
                      one())
             if alloc.allocated:
                 if vlan_id == constants.FLAT_VLAN_ID:
-                    raise q_exc.FlatNetworkInUse(
+                    raise n_exc.FlatNetworkInUse(
                         physical_network=physical_network)
                 else:
-                    raise q_exc.VlanIdInUse(vlan_id=vlan_id,
+                    raise n_exc.VlanIdInUse(vlan_id=vlan_id,
                                             physical_network=physical_network)
             LOG.debug(_("Reserving specific vlan %(vlan_id)s on physical "
                         "network %(physical_network)s from pool"),
@@ -217,7 +211,7 @@ def sync_tunnel_allocations(tunnel_id_ranges):
                         "%(tun_min)s:%(tun_max)s"),
                       {'tun_min': tun_min, 'tun_max': tun_max})
         else:
-            tunnel_ids |= set(xrange(tun_min, tun_max + 1))
+            tunnel_ids |= set(moves.xrange(tun_min, tun_max + 1))
 
     session = db.get_session()
     with session.begin():
@@ -264,7 +258,7 @@ def reserve_tunnel(session):
             LOG.debug(_("Reserving tunnel %s from pool"), alloc.tunnel_id)
             alloc.allocated = True
             return alloc.tunnel_id
-    raise q_exc.NoNetworkAvailable()
+    raise n_exc.NoNetworkAvailable()
 
 
 def reserve_specific_tunnel(session, tunnel_id):
@@ -275,7 +269,7 @@ def reserve_specific_tunnel(session, tunnel_id):
                      with_lockmode('update').
                      one())
             if alloc.allocated:
-                raise q_exc.TunnelIdInUse(tunnel_id=tunnel_id)
+                raise n_exc.TunnelIdInUse(tunnel_id=tunnel_id)
             LOG.debug(_("Reserving specific tunnel %s from pool"), tunnel_id)
             alloc.allocated = True
         except exc.NoResultFound:
@@ -352,7 +346,7 @@ def set_port_status(port_id, status):
         session.merge(port)
         session.flush()
     except exc.NoResultFound:
-        raise q_exc.PortNotFound(port_id=port_id)
+        raise n_exc.PortNotFound(port_id=port_id)
 
 
 def get_tunnel_endpoints():
@@ -377,7 +371,7 @@ def add_tunnel_endpoint(ip, max_retries=10):
     #                   doesn't conflict with any other concurrently executed
     #                   DB transactions in spite of the specified transactions
     #                   isolation level value
-    for i in xrange(max_retries):
+    for i in moves.xrange(max_retries):
         LOG.debug(_('Adding a tunnel endpoint for %s'), ip)
         try:
             session = db.get_session()
@@ -398,5 +392,5 @@ def add_tunnel_endpoint(ip, max_retries=10):
                         'transaction had been committed (%s attempts left)'),
                       max_retries - (i + 1))
 
-    raise q_exc.NeutronException(
+    raise n_exc.NeutronException(
         message=_('Unable to generate a new tunnel id'))
