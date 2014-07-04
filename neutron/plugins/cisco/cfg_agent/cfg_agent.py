@@ -15,6 +15,7 @@
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import eventlet
+eventlet.monkey_patch()
 import pprint
 import sys
 import time
@@ -25,19 +26,20 @@ from neutron.agent.common import config
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent import rpc as agent_rpc
+from neutron.common import config as common_config
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as n_context
 from neutron import manager
+from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
-from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
+from neutron.openstack.common import timeutils
+from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper import(
-    RoutingServiceHelper)
 from neutron import service as neutron_service
 
 LOG = logging.getLogger(__name__)
@@ -47,17 +49,17 @@ REGISTRATION_RETRY_DELAY = 2
 MAX_REGISTRATION_ATTEMPTS = 30
 
 
-class CiscoDeviceManagerPluginApi(proxy.RpcProxy):
+class CiscoDeviceManagementApi(n_rpc.RpcProxy):
     """Agent side of the device manager RPC API."""
 
     BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, topic, host):
-        super(CiscoDeviceManagerPluginApi, self).__init__(
+        super(CiscoDeviceManagementApi, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
-    def report_dead_hosting_devices(self, context, hd_ids=[]):
+    def report_dead_hosting_devices(self, context, hd_ids=None):
         """Report that a hosting device cannot be contacted (presumed dead).
 
         :param: context: session context
@@ -72,11 +74,10 @@ class CiscoDeviceManagerPluginApi(proxy.RpcProxy):
                   topic=self.topic)
 
     def register_for_duty(self, context):
-        """Report that a config agent is ready for duty.
-        """
-        # Cast since we don't expect a return value.
-        return self.call(context, self.make_msg('register_for_duty',
-                                                host=self.host),
+        """Report that a config agent is ready for duty."""
+        return self.call(context,
+                         self.make_msg('register_for_duty',
+                                       host=self.host),
                          topic=self.topic)
 
 
@@ -104,14 +105,19 @@ class CiscoCfgAgent(manager.Manager):
 
     OPTS = [
         cfg.IntOpt('rpc_loop_interval', default=10,
-                   help=_("Interval when the process services loop executes."
-                          "This is when the config agent lets each service "
-                          "helper to process its neutron resources.")),
+                   help=_("Interval when the process_services() loop "
+                          "executes in seconds. This is when the config agent "
+                          "lets each service helper to process its neutron "
+                          "resources.")),
+        cfg.StrOpt('routing_svc_helper_class',
+                   default='neutron.plugins.cisco.cfg_agent.service_helpers'
+                           '.routing_svc_helper.RoutingServiceHelper',
+                   help=_("path of the routing service helper class")),
     ]
 
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
-        self._dev_status = DeviceStatus()
+        self._dev_status = device_status.DeviceStatus()
         self.context = n_context.get_admin_context_without_session()
 
         self._initialize_rpc(host)
@@ -120,12 +126,20 @@ class CiscoCfgAgent(manager.Manager):
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
 
     def _initialize_rpc(self, host):
-        self.devmgr_rpc = CiscoDeviceManagerPluginApi(
-            topics.L3PLUGIN, host)
+        self.devmgr_rpc = CiscoDeviceManagementApi(
+            topics.DEVICE_MANAGER_PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
-        self.routing_service_helper = RoutingServiceHelper(host, self.conf,
-                                                           self)
+        svc_helper_class = self.conf.routing_svc_helper_class
+        try:
+            self.routing_service_helper = importutils.import_object(
+                svc_helper_class, host, self.conf, self)
+        except ImportError as e:
+            LOG.warn(_("Error in loading routing service helper. Class "
+                       "specified is %(class)s. Reason:%(reason)s"),
+                     {'class': self.conf.routing_svc_helper_class,
+                      'reason': e})
+            self.routing_service_helper = None
 
     def _start_periodic_tasks(self):
         self.loop = loopingcall.FixedIntervalLoopingCall(self.process_services)
@@ -141,7 +155,7 @@ class CiscoCfgAgent(manager.Manager):
     @periodic_task.periodic_task
     def _backlog_task(self, context):
         """Process backlogged devices."""
-        LOG.debug(_("Processing backlog."))
+        LOG.debug("Processing backlog.")
         self._process_backlogged_hosting_devices(context)
 
     ## Main orchestrator ##
@@ -158,35 +172,45 @@ class CiscoCfgAgent(manager.Manager):
         2. Called by the `_process_backlogged_hosting_devices()` as part of
         the backlog processing task. In this mode, a list of device_ids
         are passed as arguments. These are the list of backlogged
-        hosting devices that are now reachable.
+        hosting devices that are now reachable and we want to sync services
+        on them.
 
         3. Called by the `hosting_devices_removed()` method. This is when
         the config agent has received a notification from the plugin that
         some hosting devices are going to be removed. The payload contains
         the details of the hosting devices and the associated neutron
-        resources on them.
+        resources on them which should be processed and removed.
 
         To avoid race conditions with these scenarios, this function is
         protected by a lock.
 
-        This method goes on to invoke `process_service()` on the service
-        helpers.
+        This method goes on to invoke `process_service()` on the
+        different service helpers.
 
         :param device_ids : List of devices that are now available and needs
          to be processed
         :param removed_devices_info: Info about the hosting devices which
         are going to be removed and details of the resources hosted on them.
+        Expected Format:
+                {
+                 'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
+                                  'hd_id2': {'routers': [id3, id4, ...]}, ...},
+                 'deconfigure': True/False
+                }
         :return: None
         """
-        #ToDo(Hareesh): Verify admin_up event
-        LOG.debug(_("Processing services started"))
-        # Now we process only routing service
-        self.routing_service_helper.process_service(device_ids,
-                                                    removed_devices_info)
-        LOG.debug(_("Processing services completed"))
+        LOG.debug("Processing services started")
+        # Now we process only routing service, additional services will be
+        # added in future
+        if self.routing_service_helper:
+            self.routing_service_helper.process_service(device_ids,
+                                                        removed_devices_info)
+        else:
+            LOG.warn(_("No routing service helper loaded"))
+        LOG.debug("Processing services completed")
 
     def _process_backlogged_hosting_devices(self, context):
-        """Process currently back logged devices.
+        """Process currently backlogged devices.
 
         Go through the currently backlogged devices and process them.
         For devices which are now reachable (compared to last time), we call
@@ -200,29 +224,22 @@ class CiscoCfgAgent(manager.Manager):
         if res['reachable']:
             self.process_services(device_ids=res['reachable'])
         if res['dead']:
-            LOG.debug(_("Reporting dead hosting devices: %s"),
-                      res['dead'])
+            LOG.debug("Reporting dead hosting devices: %s", res['dead'])
             self.devmgr_rpc.report_dead_hosting_devices(context,
                                                         hd_ids=res['dead'])
 
     def hosting_devices_removed(self, context, payload):
-        """Deal with hosting device removed RPC message.
-        Payload format:
-        {
-             'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
-                              'hd_id2': {'routers': [id3, id4, ...]}, ... },
-             'deconfigure': True/False
-        }
-        """
+        """Deal with hosting device removed RPC message."""
         try:
             if payload['hosting_data']:
                 if payload['hosting_data'].keys():
                     self.process_services(removed_devices_info=payload)
-        except KeyError, e:
+        except KeyError as e:
             LOG.error(_("Invalid payload format for received RPC message "
                         "`hosting_devices_removed`. Error is %{error}s. "
                         "Payload is %(payload)s"),
                       {'error': e, 'payload': payload})
+
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
@@ -249,14 +266,13 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
     def _agent_registration(self):
         """Register this agent with the server.
 
-         This method registers the config agent with the server so hosting
-         devices can be assigned to it. In case the server is not ready to
-         accept registration (it sends a False) then we retry registration
-         for `MAX_REGISTRATION_ATTEMPTS` with a delay of
-         `REGISTRATION_RETRY_DELAY`. If there is no server response or a
-         failure to register after the required number of attempts,
-         the agent stops itself.
-        :return:
+        This method registers the cfg agent with the neutron server so hosting
+        devices can be assigned to it. In case the server is not ready to
+        accept registration (it sends a False) then we retry registration
+        for `MAX_REGISTRATION_ATTEMPTS` with a delay of
+        `REGISTRATION_RETRY_DELAY`. If there is no server response or a
+        failure to register after the required number of attempts,
+        the agent stops itself.
         """
         for attempts in xrange(MAX_REGISTRATION_ATTEMPTS):
             context = n_context.get_admin_context_without_session()
@@ -273,27 +289,32 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                 time.sleep(REGISTRATION_RETRY_DELAY)
             elif res is None:
                 LOG.error(_("[Agent registration] Neutron server said that no "
-                            "device manager was found. Exiting!"))
-                sys.exit(1)
+                            "device manager was found. Cannot "
+                            "continue. Exiting!"))
+                raise SystemExit("Cfg Agent exiting")
         LOG.error(_("[Agent registration] %d unsuccessful registration "
                     "attempts. Exiting!"), MAX_REGISTRATION_ATTEMPTS)
-        sys.exit(1)
+        raise SystemExit("Cfg Agent exiting")
 
     def _report_state(self):
-        """Report state back to the plugin.
+        """Report state to the plugin.
 
         This task run every `report_interval` period.
         Collects, creates and sends a summary of the services currently
         managed by this agent. Data is collected from the service helper(s).
-        Look at the `configurations` dict for the parameters reported.
+        Refer the `configurations` dict for the parameters reported.
         :return: None
         """
-        LOG.debug(_("Report state task started"))
-        configurations = self.routing_service_helper.collect_state(
-            self.agent_state['configurations'])
+        LOG.debug("Report state task started")
+        configurations = {}
+        if self.routing_service_helper:
+            configurations = self.routing_service_helper.collect_state(
+                self.agent_state['configurations'])
+        non_responding = self._dev_status.get_backlogged_hosting_devices_info()
+        configurations['non_responding_hosting_devices'] = non_responding
         self.agent_state['configurations'] = configurations
-        LOG.debug(_("State report data: %s"),
-                  pprint.pprint(self.agent_state))
+        self.agent_state['local_time'] = str(timeutils.utcnow())
+        LOG.debug("State report data: %s", pprint.pformat(self.agent_state))
         self.send_agent_report(self.agent_state, self.context)
 
     def send_agent_report(self, report, context):
@@ -302,7 +323,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             self.state_rpc.report_state(context, report, self.use_call)
             report.pop('start_flag', None)
             self.use_call = False
-            LOG.debug(_("Send agent report successfully completed"))
+            LOG.debug("Send agent report successfully completed")
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_("Neutron server does not support state report. "
@@ -315,13 +336,13 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
 def main(manager='neutron.plugins.cisco.cfg_agent.'
                  'cfg_agent.CiscoCfgAgentWithStateReport'):
-    eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(CiscoCfgAgent.OPTS)
     config.register_agent_state_opts_helper(conf)
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)
     conf.register_opts(external_process.OPTS)
+    common_config.init(sys.argv[1:])
     conf(project='neutron')
     config.setup_logging(conf)
     server = neutron_service.Service.create(

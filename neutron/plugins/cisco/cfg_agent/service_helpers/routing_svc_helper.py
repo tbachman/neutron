@@ -14,25 +14,21 @@
 #
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 
+import collections
 import eventlet
 import netaddr
 
 from neutron.common import constants as l3_constants
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import common as rpc_common
-from neutron.openstack.common.rpc import proxy
 
-from neutron.plugins.cisco.cfg_agent.cfg_exceptions import DriverException
-from neutron.plugins.cisco.cfg_agent.device_drivers.driver_mgr import (
-    DeviceDriverManager)
-from neutron.plugins.cisco.cfg_agent.device_status import DeviceStatus
-from neutron.plugins.cisco.cfg_agent.service_helpers.service_helper import (
-    ServiceHelperBase)
+from neutron.plugins.cisco.cfg_agent import cfg_exceptions
+from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
+from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 
 LOG = logging.getLogger(__name__)
@@ -62,10 +58,7 @@ class RouterInfo(object):
         self.floating_ips = []
         self.router = router
         self.routes = []
-        self.ha_info = None
-        # Set 'ha_info' if present
-        if router.get('ha_info') is not None:
-            self.ha_info = router['ha_info']
+        self.ha_info = router.get('ha_info')
 
     @property
     def router(self):
@@ -91,7 +84,7 @@ class RouterInfo(object):
         return N_ROUTER_PREFIX + self.router_id
 
 
-class CiscoRoutingPluginApi(proxy.RpcProxy):
+class CiscoRoutingPluginApi(n_rpc.RpcProxy):
     """RoutingServiceHelper(Agent) side of the  routing RPC API."""
 
     BASE_RPC_API_VERSION = '1.1'
@@ -101,7 +94,7 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
-    def get_routers(self, context, router_ids=None, hd_ids=[]):
+    def get_routers(self, context, router_ids=None, hd_ids=None):
         """Make a remote process call to retrieve the sync data for routers.
 
         :param context: session context
@@ -110,62 +103,48 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
                         hosting devices will be returned.
         """
         return self.call(context,
-                         self.make_msg('cfg_sync_routers', host=self.host,
+                         self.make_msg('cfg_sync_routers',
+                                       host=self.host,
                                        router_ids=router_ids,
                                        hosting_device_ids=hd_ids),
                          topic=self.topic)
 
-    def get_external_network_id(self, context):
-        """Make a remote process call to retrieve the external network id.
 
-        :param context : session context
-        :raise common.RemoteError: with TooManyExternalNetworks
-                                   as exc_type if there are
-                                   more than one external network
-        """
-        return self.call(context,
-                         self.make_msg('get_external_network_id',
-                                       host=self.host),
-                         topic=self.topic)
-
-
-class RoutingServiceHelper(ServiceHelperBase):
+class RoutingServiceHelper():
 
     def __init__(self, host, conf, cfg_agent):
         self.conf = conf
         self.cfg_agent = cfg_agent
         self.context = n_context.get_admin_context_without_session()
         self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
-        self._dev_status = DeviceStatus()
-        self._drivermgr = DeviceDriverManager()
+        self._dev_status = device_status.DeviceStatus()
+        self._drivermgr = driver_mgr.DeviceDriverManager()
 
         self.router_info = {}
         self.updated_routers = set()
         self.removed_routers = set()
-
-        self.fullsync = True
         self.sync_devices = set()
+        self.fullsync = True
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
+
         self._setup_rpc()
 
     def _setup_rpc(self):
-        self.conn = rpc.create_connection(new=True)
-        self.dispatcher = self.create_rpc_dispatcher()
-        self.conn.create_consumer(
-            self.topic,
-            self.dispatcher,
-            fanout=False)
-        self.conn.consume_in_thread()
+        self.conn = n_rpc.create_connection(new=True)
+        self.endpoints = [self]
+        self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
+        self.conn.consume_in_threads()
 
     ### Notifications from Plugin ####
+
     def router_deleted(self, context, router_id):
         """Deal with router deletion RPC message."""
-        LOG.debug(_('Got router deleted notification for %s'), router_id)
+        LOG.debug('Got router deleted notification for %s', router_id)
         self.removed_routers.add(router_id)
 
     def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""
-        LOG.debug(_('Got routers updated notification :%s'), routers)
+        LOG.debug('Got routers updated notification :%s', routers)
         if routers:
             # This is needed for backward compatibility
             if isinstance(routers[0], dict):
@@ -173,23 +152,26 @@ class RoutingServiceHelper(ServiceHelperBase):
             self.updated_routers.update(routers)
 
     def router_removed_from_agent(self, context, payload):
-        LOG.debug(_('Got router removed from agent :%r'), payload)
+        LOG.debug('Got router removed from agent :%r', payload)
         self.removed_routers.add(payload['router_id'])
 
     def router_added_to_agent(self, context, payload):
-        LOG.debug(_('Got router added to agent :%r'), payload)
+        LOG.debug('Got router added to agent :%r', payload)
         self.routers_updated(context, payload)
 
     # Routing service helper public methods
 
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
-            LOG.debug(_("Routing service processing started"))
+            LOG.debug("Routing service processing started")
             resources = {}
             routers = []
             removed_routers = []
+            all_routers_flag = False
             if self.fullsync:
-                LOG.debug(_("FullSync flag is on. Starting fullsync"))
+                LOG.debug("FullSync flag is on. Starting fullsync")
+                # Setting all_routers_flag and clear the global full_sync flag
+                all_routers_flag = True
                 self.fullsync = False
                 self.updated_routers.clear()
                 self.removed_routers.clear()
@@ -198,24 +180,26 @@ class RoutingServiceHelper(ServiceHelperBase):
             else:
                 if self.updated_routers:
                     router_ids = list(self.updated_routers)
-                    LOG.debug(_("Updated routers:%s"), router_ids)
+                    LOG.debug("Updated routers:%s", router_ids)
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
                 if device_ids:
-                    LOG.debug(_("Adding new devices:%s"), device_ids)
+                    LOG.debug("Adding new devices:%s", device_ids)
                     self.sync_devices = set(device_ids) | self.sync_devices
                 if self.sync_devices:
                     sync_devices_list = list(self.sync_devices)
-                    LOG.debug(_("Fetching routers on:%s"), sync_devices_list)
-                    routers.append(self._fetch_router_info(sync_devices_list))
+                    LOG.debug("Fetching routers on:%s", sync_devices_list)
+                    routers.extend(self._fetch_router_info(
+                        device_ids=sync_devices_list))
                     self.sync_devices.clear()
                 if removed_devices_info:
-                    self.removed_routers = self.removed_routers.union(set(
-                        self._get_router_ids_from_removed_devices_info(
-                            removed_devices_info)))
+                    if removed_devices_info.get('deconfigure'):
+                        ids = self._get_router_ids_from_removed_devices_info(
+                            removed_devices_info)
+                        self.removed_routers = self.removed_routers | set(ids)
                 if self.removed_routers:
                     removed_routers_ids = list(self.removed_routers)
-                    LOG.debug(_("Removed routers:%s"), removed_routers_ids)
+                    LOG.debug("Removed routers:%s", removed_routers_ids)
                     for r in removed_routers_ids:
                         if r in self.router_info:
                             removed_routers.append(self.router_info[r].router)
@@ -234,19 +218,18 @@ class RoutingServiceHelper(ServiceHelperBase):
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
                 pool.spawn_n(self._process_routers, routers, removed_routers,
-                             device_id, all_routers=self.fullsync)
+                             device_id, all_routers=all_routers_flag)
             pool.waitall()
             if removed_devices_info:
                 for hd_id in removed_devices_info['hosting_data']:
                     self._drivermgr.remove_driver_for_hosting_device(hd_id)
-            LOG.debug(_("Routing service processing successfully completed"))
+            LOG.debug("Routing service processing successfully completed")
         except Exception:
             LOG.exception(_("Failed processing routers"))
             self.fullsync = True
 
     def collect_state(self, configurations):
-        """
-        Collect state from this helper.
+        """Collect state from this helper.
 
         A set of attributes which summarizes the state of the routers and
         configurations managed by this config agent.
@@ -258,7 +241,7 @@ class RoutingServiceHelper(ServiceHelperBase):
         num_floating_ips = 0
         router_infos = self.router_info.values()
         num_routers = len(router_infos)
-        num_hd_routers = {}
+        num_hd_routers = collections.defaultdict(int)
         routers_per_hd = {}
         for ri in router_infos:
             ex_gw_port = ri.router.get('gw_port')
@@ -270,11 +253,10 @@ class RoutingServiceHelper(ServiceHelperBase):
                 l3_constants.FLOATINGIP_KEY, []))
             hd = ri.router['hosting_device']
             if hd:
-                num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
-        for (hd_id, num) in num_hd_routers.items():
-            routers_per_hd[hd_id] = {'routers': num}
+                num_hd_routers[hd['id']] += 1
+        routers_per_hd = dict((hd_id, {'routers': num})
+                              for hd_id, num in num_hd_routers.items())
         non_responding = self._dev_status.get_backlogged_hosting_devices()
-        # configurations = self.agent_state['configurations']
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
         configurations['total interfaces'] = num_interfaces
@@ -287,13 +269,13 @@ class RoutingServiceHelper(ServiceHelperBase):
 
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):
-        """ Fetch router dict from the routing plugin.
+        """Fetch router dict from the routing plugin.
 
         :param router_ids: List of router_ids of routers to fetch
         :param device_ids: List of device_ids whose routers to fetch
         :param all_routers:  If True fetch all the routers for this agent.
-        :return: List of router dicts
-        Format: [ {router_dict1}, {router_dict2},.....]
+        :return: List of router dicts of format:
+                 [ {router_dict1}, {router_dict2},.....]
         """
         try:
             if all_routers:
@@ -304,12 +286,12 @@ class RoutingServiceHelper(ServiceHelperBase):
             if device_ids:
                 return self.plugin_rpc.get_routers(self.context,
                                                    hd_ids=device_ids)
-        except rpc_common.RPCException:
+        except n_rpc.RPCException:
             LOG.exception(_("RPC Error in fetching routers from plugin"))
             self.fullsync = True
 
     def _get_router_ids_from_removed_devices_info(self, removed_devices_info):
-        """Extract router_ids from the removed devices info dict
+        """Extract router_ids from the removed devices info dict.
 
         :param removed_devices_info: Dict of removed devices and their
                associated resources.
@@ -331,7 +313,11 @@ class RoutingServiceHelper(ServiceHelperBase):
     def _sort_resources_per_hosting_device(self, resources):
         """This function will sort the resources on hosting device.
 
-        Syntax of returned dict:
+        The sorting on hosting device is done by looking up the
+        `hosting_device` attribute of the resource, and its `id`.
+
+        :param resources: a dict with key of resource name
+        :return dict sorted on the hosting device of input resource. Format:
         hosting_devices = {
                             'hd_id1' : {'routers':[routers],
                                         'removed_routers':[routers], .... }
@@ -352,18 +338,19 @@ class RoutingServiceHelper(ServiceHelperBase):
         """Process the set of routers.
 
         Iterating on the set of routers received and comparing it with the
-        set of routers already in the routing service helper,
-        new routers which are added are identified. Then check the
-        reachability (via ping) of hosting device where the router is hosted
-        and backlogs it if necessary.
+        set of routers already in the routing service helper, new routers
+        which are added are identified. Before processing check the
+        reachability (via ping) of hosting device where the router is hosted.
+        If device is not reachable it is backlogged.
+
         For routers which are only updated, call `_process_router()` on them.
 
         When all_routers is set to True (because of a full sync),
-        this will result in the detection and deletion of routers which are
-        to be removed.
+        this will result in the detection and deletion of routers which
+        have been removed.
 
         Whether the router can only be assigned to a particular hosting device
-        is decided and enforced by the plugin. So no checks are done here.
+        is decided and enforced by the plugin. No checks are done here.
 
         :param routers: The set of routers to be processed
         :param removed_routers: the set of routers which where removed
@@ -383,7 +370,8 @@ class RoutingServiceHelper(ServiceHelperBase):
                     if not r['admin_state_up']:
                         continue
                     cur_router_ids.add(r['id'])
-                    if not self._dev_status.is_hosting_device_reachable(r):
+                    hd = r['hosting_device']
+                    if not self._dev_status.is_hosting_device_reachable(hd):
                         LOG.info(_("Router: %(id)s is on an unreachable "
                                    "hosting device. "), {'id': r['id']})
                         continue
@@ -392,9 +380,14 @@ class RoutingServiceHelper(ServiceHelperBase):
                     ri = self.router_info[r['id']]
                     ri.router = r
                     self._process_router(ri)
-                except DriverException, e:
-                    LOG.exception("Driver Exception %s", e)
-                    self.sync_devices.add(device_id)
+                except KeyError as e:
+                    LOG.exception(_("Key Error, missing key: %s"), e)
+                    self.updated_routers.add(r['id'])
+                    continue
+                except cfg_exceptions.DriverException as e:
+                    LOG.exception(_("Driver Exception on router:%(id)s. "
+                                    "Error is %(e)s"), {'id': r['id'], 'e': e})
+                    self.updated_routers.update(r['id'])
                     continue
             # identify and remove routers that no longer exist
             for router_id in prev_router_ids - cur_router_ids:
@@ -402,8 +395,7 @@ class RoutingServiceHelper(ServiceHelperBase):
             if removed_routers:
                 for router in removed_routers:
                     self._router_removed(router['id'])
-                    # self.removed_routers.remove(router['id'])
-        except:
+        except Exception:
             LOG.exception(_("Exception in processing routers on device:%s"),
                           device_id)
             self.sync_devices.add(device_id)
@@ -419,11 +411,10 @@ class RoutingServiceHelper(ServiceHelperBase):
         Next, floating_ips and routes are processed. Also, latest state is
         stored in ri.internal_ports and ri.ex_gw_port for future comparisons.
 
-        :param ri : neutron.plugins.cisco.l3.agent.router_info.RouterInfo
-        corresponding to the router being processed.
+        :param ri : RouterInfo object of the router being processed.
         :return:None
-        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
-        the configuration operation fails.
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.DriverException
+        if the configuration operation fails.
         """
         try:
             ex_gw_port = ri.router.get('gw_port')
@@ -458,8 +449,9 @@ class RoutingServiceHelper(ServiceHelperBase):
 
             ri.ex_gw_port = ex_gw_port
             self._routes_updated(ri)
-        except DriverException as e:
+        except cfg_exceptions.DriverException as e:
             with excutils.save_and_reraise_exception():
+                self.updated_routers.update(ri.router_id)
                 LOG.error(e)
 
     def _process_router_floating_ips(self, ri, ex_gw_port):
@@ -470,12 +462,11 @@ class RoutingServiceHelper(ServiceHelperBase):
         flaoting_ips which were added or removed. Notify driver of
         the change via `floating_ip_added()` or `floating_ip_removed()`.
 
-        :param ri:  neutron.plugins.cisco.l3.agent.router_info.RouterInfo
-        corresponding to the router being processed.
+        :param ri:  RouterInfo object of the router being processed.
         :param ex_gw_port: Port dict of the external gateway port.
         :return: None
-        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
-        the configuration operation fails.
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.DriverException
+        if the configuration operation fails.
         """
 
         floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
@@ -509,7 +500,7 @@ class RoutingServiceHelper(ServiceHelperBase):
                 new_fixed_ip = new_fip['fixed_ip_address']
                 existing_fixed_ip = fip['fixed_ip_address']
                 if (new_fixed_ip and existing_fixed_ip and
-                            new_fixed_ip != existing_fixed_ip):
+                        new_fixed_ip != existing_fixed_ip):
                     floating_ip = fip['floating_ip_address']
                     self._floating_ip_removed(ri, ri.ex_gw_port,
                                               floating_ip,
@@ -556,20 +547,19 @@ class RoutingServiceHelper(ServiceHelperBase):
         ri.router[l3_constants.FLOATINGIP_KEY] = []
         try:
             if deconfigure:
-                #ToDo: Check here
                 self._process_router(ri)
                 driver = self._drivermgr.get_driver(router_id)
                 driver.router_removed(ri, deconfigure)
                 self._drivermgr.remove_driver(router_id)
             del self.router_info[router_id]
             self.removed_routers.discard(router_id)
-        except DriverException:
-            LOG.info(_("Router remove for router_id: %s was incomplete. "
+        except cfg_exceptions.DriverException:
+            LOG.warn(_("Router remove for router_id: %s was incomplete. "
                        "Adding the router to removed_routers list"), router_id)
             self.removed_routers.add(router_id)
             # remove this router from updated_routers if it is there. It might
-            # end up there too if exception was thrown inside
-            # `_process_router`
+            # end up there too if exception was thrown earlier inside
+            # `_process_router()`
             self.updated_routers.discard(router_id)
 
     def _internal_network_added(self, ri, port, ex_gw_port):
@@ -609,20 +599,20 @@ class RoutingServiceHelper(ServiceHelperBase):
     def _routes_updated(self, ri):
         """Update the state of routes in the router.
 
-         Compares the current routes with the (configured) existing routes
-         and detect what was removed or added. Then configure the
-         logical router in the hosting device accordingly.
-        :param ri: router_info corresponding to the router.
+        Compares the current routes with the (configured) existing routes
+        and detect what was removed or added. Then configure the
+        logical router in the hosting device accordingly.
+        :param ri: RouterInfo corresponding to the router.
         :return: None
-        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
-        the configuration operation fails.
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.DriverException
+        if the configuration operation fails.
         """
         new_routes = ri.router['routes']
         old_routes = ri.routes
         adds, removes = common_utils.diff_list_of_dict(old_routes,
                                                        new_routes)
         for route in adds:
-            LOG.debug(_("Added route entry is '%s'"), route)
+            LOG.debug("Added route entry is '%s'", route)
             # remove replaced route from deleted route
             for del_route in removes:
                 if route['destination'] == del_route['destination']:
@@ -632,7 +622,7 @@ class RoutingServiceHelper(ServiceHelperBase):
             driver.routes_updated(ri, 'replace', route)
 
         for route in removes:
-            LOG.debug(_("Removed route entry is '%s'"), route)
+            LOG.debug("Removed route entry is '%s'", route)
             driver = self._drivermgr.get_driver(ri.id)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes

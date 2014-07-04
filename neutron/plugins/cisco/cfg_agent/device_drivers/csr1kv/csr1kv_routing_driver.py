@@ -20,20 +20,25 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
-from ciscoconfparse import CiscoConfParse
+import ciscoconfparse
 from ncclient import manager
+
+from oslo.config import cfg
+
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
-from neutron.plugins.cisco.cfg_agent.services_api import RoutingDriverBase
-from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
-                                                  n1kv_constants)
-from oslo.config import cfg
+from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
 
 LOG = logging.getLogger(__name__)
 
 
-class CSR1kvRoutingDriver(RoutingDriverBase):
+# N1kv constants
+T1_PORT_NAME_PREFIX = 't1_p:'  # T1 port/network is for VXLAN
+T2_PORT_NAME_PREFIX = 't2_p:'  # T2 port/network is for VLAN
+
+
+class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     """CSR1kv Routing Driver.
 
     This driver encapsulates the configuration logic via NETCONF protocol to
@@ -48,7 +53,6 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         try:
             self._csr_host = device_params['management_ip_address']
             self._csr_ssh_port = device_params['protocol_port']
-            # Using defaults for user/password if not in device params
             credentials = device_params['credentials']
             if credentials:
                 self._csr_user = credentials['username']
@@ -118,15 +122,15 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         gateway_ip = ip_cidr.split('/')[0]
         subinterface = self._get_interface_name_from_hosting_port(port)
         vlan = self._get_interface_vlan_from_hosting_port(port)
-        self.create_subinterface(subinterface, vlan, vrf_name,
-                                 gateway_ip, netmask)
+        self._create_subinterface(subinterface, vlan, vrf_name,
+                                  gateway_ip, netmask)
 
     def _csr_remove_subinterface(self, ri, port):
         vrf_name = self._csr_get_vrf_name(ri)
         subinterface = self._get_interface_name_from_hosting_port(port)
         vlan_id = self._get_interface_vlan_from_hosting_port(port)
         ip = port['fixed_ips'][0]['ip_address']
-        self.remove_subinterface(subinterface, vlan_id, vrf_name, ip)
+        self._remove_subinterface(subinterface, vlan_id, vrf_name, ip)
 
     def _csr_add_ha(self, ri, port):
         func_dict = {
@@ -165,9 +169,9 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         netmask = netaddr.IPNetwork(internal_cidr).hostmask
         inner_intfc = self._get_interface_name_from_hosting_port(port)
         outer_intfc = self._get_interface_name_from_hosting_port(ex_port)
-        self.nat_rules_for_internet_access(acl_no, internal_net,
-                                           netmask, inner_intfc,
-                                           outer_intfc, vrf_name)
+        self._nat_rules_for_internet_access(acl_no, internal_net,
+                                            netmask, inner_intfc,
+                                            outer_intfc, vrf_name)
 
     def _csr_remove_internalnw_nat_rules(self, ri, ports, ex_port):
         acls = []
@@ -176,67 +180,65 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             in_intfc_name = self._get_interface_name_from_hosting_port(port)
             inner_vlan = self._get_interface_vlan_from_hosting_port(port)
             acls.append("acl_" + str(inner_vlan))
-            self.remove_interface_nat(in_intfc_name, 'inside')
+            self._remove_interface_nat(in_intfc_name, 'inside')
 
         #Wait for two second
-        LOG.debug(_("Sleep for 2 seconds before clearing NAT rules"))
+        LOG.debug("Sleep for 2 seconds before clearing NAT rules")
         time.sleep(2)
 
         #Clear the NAT translation table
-        self.remove_dyn_nat_translations()
+        self._remove_dyn_nat_translations()
 
         # Remove dynamic NAT rules and ACLs
         vrf_name = self._csr_get_vrf_name(ri)
         ext_intfc_name = self._get_interface_name_from_hosting_port(ex_port)
         for acl in acls:
-            self.remove_dyn_nat_rule(acl, ext_intfc_name, vrf_name)
+            self._remove_dyn_nat_rule(acl, ext_intfc_name, vrf_name)
 
     def _csr_add_default_route(self, ri, gw_ip):
         vrf_name = self._csr_get_vrf_name(ri)
-        self.add_default_static_route(gw_ip, vrf_name)
+        self._add_default_static_route(gw_ip, vrf_name)
 
     def _csr_remove_default_route(self, ri, gw_ip):
         vrf_name = self._csr_get_vrf_name(ri)
-        self.remove_default_static_route(gw_ip, vrf_name)
+        self._remove_default_static_route(gw_ip, vrf_name)
 
     def _csr_add_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
         vrf_name = self._csr_get_vrf_name(ri)
-        self.add_floating_ip(floating_ip, fixed_ip, vrf_name)
+        self._add_floating_ip(floating_ip, fixed_ip, vrf_name)
 
     def _csr_remove_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
         vrf_name = self._csr_get_vrf_name(ri)
         out_intfc_name = self._get_interface_name_from_hosting_port(ex_gw_port)
         # First remove NAT from outer interface
-        self.remove_interface_nat(out_intfc_name, 'outside')
+        self._remove_interface_nat(out_intfc_name, 'outside')
         #Clear the NAT translation table
-        self.remove_dyn_nat_translations()
+        self._remove_dyn_nat_translations()
         #Remove the floating ip
-        self.remove_floating_ip(floating_ip, fixed_ip, vrf_name)
+        self._remove_floating_ip(floating_ip, fixed_ip, vrf_name)
         #Enable NAT on outer interface
-        self.add_interface_nat(out_intfc_name, 'outside')
+        self._add_interface_nat(out_intfc_name, 'outside')
 
     def _csr_update_routing_table(self, ri, action, route):
-        #cmd = ['ip', 'route', operation, 'to', route['destination'],
-        #       'via', route['nexthop']]
         vrf_name = self._csr_get_vrf_name(ri)
         destination_net = netaddr.IPNetwork(route['destination'])
         dest = destination_net.network
         dest_mask = destination_net.netmask
         next_hop = route['nexthop']
         if action is 'replace':
-            self.add_static_route(dest, dest_mask, next_hop, vrf_name)
+            self._add_static_route(dest, dest_mask, next_hop, vrf_name)
         elif action is 'delete':
-            self.remove_static_route(dest, dest_mask, next_hop, vrf_name)
+            self._remove_static_route(dest, dest_mask, next_hop, vrf_name)
         else:
             LOG.error(_('Unknown route command %s'), action)
 
     def _csr_create_vrf(self, ri):
         vrf_name = self._csr_get_vrf_name(ri)
-        self.create_vrf(vrf_name)
+        self._create_vrf(vrf_name)
 
     def _csr_remove_vrf(self, ri):
         vrf_name = self._csr_get_vrf_name(ri)
-        self.remove_vrf(vrf_name)
+        self._remove_vrf(vrf_name)
 
     def _csr_get_vrf_name(self, ri):
         return ri.router_name()[:self.DEV_NAME_LEN]
@@ -273,24 +275,41 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
     def _get_interface_name_from_hosting_port(self, port):
         vlan = self._get_interface_vlan_from_hosting_port(port)
         int_no = self._get_interface_no_from_hosting_port(port)
-        intfc_name = 'GigabitEthernet' + str(int_no) + '.' + str(vlan)
+        intfc_name = 'GigabitEthernet%s.%s' % (int_no, vlan)
         return intfc_name
 
     def _get_interface_vlan_from_hosting_port(self, port):
-        hosting_info = port['hosting_info']
-        vlan = hosting_info['segmentation_id']
-        return vlan
+        return port['hosting_info']['segmentation_id']
 
     def _get_interface_no_from_hosting_port(self, port):
+        """Calculate interface number from the hosting port's name.
+
+         Interfaces in the CSR1kv are created in pairs (T1 and T2) where
+         T1 interface is used for VLAN and T2 interface for VXLAN traffic
+         respectively. In neutron side these are named as T1 and T2 ports and
+         follows the naming convention: <Tx_PORT_NAME_PREFIX>:<PAIR_INDEX>
+         where the `PORT_NAME_PREFIX` indicates either VLAN or VXLAN and
+         `PAIR_INDEX` is the pair number. `PAIR_INDEX` starts at 1.
+
+         In CSR1kv, GigabitEthernet 0 is not present and GigabitEthernet 1
+         is used as a management interface (Note: this might change in
+         future). So the first (T1,T2) pair corresponds to
+         (GigabitEthernet 2, GigabitEthernet 3) and so forth. This function
+         extracts the `PAIR_INDEX` and calculates the corresponding interface
+         number.
+
+        :param port: neutron port corresponding to the interface.
+        :return: number of the interface (eg: 1 in case of GigabitEthernet1)
+        """
         _name = port['hosting_info']['hosting_port_name']
         if_type = _name.split(':')[0] + ':'
-        if if_type == n1kv_constants.T1_PORT_NAME:
-            no = str(int(_name.split(':')[1]) * 2)
-        elif if_type == n1kv_constants.T2_PORT_NAME:
-            no = str(int(_name.split(':')[1]) * 2 + 1)
+        if if_type == T1_PORT_NAME_PREFIX:
+            return str(int(_name.split(':')[1]) * 2)
+        elif if_type == T2_PORT_NAME_PREFIX:
+            return str(int(_name.split(':')[1]) * 2 + 1)
         else:
-            LOG.error(_('Unknown interface name: %s'), if_type)
-        return no
+            params = {'attribute': 'hosting_port_name', 'value': _name}
+            raise cfg_exc.CSR1kvUnknownValueException(**params)
 
     def _get_interfaces(self):
         """Get a list of interfaces on this hosting device.
@@ -298,10 +317,10 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return: List of the interfaces
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface GigabitEthernet")
-        intfs = [l.strip().split(' ')[1] for l in intfs_raw]
-        LOG.info("Interfaces:%s" % intfs)
+        intfs = [raw_if.strip().split(' ')[1] for raw_if in intfs_raw]
+        LOG.info(_("Interfaces:%s"), intfs)
         return intfs
 
     def _get_interface_ip(self, interface_name):
@@ -311,20 +330,20 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return: ip address of interface as a string
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         children = parse.find_children("^interface %s" % interface_name)
         for line in children:
             if 'ip address' in line:
                 ip_address = line.strip().split(' ')[2]
-                LOG.info("IP Address:%s" % ip_address)
+                LOG.info(_("IP Address:%s"), ip_address)
                 return ip_address
-        LOG.warn("Cannot find interface:" % interface_name)
+        LOG.warn(_("Cannot find interface: %s"), interface_name)
         return None
 
     def _interface_exists(self, interface):
         """Check whether interface exists."""
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface " + interface)
         return len(intfs_raw) > 0
 
@@ -333,27 +352,27 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
         When the virtual router first boots up, all interfaces except
         management are down. This method will enable all data interfaces.
-        Only the second and third Gig interfaces are enabled now, as these are
-        configured as trunk for VLAN and VXLAN and hence the only ones
-        needed now.
 
-        Note: CSR1kv, in release 3.11 GigabitEthernet 0 is no longer
-        present. So GigabitEthernet 1 is used as management and
-        GigabitEthernet 2 and up are used for data. This might
-        change on future releases.
+        Note: In CSR1kv, GigabitEthernet 0 is not present. GigabitEthernet 1
+        is used as management and GigabitEthernet 2 and up are used for data.
+        This might change in future releases.
+
+        Currently only the second and third Gig interfaces corresponding to a
+        single (T1,T2) pair and configured as trunk for VLAN and VXLAN
+        is enabled.
 
         :param conn: Connection object
         :return: True or False
         """
 
-        #ToDo(Hareesh): Interfaces are hard coded for now.
+        #ToDo(Hareesh): Interfaces are hard coded for now. Make it dynamic.
         interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
         try:
             for i in interfaces:
                 confstr = snippets.ENABLE_INTF % i
                 rpc_obj = conn.edit_config(target='running', config=confstr)
                 if self._check_response(rpc_obj, 'ENABLE_INTF'):
-                    LOG.info("Enabled interface %s " % i)
+                    LOG.info(_("Enabled interface %s "), i)
                     time.sleep(1)
         except Exception:
             return False
@@ -366,13 +385,13 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         """
         vrfs = []
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         vrfs_raw = parse.find_lines("^ip vrf")
         for line in vrfs_raw:
             #  raw format ['ip vrf <vrf-name>',....]
             vrf_name = line.strip().split(' ')[2]
             vrfs.append(vrf_name)
-        LOG.info("VRFs:%s" % vrfs)
+        LOG.info(_("VRFs:%s"), vrfs)
         return vrfs
 
     def _get_capabilities(self):
@@ -384,7 +403,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         capabilities = []
         for c in conn.server_capabilities:
             capabilities.append(c)
-        LOG.debug("Server capabilities: %s" % capabilities)
+        LOG.debug("Server capabilities: %s", capabilities)
         return capabilities
 
     def _get_running_config(self):
@@ -412,14 +431,14 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         exp_cfg_lines = ['ip access-list standard ' + str(acl_no),
                          ' permit ' + str(network) + ' ' + str(netmask)]
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         acls_raw = parse.find_children(exp_cfg_lines[0])
         if acls_raw:
             if exp_cfg_lines[1] in acls_raw:
                 return True
-            LOG.error("Mismatch in ACL configuration for %s" % acl_no)
+            LOG.error(_("Mismatch in ACL configuration for %s"), acl_no)
             return False
-        LOG.debug("%s is not present in config" % acl_no)
+        LOG.debug("%s is not present in config", acl_no)
         return False
 
     def _cfg_exists(self, cfg_str):
@@ -429,45 +448,45 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         :return : True or False
         """
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         cfg_raw = parse.find_lines("^" + cfg_str)
-        LOG.debug("_cfg_exists(): Found lines %s " % cfg_raw)
+        LOG.debug("_cfg_exists(): Found lines %s", cfg_raw)
         return len(cfg_raw) > 0
 
-    def set_interface(self, name, ip_address, mask):
+    def _set_interface(self, name, ip_address, mask):
         conn = self._get_connection()
         confstr = snippets.SET_INTC % (name, ip_address, mask)
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'SET_INTC')
 
-    def create_vrf(self, vrf_name):
+    def _create_vrf(self, vrf_name):
         try:
             conn = self._get_connection()
             confstr = snippets.CREATE_VRF % vrf_name
             rpc_obj = conn.edit_config(target='running', config=confstr)
             if self._check_response(rpc_obj, 'CREATE_VRF'):
-                LOG.info("VRF %s successfully created" % vrf_name)
+                LOG.info(_("VRF %s successfully created"), vrf_name)
         except Exception:
-            LOG.exception("Failed creating VRF %s" % vrf_name)
+            LOG.exception(_("Failed creating VRF %s"), vrf_name)
 
-    def remove_vrf(self, vrf_name):
+    def _remove_vrf(self, vrf_name):
         if vrf_name in self._get_vrfs():
             conn = self._get_connection()
             confstr = snippets.REMOVE_VRF % vrf_name
             rpc_obj = conn.edit_config(target='running', config=confstr)
             if self._check_response(rpc_obj, 'REMOVE_VRF'):
-                LOG.info("VRF %s removed" % vrf_name)
+                LOG.info(_("VRF %s removed"), vrf_name)
         else:
-            LOG.warning("VRF %s not present" % vrf_name)
+            LOG.warning(_("VRF %s not present"), vrf_name)
 
-    def create_subinterface(self, subinterface, vlan_id, vrf_name, ip, mask):
+    def _create_subinterface(self, subinterface, vlan_id, vrf_name, ip, mask):
         if vrf_name not in self._get_vrfs():
-            LOG.error("VRF %s not present" % vrf_name)
+            LOG.error(_("VRF %s not present"), vrf_name)
         confstr = snippets.CREATE_SUBINTERFACE % (subinterface, vlan_id,
                                                   vrf_name, ip, mask)
-        self.edit_running_config(confstr, 'CREATE_SUBINTERFACE')
+        self._edit_running_config(confstr, 'CREATE_SUBINTERFACE')
 
-    def remove_subinterface(self, subinterface, vlan_id, vrf_name, ip):
+    def _remove_subinterface(self, subinterface, vlan_id, vrf_name, ip):
         #Optional : verify this is the correct subinterface
         conn = self._get_connection()
         if self._interface_exists(subinterface):
@@ -477,36 +496,36 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _set_ha_HSRP(self, subinterface, vrf_name, priority, group, ip):
         if vrf_name not in self._get_vrfs():
-            LOG.error("VRF %s not present" % vrf_name)
+            LOG.error(_("VRF %s not present"), vrf_name)
         confstr = snippets.SET_INTC_HSRP % (subinterface, vrf_name, group,
                                             priority, group, ip)
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
-        self.edit_running_config(confstr, action)
+        self._edit_running_config(confstr, action)
 
     def _remove_ha_HSRP(self, subinterface, group):
         confstr = snippets.REMOVE_INTC_HSRP % (subinterface, group)
         action = ("REMOVE_INTC_HSRP (subinterface:%s, Group:%s)"
                   % (subinterface, group))
-        self.edit_running_config(confstr, action)
+        self._edit_running_config(confstr, action)
 
     def _get_interface_cfg(self, interface):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
-        res = parse.find_children('interface ' + interface)
-        return res
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
+        return parse.find_children('interface ' + interface)
 
-    def nat_rules_for_internet_access(self, acl_no, network,
-                                      netmask,
-                                      inner_intfc,
-                                      outer_intfc,
-                                      vrf_name):
+    def _nat_rules_for_internet_access(self, acl_no, network,
+                                       netmask,
+                                       inner_intfc,
+                                       outer_intfc,
+                                       vrf_name):
         """Configure the NAT rules for an internal network.
 
-        Configuring NAT rules in the CSR1kv is a four step process. First
+        Configuring NAT rules in the CSR1kv is a three step process. First
         create an ACL for the IP range of the internal network. Then enable
         dynamic source NATing on the external interface of the CSR for this
-        ACL and VRF of the neutron router. Then enable NAT on the interfaces
-        of the CSR where the internal and external networks are connected.
+        ACL and VRF of the neutron router. Finally enable NAT on the
+        interfaces of the CSR where the internal and external networks are
+        connected.
 
         :param acl_no: ACL number of the internal network.
         :param network: internal network
@@ -517,46 +536,44 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         network
         :param vrf_name: VRF corresponding to this virtual router
         :return: True if configuration succeeded
-        :raises: neutron.plugins.cisco.l3.exceptions.CSR1kvConfigException
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
+        CSR1kvConfigException
         """
         conn = self._get_connection()
         # Duplicate ACL creation throws error, so checking
         # it first. Remove it in future as this is not common in production
         acl_present = self._check_acl(acl_no, network, netmask)
-        #We acquire a lock on the running config and process the edits
-        #as a transaction
-        with conn.locked(target='running'):
-            if not acl_present:
-                confstr = snippets.CREATE_ACL % (acl_no, network, netmask)
-                rpc_obj = conn.edit_config(target='running', config=confstr)
-                self._check_response(rpc_obj, 'CREATE_ACL')
-
-            confstr = snippets.SET_DYN_SRC_TRL_INTFC % (acl_no, outer_intfc,
-                                                        vrf_name)
+        if not acl_present:
+            confstr = snippets.CREATE_ACL % (acl_no, network, netmask)
             rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj, 'CREATE_SNAT')
+            self._check_response(rpc_obj, 'CREATE_ACL')
 
-            confstr = snippets.SET_NAT % (inner_intfc, 'inside')
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj, 'SET_NAT')
+        confstr = snippets.SET_DYN_SRC_TRL_INTFC % (acl_no, outer_intfc,
+                                                    vrf_name)
+        rpc_obj = conn.edit_config(target='running', config=confstr)
+        self._check_response(rpc_obj, 'CREATE_SNAT')
 
-            confstr = snippets.SET_NAT % (outer_intfc, 'outside')
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj, 'SET_NAT')
+        confstr = snippets.SET_NAT % (inner_intfc, 'inside')
+        rpc_obj = conn.edit_config(target='running', config=confstr)
+        self._check_response(rpc_obj, 'SET_NAT')
 
-    def add_interface_nat(self, intfc_name, intfc_type):
+        confstr = snippets.SET_NAT % (outer_intfc, 'outside')
+        rpc_obj = conn.edit_config(target='running', config=confstr)
+        self._check_response(rpc_obj, 'SET_NAT')
+
+    def _add_interface_nat(self, intfc_name, intfc_type):
         conn = self._get_connection()
         confstr = snippets.SET_NAT % (intfc_name, intfc_type)
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'SET_NAT ' + intfc_type)
 
-    def remove_interface_nat(self, intfc_name, intfc_type):
+    def _remove_interface_nat(self, intfc_name, intfc_type):
         conn = self._get_connection()
         confstr = snippets.REMOVE_NAT % (intfc_name, intfc_type)
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'REMOVE_NAT ' + intfc_type)
 
-    def remove_dyn_nat_rule(self, acl_no, outer_intfc_name, vrf_name):
+    def _remove_dyn_nat_rule(self, acl_no, outer_intfc_name, vrf_name):
         conn = self._get_connection()
         confstr = snippets.SNAT_CFG % (acl_no, outer_intfc_name, vrf_name)
         if self._cfg_exists(confstr):
@@ -570,19 +587,19 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'REMOVE_ACL')
 
-    def remove_dyn_nat_translations(self):
+    def _remove_dyn_nat_translations(self):
         conn = self._get_connection()
         confstr = snippets.CLEAR_DYN_NAT_TRANS
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'CLEAR_DYN_NAT_TRANS')
 
-    def add_floating_ip(self, floating_ip, fixed_ip, vrf):
+    def _add_floating_ip(self, floating_ip, fixed_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.SET_STATIC_SRC_TRL % (fixed_ip, floating_ip, vrf)
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'SET_STATIC_SRC_TRL')
 
-    def remove_floating_ip(self, floating_ip, fixed_ip, vrf):
+    def _remove_floating_ip(self, floating_ip, fixed_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.REMOVE_STATIC_SRC_TRL % (fixed_ip, floating_ip, vrf)
         rpc_obj = conn.edit_config(target='running', config=confstr)
@@ -590,17 +607,17 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _get_floating_ip_cfg(self):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         res = parse.find_lines('ip nat inside source static')
         return res
 
-    def add_static_route(self, dest, dest_mask, next_hop, vrf):
+    def _add_static_route(self, dest, dest_mask, next_hop, vrf):
         conn = self._get_connection()
         confstr = snippets.SET_IP_ROUTE % (vrf, dest, dest_mask, next_hop)
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, 'SET_IP_ROUTE')
 
-    def remove_static_route(self, dest, dest_mask, next_hop, vrf):
+    def _remove_static_route(self, dest, dest_mask, next_hop, vrf):
         conn = self._get_connection()
         confstr = snippets.REMOVE_IP_ROUTE % (vrf, dest, dest_mask, next_hop)
         rpc_obj = conn.edit_config(target='running', config=confstr)
@@ -608,10 +625,10 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
 
     def _get_static_route_cfg(self):
         ioscfg = self._get_running_config()
-        parse = CiscoConfParse(ioscfg)
+        parse = ciscoconfparse.CiscoConfParse(ioscfg)
         return parse.find_lines('ip route')
 
-    def add_default_static_route(self, gw_ip, vrf):
+    def _add_default_static_route(self, gw_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.DEFAULT_ROUTE_CFG % (vrf, gw_ip)
         if not self._cfg_exists(confstr):
@@ -619,7 +636,7 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             rpc_obj = conn.edit_config(target='running', config=confstr)
             self._check_response(rpc_obj, 'SET_DEFAULT_ROUTE')
 
-    def remove_default_static_route(self, gw_ip, vrf):
+    def _remove_default_static_route(self, gw_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.DEFAULT_ROUTE_CFG % (vrf, gw_ip)
         if self._cfg_exists(confstr):
@@ -627,13 +644,10 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
             rpc_obj = conn.edit_config(target='running', config=confstr)
             self._check_response(rpc_obj, 'REMOVE_DEFAULT_ROUTE')
 
-    def edit_running_config(self, confstr, snippet):
+    def _edit_running_config(self, confstr, snippet):
         conn = self._get_connection()
         rpc_obj = conn.edit_config(target='running', config=confstr)
-        if self._check_response(rpc_obj, snippet):
-            LOG.info(_("%s successfully executed"), snippet)
-        else:
-            LOG.exception(_("Failed executing %s"), snippet)
+        self._check_response(rpc_obj, snippet)
 
     def _check_response(self, rpc_obj, snippet_name):
         """This function checks the rpc response object for status.
@@ -658,13 +672,15 @@ class CSR1kvRoutingDriver(RoutingDriverBase):
                 </rpc-error>
             </rpc-reply>
         :return: True if the config operation completed successfully
-        :raises: neutron.plugins.cisco.l3.exceptions.CSR1kvConfigException
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
+        CSR1kvConfigException
         """
-        LOG.debug(_("RPCReply for %(snippet_name)s is %(rpc_obj)s"),
+        LOG.debug("RPCReply for %(snippet_name)s is %(rpc_obj)s",
                   {'snippet_name': snippet_name, 'rpc_obj': rpc_obj.xml})
         xml_str = rpc_obj.xml
         if "<ok />" in xml_str:
-            LOG.debug(_("RPCReply for %s is OK"), snippet_name)
+            LOG.debug("RPCReply for %s is OK", snippet_name)
+            LOG.info(_("%s successfully executed"), snippet_name)
             return True
         # Not Ok, we throw a ConfigurationException
         e_type = rpc_obj._root[0][0].text
