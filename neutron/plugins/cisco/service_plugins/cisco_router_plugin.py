@@ -72,14 +72,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
             cfg.CONF.set_override('api_extensions_path', cp + to_add)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
-        auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
-                    cfg.CONF.keystone_authtoken.auth_host + ":" +
-                    str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
-        u_name = cfg.CONF.keystone_authtoken.admin_user
-        pw = cfg.CONF.keystone_authtoken.admin_password
-        tenant = cfg.CONF.l3_admin_tenant
-        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
-            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
+        self._setup_device_handling()
 
     def setup_rpc(self):
         # RPC support

@@ -317,6 +317,14 @@ class DeviceHandlingMixin(object):
                 context.session.add(hd)
             return True
 
+    def _setup_device_handling(self):
+        auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
+        u_name = cfg.CONF.keystone_authtoken.admin_user
+        pw = cfg.CONF.keystone_authtoken.admin_password
+        tenant = cfg.CONF.l3_admin_tenant
+        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
+            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
+
     def _process_non_responsive_hosting_device(self, context, hosting_device):
         """Host type specific processing of non responsive hosting devices.
 
@@ -329,6 +337,18 @@ class DeviceHandlingMixin(object):
 
     def _create_csr1kv_vm_hosting_device(self, context):
         """Creates a CSR1kv VM instance."""
+        # Note(bobmel): Nova does not handle VM dispatching well before all
+        # its services have started. This creates problems for the Neutron
+        # devstack script that creates a Neutron router, which in turn
+        # triggers service VM dispatching.
+        # Only perform pool maintenance if needed Nova services have started
+        if not self._nova_running:
+            if self._svc_vm_mgr.nova_services_up():
+                self._nova_running = True
+            else:
+                LOG.info(_('Not all Nova services are up and running. '
+                           'Skipping this CSR1kv vm create request.'))
+                return
         plugging_drv = self.get_hosting_device_plugging_driver()
         hosting_device_drv = self.get_hosting_device_driver()
         if plugging_drv is None or hosting_device_drv is None:
