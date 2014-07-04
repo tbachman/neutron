@@ -15,6 +15,11 @@ if [[ ! -z $localrc && -f $localrc ]]; then
     eval $(grep ^Q_CISCO_PLUGIN_VSM_IP= $localrc)
     eval $(grep Q_CISCO_PLUGIN_VSM_USERNAME= $localrc)
     eval $(grep ^Q_CISCO_PLUGIN_VSM_PASSWORD= $localrc)
+
+    eval $(grep ^Q_CISCO_MGMT_SUBNET= $localrc)
+    eval $(grep ^Q_CISCO_MGMT_SUBNET_LENGTH= $localrc)
+    eval $(grep ^Q_CISCO_MGMT_SUBNET_USAGE_RANGE_START= $localrc)
+    eval $(grep ^Q_CISCO_MGMT_SUBNET_USAGE_RANGE_END= $localrc)
 fi
 
 adminUser=$osn
@@ -37,12 +42,12 @@ mgmtProviderNwName=mgmt_net
 mgmtProviderVlanId=100
 osnMgmtSubnetName=osn_mgmt_subnet
 # note that the size of this network sets the limit on number of CSR instances
-osnMgmtNw=10.0.100.0
-osnMgmtNwLen=24
+osnMgmtNw=${Q_CISCO_MGMT_SUBNET:-10.0.100.0}
+osnMgmtNwLen=${Q_CISCO_MGMT_SUBNET_LENGTH:-24}
 osnMgmtSubnet=$osnMgmtNw/$osnMgmtNwLen
 # the first 9 addresses are set aside for L3CfgAgents and similar
-osnMgmtRangeStart=10.0.100.10
-osnMgmtRangeEnd=10.0.100.254
+osnMgmtRangeStart=${Q_CISCO_MGMT_SUBNET_USAGE_RANGE_START:-10.0.100.10}
+osnMgmtRangeEnd=${Q_CISCO_MGMT_SUBNET_USAGE_RANGE_END:-10.0.100.254}
 
 # Items in the arrays below correspond to settings for
 # the Mgmt, T1 (i.e., VLAN) and T2 (i.e., VXLAN) networks/ports.

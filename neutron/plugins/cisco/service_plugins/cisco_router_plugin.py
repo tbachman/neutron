@@ -16,13 +16,12 @@
 
 from oslo.config import cfg
 
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
-from neutron.openstack.common import rpc
 import neutron.plugins
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
@@ -30,22 +29,18 @@ from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
 from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
-
 from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.common import constants
 
 
-class CiscoRouterPluginRpcCallbacks(l3_router_rpc.L3RouterCfgRpcCallbackMixin,
+class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
+                                    l3_router_rpc.L3RouterCfgRpcCallbackMixin,
                                     devices_rpc.DeviceCfgRpcCallbackMixin):
     RPC_API_VERSION = '1.1'
 
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        """
-        return q_rpc.PluginRpcDispatcher([self])
+    def __init__(self, plugin):
+        super(CiscoRouterPluginRpcCallbacks, self).__init__()
+        self._plugin = plugin
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
@@ -89,14 +84,14 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     def setup_rpc(self):
         # RPC support
         self.topic = topics.L3PLUGIN
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         # Disable notifications from l3 base class to l3 agents
         self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
-        self.callbacks = CiscoRouterPluginRpcCallbacks()
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher,
+        self.endpoints = [CiscoRouterPluginRpcCallbacks(self)]
+        self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
-        self.conn.consume_in_thread()
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def get_plugin_type(self):
         return constants.L3_ROUTER_NAT

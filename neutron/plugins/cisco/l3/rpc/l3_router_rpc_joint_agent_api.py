@@ -13,29 +13,27 @@
 #    under the License.
 #
 
-from neutron import manager
+from neutron.common import rpc as n_rpc
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
 
-class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
+class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
     """API for plugin to notify Cisco cfg agent."""
     BASE_RPC_API_VERSION = '1.0'
 
-    def __init__(self, topic=c_constants.CFG_AGENT_L3_ROUTING):
+    def __init__(self, l3plugin, topic=c_constants.CFG_AGENT_L3_ROUTING):
         super(L3RouterJointAgentNotifyAPI, self).__init__(
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
+        self._l3plugin = l3plugin
 
-    def _notification_host(self, context, method, payload, host,
+    def _host_notification(self, context, method, payload, host,
                            topic=None):
         """Notify the cfg agent that is handling the hosting device."""
-
-        LOG.debug(_('Notify Cisco cfg agent at %(host)s the message '
-                    '%(method)s'), {'host': host, 'method': method})
+        LOG.debug('Notify Cisco cfg agent at %(host)s the message '
+                  '%(method)s', {'host': host, 'method': method})
         self.cast(context,
                   self.make_msg(method, payload=payload),
                   topic='%s.%s' % (self.topic if topic is None else topic,
@@ -44,18 +42,15 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
     def _agent_notification(self, context, method, routers, operation, data):
         """Notify individual Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()
-        l3plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
         for router in routers:
-            if router['hosting_device'] is not None:
-                agents = l3plugin.get_cfg_agents_for_hosting_devices(
+            if router['hosting_device'] is None:
+                continue
+            agents = self._l3plugin.get_cfg_agents_for_hosting_devices(
                     admin_context, [router['hosting_device']['id']],
                     admin_state_up=True, active=True, schedule=True)
-            else:
-                agents = []
             for agent in agents:
-                LOG.debug(_('Notify %(agent_type)s at %(topic)s.%(host)s the '
-                            'message %(method)s'),
+                LOG.debug('Notify %(agent_type)s at %(topic)s.%(host)s the '
+                          'message %(method)s',
                           {'agent_type': agent.agent_type,
                            'topic': c_constants.CFG_AGENT_L3_ROUTING,
                            'host': agent.host,
@@ -64,10 +59,6 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
                           self.make_msg(method, routers=[router['id']]),
                           topic='%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING,
                                            agent.host))
-
-    def _notification(self, context, method, routers, operation, data):
-        """Notify all or individual Cisco cfg agents."""
-        self._agent_notification(context, method, routers, operation, data)
 
     def router_deleted(self, context, router):
         """Notifies agents about a deleted router."""
@@ -81,8 +72,8 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
         router interface is added or removed.
         """
         if routers:
-            self._notification(context, 'routers_updated', routers,
-                               operation, data)
+            self._agent_notification(context, 'routers_updated', routers,
+                                     operation, data)
 
     def hosting_devices_removed(self, context, hosting_data, deconfigure,
                                 host):
@@ -104,9 +95,7 @@ class L3RouterJointAgentNotifyAPI(proxy.RpcProxy):
         logical resources should be removed from the hosting devices
         """
         if hosting_data:
-            self._notification_host(context, 'hosting_devices_removed',
+            self._host_notification(context, 'hosting_devices_removed',
                                     {'hosting_data': hosting_data,
                                      'deconfigure': deconfigure}, host,
                                     topic=c_constants.CFG_AGENT)
-
-L3JointAgentNotify = L3RouterJointAgentNotifyAPI()

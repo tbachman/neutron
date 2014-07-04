@@ -13,7 +13,7 @@ mysql_user=$4
 mysql_password=$5
 
 
-# Borrowed from Devstack:
+# Adopted from Devstack scripts:
 # Normalize config values to True or False
 # Accepts as False: 0 no No NO false False FALSE
 # Accepts as True: 1 yes Yes YES true True TRUE

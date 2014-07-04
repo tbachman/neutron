@@ -33,8 +33,6 @@ from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_models
-from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
-                                          rpcapi)
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
@@ -42,35 +40,35 @@ LOG = logging.getLogger(__name__)
 
 DEVICE_HANDLING_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
-               help=_("Name of the L3 admin tenant")),
+               help=_("Name of the L3 admin tenant.")),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
                help=_("Name of management network for device configuration. "
                       "Default value is osn_mgmt_nw")),
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
-                      "Default value is mgmt_sec_grp")),
+                      "Default value is mgmt_sec_grp.")),
     cfg.IntOpt('cfg_agent_down_time', default=60,
                help=_('Seconds of no status update until a cfg agent '
                       'is considered down.')),
     cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
-               help=_('Name of Glance image for CSR1kv')),
+               help=_('Name of Glance image for CSR1kv.')),
     cfg.StrOpt('csr1kv_flavor', default=621,
-               help=_('UUID of Nova flavor for CSR1kv')),
+               help=_('UUID of Nova flavor for CSR1kv.')),
     cfg.StrOpt('csr1kv_plugging_driver',
                default=('neutron.plugins.cisco.l3.plugging_drivers.'
                         'n1kv_trunking_driver.N1kvTrunkingPlugDriver'),
-               help=_('Plugging driver for CSR1kv')),
+               help=_('Plugging driver for CSR1kv.')),
     cfg.StrOpt('csr1kv_device_driver',
                default=('neutron.plugins.cisco.l3.hosting_device_drivers.'
                         'csr1kv_hd_driver.CSR1kvHostingDeviceDriver'),
-               help=_('Hosting device driver for CSR1kv')),
+               help=_('Hosting device driver for CSR1kv.')),
     cfg.IntOpt('csr1kv_booting_time', default=420,
                help=_('Booting time in seconds before a CSR1kv '
-                      'becomes operational')),
+                      'becomes operational.')),
     cfg.StrOpt('csr1kv_username', default='stack',
-               help=_('Username to use for CSR1kv configurations')),
+               help=_('Username to use for CSR1kv configurations.')),
     cfg.StrOpt('csr1kv_password', default='cisco',
-               help=_('Password to use for CSR1kv configurations')),
+               help=_('Password to use for CSR1kv configurations.')),
 ]
 
 cfg.CONF.register_opts(DEVICE_HANDLING_OPTS)
@@ -92,13 +90,14 @@ class DeviceHandlingMixin(object):
     # Service VM manager object that interacts with Nova
     _svc_vm_mgr = None
 
+    # Flag indicating is needed Nova services are reported as up.
+    _nova_running = False
+
     @classmethod
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
-            auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
-                        cfg.CONF.keystone_authtoken.auth_host + ":" +
-                        str(cfg.CONF.keystone_authtoken.auth_port) + "/v2.0")
+            auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
             user = cfg.CONF.keystone_authtoken.admin_user
             pw = cfg.CONF.keystone_authtoken.admin_password
             tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
@@ -122,7 +121,7 @@ class DeviceHandlingMixin(object):
         if cls._mgmt_nw_uuid is None:
             tenant_id = cls.l3_tenant_id()
             if not tenant_id:
-                return None
+                return
             net = manager.NeutronManager.get_plugin().get_networks(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
@@ -153,7 +152,7 @@ class DeviceHandlingMixin(object):
         """Returns id of security group used by the management network."""
         if not utils.is_extension_supported(
                 manager.NeutronManager.get_plugin(), "security-group"):
-            return None
+            return
         if cls._mgmt_sec_grp_id is None:
             # Get the id for the _mgmt_security_group_id
             tenant_id = cls.l3_tenant_id()
@@ -185,7 +184,7 @@ class DeviceHandlingMixin(object):
                 self._hosting_device_driver = importutils.import_object(
                     cfg.CONF.csr1kv_device_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
-                LOG.exception(_("Error loading hosting device driver"))
+                LOG.exception(_('Error loading hosting device driver'))
             return self._hosting_device_driver
 
     def get_hosting_device_plugging_driver(self):
@@ -197,7 +196,7 @@ class DeviceHandlingMixin(object):
                 self._plugging_driver = importutils.import_object(
                     cfg.CONF.csr1kv_plugging_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
-                LOG.exception(_("Error loading plugging driver"))
+                LOG.exception(_('Error loading plugging driver'))
             return self._plugging_driver
 
     def get_hosting_devices_qry(self, context, hosting_device_ids,
@@ -230,7 +229,7 @@ class DeviceHandlingMixin(object):
             #                'fw': [id1, ...],
             #                ...},
             #     ...}
-            hosting_info = {id: {} for id in hosting_device_ids}
+            hosting_info = dict((id, {}) for id in hosting_device_ids)
             try:
                 #TODO(bobmel): Modify so service plugins register themselves
                 self._handle_non_responding_hosting_devices(
@@ -239,7 +238,7 @@ class DeviceHandlingMixin(object):
                 pass
             for hd in hosting_devices:
                 if self._process_non_responsive_hosting_device(e_context, hd):
-                    rpcapi.L3JointAgentNotify.hosting_devices_removed(
+                    self.l3_cfg_rpc_notifier.hosting_devices_removed(
                         context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):
@@ -305,7 +304,7 @@ class DeviceHandlingMixin(object):
             try:
                 cfg_agent = query.one()
             except (exc.MultipleResultsFound, exc.NoResultFound):
-                LOG.debug(_('No enabled Cisco cfg agent on host %s'),
+                LOG.debug('No enabled Cisco cfg agent on host %s',
                           agent_host)
                 return False
             if self.is_agent_down(
@@ -335,13 +334,15 @@ class DeviceHandlingMixin(object):
         if plugging_drv is None or hosting_device_drv is None:
             return
         # These resources are owned by the L3AdminTenant
-        dev_data = {'device_id': 'CSR1kv',
+        complementary_id = uuidutils.generate_uuid()
+        dev_data = {'complementary_id': complementary_id
+                    'device_id': 'CSR1kv',
                     'admin_state_up': True,
                     'protocol_port': 22,
                     'created_at': timeutils.utcnow()}
         res = plugging_drv.create_hosting_device_resources(
-            context, self.l3_tenant_id(), self.mgmt_nw_id(),
-            self.mgmt_sec_grp_id(), 1)
+            context, complementary_id, self.l3_tenant_id(),
+            self.mgmt_nw_id(), self.mgmt_sec_grp_id(), 1)
         if res.get('mgmt_port') is None:
             # Required ports could not be created
             return
@@ -377,8 +378,8 @@ class DeviceHandlingMixin(object):
         if plugging_drv is None or hosting_device_drv is None:
             return
         res = plugging_drv.get_hosting_device_resources(
-            context, hosting_device['id'], self.l3_tenant_id(),
-            self.mgmt_nw_id())
+            context, hosting_device['id'], hosting_device['complementary_id'],
+            self.l3_tenant_id(), self.mgmt_nw_id())
         if not self._svc_vm_mgr.delete_service_vm(
                 context, hosting_device['id'], hosting_device_drv,
                 self.mgmt_nw_id()):
@@ -391,12 +392,13 @@ class DeviceHandlingMixin(object):
             context.session.delete(hosting_device)
 
     def _create_hosting_device(self, context, hosting_device):
-        LOG.debug(_("create_hosting_device() called"))
+        LOG.debug('create_hosting_device() called')
         hd = hosting_device['hosting_device']
         tenant_id = self._get_tenant_id_for_create(context, hd)
         with context.session.begin(subtransactions=True):
             hd_db = l3_models.HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
+                complementary_id = hd.get('complementary_id'),
                 tenant_id=tenant_id,
                 device_id=hd.get('device_id'),
                 admin_state_up=hd.get('admin_state_up', True),
@@ -412,11 +414,11 @@ class DeviceHandlingMixin(object):
         """Selects Cisco cfg agent that will configure <hosting_device>."""
         with context.session.begin(subtransactions=True):
             if not hosting_device:
-                LOG.debug(_('Hosting device to schedule not specified'))
+                LOG.debug('Hosting device to schedule not specified')
                 return
             elif hosting_device.cfg_agent:
-                LOG.debug(_('Hosting device %(hd_id)s has already been '
-                            'assigned to Cisco cfg agent %(agent_id)s'),
+                LOG.debug('Hosting device %(hd_id)s has already been '
+                          'assigned to Cisco cfg agent %(agent_id)s',
                           {'hd_id': id,
                            'agent_id': hosting_device.cfg_agent.id})
                 return

@@ -14,38 +14,23 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from neutron import manager
-from neutron.openstack.common import log as logging
-from neutron.plugins.common import constants as svc_constants
-
-LOG = logging.getLogger(__name__)
-
 
 class DeviceCfgRpcCallbackMixin(object):
     """Mixin for Cisco cfg agent device reporting rpc support."""
 
-    def report_non_responding_hosting_devices(self, context, **kwargs):
+    def report_non_responding_hosting_devices(self, context, host,
+                                              hosting_device_ids):
         """Report that a hosting device cannot be contacted.
 
         @param: context - contains user information
-        @param: kwargs - hosting_device_ids: list of non-responding
-                                             hosting devices
-                         host: originator of callback
+        @param: host - originator of callback
+        @param: hosting_device_ids - list of non-responding hosting devices
         @return: -
         """
-        hosting_device_ids = kwargs.get('hosting_device_ids', [])
-        cfg_agent_host = kwargs.get('host', None)
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
-        if plugin is None:
-            LOG.error(_('No router service plugin registered!'
-                        'Cannot handle non-responding hosting device '
-                        'callback'))
-        else:
-            plugin.handle_non_responding_hosting_devices(
-                context, cfg_agent_host, hosting_device_ids)
+        self._plugin.handle_non_responding_hosting_devices(context, host,
+                                                           hosting_device_ids)
 
-    def register_for_duty(self, context, **kwargs):
+    def register_for_duty(self, context, host):
         """Report that Cisco cfg agent is ready for duty.
 
         This function is supposed to be called when the agent has started,
@@ -53,20 +38,11 @@ class DeviceCfgRpcCallbackMixin(object):
         logical resources are issued.
 
         @param: context - contains user information
-        @param: kwargs - host: originator of callback
+        @param: host - originator of callback
         @return: True if succesfully registered, False if not successfully
                  registered, None if no handler found
                  If unsuccessful the agent should retry registration a few
                  seconds later
         """
-        agent_host = kwargs.get('host', None)
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
-        if plugin is None:
-            LOG.error(_('No router service plugin registered!'
-                        'Cannot handle Cisco configuration agent duty '
-                        'readiness callback'))
-            return
-        else:
-            # schedule any non-handled hosting devices
-            return plugin.auto_schedule_hosting_devices(context, agent_host)
+        # schedule any non-handled hosting devices
+        return self._plugin.auto_schedule_hosting_devices(context, host)

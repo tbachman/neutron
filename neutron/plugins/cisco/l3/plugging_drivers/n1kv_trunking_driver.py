@@ -18,6 +18,7 @@ import eventlet
 
 from oslo.config import cfg
 from sqlalchemy import and_
+from sqlalchemy import or_
 from sqlalchemy.orm import exc
 
 from neutron.api.v2 import attributes
@@ -39,15 +40,19 @@ LOG = logging.getLogger(__name__)
 
 N1KV_TRUNKING_DRIVER_OPTS = [
     cfg.StrOpt('management_port_profile', default='osn_mgmt_pp',
-               help=_("Name of N1kv port profile for management ports")),
+               help=_("Name of N1kv port profile for management ports.")),
     cfg.StrOpt('t1_port_profile', default='osn_t1_pp',
-               help=_("Name of N1kv port profile for T1 ports")),
+               help=_("Name of N1kv port profile for T1 ports (i.e., ports "
+                      "carrying traffic from VXLAN segmented networks).")),
     cfg.StrOpt('t2_port_profile', default='osn_t2_pp',
-               help=_("Name of N1kv port profile for T2 ports")),
+               help=_("Name of N1kv port profile for T2 ports (i.e., ports "
+                      "carrying traffic from VLAN segmented networks).")),
     cfg.StrOpt('t1_network_profile', default='osn_t1_np',
-               help=_("Name of N1kv network profile for T1 networks")),
+               help=_("Name of N1kv network profile for T1 networks (i.e., "
+                      "trunk networks for VXLAN segmented traffic).")),
     cfg.StrOpt('t2_network_profile', default='osn_t2_np',
-               help=_("Name of N1kv network profile for T2 networks")),
+               help=_("Name of N1kv network profile for T2 networks (i.e., "
+                      "trunk networks for VLAN segmented traffic).")),
 ]
 
 cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS)
@@ -56,7 +61,7 @@ MIN_LL_VLAN_TAG = 10
 MAX_LL_VLAN_TAG = 200
 FULL_VLAN_SET = set(range(MIN_LL_VLAN_TAG, MAX_LL_VLAN_TAG + 1))
 DELETION_ATTEMPTS = 5
-SECONDS_BETWEEN_ATTEMPTS = 3
+SECONDS_BETWEEN_DELETION_ATTEMPTS = 3
 
 # Port lookups can fail so retries are needed
 MAX_HOSTING_PORT_LOOKUP_ATTEMPTS = 10
@@ -68,11 +73,11 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     The driver makes use N1kv plugin's VLAN trunk feature.
     """
-    _n1kv_mgmt_pp_id = None
-    _n1kv_t1_pp_id = None
-    _n1kv_t2_pp_id = None
-    _n1kv_t1_np_id = None
-    _n1kv_t2_np_id = None
+    _mgmt_port_profile_id = None
+    _t1_port_profile_id = None
+    _t2_port_profile_id = None
+    _t1_network_profile_id = None
+    _t2_network_profile_id = None
 
     @property
     def _core_plugin(self):
@@ -117,45 +122,46 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                       {'resource': resource, 'name': name})
 
     @classmethod
-    def n1kv_mgmt_pp_id(cls):
-        if cls._n1kv_mgmt_pp_id is None:
-            cls._n1kv_mgmt_pp_id = cls._get_profile_id(
+    def mgmt_port_profile_id(cls):
+        if cls._mgmt_port_profile_id is None:
+            cls._mgmt_port_profile_id = cls._get_profile_id(
                 'port_profile', 'N1kv port profile',
                 cfg.CONF.management_port_profile)
-        return cls._n1kv_mgmt_pp_id
+        return cls._mgmt_port_profile_id
 
     @classmethod
-    def n1kv_t1_pp_id(cls):
-        if cls._n1kv_t1_pp_id is None:
-            cls._n1kv_t1_pp_id = cls._get_profile_id(
+    def t1_port_profile_id(cls):
+        if cls._t1_port_profile_id is None:
+            cls._t1_port_profile_id = cls._get_profile_id(
                 'port_profile', 'N1kv port profile', cfg.CONF.t1_port_profile)
-        return cls._n1kv_t1_pp_id
+        return cls._t1_port_profile_id
 
     @classmethod
-    def n1kv_t2_pp_id(cls):
-        if cls._n1kv_t2_pp_id is None:
-            cls._n1kv_t2_pp_id = cls._get_profile_id(
+    def t2_port_profile_id(cls):
+        if cls._t2_port_profile_id is None:
+            cls._t2_port_profile_id = cls._get_profile_id(
                 'port_profile', 'N1kv port profile', cfg.CONF.t2_port_profile)
-        return cls._n1kv_t2_pp_id
+        return cls._t2_port_profile_id
 
     @classmethod
-    def n1kv_t1_np_id(cls):
-        if cls._n1kv_t1_np_id is None:
-            cls._n1kv_t1_np_id = cls._get_profile_id(
+    def t1_network_profile_id(cls):
+        if cls._t1_network_profile_id is None:
+            cls._t1_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
                 cfg.CONF.t1_network_profile)
-        return cls._n1kv_t1_np_id
+        return cls._t1_network_profile_id
 
     @classmethod
-    def n1kv_t2_np_id(cls):
-        if cls._n1kv_t2_np_id is None:
-            cls._n1kv_t2_np_id = cls._get_profile_id(
+    def t2_network_profile_id(cls):
+        if cls._t2_network_profile_id is None:
+            cls._t2_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
                 cfg.CONF.t2_network_profile)
-        return cls._n1kv_t2_np_id
+        return cls._t2_network_profile_id
 
-    def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted, **kwargs):
+    def create_hosting_device_resources(self, context, complementary_id,
+                                        tenant_id, mgmt_nw_id,
+                                        mgmt_sec_grp_id, max_hosted):
         mgmt_port = None
         t1_n, t1_sn, t2_n, t2_sn, t_p = [], [], [], [], []
         if mgmt_nw_id is not None and tenant_id is not None:
@@ -167,9 +173,11 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 'network_id': mgmt_nw_id,
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
-                'n1kv:profile_id': self.n1kv_mgmt_pp_id(),
+                'n1kv:profile_id': self.mgmt_port_profile_id(),
                 'device_id': "",
-                'device_owner': ""}}
+                # Use device_owner attribute to ensure we can query for these
+                # ports even before Nova has set device_id attribute.
+                'device_owner': complementary_id}}
             try:
                 mgmt_port = self._core_plugin.create_port(context,
                                                           p_spec)
@@ -181,7 +189,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 # Until Nova allows spinning up VMs with VIFs on
                 # networks without subnet(s) we create "dummy" subnets
                 # for the trunk networks
-                sub_spec = {'subnet': {
+                s_spec = {'subnet': {
                     'tenant_id': tenant_id,
                     'admin_state_up': True,
                     'cidr': n1kv_const.SUBNET_PREFIX,
@@ -193,60 +201,19 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                     'host_routes': attributes.ATTR_NOT_SPECIFIED}}
                 for i in xrange(max_hosted):
                     # Create T1 trunk network for this router
-                    indx = str(i + 1)
-                    n_spec['network'].update(
-                        {'name': n1kv_const.T1_NETWORK_NAME + indx,
-                         'n1kv:profile_id': self.n1kv_t1_np_id()})
-                    t1_n.append(self._core_plugin.create_network(
-                        context, n_spec))
-                    LOG.debug(_('Created T1 network with name %(name)s and '
-                                'id %(id)s'),
-                              {'name': n1kv_const.T1_NETWORK_NAME + indx,
-                               'id': t1_n[i]['id']})
-                    # Create dummy subnet for this trunk network
-                    sub_spec['subnet'].update(
-                        {'name': n1kv_const.T1_SUBNET_NAME + indx,
-                         'network_id': t1_n[i]['id']})
-                    t1_sn.append(self._core_plugin.create_subnet(context,
-                                                                 sub_spec))
-                    # Create T1 port for this router
-                    p_spec['port'].update(
-                        {'name': n1kv_const.T1_PORT_NAME + indx,
-                         'network_id': t1_n[i]['id'],
-                         'n1kv:profile_id': self.n1kv_t1_pp_id()})
-                    t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T1 port with name %(name)s, '
-                                'id %(id)s and subnet %(subnet)s'),
-                              {'name': t1_n[i]['name'],
-                               'id': t1_n[i]['id'],
-                               'subnet': t1_sn[i]['id']})
+                    self._create_resources(
+                        context, "T1", i, n_spec, n1kv_const.T1_NETWORK_NAME,
+                        self.t1_network_profile_id(), t1_n, s_spec,
+                        n1kv_const.T1_SUBNET_NAME, t1_sn, p_spec,
+                        n1kv_const.T1_PORT_NAME, self.t1_port_profile_id(),
+                        t_p)
                     # Create T2 trunk network for this router
-                    n_spec['network'].update(
-                        {'name': n1kv_const.T2_NETWORK_NAME + indx,
-                         'n1kv:profile_id': self.n1kv_t2_np_id()})
-                    t2_n.append(self._core_plugin.create_network(context,
-                                                                 n_spec))
-                    LOG.debug(_('Created T2 network with name %(name)s and '
-                                'id %(id)s'),
-                              {'name': n1kv_const.T2_NETWORK_NAME + indx,
-                               'id': t2_n[i]['id']})
-                    # Create dummy subnet for this trunk network
-                    sub_spec['subnet'].update(
-                        {'name': n1kv_const.T2_SUBNET_NAME + indx,
-                         'network_id': t2_n[i]['id']})
-                    t2_sn.append(self._core_plugin.create_subnet(context,
-                                                                 sub_spec))
-                    # Create T2 port for this router
-                    p_spec['port'].update(
-                        {'name': n1kv_const.T2_PORT_NAME + indx,
-                         'network_id': t2_n[i]['id'],
-                         'n1kv:profile_id': self.n1kv_t2_pp_id()})
-                    t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T2 port with name %(name)s,  '
-                                'id %(id)s and subnet %(subnet)s'),
-                              {'name': t2_n[i]['name'],
-                               'id': t2_n[i]['id'],
-                               'subnet': t2_sn[i]['id']})
+                    self._create_resources(
+                        context, "T2", i, n_spec, n1kv_const.T2_NETWORK_NAME,
+                        self.t2_network_profile_id(), t2_n, s_spec,
+                        n1kv_const.T2_SUBNET_NAME, t2_sn, p_spec,
+                        n1kv_const.T2_PORT_NAME, self.t2_port_profile_id(),
+                        t_p)
             except n_exc.NeutronException as e:
                 LOG.error(_('Error %s when creating service VM resources. '
                             'Cleaning up.'), e)
@@ -261,11 +228,46 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 'networks': t1_n + t2_n,
                 'subnets': t1_sn + t2_sn}
 
-    def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
+    def _create_resources(self, context, type_name, resource_index,
+                          n_spec, net_namebase, net_profile, t_n,
+                          s_spec, subnet_namebase, t_sn,
+                          p_spec, port_namebase, port_profile, t_p):
+        index = str(resource_index + 1)
+        # Create trunk network
+        n_spec['network'].update({'name': net_namebase + index,
+                                  'n1kv:profile_id': net_profile})
+        t_n.append(self._core_plugin.create_network(context, n_spec))
+        LOG.debug('Created %(t_n)s network with name %(name)s and id %(id)s',
+                  {'t_n': type_name, 'name': n_spec['network']['name'],
+                   'id': t_n[resource_index]['id']})
+        # Create dummy subnet for the trunk network
+        s_spec['subnet'].update({'name': subnet_namebase + index,
+                                'network_id': t_n[resource_index]['id']})
+        t_sn.append(self._core_plugin.create_subnet(context, s_spec))
+        # Create port for on trunk network
+        p_spec['port'].update({'name': port_namebase + index,
+                               'network_id': t_n[resource_index]['id'],
+                               'n1kv:profile_id': port_profile})
+        t_p.append(self._core_plugin.create_port(context, p_spec))
+        LOG.debug('Created %(t_n)s port with name %(name)s, id %(id)s on '
+                  'subnet %(subnet)s',
+                  {'t_n': type_name, 'name': t_n[resource_index]['name'],
+                   'id': t_n[resource_index]['id'],
+                   'subnet': t_sn[resource_index]['id']})
+
+    def get_hosting_device_resources(self, context, id, complementary_id,
+                                     tenant_id, mgmt_nw_id):
         ports, nets, subnets = [], [], []
         mgmt_port = None
-        for port in self._core_plugin.get_ports(context,
-                                                filters={'device_id': [id]}):
+        # Ports for hosting device may not yet have 'device_id' set to
+        # Nova assigned uuid of VM instance. However, those ports will still
+        # have 'device_owner' attribute set to complementary_id. Hence, we
+        # use both attributes in the query to ensure we find all ports.
+        query = context.session.query(models_v2.Port)
+        query = query.filter(or_(
+            models_v2.Port.device_id == id,
+            models_v2.Port.device_owner == complementary_id))
+        for port in query:
             if port['network_id'] != mgmt_nw_id:
                 ports.append(port)
                 nets.append({'id': port['network_id']})
@@ -289,50 +291,39 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 break
             else:
                 if attempts > 1:
-                    eventlet.sleep(SECONDS_BETWEEN_ATTEMPTS)
+                    eventlet.sleep(SECONDS_BETWEEN_DELETION_ATTEMPTS)
                 LOG.info(_('Initiating deletion attempt %d'), attempts)
             # Remove anything created.
             if mgmt_port is not None:
-                try:
-                    self._core_plugin.delete_port(context, mgmt_port['id'])
+                ml = set([mgmt_port['id']])
+                self._delete_resources(context, "management port",
+                                       self._core_plugin.delete_port,
+                                       n_exc.PortNotFound, ml)
+                if not ml:
                     mgmt_port = None
-                except n_exc.PortNotFound:
-                    mgmt_port = None
-                except n_exc.NeutronException as e:
-                    LOG.error(_('Failed to delete management port %(port_id) '
-                                'for service vm due to %(err)s'),
-                              {'port_id': mgmt_port['id'], 'err': e})
-            for item in port_ids.copy():
-                try:
-                    self._core_plugin.delete_port(context, item)
-                    port_ids.remove(item)
-                except n_exc.PortNotFound:
-                    port_ids.remove(item)
-                except n_exc.NeutronException as e:
-                    LOG.error(_('Failed to delete trunk port %(port_id)s for '
-                                'service vm due to %(err)s'),
-                              {'port_id': item, 'err': e})
-            for item in subnet_ids.copy():
-                try:
-                    self._core_plugin.delete_subnet(context, item)
-                    subnet_ids.remove(item)
-                except n_exc.SubnetNotFound:
-                    subnet_ids.remove(item)
-                except n_exc.NeutronException as e:
-                    LOG.error(_('Failed to delete subnet %(subnet_id)s for '
-                                'service vm due to %(err)s'),
-                              {'subnet_id': item, 'err': e})
-            for item in net_ids.copy():
-                try:
-                    self._core_plugin.delete_network(context, item)
-                    net_ids.remove(item)
-                except n_exc.NetworkNotFound:
-                    net_ids.remove(item)
-                except n_exc.NeutronException as e:
-                    LOG.error(_('Failed to delete trunk network %(net_id)s '
-                                'for service vm due to %(err)s'),
-                              {'net_id': item, 'err': e})
+            self._delete_resources(context, "trunk port",
+                                   self._core_plugin.delete_port,
+                                   n_exc.PortNotFound, port_ids)
+            self._delete_resources(context, "subnet",
+                                   self._core_plugin.delete_subnet,
+                                   n_exc.SubnetNotFound, subnet_ids)
+            self._delete_resources(context, "trunk network",
+                                   self._core_plugin.delete_network,
+                                   n_exc.NetworkNotFound, net_ids)
             attempts += 1
+
+    def _delete_resources(self, context, name, deleter, exception_type,
+                          resource_ids):
+        for item_id in resource_ids.copy():
+            try:
+                deleter(context, item_id)
+                resource_ids.remove(item_id)
+            except exception_type:
+                resource_ids.remove(item_id)
+            except n_exc.NeutronException as e:
+                LOG.error(_('Failed to delete %(resource_name) %(net_id)s '
+                            'for service vm due to %(err)s'),
+                          {'resource_name': name, 'net_id': item_id, 'err': e})
 
     def setup_logical_port_connectivity(self, context, port_db):
         # Add the VLAN to the VLANs that the hosting port trunks.
@@ -387,6 +378,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                     context, port_twin_id, hosting_device_id)
         if id_allocated_port is None:
             # Database must have been messed up if this happens ...
+            LOG.debug('n1kv_trunking_driver: Could not allocate hosting port')
             return
         if network_type == 'vxlan':
             # For VLXAN we choose the (link local) VLAN tag
@@ -402,6 +394,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                               else tags[0].get(pr_net.SEGMENTATION_ID))
         if allocated_vlan is None:
             # Database must have been messed up if this happens ...
+            LOG.debug('n1kv_trunking_driver: Could not allocate VLAN')
             return
         return {'allocated_port_id': id_allocated_port,
                 'allocated_vlan': allocated_vlan}
@@ -414,7 +407,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         np_id_t_nw = self._core_plugin.get_network(
             context, port_db.hosting_info.hosting_port['network_id'],
             [n1kv.PROFILE_ID])
-        if np_id_t_nw.get(n1kv.PROFILE_ID) == self.n1kv_t1_np_id():
+        if np_id_t_nw.get(n1kv.PROFILE_ID) == self.t1_network_profile_id():
             # for vxlan trunked segment, id:s end with ':'link local vlan tag
             trunk_spec = (port_db['network_id'] + ':' +
                           str(port_db.hosting_info.segmentation_tag))

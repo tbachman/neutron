@@ -28,6 +28,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
        When the hosting device is a Nova VM 'id' is uuid of that VM.
     """
+    # complementary id to enable identification of associated Neutron resources
+    complementary_id = sa.Column(sa.String(36))
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)

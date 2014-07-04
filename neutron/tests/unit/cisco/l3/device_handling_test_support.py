@@ -19,7 +19,7 @@ from oslo.config import cfg
 
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
-from neutron.manager import NeutronManager
+from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -34,7 +34,7 @@ class DeviceHandlingTestSupportMixin:
 
     @property
     def _core_plugin(self):
-        return NeutronManager.get_plugin()
+        return manager.NeutronManager.get_plugin()
 
     def _mock_l3_admin_tenant(self):
         # Mock l3 admin tenant
@@ -72,7 +72,7 @@ class DeviceHandlingTestSupportMixin:
             # plugin dependent, only hosting device type dependent.
             hosting_device_drv.create_configdrive_files(context, mgmt_port)
         except IOError:
-            return None
+            return
 
         if mgmt_port is not None:
             p_dict = {'port': {'device_id': vm_id,
@@ -111,8 +111,8 @@ class DeviceHandlingTestSupportMixin:
                 for port in ports:
                     self._core_plugin.delete_port(context, port['id'])
             except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete service VM %(id)s due to '
-                            '%(err)s'), {'id': vm_id, 'err': e})
+                LOG.error('Failed to delete service VM %(id)s due to '
+                          '%(err)s', {'id': vm_id, 'err': e})
                 result = False
             return result
 
@@ -130,9 +130,26 @@ class DeviceHandlingTestSupportMixin:
             self._delete_service_vm_mock)
         self.delete_svc_vm_fcn_p.start()
 
+    def _mock_io_file_ops(self):
+        # Mock library functions for config drive file operations
+        cfg_template = '\n'.join(['interface GigabitEthernet1',
+                                  'ip address <ip> <mask>',
+                                  'no shutdown'])
+        m = mock.mock_open(read_data=cfg_template)
+        m.return_value.__iter__.return_value = cfg_template.splitlines()
+        self.open_fcn_p = mock.patch('neutron.plugins.cisco.l3'
+                                     '.hosting_device_drivers.csr1kv_hd_driver'
+                                     '.open', m, create=True)
+        self.open_fcn_p.start()
+        self.remove_fcn_p = mock.patch('neutron.plugins.cisco.l3'
+                                       '.hosting_device_drivers'
+                                       '.csr1kv_hd_driver.os.remove',
+                                       create=True)
+        self.remove_fcn_p.start()
+
     def _test_remove_all_hosting_devices(self):
         """Removes all hosting devices created during a test."""
-        plugin = NeutronManager.get_service_plugins()[
+        plugin = manager.NeutronManager.get_service_plugins()[
             constants.L3_ROUTER_NAT]
         context = n_context.get_admin_context()
         plugin.delete_all_hosting_devices(context, True)

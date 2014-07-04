@@ -13,12 +13,6 @@
 #    under the License.
 #
 
-from neutron.common import topics
-from neutron.openstack.common import log as logging
-
-
-LOG = logging.getLogger(__name__)
-
 
 # This class is used instead of the L3AgentNotifyAPI to effectively
 # disable notifications from the l3 base class to the l3 agents.
@@ -26,24 +20,7 @@ class L3AgentNotifyAPINoOp(object):
     """API for plugin to notify L3 agent but without actions."""
     BASE_RPC_API_VERSION = '1.0'
 
-    def __init__(self, topic=topics.L3_AGENT):
-        pass
-
-    def _notification_host(self, context, method, payload, host):
-        """Notify the agent that is hosting the router."""
-        pass
-
-    def _agent_notification(self, context, method, routers_ids,
-                            operation, data):
-        """Notify changed routers to hosting l3 agents."""
-        pass
-
-    def _notification(self, context, method, routers_ids, operation, data):
-        """Notify all the agents that are hosting the routers."""
-        pass
-
-    def _notification_fanout(self, context, method, router_id):
-        """Fanout the deleted router to all L3 agents."""
+    def __init__(self, topic=None):
         pass
 
     def agent_updated(self, context, admin_state_up, host):

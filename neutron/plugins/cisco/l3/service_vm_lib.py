@@ -32,10 +32,10 @@ LOG = logging.getLogger(__name__)
 SERVICE_VM_LIB_OPTS = [
     cfg.StrOpt('templates_path',
                default='/opt/stack/data/neutron/cisco/templates',
-               help=_("Path to templates for hosting devices")),
+               help=_("Path to templates for hosting devices.")),
     cfg.StrOpt('service_vm_config_path',
                default='/opt/stack/data/neutron/cisco/config_drive',
-               help=_("Path to config drive files for service VM instances")),
+               help=_("Path to config drive files for service VM instances.")),
 ]
 
 cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS)
@@ -52,11 +52,38 @@ class ServiceVMManager:
     def _core_plugin(self):
         return manager.NeutronManager.get_plugin()
 
+    def nova_services_up(self):
+        """Checks if required Nova services are up and running.
+
+        returns: True if all needed Nova services are up, False otherwise
+        """
+        required = set(['nova-conductor', 'nova-cert', 'nova-scheduler',
+                        'nova-compute', 'nova-consoleauth'])
+        try:
+            services = self._nclient.services.list()
+        # There are several individual Nova client exceptions but they have
+        # no other common base than Exception, hence the long list.
+        except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
+                nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
+                nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
+                nova_exc.EndpointNotFound, nova_exc.AmbiguousEndpoints,
+                nova_exc.ConnectionRefused, nova_exc.ClientException,
+                Exception) as e:
+            LOG.error(_('Failure determining running Nova services: %s'), e)
+            return False
+        for service in services:
+            if (service.binary in required and service.status == 'enabled' and
+                    service.state == 'up'):
+                required.remove(service.binary)
+            if len(required) == 0:
+                return True
+        return False
+
     def get_service_vm_status(self, vm_id):
         try:
             status = self._nclient.servers.get(vm_id).status
         # There are several individual Nova client exceptions but they have
-        # no other common base than Exception, therefore the long list.
+        # no other common base than Exception, hence the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
                 nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
                 nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
@@ -93,9 +120,9 @@ class ServiceVMManager:
         try:
             image = n_utils.find_resource(self._nclient.images, vm_image)
             flavor = n_utils.find_resource(self._nclient.flavors, vm_flavor)
-        except nova_exc.CommandError as e:
-            LOG.error(_('Failure: %s'), e)
-            return None
+        except (nova_exc.CommandError, Exception) as e:
+            LOG.error(_('Failure finding needed Nova resource: %s'), e)
+            return
 
         try:
             # Assumption for now is that this does not need to be
@@ -105,7 +132,7 @@ class ServiceVMManager:
             files = dict((label, open(name)) for label, name in
                          cfg_files.items())
         except IOError:
-            return None
+            return
 
         try:
             server = self._nclient.servers.create(
@@ -121,7 +148,7 @@ class ServiceVMManager:
                 Exception) as e:
             LOG.error(_('Failed to create service VM instance: %s'), e)
             hosting_device_drv.delete_configdrive_files(context, mgmt_port)
-            return None
+            return
         return {'id': server.id}
 
     #TODO(remove fake function later)
@@ -164,7 +191,6 @@ class ServiceVMManager:
                                  vm_flavor, hosting_device_drv, mgmt_port,
                                  ports=None):
         vm_id = uuidutils.generate_uuid()
-
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
@@ -176,7 +202,7 @@ class ServiceVMManager:
                        'config drive'),
                      {'files': cfg_files.values(), 'keys': files.keys()})
         except IOError:
-            return None
+            return
 
         if mgmt_port is not None:
             p_dict = {'port': {'device_id': vm_id,

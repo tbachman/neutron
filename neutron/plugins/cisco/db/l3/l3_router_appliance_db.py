@@ -34,8 +34,7 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.l3 import l3_models
-from neutron.plugins.cisco.l3.rpc import (l3_router_rpc_joint_agent_api as
-                                          l3_router_rpc_api)
+from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
 
 LOG = logging.getLogger(__name__)
 
@@ -44,11 +43,11 @@ ROUTER_APPLIANCE_OPTS = [
     cfg.StrOpt('csr1kv_cfgagent_router_driver',
                default=('neutron.plugins.cisco.cfg_agent.device_drivers.'
                         'csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver'),
-               help=_('Config agent driver for CSR1kv')),
+               help=_('Config agent driver for CSR1kv.')),
     cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
-                      'non-scheduled routers')),
+                      'non-scheduled routers.')),
 ]
 
 cfg.CONF.register_opts(ROUTER_APPLIANCE_OPTS)
@@ -75,11 +74,16 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     _refresh_router_backlog = True
     _heartbeat = None
 
-    @classmethod
-    def reset_all(cls):
-        cls._backlogged_routers = {}
-        cls._refresh_router_backlog = True
-        cls._heartbeat = None
+    @property
+    def l3_cfg_rpc_notifier(self):
+        if not hasattr(self, '_l3_cfg_rpc_notifier'):
+            self._l3_cfg_rpc_notifier = (l3_router_rpc_joint_agent_api.
+                                         L3RouterJointAgentNotifyAPI(self))
+        return self._l3_cfg_rpc_notifier
+
+    @l3_cfg_rpc_notifier.setter
+    def l3_cfg_rpc_notifier(self, value):
+        self._l3_cfg_rpc_notifier = value
 
     def create_router(self, context, router):
         with context.session.begin(subtransactions=True):
@@ -122,7 +126,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     context, id, router))
             routers = [copy.deepcopy(router_updated)]
             self._add_type_and_hosting_device_info(e_context, routers[0])
-        l3_router_rpc_api.L3JointAgentNotify.routers_updated(context, routers)
+        self.l3_cfg_rpc_notifier.routers_updated(context, routers)
         return router_updated
 
     def delete_router(self, context, id):
@@ -144,7 +148,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 self.unschedule_router_from_hosting_device(context,
                                                            r_hd_binding)
             super(L3RouterApplianceDBMixin, self).delete_router(context, id)
-        l3_router_rpc_api.L3JointAgentNotify.router_deleted(context, router)
+        self.l3_cfg_rpc_notifier.router_deleted(context, router)
 
     def add_router_interface(self, context, router_id, interface_info):
         with context.session.begin(subtransactions=True):
@@ -153,8 +157,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             routers = [self.get_router(context, router_id)]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-        l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-            context, routers, 'add_router_interface')
+        self.l3_cfg_rpc_notifier.routers_updated(context, routers,
+                                                 'add_router_interface')
         return info
 
     def remove_router_interface(self, context, router_id, interface_info):
@@ -179,8 +183,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             info = (super(L3RouterApplianceDBMixin, self).
                     remove_router_interface(context, router_id,
                                             interface_info))
-        l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-            context, routers, 'remove_router_interface')
+        self.l3_cfg_rpc_notifier.routers_updated(context, routers,
+                                                 'remove_router_interface')
         return info
 
     def create_floatingip(
@@ -193,8 +197,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 routers = [self.get_router(context, info['router_id'])]
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        routers[0])
-                l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-                    context, routers, 'create_floatingip')
+                self.l3_cfg_rpc_notifier.routers_updated(context, routers,
+                                                         'create_floatingip')
         return info
 
     def update_floatingip(self, context, id, floatingip):
@@ -216,8 +220,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        router)
                 routers.append(router)
-        l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-            context, routers, 'update_floatingip')
+        self.l3_cfg_rpc_notifier.routers_updated(context, routers,
+                                                 'update_floatingip')
         return info
 
     def delete_floatingip(self, context, id):
@@ -230,8 +234,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 routers = [self.get_router(context, router_id)]
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        routers[0])
-                l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-                    context, routers, 'delete_floatingip')
+                self.l3_cfg_rpc_notifier.routers_updated(context, routers,
+                                                         'delete_floatingip')
 
     def disassociate_floatingips(self, context, port_id):
         router_ids = set()
@@ -252,7 +256,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     self._add_type_and_hosting_device_info(context.elevated(),
                                                            router)
                     routers.append(router)
-                l3_router_rpc_api.L3JointAgentNotify.routers_updated(
+                self.l3_cfg_rpc_notifier.routers_updated(
                     context, routers, 'disassociate_floatingips')
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
@@ -276,7 +280,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                          ...},
               ...}
         """
-        LOG.debug(_('Processing affected routers in dead hosting devices'))
+        LOG.debug('Processing affected routers in dead hosting devices')
         with context.session.begin(subtransactions=True):
             for hd in hosting_devices:
                 hd_bindings = self._get_hosting_device_bindings(context,
@@ -319,13 +323,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 return False
             else:
                 router = r_hd_binding['router']
-                r_hd_binding.hosting_device_id = result['id']
+                r_hd_binding.hosting_device = result
                 self.remove_router_from_backlog(router['id'])
                 LOG.info(_('Successfully scheduled router %(r_id)s to '
                            'hosting device %(d_id)s'),
                          {'r_id': r_hd_binding['router']['id'],
-                          'd_id': r_hd_binding.hosting_device_id})
-                context.session.add(r_hd_binding)
+                          'd_id': result['id']})
         return True
 
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
@@ -369,8 +372,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 self._backlogged_routers.pop(r_id, None)
         # notify cfg agents so the scheduled routers are instantiated
         if scheduled_routers:
-            l3_router_rpc_api.L3JointAgentNotify.routers_updated(
-                context, scheduled_routers)
+            self.l3_cfg_rpc_notifier.routers_updated(context,
+                                                     scheduled_routers)
 
     def _setup_backlog_handling(self):
         self._heartbeat = loopingcall.FixedIntervalLoopingCall(
@@ -402,8 +405,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         query = query.filter(l3_models.RouterHostingDeviceBinding.router_id ==
                              id)
         try:
-            r_hd_b = query.one()
-            return r_hd_b
+            return query.one()
         except exc.NoResultFound:
             # This should not happen
             LOG.error(_('DB inconsistency: No type and hosting info associated'
@@ -453,10 +455,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 binding_info.hosting_device)
 
     def _add_hosting_port_info(self, context, router, plugging_driver):
-        """Adds hosting port information to router ports."""
-        # We only populate hosting port info, i.e., reach here, if the
-        # router has been scheduled to a hosting device. Hence this
-        # a good place to allocate hosting ports to the router ports.
+        """Adds hosting port information to router ports.
+
+        We only populate hosting port info, i.e., reach here, if the
+        router has been scheduled to a hosting device. Hence this
+        a good place to allocate hosting ports to the router ports.
+        """
         # cache of hosting port information: {mac_addr: {'name': port_name}}
         hosting_pdata = {}
         if router['external_gateway_info'] is not None:
