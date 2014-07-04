@@ -67,9 +67,10 @@ class FlatTypeDriver(api.TypeDriver):
         if '*' in self.flat_networks:
             LOG.info(_("Arbitrary flat physical_network names allowed"))
             self.flat_networks = None
+        elif not all(self.flat_networks):
+            msg = _("physical network name is empty")
+            raise exc.InvalidInput(error_message=msg)
         else:
-            # TODO(rkukura): Validate that each physical_network name
-            # is neither empty nor too long.
             LOG.info(_("Allowable flat physical_network names: %s"),
                      self.flat_networks)
 
@@ -118,14 +119,12 @@ class FlatTypeDriver(api.TypeDriver):
     def release_segment(self, session, segment):
         physical_network = segment[api.PHYSICAL_NETWORK]
         with session.begin(subtransactions=True):
-            try:
-                alloc = (session.query(FlatAllocation).
-                         filter_by(physical_network=physical_network).
-                         with_lockmode('update').
-                         one())
-                session.delete(alloc)
-                LOG.debug(_("Releasing flat network on physical "
-                            "network %s"), physical_network)
-            except sa.orm.exc.NoResultFound:
-                LOG.warning(_("No flat network found on physical network %s"),
-                            physical_network)
+            count = (session.query(FlatAllocation).
+                     filter_by(physical_network=physical_network).
+                     delete())
+        if count:
+            LOG.debug("Releasing flat network on physical network %s",
+                      physical_network)
+        else:
+            LOG.warning(_("No flat network found on physical network %s"),
+                        physical_network)
