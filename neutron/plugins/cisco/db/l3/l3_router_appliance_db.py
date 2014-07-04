@@ -306,7 +306,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             for router in sync_data:
                 self._add_type_and_hosting_device_info(context, router)
                 plg_drv = self.get_hosting_device_plugging_driver()
-                if plg_drv is not None:
+                if plg_drv and router['hosting_device']:
                     self._add_hosting_port_info(context, router, plg_drv)
         return sync_data
 
