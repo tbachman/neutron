@@ -19,6 +19,7 @@ import os
 
 from oslo.config import cfg
 
+from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3 import hosting_device_drivers
 
@@ -80,3 +81,11 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
         end = CFG_DRIVE_UUID_START + CFG_DRIVE_UUID_LEN
         return (cfg.CONF.service_vm_config_path + "/csr1kv_" +
                 uuid[CFG_DRIVE_UUID_START:end] + ".cfg")
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
