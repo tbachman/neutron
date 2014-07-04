@@ -27,8 +27,8 @@ class DeviceCfgRpcCallbackMixin(object):
         @param: hosting_device_ids - list of non-responding hosting devices
         @return: -
         """
-        self._plugin.handle_non_responding_hosting_devices(context, host,
-                                                           hosting_device_ids)
+        self._l3plugin.handle_non_responding_hosting_devices(
+            context, host, hosting_device_ids)
 
     def register_for_duty(self, context, host):
         """Report that Cisco cfg agent is ready for duty.
@@ -45,4 +45,4 @@ class DeviceCfgRpcCallbackMixin(object):
                  seconds later
         """
         # schedule any non-handled hosting devices
-        return self._plugin.auto_schedule_hosting_devices(context, host)
+        return self._l3plugin.auto_schedule_hosting_devices(context, host)

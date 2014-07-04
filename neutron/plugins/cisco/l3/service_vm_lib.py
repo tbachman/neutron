@@ -41,7 +41,7 @@ SERVICE_VM_LIB_OPTS = [
 cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS)
 
 
-class ServiceVMManager:
+class ServiceVMManager(object):
 
     def __init__(self, user=None, passwd=None, l3_admin_tenant=None,
                  auth_url=''):
@@ -50,7 +50,11 @@ class ServiceVMManager:
 
     @property
     def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 
     def nova_services_up(self):
         """Checks if required Nova services are up and running.

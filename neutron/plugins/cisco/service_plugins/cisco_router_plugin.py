@@ -22,6 +22,7 @@ from neutron.db import agents_db
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
+from neutron import manager
 import neutron.plugins
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
@@ -29,7 +30,6 @@ from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
 from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
 from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
-from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.common import constants
 
 
@@ -38,9 +38,17 @@ class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
                                     devices_rpc.DeviceCfgRpcCallbackMixin):
     RPC_API_VERSION = '1.1'
 
-    def __init__(self, plugin):
+    def __init__(self, l3plugin):
         super(CiscoRouterPluginRpcCallbacks, self).__init__()
-        self._plugin = plugin
+        self._l3plugin = l3plugin
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
@@ -93,3 +101,11 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         return ("Cisco Router Service Plugin for basic L3 forwarding"
                 " between (L2) Neutron networks and access to external"
                 " networks via a NAT gateway.")
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin

@@ -42,32 +42,30 @@ class L3RouterCfgRpcCallbackMixin(object):
         """
         context = neutron_context.get_admin_context()
         try:
-            routers = self._plugin.list_active_sync_routers_on_hosting_devices(
-                context, host, router_ids, hosting_device_ids)
+            routers = (
+                self._l3plugin.list_active_sync_routers_on_hosting_devices(
+                    context, host, router_ids, hosting_device_ids))
         except AttributeError:
             routers = []
-        plugin = manager.NeutronManager.get_plugin()
         if routers and utils.is_extension_supported(
-                plugin, constants.PORT_BINDING_EXT_ALIAS):
-            self._ensure_host_set_on_ports(context, plugin, host, routers)
+                self._core_plugin, constants.PORT_BINDING_EXT_ALIAS):
+            self._ensure_host_set_on_ports(context, host, routers)
         LOG.debug('Routers returned to Cisco cfg agent@%(agt)s:\n %(routers)s',
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
-    def _ensure_host_set_on_ports(self, context, plugin, host, routers):
+    def _ensure_host_set_on_ports(self, context, host, routers):
         for router in routers:
             LOG.debug('Checking router: %(id)s for host: %(host)s',
                       {'id': router['id'], 'host': host})
-            self._ensure_host_set_on_port(context, plugin, host,
-                                          router.get('gw_port'))
+            self._ensure_host_set_on_port(context, host, router.get('gw_port'))
             for interface in router.get(constants.INTERFACE_KEY, []):
-                self._ensure_host_set_on_port(context, plugin, host,
-                                              interface)
+                self._ensure_host_set_on_port(context, host, interface)
 
-    def _ensure_host_set_on_port(self, context, plugin, host, port):
+    def _ensure_host_set_on_port(self, context, host, port):
         if (port and
             (port.get(portbindings.HOST_ID) != host or
              port.get(portbindings.VIF_TYPE) ==
              portbindings.VIF_TYPE_BINDING_FAILED)):
-            plugin.update_port(context, port['id'],
-                               {'port': {portbindings.HOST_ID: host}})
+            self._core_plugin.update_port(
+                context, port['id'], {'port': {portbindings.HOST_ID: host}})

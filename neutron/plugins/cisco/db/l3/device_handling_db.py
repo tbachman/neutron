@@ -33,6 +33,7 @@ from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_models
+from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)

@@ -31,7 +31,8 @@ class PluginSidePluggingDriver(object):
     """
 
     @abc.abstractmethod
-    def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
+    def create_hosting_device_resources(self, context, complementary_id,
+                                        tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
         """Create resources for a hosting device in a plugin specific way.
 
@@ -44,6 +45,7 @@ class PluginSidePluggingDriver(object):
                          ... arbitrary driver items }
 
         :param context: Neutron api request context.
+        :param complementary_id: complementary id of hosting device
         :param tenant_id: id of tenant owning the hosting device resources.
         :param mgmt_nw_id: id of management network for hosting devices.
         :param mgmt_sec_grp_id: id of security group for management network.
@@ -52,7 +54,8 @@ class PluginSidePluggingDriver(object):
         pass
 
     @abc.abstractmethod
-    def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
+    def get_hosting_device_resources(self, context, id, complementary_id,
+                                     tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device.
 
         Called just before a hosting device is to be deleted so that
@@ -65,6 +68,7 @@ class PluginSidePluggingDriver(object):
 
         :param context: Neutron api request context.
         :param id: id of hosting device.
+        :param complementary_id: complementary id of hosting device
         :param tenant_id: id of tenant owning the hosting device resources.
         :param mgmt_nw_id: id of management network for hosting devices.
         """

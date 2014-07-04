@@ -19,7 +19,6 @@ import os
 
 from oslo.config import cfg
 
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3 import hosting_device_drivers
 
@@ -39,10 +38,6 @@ cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
 
 
 class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
-
-    @property
-    def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
 
     def hosting_device_name(self):
         return "CSR1kv"

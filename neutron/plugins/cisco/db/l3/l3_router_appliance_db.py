@@ -28,7 +28,6 @@ from neutron.db import extraroute_db
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
-from neutron import manager
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -393,10 +392,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                                             process_extensions=False)
             self._backlogged_routers[binding.router_id] = router
         self._refresh_router_backlog = False
-
-    @property
-    def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
         query = context.session.query(l3_models.RouterHostingDeviceBinding)

@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 _uuid = uuidutils.generate_uuid
 
 
-class DeviceHandlingTestSupportMixin:
+class DeviceHandlingTestSupportMixin(object):
 
     @property
     def _core_plugin(self):
@@ -97,24 +97,24 @@ class DeviceHandlingTestSupportMixin:
 
     def _delete_service_vm_mock(self, context, vm_id, hosting_device_drv,
                                 mgmt_nw_id):
-            result = True
-            # Get ports on management network (should be only one)
-            ports = self._core_plugin.get_ports(
-                context, filters={'device_id': [vm_id],
-                                  'network_id': [mgmt_nw_id]})
-            if ports:
-                hosting_device_drv.delete_configdrive_files(context, ports[0])
+        result = True
+        # Get ports on management network (should be only one)
+        ports = self._core_plugin.get_ports(
+            context, filters={'device_id': [vm_id],
+                              'network_id': [mgmt_nw_id]})
+        if ports:
+            hosting_device_drv.delete_configdrive_files(context, ports[0])
 
-            try:
-                ports = self._core_plugin.get_ports(
-                    context, filters={'device_id': [vm_id]})
-                for port in ports:
-                    self._core_plugin.delete_port(context, port['id'])
-            except n_exc.NeutronException as e:
-                LOG.error('Failed to delete service VM %(id)s due to '
-                          '%(err)s', {'id': vm_id, 'err': e})
-                result = False
-            return result
+        try:
+            ports = self._core_plugin.get_ports(
+                context, filters={'device_id': [vm_id]})
+            for port in ports:
+                self._core_plugin.delete_port(context, port['id'])
+        except n_exc.NeutronException as e:
+            LOG.error('Failed to delete service VM %(id)s due to '
+                      '%(err)s', {'id': vm_id, 'err': e})
+            result = False
+        return result
 
     def _mock_svc_vm_create_delete(self):
         # Mock creation/deletion of service VMs
