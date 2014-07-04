@@ -81,12 +81,12 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                     # Create T1 trunk network for this router
                     self._create_resources(
                         context, "T1", i, n_spec, n1kv_const.T1_NETWORK_NAME,
-                        t1_n, s_spec, n1kv_const.T1_SUBNET_NAME, t1_sn, 
+                        t1_n, s_spec, n1kv_const.T1_SUBNET_NAME, t1_sn,
                         p_spec, n1kv_const.T1_PORT_NAME, t_p)
                     # Create T2 trunk network for this router
                     self._create_resources(
                         context, "T2", i, n_spec, n1kv_const.T2_NETWORK_NAME,
-                        t2_n, s_spec, n1kv_const.T2_SUBNET_NAME, t2_sn, 
+                        t2_n, s_spec, n1kv_const.T2_SUBNET_NAME, t2_sn,
                         p_spec, n1kv_const.T2_PORT_NAME, t_p)
             except n_exc.NeutronException as e:
                 LOG.error(_('Error %s when creating service VM resources. '

@@ -18,7 +18,6 @@ from neutron.common import constants
 from neutron.common import utils
 from neutron import context as neutron_context
 from neutron.extensions import portbindings
-from neutron import manager
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
