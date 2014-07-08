@@ -78,7 +78,7 @@ class TestHostingDevice(base.BaseTestCase):
         self.status._is_pingable.return_value = False
 
         self.assertFalse(self.status._is_pingable('1.2.3.4'))
-        self.assertEqual(None, self.status.is_hosting_device_reachable(
+        self.assertIsNone(self.status.is_hosting_device_reachable(
             self.hosting_device))
         self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
         self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
@@ -90,7 +90,7 @@ class TestHostingDevice(base.BaseTestCase):
         self.status.backlog_hosting_devices[123] = {'hd': self.hosting_device}
 
         self.assertEqual(1, len(self.status.backlog_hosting_devices))
-        self.assertEqual(None, self.status.is_hosting_device_reachable(
+        self.assertIsNone(self.status.is_hosting_device_reachable(
             self.hosting_device))
         self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
         self.assertTrue(123 in self.status.backlog_hosting_devices.keys())

@@ -112,7 +112,7 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('routing_svc_helper_class',
                    default='neutron.plugins.cisco.cfg_agent.service_helpers'
                            '.routing_svc_helper.RoutingServiceHelper',
-                   help=_("path of the routing service helper class")),
+                   help=_("Path of the routing service helper class.")),
     ]
 
     def __init__(self, host, conf=None):
