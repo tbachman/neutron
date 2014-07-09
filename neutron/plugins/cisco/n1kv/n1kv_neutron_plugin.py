@@ -126,6 +126,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
                 'security-group' in self.supported_extension_aliases}}
+        network_db_v2.delete_all_n1kv_credentials()
         c_cred.Store.initialize()
         self._setup_vsm()
         self._setup_rpc()
