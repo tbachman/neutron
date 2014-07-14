@@ -1194,6 +1194,15 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._extend_port_dict_profile(context, updated_port)
         return updated_port
 
+    @property
+    def l3plugin(self):
+        try:
+            return self._l3plugin
+        except AttributeError:
+            self._l3plugin = manager.NeutronManager.get_service_plugins().get(
+                svc_constants.L3_ROUTER_NAT)
+            return self._l3plugin
+
     def delete_port(self, context, id, l3_port_check=True):
         """
         Delete a port.
@@ -1203,10 +1212,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
-        l3plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.L3_ROUTER_NAT)
-        if l3plugin and l3_port_check:
-            l3plugin.prevent_l3_port_deletion(context, id)
+        if self.l3plugin and l3_port_check:
+            self.l3plugin.prevent_l3_port_deletion(context, id)
         with context.session.begin(subtransactions=True):
             port = self.get_port(context, id)
             vm_network = n1kv_db_v2.get_vm_network(context.session,
@@ -1220,8 +1227,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 n1kv_db_v2.delete_vm_network(context.session,
                                              port[n1kv.PROFILE_ID],
                                              port['network_id'])
-            if l3plugin:
-                l3plugin.disassociate_floatingips(context, id)
+            if self.l3plugin:
+                self.l3plugin.disassociate_floatingips(context, id)
             super(N1kvNeutronPluginV2, self).delete_port(context, id)
         self._send_delete_port_request(context, port, vm_network)
 
