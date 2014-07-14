@@ -15,7 +15,10 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
+import sqlalchemy as sql
 
+from neutron.common import topics
+from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db as l3agentsched_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
@@ -100,3 +103,34 @@ class L3RouterTypeAwareSchedulerDbMixin(
                                           active=True)
         else:
             return []
+
+    def _agent_state_filter(self, check_active, last_heartbeat):
+        """Filters only active agents, if requested."""
+        if not check_active:
+            return True
+        return not agents_db.AgentDbMixin.is_agent_down(last_heartbeat)
+
+    def get_hosts_for_routers(self, context, routers, admin_state_up=None,
+                              check_active=False):
+        query = context.session.query(p_binding.PortBindingPort.host,
+                                      agents_db.Agent)
+        query = query.join(
+            models_v2.Port,
+            models_v2.Port.id == p_binding.PortBindingPort.port_id)
+        query = query.join(
+            l3_models.RouterHostingDeviceBinding,
+            l3_models.RouterHostingDeviceBinding.hosting_device_id ==
+            models_v2.Port.device_id)
+        query = query.join(
+            agents_db.Agent,
+            agents_db.Agent.host == p_binding.PortBindingPort.host)
+        query = query.filter(sql.and_(
+            agents_db.Agent.topic == topics.L3_AGENT,
+            l3_models.RouterHostingDeviceBinding.router_id.in_(routers)))
+        if admin_state_up is not None:
+            query = query.filter(
+                agents_db.Agent.admin_state_up == admin_state_up)
+        hosts = [row.host for row in query if
+                 self._agent_state_filter(check_active,
+                                          row.heartbeat_timestamp)]
+        return hosts
