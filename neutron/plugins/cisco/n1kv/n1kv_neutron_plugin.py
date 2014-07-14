@@ -1769,7 +1769,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             with excutils.save_and_reraise_exception():
                 super(N1kvNeutronPluginV2,
                       self).delete_network_profile(context, net_p['id'])
-                self._send_delete_logical_network_request(net_p)
+                self._send_delete_logical_network_request(net_p['id'])
         return net_p
 
     def delete_network_profile(self, context, id):
