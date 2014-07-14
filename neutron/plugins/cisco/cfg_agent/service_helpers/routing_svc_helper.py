@@ -137,10 +137,10 @@ class RoutingServiceHelper():
 
     ### Notifications from Plugin ####
 
-    def router_deleted(self, context, router_id):
+    def router_deleted(self, context, router_ids):
         """Deal with router deletion RPC message."""
-        LOG.debug('Got router deleted notification for %s', router_id)
-        self.removed_routers.add(router_id)
+        LOG.debug('Got router deleted notification for %s', router_ids)
+        self.removed_routers.update(router_ids)
 
     def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""

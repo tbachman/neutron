@@ -112,7 +112,7 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('routing_svc_helper_class',
                    default='neutron.plugins.cisco.cfg_agent.service_helpers'
                            '.routing_svc_helper.RoutingServiceHelper',
-                   help=_("path of the routing service helper class")),
+                   help=_("Path of the routing service helper class.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -127,7 +127,7 @@ class CiscoCfgAgent(manager.Manager):
 
     def _initialize_rpc(self, host):
         self.devmgr_rpc = CiscoDeviceManagementApi(
-            topics.L3PLUGIN, host)
+            topics.DEVICE_MANAGER_PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
         svc_helper_class = self.conf.routing_svc_helper_class

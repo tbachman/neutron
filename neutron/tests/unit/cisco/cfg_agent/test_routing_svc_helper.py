@@ -158,10 +158,20 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         l3pluginApi_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
         l3pluginApi_cls.return_value = self.plugin_api
+        self.plugin_api.get_routers = mock.MagicMock()
         self.looping_call_p = mock.patch(
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
         mock.patch('neutron.common.rpc.create_connection').start()
+
+        self.routing_helper = RoutingServiceHelper(
+            HOST, self.conf, self.agent)
+        self.routing_helper._internal_network_added = mock.Mock()
+        self.routing_helper._external_gateway_added = mock.Mock()
+        self.routing_helper._internal_network_removed = mock.Mock()
+        self.routing_helper._external_gateway_removed = mock.Mock()
+        self.driver = self._mock_driver_and_hosting_device(
+            self.routing_helper)
 
     def _mock_driver_and_hosting_device(self, svc_helper):
         svc_helper._dev_status.is_hosting_device_reachable = mock.MagicMock(
@@ -171,31 +181,29 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         svc_helper._drivermgr.set_driver = mock.Mock(return_value=driver)
         return driver
 
+    def _reset_mocks(self):
+        self.routing_helper._process_router_floating_ips.reset_mock()
+        self.routing_helper._internal_network_added.reset_mock()
+        self.routing_helper._external_gateway_added.reset_mock()
+        self.routing_helper._internal_network_removed.reset_mock()
+        self.routing_helper._external_gateway_removed.reset_mock()
+
     def test_process_router_throw_config_error(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper._internal_network_added = mock.Mock()
         snip_name = 'CREATE_SUBINTERFACE'
         e_type = 'Fake error'
         e_tag = 'Fake error tag'
         params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
-        routing_svc_helper._internal_network_added.side_effect = (
+        self.routing_helper._internal_network_added.side_effect = (
             cfg_exceptions.CSR1kvConfigException(**params))
         router, ports = prepare_router_data()
         ri = RouterInfo(router['id'], router)
         self.assertRaises(cfg_exceptions.CSR1kvConfigException,
-                          routing_svc_helper._process_router, ri)
-        routing_svc_helper._internal_network_added.reset_mock()
+                          self.routing_helper._process_router, ri)
 
     def test_process_router(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper._process_router_floating_ips = mock.Mock()
-        routing_svc_helper._internal_network_added = mock.Mock()
-        routing_svc_helper._external_gateway_added = mock.Mock()
-        routing_svc_helper._internal_network_removed = mock.Mock()
-        routing_svc_helper._external_gateway_removed = mock.Mock()
-        self._mock_driver_and_hosting_device(routing_svc_helper)
         router, ports = prepare_router_data()
+        #Setup mock for call to proceess floating ips
+        self.routing_helper._process_router_floating_ips = mock.Mock()
         fake_floatingips1 = {'floatingips': [
             {'id': _uuid(),
              'floating_ip_address': '8.8.8.8',
@@ -203,19 +211,17 @@ class TestBasicRoutingOperations(base.BaseTestCase):
              'port_id': _uuid()}]}
         ri = RouterInfo(router['id'], router=router)
         # Process with initial values
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
         ex_gw_port = ri.router.get('gw_port')
         # Assert that process_floating_ips, internal_network & external network
         # added were all called with the right params
-        routing_svc_helper._process_router_floating_ips.assert_called_with(
+        self.routing_helper._process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
-        routing_svc_helper._process_router_floating_ips.reset_mock()
-        routing_svc_helper._internal_network_added.assert_called_with(
+        self.routing_helper._internal_network_added.assert_called_with(
             ri, ports[0], ex_gw_port)
-        routing_svc_helper._external_gateway_added.assert_called_with(
+        self.routing_helper._external_gateway_added.assert_called_with(
             ri, ex_gw_port)
-        routing_svc_helper._internal_network_added.reset_mock()
-        routing_svc_helper._external_gateway_added.reset_mock()
+        self._reset_mocks()
         # remap floating IP to a new fixed ip
         fake_floatingips2 = copy.deepcopy(fake_floatingips1)
         fake_floatingips2['floatingips'][0]['fixed_ip_address'] = '7.7.7.8'
@@ -223,26 +229,24 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
         # Process again and check that this time only the process_floating_ips
         # was only called.
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
         ex_gw_port = ri.router.get('gw_port')
-        routing_svc_helper._process_router_floating_ips.assert_called_with(
+        self.routing_helper._process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
-        self.assertFalse(routing_svc_helper._internal_network_added.called)
-        self.assertFalse(routing_svc_helper._external_gateway_added.called)
-        routing_svc_helper._process_router_floating_ips.reset_mock()
-
+        self.assertFalse(self.routing_helper._internal_network_added.called)
+        self.assertFalse(self.routing_helper._external_gateway_added.called)
+        self._reset_mocks()
         # remove just the floating ips
         del router[l3_constants.FLOATINGIP_KEY]
         # Process again and check that this time also only the
         # process_floating_ips and external_network remove was called
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
         ex_gw_port = ri.router.get('gw_port')
-        routing_svc_helper._process_router_floating_ips.assert_called_with(
+        self.routing_helper._process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
-        self.assertFalse(routing_svc_helper._internal_network_added.called)
-        self.assertFalse(routing_svc_helper._external_gateway_added.called)
-        routing_svc_helper._process_router_floating_ips.reset_mock()
-
+        self.assertFalse(self.routing_helper._internal_network_added.called)
+        self.assertFalse(self.routing_helper._external_gateway_added.called)
+        self._reset_mocks()
         # now no ports so state is torn down
         del router[l3_constants.INTERFACE_KEY]
         del router['gw_port']
@@ -252,23 +256,19 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         ex_gw_port = ri.ex_gw_port
         # Process router and verify that internal and external network removed
         # were called and floating_ips_process was called
-        routing_svc_helper._process_router(ri)
-        self.assertFalse(routing_svc_helper.
+        self.routing_helper._process_router(ri)
+        self.assertFalse(self.routing_helper.
                          _process_router_floating_ips.called)
-        self.assertFalse(routing_svc_helper._external_gateway_added.called)
-        self.assertTrue(routing_svc_helper._internal_network_removed.called)
-        self.assertTrue(routing_svc_helper._external_gateway_removed.called)
-        routing_svc_helper._internal_network_removed.assert_called_with(
+        self.assertFalse(self.routing_helper._external_gateway_added.called)
+        self.assertTrue(self.routing_helper._internal_network_removed.called)
+        self.assertTrue(self.routing_helper._external_gateway_removed.called)
+        self.routing_helper._internal_network_removed.assert_called_with(
             ri, ports[0], ex_gw_port)
-        routing_svc_helper._external_gateway_removed.assert_called_with(
+        self.routing_helper._external_gateway_removed.assert_called_with(
             ri, ex_gw_port)
 
     def test_routing_table_update(self):
         router = self.router
-        driver = mock.Mock()
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper._drivermgr.get_driver = mock.Mock(
-            return_value=driver)
         fake_route1 = {'destination': '135.207.0.0/16',
                        'nexthop': '1.2.3.4'}
         fake_route2 = {'destination': '135.207.111.111/32',
@@ -279,149 +279,132 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         # and fake_route1
         router['routes'] = [fake_route1]
         ri = RouterInfo(router['id'], router)
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
 
-        driver.routes_updated.assert_called_with(ri, 'replace', fake_route1)
+        self.driver.routes_updated.assert_called_with(ri, 'replace',
+                                                    fake_route1)
 
         # Now we replace fake_route1 with fake_route2. This should cause driver
         # to be invoked to delete fake_route1 and 'replace'(==add or replace)
-        driver.reset_mock()
+        self.driver.reset_mock()
         router['routes'] = [fake_route2]
         ri.router = router
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
 
-        driver.routes_updated.assert_called_with(ri, 'delete', fake_route1)
-        driver.routes_updated.assert_any_call(ri, 'replace', fake_route2)
+        self.driver.routes_updated.assert_called_with(ri, 'delete',
+                                                      fake_route1)
+        self.driver.routes_updated.assert_any_call(ri, 'replace', fake_route2)
 
         # Now we add back fake_route1 as a new route, this should cause driver
         # to be invoked to 'replace'(==add or replace) fake_route1
-        driver.reset_mock()
+        self.driver.reset_mock()
         router['routes'] = [fake_route2, fake_route1]
         ri.router = router
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
 
-        driver.routes_updated.assert_any_call(ri, 'replace', fake_route1)
+        self.driver.routes_updated.assert_any_call(ri, 'replace', fake_route1)
 
         # Now we delete all routes. This should cause driver
         # to be invoked to delete fake_route1 and fake-route2
-        driver.reset_mock()
+        self.driver.reset_mock()
         router['routes'] = []
         ri.router = router
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
 
-        driver.routes_updated.assert_any_call(ri, 'delete', fake_route2)
-        driver.routes_updated.assert_any_call(ri, 'delete', fake_route1)
+        self.driver.routes_updated.assert_any_call(ri, 'delete', fake_route2)
+        self.driver.routes_updated.assert_any_call(ri, 'delete', fake_route1)
 
     def test_process_router_internal_network_added_unexpected_error(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
         router, ports = prepare_router_data()
         ri = RouterInfo(router['id'], router=router)
-        with mock.patch.object(
-                RoutingServiceHelper,
-                '_internal_network_added') as internal_network_added:
-            # raise RuntimeError to simulate that an unexpected exception
-            # occurrs
-            internal_network_added.side_effect = RuntimeError
-            self.assertRaises(RuntimeError,
-                              routing_svc_helper._process_router,
-                              ri)
-            self.assertNotIn(
-                router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
+        # raise RuntimeError to simulate that an unexpected exception occurrs
+        self.routing_helper._internal_network_added.side_effect = RuntimeError
+        self.assertRaises(RuntimeError,
+                          self.routing_helper._process_router,
+                          ri)
+        self.assertNotIn(
+            router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
 
-            # The unexpected exception has been fixed manually
-            internal_network_added.side_effect = None
+        # The unexpected exception has been fixed manually
+        self.routing_helper._internal_network_added.side_effect = None
 
-            # Failure will cause a retry next time,
-            # We were able to add the port to ri.internal_ports
-            routing_svc_helper._process_router(ri)
-            self.assertIn(
-                router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
+        # Failure will cause a retry next time, then were able to add the
+        # port to ri.internal_ports
+        self.routing_helper._process_router(ri)
+        self.assertIn(
+            router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
 
     def test_process_router_internal_network_removed_unexpected_error(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
         router, ports = prepare_router_data()
         ri = RouterInfo(router['id'], router=router)
         # add an internal port
-        routing_svc_helper._process_router(ri)
+        self.routing_helper._process_router(ri)
 
-        with mock.patch.object(
-                RoutingServiceHelper,
-                '_internal_network_removed') as internal_net_removed:
-            # raise RuntimeError to simulate that an unexpected exception
-            # occurrs
-            internal_net_removed.side_effect = RuntimeError
-            ri.internal_ports[0]['admin_state_up'] = False
-            # The above port is set to down state, remove it.
-            self.assertRaises(RuntimeError,
-                              routing_svc_helper._process_router,
-                              ri)
-            self.assertIn(
-                router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
+        # raise RuntimeError to simulate that an unexpected exception occurrs
 
-            # The unexpected exception has been fixed manually
-            internal_net_removed.side_effect = None
+        self.routing_helper._internal_network_removed.side_effect = mock.Mock(
+            side_effect=RuntimeError)
+        ri.internal_ports[0]['admin_state_up'] = False
+        # The above port is set to down state, remove it.
+        self.assertRaises(RuntimeError,
+                          self.routing_helper._process_router,
+                          ri)
+        self.assertIn(
+            router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
 
-            # Failure will cause a retry next time,
-            # We were able to add the port to ri.internal_ports
-            routing_svc_helper._process_router(ri)
-            # We were able to remove the port from ri.internal_ports
-            self.assertNotIn(
-                router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
+        # The unexpected exception has been fixed manually
+        self.routing_helper._internal_network_removed.side_effect = None
+
+        # Failure will cause a retry next time,
+        # We were able to add the port to ri.internal_ports
+        self.routing_helper._process_router(ri)
+        # We were able to remove the port from ri.internal_ports
+        self.assertNotIn(
+            router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
 
     def test_routers_with_admin_state_down(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         self.plugin_api.get_external_network_id.return_value = None
 
         routers = [
             {'id': _uuid(),
              'admin_state_up': False,
              'external_gateway_info': {}}]
-        routing_svc_helper._process_routers(routers, None)
-        self.assertNotIn(routers[0]['id'], routing_svc_helper.router_info)
+        self.routing_helper._process_routers(routers, None)
+        self.assertNotIn(routers[0]['id'], self.routing_helper.router_info)
 
     def test_router_deleted(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.router_deleted(None, FAKE_ID)
-        self.assertIn(FAKE_ID, routing_svc_helper.removed_routers)
+        self.routing_helper.router_deleted(None, [FAKE_ID])
+        self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_routers_updated(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.routers_updated(None, [FAKE_ID])
-        self.assertIn(FAKE_ID, routing_svc_helper.updated_routers)
+        self.routing_helper.routers_updated(None, [FAKE_ID])
+        self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_removed_from_agent(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.router_removed_from_agent(None,
+        self.routing_helper.router_removed_from_agent(None,
                                                      {'router_id': FAKE_ID})
-        self.assertIn(FAKE_ID, routing_svc_helper.removed_routers)
+        self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_added_to_agent(self):
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.router_added_to_agent(None, [FAKE_ID])
-        self.assertIn(FAKE_ID, routing_svc_helper.updated_routers)
+        self.routing_helper.router_added_to_agent(None, [FAKE_ID])
+        self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_process_router_delete(self):
         router = self.router
         router['gw_port'] = self.ex_gw_port
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper._router_added(router['id'], router)
-        self.assertIn(router['id'], routing_svc_helper.router_info)
+        self.routing_helper._router_added(router['id'], router)
+        self.assertIn(router['id'], self.routing_helper.router_info)
         # Now we remove the router
-        routing_svc_helper._router_removed(router['id'], deconfigure=True)
-        self.assertNotIn(router['id'], routing_svc_helper.router_info)
+        self.routing_helper._router_removed(router['id'], deconfigure=True)
+        self.assertNotIn(router['id'], self.routing_helper.router_info)
 
     def test_collect_state(self):
         router, ports = prepare_router_data(enable_snat=True,
                                             num_internal_ports=2)
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper._router_added(router['id'], router)
+        self.routing_helper._router_added(router['id'], router)
 
         configurations = {}
-        configurations = routing_svc_helper.collect_state(configurations)
+        configurations = self.routing_helper.collect_state(configurations)
         hd_exp_result = {
             router['hosting_device']['id']: {'routers': 1}}
         self.assertEqual(1, configurations['total routers'])
@@ -443,11 +426,10 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         router2['hosting_device']['id'] = hd1_id
         router3['hosting_device']['id'] = hd1_id
 
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
         resources = {'routers': [router1, router2, router4],
                      'removed_routers': [router3]}
-        devices = (
-            routing_svc_helper._sort_resources_per_hosting_device(resources))
+        devices = self.routing_helper._sort_resources_per_hosting_device(
+            resources)
 
         self.assertEqual(2, len(devices.keys()))  # Two devices
         hd1_routers = [router1, router2]
@@ -461,10 +443,9 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                              'device_2': {'routers': ['id3', 'id4'],
                                           'other_key': ['value1', 'value2']}}
         }
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        resp = routing_svc_helper._get_router_ids_from_removed_devices_info(
+        resp = self.routing_helper._get_router_ids_from_removed_devices_info(
             removed_devices_info)
-        self.assertEqual(sorted(['id1', 'id2', 'id3', 'id4']), sorted(resp))
+        self.assertEqual(sorted(resp), sorted(['id1', 'id2', 'id3', 'id4']))
 
     @mock.patch("eventlet.GreenPool.spawn_n")
     def test_process_services_full_sync_different_devices(self, mock_spawn):
@@ -472,13 +453,12 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         router2, port = prepare_router_data()
         self.plugin_api.get_routers = mock.Mock(
             return_value=[router1, router2])
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.process_service()
+        self.routing_helper.process_service()
         self.assertEqual(2, mock_spawn.call_count)
-        call1 = mock.call(routing_svc_helper._process_routers, [router1],
+        call1 = mock.call(self.routing_helper._process_routers, [router1],
                           None, router1['hosting_device']['id'],
                           all_routers=True)
-        call2 = mock.call(routing_svc_helper._process_routers, [router2],
+        call2 = mock.call(self.routing_helper._process_routers, [router2],
                           None, router2['hosting_device']['id'],
                           all_routers=True)
         mock_spawn.assert_has_calls([call1, call2], any_order=True)
@@ -490,10 +470,9 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         router2['hosting_device']['id'] = router1['hosting_device']['id']
         self.plugin_api.get_routers = mock.Mock(return_value=[router1,
                                                               router2])
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.process_service()
+        self.routing_helper.process_service()
         self.assertEqual(1, mock_spawn.call_count)
-        mock_spawn.assert_called_with(routing_svc_helper._process_routers,
+        mock_spawn.assert_called_with(self.routing_helper._process_routers,
                                       [router1, router2],
                                       None,
                                       router1['hosting_device']['id'],
@@ -509,16 +488,15 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                 return [router1]
         self.plugin_api.get_routers.side_effect = routers_data
 
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.fullsync = False
-        routing_svc_helper.updated_routers.add(router1['id'])
-        routing_svc_helper.process_service()
+        self.routing_helper.fullsync = False
+        self.routing_helper.updated_routers.add(router1['id'])
+        self.routing_helper.process_service()
         self.assertEqual(1, self.plugin_api.get_routers.call_count)
         self.plugin_api.get_routers.assert_called_with(
-            routing_svc_helper.context,
+            self.routing_helper.context,
             router_ids=[router1['id']])
         self.assertEqual(1, mock_spawn.call_count)
-        mock_spawn.assert_called_with(routing_svc_helper._process_routers,
+        mock_spawn.assert_called_with(self.routing_helper._process_routers,
                                       [router1],
                                       None,
                                       router1['hosting_device']['id'],
@@ -536,16 +514,14 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                 return [router]
 
         self.plugin_api.get_routers.side_effect = routers_data
-
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.fullsync = False
-        routing_svc_helper.process_service(device_ids=[device_id])
+        self.routing_helper.fullsync = False
+        self.routing_helper.process_service(device_ids=[device_id])
         self.assertEqual(1, self.plugin_api.get_routers.call_count)
         self.plugin_api.get_routers.assert_called_with(
-            routing_svc_helper.context,
+            self.routing_helper.context,
             hd_ids=[device_id])
         self.assertEqual(1, mock_spawn.call_count)
-        mock_spawn.assert_called_with(routing_svc_helper._process_routers,
+        mock_spawn.assert_called_with(self.routing_helper._process_routers,
                                       [router],
                                       None,
                                       device_id,
@@ -556,17 +532,16 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         router, port = prepare_router_data()
         device_id = router['hosting_device']['id']
 
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper.fullsync = False
+        self._mock_driver_and_hosting_device(self.routing_helper)
+        self.routing_helper.fullsync = False
         # Emulate router added for setting up internal structures
-        routing_svc_helper._router_added(router['id'], router)
+        self.routing_helper._router_added(router['id'], router)
         # Add router to removed routers list and process it
-        routing_svc_helper.removed_routers.add(router['id'])
-        routing_svc_helper.process_service()
+        self.routing_helper.removed_routers.add(router['id'])
+        self.routing_helper.process_service()
 
         self.assertEqual(1, mock_spawn.call_count)
-        mock_spawn.assert_called_with(routing_svc_helper._process_routers,
+        mock_spawn.assert_called_with(self.routing_helper._process_routers,
                                       None,
                                       [router],
                                       device_id,
@@ -584,24 +559,23 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             'deconfigure': True
         }
 
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper.fullsync = False
+        self._mock_driver_and_hosting_device(self.routing_helper)
+        self.routing_helper.fullsync = False
         # Emulate router added for setting up internal structures
-        routing_svc_helper._router_added(router1['id'], router1)
-        routing_svc_helper._router_added(router2['id'], router2)
+        self.routing_helper._router_added(router1['id'], router1)
+        self.routing_helper._router_added(router2['id'], router2)
         # Add router to removed routers list and process it
-        routing_svc_helper.removed_routers.add(router2['id'])
-        routing_svc_helper.process_service(
+        self.routing_helper.removed_routers.add(router2['id'])
+        self.routing_helper.process_service(
             removed_devices_info=removed_devices_info)
 
         self.assertEqual(2, mock_spawn.call_count)
-        call1 = mock.call(routing_svc_helper._process_routers,
+        call1 = mock.call(self.routing_helper._process_routers,
                           None,
                           [router1],
                           router1['hosting_device']['id'],
                           all_routers=False)
-        call2 = mock.call(routing_svc_helper._process_routers,
+        call2 = mock.call(self.routing_helper._process_routers,
                           None,
                           [router2],
                           router2['hosting_device']['id'],
@@ -612,24 +586,70 @@ class TestBasicRoutingOperations(base.BaseTestCase):
     def test_process_services_with_rpc_error(self, mock_spawn):
         router, port = prepare_router_data()
         self.plugin_api.get_routers.side_effect = n_rpc.RPCException
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        routing_svc_helper.fullsync = False
-        routing_svc_helper.updated_routers.add(router['id'])
-        routing_svc_helper.process_service()
+        self.routing_helper.fullsync = False
+        self.routing_helper.updated_routers.add(router['id'])
+        self.routing_helper.process_service()
         self.assertEqual(1, self.plugin_api.get_routers.call_count)
         self.plugin_api.get_routers.assert_called_with(
-            routing_svc_helper.context,
+            self.routing_helper.context,
             router_ids=[router['id']])
         self.assertFalse(mock_spawn.called)
-        self.assertTrue(routing_svc_helper.fullsync)
-        self.plugin_api.get_routers.reset_mock()
+        self.assertTrue(self.routing_helper.fullsync)
 
     def test_process_routers(self):
         router, port = prepare_router_data()
-        routing_svc_helper = RoutingServiceHelper(HOST, self.conf, self.agent)
-        driver = self._mock_driver_and_hosting_device(routing_svc_helper)
-        routing_svc_helper._process_router = mock.Mock()
-        routing_svc_helper._process_routers([router], None)
-        ri = routing_svc_helper.router_info[router['id']]
+        driver = self._mock_driver_and_hosting_device(self.routing_helper)
+        self.routing_helper._process_router = mock.Mock()
+        self.routing_helper._process_routers([router], None)
+        ri = self.routing_helper.router_info[router['id']]
         driver.router_added.assert_called_with(ri)
-        routing_svc_helper._process_router.assert_called_with(ri)
+        self.routing_helper._process_router.assert_called_with(ri)
+
+    def _process_routers_floatingips(self, action='add'):
+        router, port = prepare_router_data()
+        driver = self._mock_driver_and_hosting_device(self.routing_helper)
+        ex_gw_port = router['gw_port']
+        floating_ip_address = '19.4.4.10'
+        fixed_ip_address = '35.4.1.10'
+        fixed_ip_address_2 = '35.4.1.15'
+        port_id = 'fake_port_id'
+        floating_ip = {'fixed_ip_address': fixed_ip_address,
+                       'floating_ip_address': floating_ip_address,
+                       'id': 'floating_ip_id',
+                       'port_id': port_id,
+                       'status': 'ACTIVE', }
+        router[l3_constants.FLOATINGIP_KEY] = [floating_ip]
+        ri = RouterInfo(router['id'], router=router)
+
+        # Default add action
+        self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+        driver.floating_ip_added.assert_called_with(
+            ri, ex_gw_port, floating_ip_address, fixed_ip_address)
+
+        if action == 'remove':
+            router[l3_constants.FLOATINGIP_KEY] = []
+            self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+            driver.floating_ip_removed.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address)
+
+        if action == 'remap':
+            driver.reset_mock()
+            floating_ip_2 = copy.deepcopy(floating_ip)
+            floating_ip_2['fixed_ip_address'] = fixed_ip_address_2
+            ri.router[l3_constants.FLOATINGIP_KEY] = [floating_ip_2]
+
+            self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+            driver.floating_ip_added.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address_2)
+
+            driver.floating_ip_removed.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address)
+
+    def test_process_routers_floatingips_add(self):
+        self._process_routers_floatingips(action="add")
+
+    def test_process_routers_floatingips_remove(self):
+        self._process_routers_floatingips(action="remove")
+
+    def test_process_routers_floatingips_remap(self):
+        self._process_routers_floatingips(action="remap")

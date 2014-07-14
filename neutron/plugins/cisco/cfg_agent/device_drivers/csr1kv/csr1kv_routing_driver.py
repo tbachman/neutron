@@ -286,7 +286,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
          Interfaces in the CSR1kv are created in pairs (T1 and T2) where
          T1 interface is used for VLAN and T2 interface for VXLAN traffic
-         respectively. In neutron side these are named as T1 and T2 ports and
+         respectively. On the neutron side these are named T1 and T2 ports and
          follows the naming convention: <Tx_PORT_NAME_PREFIX>:<PAIR_INDEX>
          where the `PORT_NAME_PREFIX` indicates either VLAN or VXLAN and
          `PAIR_INDEX` is the pair number. `PAIR_INDEX` starts at 1.
