@@ -121,7 +121,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+        self.conn.consume_in_threads()
 
     def _setup_vsm(self):
         """
