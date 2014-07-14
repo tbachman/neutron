@@ -14,13 +14,12 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from abc import ABCMeta
-from abc import abstractmethod
+import abc
 
 import six
 
 
-@six.add_metaclass(ABCMeta)
+@six.add_metaclass(abc.ABCMeta)
 class HostingDeviceDriver(object):
     """This class defines the API for hosting device drivers.
 
@@ -28,11 +27,11 @@ class HostingDeviceDriver(object):
     various (plugin independent) operations on hosting devices.
     """
 
-    @abstractmethod
+    @abc.abstractmethod
     def hosting_device_name(self):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def create_configdrive_files(self, context, mgmtport):
         """Creates configuration file(s) for a service VM.
 
@@ -54,7 +53,7 @@ class HostingDeviceDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def delete_configdrive_files(self, context, mgmtport):
         """Deletes any configuration file(s) used by service VM's configdrive.
 

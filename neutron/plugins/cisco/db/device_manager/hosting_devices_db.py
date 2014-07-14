@@ -23,9 +23,7 @@ from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.db.device_manager.hd_models import (
-    HostingDeviceTemplate)
-from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
+from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 
@@ -50,7 +48,7 @@ class HostingDeviceDBMixin(
                 hdt_db = self._get_hosting_device_template(context,
                                                            hd['template_id'])
                 credentials_id = hdt_db['default_credentials_id']
-            hd_db = HostingDevice(
+            hd_db = hd_models.HostingDevice(
                 id=hd.get('id') or uuidutils.generate_uuid(),
                 complementary_id=hd.get('complementary_id'),
                 tenant_id=tenant_id,
@@ -74,7 +72,7 @@ class HostingDeviceDBMixin(
         with context.session.begin(subtransactions=True):
             #TODO(bobmel): handle tenant_bound changes
             hd_query = context.session.query(
-                HostingDevice).with_lockmode('update')
+                hd_models.HostingDevice).with_lockmode('update')
             hd_db = hd_query.filter_by(id=id).one()
             hd_db.update(hd)
             #TODO(bobmel): notify_agent on changes to credentials,
@@ -86,7 +84,7 @@ class HostingDeviceDBMixin(
         try:
             with context.session.begin(subtransactions=True):
                 hd_query = context.session.query(
-                    HostingDevice).with_lockmode('update')
+                    hd_models.HostingDevice).with_lockmode('update')
                 hd_db = hd_query.filter_by(id=id).one()
                 context.session.delete(hd_db)
         except db_exc.DBError as e:
@@ -104,7 +102,7 @@ class HostingDeviceDBMixin(
                             sorts=None, limit=None, marker=None,
                             page_reverse=False):
         LOG.debug(_("get_hosting_devices() called"))
-        return self._get_collection(context, HostingDevice,
+        return self._get_collection(context, hd_models.HostingDevice,
                                     self._make_hosting_device_dict,
                                     filters=filters, fields=fields)
 
@@ -114,7 +112,7 @@ class HostingDeviceDBMixin(
         tenant_id = self._get_tenant_id_for_create(context, hdt)
         #TODO(bobmel): check service types
         with context.session.begin(subtransactions=True):
-            hdt_db = HostingDeviceTemplate(
+            hdt_db = hd_models.HostingDeviceTemplate(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
                 name=hdt.get('name'),
@@ -141,7 +139,7 @@ class HostingDeviceDBMixin(
         hdt = hosting_device_template['hosting_device_template']
         with context.session.begin(subtransactions=True):
             hdt_query = context.session.query(
-                HostingDeviceTemplate).with_lockmode('update')
+                hd_models.HostingDeviceTemplate).with_lockmode('update')
             hdt_db = hdt_query.filter_by(id=id).one()
             hdt_db.update(hdt)
         return self._make_hosting_device_template_dict(hdt_db)
@@ -151,7 +149,7 @@ class HostingDeviceDBMixin(
         try:
             with context.session.begin(subtransactions=True):
                 hdt_query = context.session.query(
-                    HostingDeviceTemplate).with_lockmode('update')
+                    hd_models.HostingDeviceTemplate).with_lockmode('update')
                 hdt_db = hdt_query.filter_by(id=id).one()
                 context.session.delete(hdt_db)
         except db_exc.DBError as e:
@@ -170,13 +168,13 @@ class HostingDeviceDBMixin(
                                      sorts=None, limit=None, marker=None,
                                      page_reverse=False):
         LOG.debug(_("get_hosting_device_templates() called"))
-        return self._get_collection(context, HostingDeviceTemplate,
+        return self._get_collection(context, hd_models.HostingDeviceTemplate,
                                     self._make_hosting_device_template_dict,
                                     filters=filters, fields=fields)
 
     def _get_hosting_device(self, context, id):
         try:
-            return self._get_by_id(context, HostingDevice, id)
+            return self._get_by_id(context, hd_models.HostingDevice, id)
         except exc.NoResultFound:
             raise ciscohostingdevicemanager.HostingDeviceNotFound(id=id)
 
@@ -199,7 +197,8 @@ class HostingDeviceDBMixin(
 
     def _get_hosting_device_template(self, context, id):
         try:
-            return self._get_by_id(context, HostingDeviceTemplate, id)
+            return self._get_by_id(context, hd_models.HostingDeviceTemplate,
+                                   id)
         except exc.NoResultFound:
             raise ciscohostingdevicemanager.HostingDeviceTemplateNotFound(
                 id=id)

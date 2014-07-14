@@ -19,8 +19,8 @@ from oslo.config import cfg
 from neutron.db import l3_agentschedulers_db as l3agentsched_db
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
-from neutron.plugins.cisco.db.l3.l3_models import RouterHostingDeviceBinding
+from neutron.plugins.cisco.db.device_manager import hd_models
+from neutron.plugins.cisco.db.l3 import l3_models
 
 LOG = logging.getLogger(__name__)
 
@@ -52,24 +52,27 @@ class L3RouterTypeAwareSchedulerDbMixin(
             context, c_constants.AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []
-        query = context.session.query(RouterHostingDeviceBinding.router_id)
-        query = query.join(HostingDevice)
-        query = query.filter(HostingDevice.cfg_agent_id == agent.id)
+        query = context.session.query(
+            l3_models.RouterHostingDeviceBinding.router_id)
+        query = query.join(hd_models.HostingDevice)
+        query = query.filter(hd_models.HostingDevice.cfg_agent_id == agent.id)
         if router_ids:
             if len(router_ids) == 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.router_id == router_ids[0])
+                    l3_models.RouterHostingDeviceBinding.router_id ==
+                    router_ids[0])
             else:
                 query = query.filter(
-                    RouterHostingDeviceBinding.router_id.in_(router_ids))
+                    l3_models.RouterHostingDeviceBinding.router_id.in_(
+                        router_ids))
         if hosting_device_ids:
             if len(hosting_device_ids) == 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.hosting_device_id ==
+                    l3_models.RouterHostingDeviceBinding.hosting_device_id ==
                     hosting_device_ids[0])
             elif len(hosting_device_ids) > 1:
                 query = query.filter(
-                    RouterHostingDeviceBinding.hosting_device_id.in_(
+                    l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
                         hosting_device_ids))
         router_ids = [item[0] for item in query]
         if router_ids:

@@ -1409,5 +1409,5 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                      update_network_profile(context,
                                             net_profile_id,
                                             network_profile))
-            self._send_update_network_profile_request(net_p)
+        self._send_update_network_profile_request(net_p)
         return net_p

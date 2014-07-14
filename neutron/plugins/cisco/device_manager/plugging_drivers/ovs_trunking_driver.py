@@ -54,7 +54,8 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 # ports even before Nova has set device_id attribute.
                 'device_owner': complementary_id}}
             try:
-                mgmt_port = self._core_plugin.create_port(context, p_spec)
+                mgmt_port = self._core_plugin.create_port(context,
+                                                          p_spec)
                 # No security groups on the trunk ports since
                 # they have no IP address
                 p_spec['port']['security_groups'] = []
@@ -67,7 +68,7 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 # Until Nova allows spinning up VMs with VIFs on
                 # networks without subnet(s) we create "dummy" subnets
                 # for the trunk networks
-                sub_spec = {'subnet': {
+                s_spec = {'subnet': {
                     'tenant_id': tenant_id,
                     'admin_state_up': True,
                     'cidr': n1kv_const.SUBNET_PREFIX,
@@ -77,58 +78,17 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                     'ip_version': 4,
                     'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                     'host_routes': attributes.ATTR_NOT_SPECIFIED}}
-                for i in xrange(0, max_hosted):
+                for i in xrange(max_hosted):
                     # Create T1 trunk network for this router
-                    indx = str(i + 1)
-                    n_spec['network'].update(
-                        {'name': n1kv_const.T1_NETWORK_NAME + indx})
-                    t1_n.append(self._core_plugin.create_network(
-                        context, n_spec))
-                    LOG.debug(_('Created T1 network with name %(name)s and '
-                                'id %(id)s'),
-                              {'name': n1kv_const.T1_NETWORK_NAME + indx,
-                               'id': t1_n[i]['id']})
-                    # Create dummy subnet for this trunk network
-                    sub_spec['subnet'].update(
-                        {'name': n1kv_const.T1_SUBNET_NAME + indx,
-                         'network_id': t1_n[i]['id']})
-                    t1_sn.append(self._core_plugin.create_subnet(context,
-                                                                 sub_spec))
-                    # Create T1 port for this router
-                    p_spec['port'].update(
-                        {'name': n1kv_const.T1_PORT_NAME + indx,
-                         'network_id': t1_n[i]['id']})
-                    t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T1 port with name %(name)s,  '
-                                'id %(id)s and subnet %(subnet)s'),
-                              {'name': t1_n[i]['name'],
-                               'id': t1_n[i]['id'],
-                               'subnet': t1_sn[i]['id']})
+                    self._create_resources(
+                        context, "T1", i, n_spec, n1kv_const.T1_NETWORK_NAME,
+                        t1_n, s_spec, n1kv_const.T1_SUBNET_NAME, t1_sn,
+                        p_spec, n1kv_const.T1_PORT_NAME, t_p)
                     # Create T2 trunk network for this router
-                    n_spec['network'].update(
-                        {'name': n1kv_const.T2_NETWORK_NAME + indx})
-                    t2_n.append(self._core_plugin.create_network(context,
-                                                                 n_spec))
-                    LOG.debug(_('Created T2 network with name %(name)s and '
-                                'id %(id)s'),
-                              {'name': n1kv_const.T2_NETWORK_NAME + indx,
-                               'id': t2_n[i]['id']})
-                    # Create dummy subnet for this trunk network
-                    sub_spec['subnet'].update(
-                        {'name': n1kv_const.T2_SUBNET_NAME + indx,
-                         'network_id': t2_n[i]['id']})
-                    t2_sn.append(self._core_plugin.create_subnet(context,
-                                                                 sub_spec))
-                    # Create T2 port for this router
-                    p_spec['port'].update(
-                        {'name': n1kv_const.T2_PORT_NAME + indx,
-                         'network_id': t2_n[i]['id']})
-                    t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T2 port with name %(name)s,  '
-                                'id %(id)s and subnet %(subnet)s'),
-                              {'name': t2_n[i]['name'],
-                               'id': t2_n[i]['id'],
-                               'subnet': t2_sn[i]['id']})
+                    self._create_resources(
+                        context, "T2", i, n_spec, n1kv_const.T2_NETWORK_NAME,
+                        t2_n, s_spec, n1kv_const.T2_SUBNET_NAME, t2_sn,
+                        p_spec, n1kv_const.T2_PORT_NAME, t_p)
             except n_exc.NeutronException as e:
                 LOG.error(_('Error %s when creating service VM resources. '
                             'Cleaning up.'), e)
@@ -142,6 +102,31 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 'ports': t_p,
                 'networks': t1_n + t2_n,
                 'subnets': t1_sn + t2_sn}
+
+    def _create_resources(self, context, type_name, resource_index,
+                          n_spec, net_namebase, t_n,
+                          s_spec, subnet_namebase, t_sn,
+                          p_spec, port_namebase, t_p):
+        index = str(resource_index + 1)
+        # Create trunk network
+        n_spec['network'].update({'name': net_namebase + index})
+        t_n.append(self._core_plugin.create_network(context, n_spec))
+        LOG.debug('Created %(t_n)s network with name %(name)s and id %(id)s',
+                  {'t_n': type_name, 'name': n_spec['network']['name'],
+                   'id': t_n[resource_index]['id']})
+        # Create dummy subnet for the trunk network
+        s_spec['subnet'].update({'name': subnet_namebase + index,
+                                'network_id': t_n[resource_index]['id']})
+        t_sn.append(self._core_plugin.create_subnet(context, s_spec))
+        # Create port for on trunk network
+        p_spec['port'].update({'name': port_namebase + index,
+                               'network_id': t_n[resource_index]['id']})
+        t_p.append(self._core_plugin.create_port(context, p_spec))
+        LOG.debug('Created %(t_n)s port with name %(name)s, id %(id)s on '
+                  'subnet %(subnet)s',
+                  {'t_n': type_name, 'name': t_n[resource_index]['name'],
+                   'id': t_n[resource_index]['id'],
+                   'subnet': t_sn[resource_index]['id']})
 
     def setup_logical_port_connectivity(self, context, port_db):
         # Remove the VLAN from the VLANs that the hosting port trunks.

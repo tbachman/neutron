@@ -19,7 +19,7 @@ from sqlalchemy.orm import exc
 from neutron.db import db_base_plugin_v2 as base_db
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.db.l3.l3_models import RouterType
+from neutron.plugins.cisco.db.l3 import l3_models
 import neutron.plugins.cisco.extensions.routertype as routertype
 
 LOG = logging.getLogger(__name__)
@@ -37,15 +37,16 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         rt = routertype['routertype']
         tenant_id = self._get_tenant_id_for_create(context, rt)
         with context.session.begin(subtransactions=True):
-            routertype_db = RouterType(id=uuidutils.generate_uuid(),
-                                       tenant_id=tenant_id,
-                                       name=rt['name'],
-                                       description=rt['description'],
-                                       template_id=rt['template_id'],
-                                       shared=rt['shared'],
-                                       slot_need=rt['slot_need'],
-                                       scheduler=rt['scheduler'],
-                                       cfg_agent_driver=rt['cfg_agent_driver'])
+            routertype_db = l3_models.RouterType(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=rt['name'],
+                description=rt['description'],
+                template_id=rt['template_id'],
+                shared=rt['shared'],
+                slot_need=rt['slot_need'],
+                scheduler=rt['scheduler'],
+                cfg_agent_driver=rt['cfg_agent_driver'])
             context.session.add(routertype_db)
         return self._make_routertype_dict(routertype_db)
 
@@ -54,7 +55,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         rt = routertype['routertype']
         with context.session.begin(subtransactions=True):
             rt_query = context.session.query(
-                RouterType).with_lockmode('update')
+                l3_models.RouterType).with_lockmode('update')
             rt_db = rt_query.filter_by(id=id).one()
             rt_db.update(rt)
         return self._make_routertype_dict(rt_db)
@@ -63,15 +64,15 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         LOG.debug(_("delete_routertype() called"))
         with context.session.begin(subtransactions=True):
             routertype_query = context.session.query(
-                RouterType).with_lockmode('update')
+                l3_models.RouterType).with_lockmode('update')
             routertype_db = routertype_query.filter_by(id=id).one()
             context.session.delete(routertype_db)
 
     def get_routertype(self, context, id, fields=None):
         LOG.debug(_("get_routertype() called"))
         try:
-            query = self._model_query(context, RouterType)
-            rt = query.filter(RouterType.id == id).one()
+            query = self._model_query(context, l3_models.RouterType)
+            rt = query.filter(l3_models.RouterType.id == id).one()
             return self._make_routertype_dict(rt, fields)
         except exc.NoResultFound:
             raise routertype.RouterTypeNotFound(routertype_id=id)
@@ -80,7 +81,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
         LOG.debug(_("get_routertypes() called"))
-        return self._get_collection(context, RouterType,
+        return self._get_collection(context, l3_models.RouterType,
                                     self._make_routertype_dict,
                                     filters=filters, fields=fields,
                                     sorts=sorts, limit=limit,

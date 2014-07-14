@@ -41,10 +41,6 @@ cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
 
 class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
 
-    @property
-    def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
-
     def hosting_device_name(self):
         return "CSR1kv"
 
@@ -86,3 +82,11 @@ class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
         end = CFG_DRIVE_UUID_START + CFG_DRIVE_UUID_LEN
         return (cfg.CONF.service_vm_config_path + "/csr1kv_" +
                 uuid[CFG_DRIVE_UUID_START:end] + ".cfg")
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin

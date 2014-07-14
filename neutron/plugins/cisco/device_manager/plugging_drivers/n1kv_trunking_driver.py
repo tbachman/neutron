@@ -17,9 +17,8 @@
 import eventlet
 
 from oslo.config import cfg
-from sqlalchemy import and_
-from sqlalchemy import or_
 from sqlalchemy.orm import exc
+from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
@@ -28,11 +27,10 @@ from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.db.l3.l3_router_appliance_db import (
-    HostedHostingPortBinding)
+from neutron.plugins.cisco.db.device_manager import hd_models
+import neutron.plugins.cisco.device_manager.plugging_drivers as plug
 from neutron.plugins.cisco.device_manager.plugging_drivers import (
     n1kv_plugging_constants as n1kv_const)
-import neutron.plugins.cisco.device_manager.plugging_drivers as plug
 from neutron.plugins.cisco.extensions import n1kv
 from neutron.plugins.common import constants
 
@@ -82,12 +80,11 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     @property
     def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
-
-    @property
-    def _dev_mgr(self):
-        return manager.NeutronManager.get_service_plugins().get(
-            constants.DEVICE_MANAGER)
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 
     @classmethod
     def _get_profile_id(cls, p_type, resource, name):
@@ -265,7 +262,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         # have 'device_owner' attribute set to complementary_id. Hence, we
         # use both attributes in the query to ensure we find all ports.
         query = context.session.query(models_v2.Port)
-        query = query.filter(or_(
+        query = query.filter(expr.or_(
             models_v2.Port.device_id == id,
             models_v2.Port.device_owner == complementary_id))
         for port in query:
@@ -425,9 +422,10 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                 {'network': {action: trunk_spec}})
 
     def _get_trunk_mappings(self, context, hosting_port_id):
-        query = context.session.query(HostedHostingPortBinding)
+        query = context.session.query(hd_models.HostedHostingPortBinding)
         query = query.filter(
-            HostedHostingPortBinding.hosting_port_id == hosting_port_id)
+            hd_models.HostedHostingPortBinding.hosting_port_id ==
+            hosting_port_id)
         return dict((hhpb.logical_port['network_id'], hhpb.segmentation_tag)
                     for hhpb in query)
 
@@ -442,12 +440,12 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             # name LIKE '%t1%'
             # ORDER BY name;
             stmt = context.session.query(
-                HostedHostingPortBinding.hosting_port_id).subquery()
+                hd_models.HostedHostingPortBinding.hosting_port_id).subquery()
             query = context.session.query(models_v2.Port.id)
-            query = query.filter(and_(models_v2.Port.device_id == hd_id,
-                                      ~models_v2.Port.id.in_(stmt),
-                                      models_v2.Port.name.like('%' + name +
-                                                               '%')))
+            query = query.filter(
+                expr.and_(models_v2.Port.device_id == hd_id,
+                          ~models_v2.Port.id.in_(stmt),
+                          models_v2.Port.name.like('%' + name + '%')))
             query = query.order_by(models_v2.Port.name)
             res = query.first()
             if res is None:
@@ -476,14 +474,16 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         # Query for a router's ports that have trunking information
         query = context.session.query(models_v2.Port)
         query = query.join(
-            HostedHostingPortBinding,
-            models_v2.Port.id == HostedHostingPortBinding.logical_port_id)
+            hd_models.HostedHostingPortBinding,
+            models_v2.Port.id ==
+            hd_models.HostedHostingPortBinding.logical_port_id)
         query = query.filter(models_v2.Port.device_id == router_id)
         if device_owner is not None:
             query = query.filter(models_v2.Port.device_owner == device_owner)
         if hosting_port_id is not None:
             query = query.filter(
-                HostedHostingPortBinding.hosting_port_id == hosting_port_id)
+                hd_models.HostedHostingPortBinding.hosting_port_id ==
+                hosting_port_id)
         return query
 
     def _get_other_port_id_in_pair(self, context, port_id, hosting_device_id):

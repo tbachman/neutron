@@ -34,10 +34,7 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.db.device_manager.hd_models import (
-    HostingDeviceTemplate)
-from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
-from neutron.plugins.cisco.db.device_manager.hd_models import SlotAllocation
+from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.device_manager import hosting_devices_db
 from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.device_manager import service_vm_lib
@@ -56,6 +53,9 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
                help=_("Default security group applied on management port. "
                       "Default value is mgmt_sec_grp")),
+    cfg.BoolOpt('ensure_nova_running', default=True,
+                help=_("Ensure that Nova is running before attempting to"
+                       "create any CSR1kv VM."))
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
@@ -251,9 +251,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             return False
         with context.session.begin(subtransactions=True):
             try:
-                slot_info = context.session.query(SlotAllocation).filter_by(
+                slot_info = (context.session.query(hd_models.SlotAllocation).
+                             filter_by(
                     logical_resource_id=resource['id'],
-                    hosting_device_id=hosting_device['id']).one()
+                    hosting_device_id=hosting_device['id']).one())
             except exc.MultipleResultsFound:
                 # this should not happen
                 LOG.error(_('DB inconsistency: Multiple slot allocation '
@@ -263,7 +264,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                            'device': hosting_device['id']})
                 return False
             except exc.NoResultFound:
-                slot_info = SlotAllocation(
+                slot_info = hd_models.SlotAllocation(
                     template_id=hosting_device['template_id'],
                     hosting_device_id=hosting_device['id'],
                     logical_resource_id=resource['id'],
@@ -305,9 +306,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         """
         with context.session.begin(subtransactions=True):
             try:
-                query = context.session.query(SlotAllocation).filter_by(
+                query = (context.session.query(hd_models.SlotAllocation).
+                         filter_by(
                     logical_resource_id=resource['id'],
-                    hosting_device_id=hosting_device['id'])
+                    hosting_device_id=hosting_device['id']))
                 slot_info = query.one()
             except exc.MultipleResultsFound:
                 # this should not happen
@@ -336,7 +338,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             elif new_allocation == 0:
                 result = query.delete()
                 if (hosting_device['tenant_bound'] is not None and
-                    context.session.query(SlotAllocation).filter_by(
+                    context.session.query(hd_models.SlotAllocation).filter_by(
                         hosting_device_id=hosting_device['id']).first() is
                         None):
                     # make hosting device tenant unbound if no logical
@@ -358,7 +360,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     def get_slot_allocation(self, context, template_id=None,
                             hosting_device_id=None, resource_id=None):
-        query = context.session.query(func.sum(SlotAllocation.num_allocated))
+        query = context.session.query(func.sum(
+            hd_models.SlotAllocation.num_allocated))
         if template_id is not None:
             query = query.filter_by(template_id=template_id)
         if hosting_device_id is not None:
@@ -370,18 +373,21 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def get_hosting_devices_qry(self, context, hosting_device_ids,
                                 load_agent=True):
         """Returns hosting devices with <hosting_device_ids>."""
-        query = context.session.query(HostingDevice)
+        query = context.session.query(hd_models.HostingDevice)
         if load_agent:
             query = query.options(joinedload('cfg_agent'))
         if len(hosting_device_ids) > 1:
-            query = query.filter(HostingDevice.id.in_(hosting_device_ids))
+            query = query.filter(hd_models.HostingDevice.id.in_(
+                hosting_device_ids))
         else:
-            query = query.filter(HostingDevice.id == hosting_device_ids[0])
+            query = query.filter(hd_models.HostingDevice.id ==
+                                 hosting_device_ids[0])
         return query
 
     def delete_all_hosting_devices(self, context, force_delete=False):
         """Deletes all hosting devices."""
-        for item in self._get_collection_query(context, HostingDeviceTemplate):
+        for item in self._get_collection_query(
+                context, hd_models.HostingDeviceTemplate):
             self.delete_all_hosting_devices_by_template(
                 context, template=item, force_delete=force_delete)
 
@@ -396,8 +402,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if plugging_drv is None or hosting_device_drv is None:
                 return
             is_vm = template['host_category'] == VM_CATEGORY
-            query = context.session.query(HostingDevice)
-            query = query.filter(HostingDevice.template_id == template['id'])
+            query = context.session.query(hd_models.HostingDevice)
+            query = query.filter(hd_models.HostingDevice.template_id ==
+                                 template['id'])
             for hd in query:
                 if not (hd.auto_delete or force_delete):
                     # device manager is not responsible for life cycle
@@ -412,7 +419,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 plugging_drv.delete_hosting_device_resources(
                     context, self.l3_tenant_id(), **res)
                 # remove all allocations in this hosting device
-                context.session.query(SlotAllocation).filter_by(
+                context.session.query(hd_models.SlotAllocation).filter_by(
                     hosting_device_id=hd['id']).delete()
                 context.session.delete(hd)
 
@@ -432,7 +439,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             #                'fw': [id1, ...],
             #                ...},
             #     ...}
-            hosting_info = {id: {} for id in hosting_device_ids}
+            hosting_info = dict((id, {}) for id in hosting_device_ids)
             #TODO(bobmel): Modify so service plugins register themselves
             try:
                 l3plugin = manager.NeutronManager.get_service_plugins().get(
@@ -493,7 +500,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         self._gt_pool = eventlet.GreenPool()
         # initialize hosting device pools
         ctx = neutron_context.get_admin_context()
-        for template in ctx.session.query(HostingDeviceTemplate):
+        for template in ctx.session.query(hd_models.HostingDeviceTemplate):
             self._dispatch_pool_maintenance_job(template)
 
     def _dispatch_pool_maintenance_job(self, template):
@@ -502,7 +509,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
-        if not self._nova_running:
+        if cfg.CONF.ensure_nova_running and not self._nova_running:
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
@@ -638,19 +645,24 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                                             template['id'])
         if plugging_drv is None or hosting_device_drv is None or num <= 0:
             return num_deleted
-        query = context.session.query(HostingDevice)
+        query = context.session.query(hd_models.HostingDevice)
         query = query.outerjoin(
-            SlotAllocation,
-            HostingDevice.id == SlotAllocation.hosting_device_id)
-        query = query.filter(HostingDevice.template_id == template['id'],
-                             HostingDevice.admin_state_up == expr.true(),
-                             HostingDevice.tenant_bound == expr.null(),
-                             HostingDevice.auto_delete == expr.true())
-        query = query.group_by(HostingDevice.id).having(
-            func.count(SlotAllocation.logical_resource_id) == 0)
+            hd_models.SlotAllocation,
+            hd_models.HostingDevice.id ==
+            hd_models.SlotAllocation.hosting_device_id)
+        query = query.filter(hd_models.HostingDevice.template_id ==
+                             template['id'],
+                             hd_models.HostingDevice.admin_state_up ==
+                             expr.true(),
+                             hd_models.HostingDevice.tenant_bound ==
+                             expr.null(),
+                             hd_models.HostingDevice.auto_delete ==
+                             expr.true())
+        query = query.group_by(hd_models.HostingDevice.id).having(
+            func.count(hd_models.SlotAllocation.logical_resource_id) == 0)
         query = query.order_by(
-            HostingDevice.created_at.desc(),
-            func.count(SlotAllocation.logical_resource_id))
+            hd_models.HostingDevice.created_at.desc(),
+            func.count(hd_models.SlotAllocation.logical_resource_id))
         hd_candidates = query.all()
         num_possible_to_delete = min(len(hd_candidates), num)
         with context.session.begin(subtransactions=True):
@@ -696,7 +708,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             context, self.l3_tenant_id(), **res)
         with context.session.begin(subtransactions=True):
             # remove all allocations in this hosting device
-            context.session.query(SlotAllocation).filter_by(
+            context.session.query(hd_models.SlotAllocation).filter_by(
                 hosting_device_id=hosting_device['id']).delete()
             context.session.delete(hosting_device)
 
@@ -706,26 +718,27 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         Only slots in tenant unbound hosting devices are counted to ensure
         there is always hosting device slots available regardless of tenant.
         """
-        query = context.session.query(HostingDevice.id)
+        query = context.session.query(hd_models.HostingDevice.id)
         query = query.outerjoin(
-            SlotAllocation,
-            HostingDevice.id == SlotAllocation.hosting_device_id)
+            hd_models.SlotAllocation,
+            hd_models.HostingDevice.id == hd_models.SlotAllocation
+            .hosting_device_id)
         query = query.filter(
-            HostingDevice.template_id == template_id,
-            HostingDevice.admin_state_up == expr.true(),
-            HostingDevice.tenant_bound == expr.null())
-        query = query.group_by(HostingDevice.id)
+            hd_models.HostingDevice.template_id == template_id,
+            hd_models.HostingDevice.admin_state_up == expr.true(),
+            hd_models.HostingDevice.tenant_bound == expr.null())
+        query = query.group_by(hd_models.HostingDevice.id)
         query = query.having(
-            func.sum(SlotAllocation.num_allocated) == expr.null())
+            func.sum(hd_models.SlotAllocation.num_allocated) == expr.null())
         num_hosting_devices = query.count()
         return num_hosting_devices * capacity
 
     def _exclusively_used(self, context, hosting_device, tenant_id):
         """Checks if only <tenant_id>'s resources use <hosting_device>."""
-        return (context.session.query(SlotAllocation).filter(
-            SlotAllocation.hosting_device_id == hosting_device['id'],
-            SlotAllocation.logical_resource_owner != tenant_id).first() is
-                None)
+        return (context.session.query(hd_models.SlotAllocation).filter(
+            hd_models.SlotAllocation.hosting_device_id == hosting_device['id'],
+            hd_models.SlotAllocation.logical_resource_owner != tenant_id).
+                first() is None)
 
     def _update_hosting_device_exclusivity(self, context, hosting_device,
                                            tenant_id):
@@ -737,8 +750,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         with context.session.begin(subtransactions=True):
             hosting_device['tenant_bound'] = tenant_id
             context.session.add(hosting_device)
-            for item in context.session.query(SlotAllocation).filter_by(
-                    hosting_device_id=hosting_device['id']):
+            for item in (context.session.query(hd_models.SlotAllocation).
+                         filter_by(hosting_device_id=hosting_device['id'])):
                 item['tenant_bound'] = tenant_id
                 context.session.add(item)
 

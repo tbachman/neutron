@@ -14,13 +14,14 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from abc import ABCMeta
-from abc import abstractmethod
+
+import abc
+
 
 import six
 
 
-@six.add_metaclass(ABCMeta)
+@six.add_metaclass(abc.ABCMeta)
 class PluginSidePluggingDriver(object):
     """This class defines the API for plugging drivers.
 
@@ -29,7 +30,7 @@ class PluginSidePluggingDriver(object):
     in a plugin compatible way.
     """
 
-    @abstractmethod
+    @abc.abstractmethod
     def create_hosting_device_resources(self, context, complementary_id,
                                         tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
@@ -52,7 +53,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_hosting_device_resources(self, context, id, complementary_id,
                                      tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device.
@@ -73,7 +74,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,
                                         **kwargs):
         """Deletes resources for a hosting device in a plugin specific way.
@@ -89,7 +90,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def setup_logical_port_connectivity(self, context, port_db):
         """Establishes connectivity for a logical port.
 
@@ -101,7 +102,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def teardown_logical_port_connectivity(self, context, port_db):
         """Removes connectivity for a logical port.
 
@@ -115,7 +116,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def extend_hosting_port_info(self, context, port_db, hosting_info):
         """Extends hosting information for a logical port.
 
@@ -128,7 +129,7 @@ class PluginSidePluggingDriver(object):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def allocate_hosting_port(self, context, router_id, port_db, network_type,
                               hosting_device_id):
         """Allocates a hosting port for a logical port.

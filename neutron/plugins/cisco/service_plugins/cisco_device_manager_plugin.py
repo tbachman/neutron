@@ -42,7 +42,7 @@ class CiscoDevMgrPluginRpcCallbacks(n_rpc.RpcCallback,
 
     def __init__(self, plugin):
         super(CiscoDevMgrPluginRpcCallbacks, self).__init__()
-        self._plugin = plugin
+        self._dmplugin = plugin
 
 
 class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,

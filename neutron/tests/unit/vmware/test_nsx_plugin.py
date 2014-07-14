@@ -947,6 +947,13 @@ class TestL3NatTestCase(L3NatTest,
             # Test that route is deleted after dhcp port is removed
             self.assertEqual(len(subnets[0]['host_routes']), 0)
 
+    def _test_floatingip_update(self, expected_status):
+        super(TestL3NatTestCase, self).test_floatingip_update(
+            expected_status)
+
+    def test_floatingip_update(self):
+        self._test_floatingip_update(constants.FLOATINGIP_STATUS_DOWN)
+
     def test_floatingip_disassociate(self):
         with self.port() as p:
             private_sub = {'subnet': {'id':
@@ -956,12 +963,18 @@ class TestL3NatTestCase(L3NatTest,
                 body = self._update('floatingips', fip['floatingip']['id'],
                                     {'floatingip': {'port_id': port_id}})
                 self.assertEqual(body['floatingip']['port_id'], port_id)
+                # Floating IP status should be active
+                self.assertEqual(constants.FLOATINGIP_STATUS_ACTIVE,
+                                 body['floatingip']['status'])
                 # Disassociate
                 body = self._update('floatingips', fip['floatingip']['id'],
                                     {'floatingip': {'port_id': None}})
                 body = self._show('floatingips', fip['floatingip']['id'])
                 self.assertIsNone(body['floatingip']['port_id'])
                 self.assertIsNone(body['floatingip']['fixed_ip_address'])
+                # Floating IP status should be down
+                self.assertEqual(constants.FLOATINGIP_STATUS_DOWN,
+                                 body['floatingip']['status'])
 
     def test_create_router_maintenance_returns_503(self):
         with self._create_l3_ext_network() as net:
@@ -979,6 +992,25 @@ class TestL3NatTestCase(L3NatTest,
                     res = router_req.get_response(self.ext_api)
                     self.assertEqual(webob.exc.HTTPServiceUnavailable.code,
                                      res.status_int)
+
+    def test_router_add_interface_port_removes_security_group(self):
+        with self.router() as r:
+            with self.port(no_delete=True) as p:
+                body = self._router_interface_action('add',
+                                                     r['router']['id'],
+                                                     None,
+                                                     p['port']['id'])
+                self.assertIn('port_id', body)
+                self.assertEqual(body['port_id'], p['port']['id'])
+
+                # fetch port and confirm no security-group on it.
+                body = self._show('ports', p['port']['id'])
+                self.assertEqual(body['port']['security_groups'], [])
+                # clean-up
+                self._router_interface_action('remove',
+                                              r['router']['id'],
+                                              None,
+                                              p['port']['id'])
 
 
 class ExtGwModeTestCase(NsxPluginV2TestCase,

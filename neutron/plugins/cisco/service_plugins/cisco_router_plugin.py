@@ -24,6 +24,7 @@ from neutron.db import db_base_plugin_v2
 #from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
 from neutron.db import model_base
+from neutron import manager
 from neutron.openstack.common import importutils
 import neutron.plugins
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
@@ -46,7 +47,15 @@ class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
 
     def __init__(self, plugin):
         super(CiscoRouterPluginRpcCallbacks, self).__init__()
-        self._plugin = plugin
+        self._l3plugin = plugin
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,

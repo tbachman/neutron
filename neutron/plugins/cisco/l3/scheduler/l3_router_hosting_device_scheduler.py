@@ -16,14 +16,11 @@
 
 from datetime import timedelta
 from operator import itemgetter
-from sqlalchemy import and_
 from sqlalchemy import func
-from sqlalchemy import or_
 from sqlalchemy.sql import expression as expr
 
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
-from neutron.plugins.cisco.db.device_manager.hd_models import SlotAllocation
+from neutron.plugins.cisco.db.device_manager import hd_models
 
 LOG = logging.getLogger(__name__)
 
@@ -78,32 +75,40 @@ class L3RouterHostingDeviceScheduler(object):
         template = router_type['template']
         slot_threshold = template['slot_capacity'] - router_type['slot_need']
 
-        query = context.session.query(HostingDevice.id,
-                                      HostingDevice.created_at,
-                                      func.sum(SlotAllocation.num_allocated))
+        query = context.session.query(
+            hd_models.HostingDevice.id, hd_models.HostingDevice.created_at,
+            func.sum(hd_models.SlotAllocation.num_allocated))
         query = query.outerjoin(
-            SlotAllocation,
-            HostingDevice.id == SlotAllocation.hosting_device_id)
+            hd_models.SlotAllocation,
+            hd_models.HostingDevice.id ==
+            hd_models.SlotAllocation.hosting_device_id)
         query = query.filter(
-            HostingDevice.template_id == template_id,
-            HostingDevice.admin_state_up == expr.true())
+            hd_models.HostingDevice.template_id == template_id,
+            hd_models.HostingDevice.admin_state_up == expr.true())
         if r_hd_binding['share_hosting_device']:
             query = query.filter(
-                or_(HostingDevice.tenant_bound == expr.null(),
-                    HostingDevice.tenant_bound == tenant_id))
+                expr.or_(hd_models.HostingDevice.tenant_bound == expr.null(),
+                         hd_models.HostingDevice.tenant_bound == tenant_id))
         else:
             query = query.filter(
-                or_(SlotAllocation.tenant_bound == tenant_id,
-                    and_(SlotAllocation.tenant_bound == expr.null(),
-                         SlotAllocation.logical_resource_owner == tenant_id),
-                    HostingDevice.tenant_bound == tenant_id,
-                    and_(HostingDevice.tenant_bound == expr.null(),
-                         SlotAllocation.hosting_device_id == expr.null())))
-        query = query.group_by(HostingDevice.id)
+                expr.or_(
+                    hd_models.SlotAllocation.tenant_bound == tenant_id,
+                    expr.and_(
+                        hd_models.SlotAllocation.tenant_bound == expr.null(),
+                        hd_models.SlotAllocation.logical_resource_owner ==
+                        tenant_id),
+                    hd_models.HostingDevice.tenant_bound == tenant_id,
+                    expr.and_(
+                        hd_models.HostingDevice.tenant_bound == expr.null(),
+                        hd_models.SlotAllocation.hosting_device_id ==
+                        expr.null())))
+        query = query.group_by(hd_models.HostingDevice.id)
         query = query.having(
-            or_(func.sum(SlotAllocation.num_allocated) <= slot_threshold,
-                func.sum(SlotAllocation.num_allocated == expr.null())))
-        query = query.order_by(HostingDevice.created_at)
+            expr.or_(func.sum(
+                hd_models.SlotAllocation.num_allocated) <= slot_threshold,
+                func.sum(hd_models.SlotAllocation.num_allocated ==
+                         expr.null())))
+        query = query.order_by(hd_models.HostingDevice.created_at)
         candidates = query.all()
         if len(candidates) == 0:
             # report unsuccessful scheduling
