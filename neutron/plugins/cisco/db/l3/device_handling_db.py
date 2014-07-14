@@ -70,6 +70,9 @@ DEVICE_HANDLING_OPTS = [
                help=_('Username to use for CSR1kv configurations.')),
     cfg.StrOpt('csr1kv_password', default='cisco',
                help=_('Password to use for CSR1kv configurations.')),
+    cfg.BoolOpt('ensure_nova_running', default=True,
+                help=_("Ensure that Nova is running before attempting to"
+                       "create any CSR1kv VM."))
 ]
 
 cfg.CONF.register_opts(DEVICE_HANDLING_OPTS)
@@ -343,7 +346,7 @@ class DeviceHandlingMixin(object):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
-        if not self._nova_running:
+        if cfg.CONF.ensure_nova_running and not self._nova_running:
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:

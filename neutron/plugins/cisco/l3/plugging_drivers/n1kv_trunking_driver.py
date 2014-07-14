@@ -17,9 +17,8 @@
 import eventlet
 
 from oslo.config import cfg
-from sqlalchemy import and_
-from sqlalchemy import or_
 from sqlalchemy.orm import exc
+from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
@@ -263,7 +262,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         # have 'device_owner' attribute set to complementary_id. Hence, we
         # use both attributes in the query to ensure we find all ports.
         query = context.session.query(models_v2.Port)
-        query = query.filter(or_(
+        query = query.filter(expr.or_(
             models_v2.Port.device_id == id,
             models_v2.Port.device_owner == complementary_id))
         for port in query:
@@ -443,10 +442,10 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             stmt = context.session.query(
                 l3_models.HostedHostingPortBinding.hosting_port_id).subquery()
             query = context.session.query(models_v2.Port.id)
-            query = query.filter(and_(models_v2.Port.device_id == hd_id,
-                                      ~models_v2.Port.id.in_(stmt),
-                                      models_v2.Port.name.like('%' + name +
-                                                               '%')))
+            query = query.filter(
+                expr.and_(models_v2.Port.device_id == hd_id,
+                          ~models_v2.Port.id.in_(stmt),
+                          models_v2.Port.name.like('%' + name + '%')))
             query = query.order_by(models_v2.Port.name)
             res = query.first()
             if res is None:

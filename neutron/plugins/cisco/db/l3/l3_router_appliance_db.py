@@ -142,7 +142,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     p_drv.teardown_logical_port_connectivity(e_context,
                                                              router_db.gw_port)
             # conditionally remove router from backlog just to be sure
-            self.remove_router_from_backlog('id')
+            self.remove_router_from_backlog(id)
             if router['hosting_device'] is not None:
                 self.unschedule_router_from_hosting_device(context,
                                                            r_hd_binding)
@@ -365,7 +365,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         # try to reschedule
         for r_id, router in self._backlogged_routers.items():
             self._add_type_and_hosting_device_info(context, router)
-            if router['hosting_device']:
+            if router.get('hosting_device'):
                 # scheduling attempt succeeded
                 scheduled_routers.append(router)
                 self._backlogged_routers.pop(r_id, None)
@@ -433,6 +433,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         except RouterBindingInfoError:
             LOG.error(_('DB inconsistency: No hosting info associated with '
                         'router %s'), router['id'])
+            router['hosting_device'] = None
             return
         router['router_type'] = {
             'id': None,
