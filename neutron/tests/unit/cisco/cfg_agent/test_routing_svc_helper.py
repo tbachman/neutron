@@ -166,7 +166,6 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
         self.routing_helper = RoutingServiceHelper(
             HOST, self.conf, self.agent)
-        self.routing_helper._process_router_floating_ips = mock.Mock()
         self.routing_helper._internal_network_added = mock.Mock()
         self.routing_helper._external_gateway_added = mock.Mock()
         self.routing_helper._internal_network_removed = mock.Mock()
@@ -203,6 +202,8 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
     def test_process_router(self):
         router, ports = prepare_router_data()
+        #Setup mock for call to proceess floating ips
+        self.routing_helper._process_router_floating_ips = mock.Mock()
         fake_floatingips1 = {'floatingips': [
             {'id': _uuid(),
              'floating_ip_address': '8.8.8.8',
@@ -372,7 +373,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.assertNotIn(routers[0]['id'], self.routing_helper.router_info)
 
     def test_router_deleted(self):
-        self.routing_helper.router_deleted(None, FAKE_ID)
+        self.routing_helper.router_deleted(None, [FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_routers_updated(self):
@@ -603,3 +604,52 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         ri = self.routing_helper.router_info[router['id']]
         driver.router_added.assert_called_with(ri)
         self.routing_helper._process_router.assert_called_with(ri)
+
+    def _process_routers_floatingips(self, action='add'):
+        router, port = prepare_router_data()
+        driver = self._mock_driver_and_hosting_device(self.routing_helper)
+        ex_gw_port = router['gw_port']
+        floating_ip_address = '19.4.4.10'
+        fixed_ip_address = '35.4.1.10'
+        fixed_ip_address_2 = '35.4.1.15'
+        port_id = 'fake_port_id'
+        floating_ip = {'fixed_ip_address': fixed_ip_address,
+                       'floating_ip_address': floating_ip_address,
+                       'id': 'floating_ip_id',
+                       'port_id': port_id,
+                       'status': 'ACTIVE', }
+        router[l3_constants.FLOATINGIP_KEY] = [floating_ip]
+        ri = RouterInfo(router['id'], router=router)
+
+        # Default add action
+        self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+        driver.floating_ip_added.assert_called_with(
+            ri, ex_gw_port, floating_ip_address, fixed_ip_address)
+
+        if action == 'remove':
+            router[l3_constants.FLOATINGIP_KEY] = []
+            self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+            driver.floating_ip_removed.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address)
+
+        if action == 'remap':
+            driver.reset_mock()
+            floating_ip_2 = copy.deepcopy(floating_ip)
+            floating_ip_2['fixed_ip_address'] = fixed_ip_address_2
+            ri.router[l3_constants.FLOATINGIP_KEY] = [floating_ip_2]
+
+            self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
+            driver.floating_ip_added.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address_2)
+
+            driver.floating_ip_removed.assert_called_with(
+                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address)
+
+    def test_process_routers_floatingips_add(self):
+        self._process_routers_floatingips(action="add")
+
+    def test_process_routers_floatingips_remove(self):
+        self._process_routers_floatingips(action="remove")
+
+    def test_process_routers_floatingips_remap(self):
+        self._process_routers_floatingips(action="remap")
