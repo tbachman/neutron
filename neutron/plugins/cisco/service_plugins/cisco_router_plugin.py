@@ -20,7 +20,7 @@ from neutron.common import constants as q_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as qdbapi
-from neutron.db import db_base_plugin_v2
+from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
 from neutron.db import model_base
@@ -58,7 +58,7 @@ class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
             return self._plugin
 
 
-class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
+class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
                         routertype_db.RoutertypeDbMixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,

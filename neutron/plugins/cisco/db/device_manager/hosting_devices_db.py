@@ -18,7 +18,7 @@ from oslo.db import exception as db_exc
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
-from neutron.db import db_base_plugin_v2 as base_db
+from neutron.db import common_db_mixin
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
@@ -35,7 +35,7 @@ AUTO_DELETE_DEFAULT = ciscohostingdevicemanager.AUTO_DELETE_DEFAULT
 
 class HostingDeviceDBMixin(
         ciscohostingdevicemanager.CiscoHostingDevicePluginBase,
-        base_db.CommonDbMixin):
+        common_db_mixin.CommonDbMixin):
     """A class implementing DB functionality for hosting devices."""
 
     def create_hosting_device(self, context, hosting_device):
