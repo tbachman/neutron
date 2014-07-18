@@ -78,7 +78,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             self._csr_add_ha(ri, port)
 
     def internal_network_removed(self, ri, port):
-        self._csr_remove_subinterface(ri, port)
+        self._csr_remove_subinterface(port)
 
     def external_gateway_added(self, ri, ex_gw_port):
         self._csr_create_subinterface(ri, ex_gw_port)
@@ -93,7 +93,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             #Remove default route via this network's gateway ip
             self._csr_remove_default_route(ri, ex_gw_ip)
         #Finally, remove external network subinterface
-        self._csr_remove_subinterface(ri, ex_gw_port)
+        self._csr_remove_subinterface(ex_gw_port)
 
     def enable_internal_network_NAT(self, ri, port, ex_gw_port):
         self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
@@ -102,7 +102,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         self._csr_remove_internalnw_nat_rules(ri, [port], ex_gw_port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        self._csr_add_floating_ip(ri, ex_gw_port, floating_ip, fixed_ip)
+        self._csr_add_floating_ip(ri, floating_ip, fixed_ip)
 
     def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
         self._csr_remove_floating_ip(ri, ex_gw_port, floating_ip, fixed_ip)
@@ -125,12 +125,9 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         self._create_subinterface(subinterface, vlan, vrf_name,
                                   gateway_ip, netmask)
 
-    def _csr_remove_subinterface(self, ri, port):
-        vrf_name = self._csr_get_vrf_name(ri)
+    def _csr_remove_subinterface(self, port):
         subinterface = self._get_interface_name_from_hosting_port(port)
-        vlan_id = self._get_interface_vlan_from_hosting_port(port)
-        ip = port['fixed_ips'][0]['ip_address']
-        self._remove_subinterface(subinterface, vlan_id, vrf_name, ip)
+        self._remove_subinterface(subinterface)
 
     def _csr_add_ha(self, ri, port):
         func_dict = {
@@ -203,7 +200,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         vrf_name = self._csr_get_vrf_name(ri)
         self._remove_default_static_route(gw_ip, vrf_name)
 
-    def _csr_add_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
+    def _csr_add_floating_ip(self, ri, floating_ip, fixed_ip):
         vrf_name = self._csr_get_vrf_name(ri)
         self._add_floating_ip(floating_ip, fixed_ip, vrf_name)
 
@@ -278,10 +275,12 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         intfc_name = 'GigabitEthernet%s.%s' % (int_no, vlan)
         return intfc_name
 
-    def _get_interface_vlan_from_hosting_port(self, port):
+    @staticmethod
+    def _get_interface_vlan_from_hosting_port(port):
         return port['hosting_info']['segmentation_id']
 
-    def _get_interface_no_from_hosting_port(self, port):
+    @staticmethod
+    def _get_interface_no_from_hosting_port(port):
         """Calculate interface number from the hosting port's name.
 
          Interfaces in the CSR1kv are created in pairs (T1 and T2) where
@@ -486,13 +485,11 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
                                                   vrf_name, ip, mask)
         self._edit_running_config(confstr, 'CREATE_SUBINTERFACE')
 
-    def _remove_subinterface(self, subinterface, vlan_id, vrf_name, ip):
+    def _remove_subinterface(self, subinterface):
         #Optional : verify this is the correct subinterface
-        conn = self._get_connection()
         if self._interface_exists(subinterface):
-            confstr = snippets.REMOVE_SUBINTERFACE % (subinterface)
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj, 'REMOVE_SUBINTERFACE')
+            confstr = snippets.REMOVE_SUBINTERFACE % subinterface
+            self._edit_running_config(confstr, 'REMOVE_SUBINTERFACE')
 
     def _set_ha_HSRP(self, subinterface, vrf_name, priority, group, ip):
         if vrf_name not in self._get_vrfs():
@@ -649,7 +646,8 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         rpc_obj = conn.edit_config(target='running', config=confstr)
         self._check_response(rpc_obj, snippet)
 
-    def _check_response(self, rpc_obj, snippet_name):
+    @staticmethod
+    def _check_response(rpc_obj, snippet_name):
         """This function checks the rpc response object for status.
 
         This function takes as input the response rpc_obj and the snippet name

@@ -43,10 +43,9 @@ class DeviceStatus(object):
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if not cls._instance:
-            cls._instance = super(DeviceStatus, cls).__new__(
-                cls, *args, **kwargs)
+            cls._instance = super(DeviceStatus, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -152,7 +151,8 @@ class DeviceStatus(object):
         LOG.debug("Response: %s", response_dict)
         return response_dict
 
-    def _is_pingable(self, ip):
+    @staticmethod
+    def _is_pingable(ip):
         """Checks whether an IP address is reachable by pinging.
 
         Use linux utils to execute the ping (ICMP ECHO) command.

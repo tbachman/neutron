@@ -56,6 +56,7 @@ class RouterInfo(object):
         self._snat_action = None
         self.internal_ports = []
         self.floating_ips = []
+        self._router = None
         self.router = router
         self.routes = []
         self.ha_info = router.get('ha_info')
@@ -137,12 +138,12 @@ class RoutingServiceHelper():
 
     ### Notifications from Plugin ####
 
-    def router_deleted(self, context, router_ids):
+    def router_deleted(self, router_ids):
         """Deal with router deletion RPC message."""
         LOG.debug('Got router deleted notification for %s', router_ids)
         self.removed_routers.update(router_ids)
 
-    def routers_updated(self, context, routers):
+    def routers_updated(self, routers):
         """Deal with routers modification and creation RPC message."""
         LOG.debug('Got routers updated notification :%s', routers)
         if routers:
@@ -151,13 +152,13 @@ class RoutingServiceHelper():
                 routers = [router['id'] for router in routers]
             self.updated_routers.update(routers)
 
-    def router_removed_from_agent(self, context, payload):
+    def router_removed_from_agent(self, payload):
         LOG.debug('Got router removed from agent :%r', payload)
         self.removed_routers.add(payload['router_id'])
 
-    def router_added_to_agent(self, context, payload):
+    def router_added_to_agent(self, payload):
         LOG.debug('Got router added to agent :%r', payload)
-        self.routers_updated(context, payload)
+        self.routers_updated(payload)
 
     # Routing service helper public methods
 
@@ -242,7 +243,6 @@ class RoutingServiceHelper():
         router_infos = self.router_info.values()
         num_routers = len(router_infos)
         num_hd_routers = collections.defaultdict(int)
-        routers_per_hd = {}
         for ri in router_infos:
             ex_gw_port = ri.router.get('gw_port')
             if ex_gw_port:
@@ -290,7 +290,8 @@ class RoutingServiceHelper():
             LOG.exception(_("RPC Error in fetching routers from plugin"))
             self.fullsync = True
 
-    def _get_router_ids_from_removed_devices_info(self, removed_devices_info):
+    @staticmethod
+    def _get_router_ids_from_removed_devices_info(removed_devices_info):
         """Extract router_ids from the removed devices info dict.
 
         :param removed_devices_info: Dict of removed devices and their
@@ -310,7 +311,8 @@ class RoutingServiceHelper():
             removed_router_ids += resources.get('routers', [])
         return removed_router_ids
 
-    def _sort_resources_per_hosting_device(self, resources):
+    @staticmethod
+    def _sort_resources_per_hosting_device(resources):
         """This function will sort the resources on hosting device.
 
         The sorting on hosting device is done by looking up the
@@ -617,7 +619,6 @@ class RoutingServiceHelper():
             for del_route in removes:
                 if route['destination'] == del_route['destination']:
                     removes.remove(del_route)
-                    #replace success even if there is no existing route
             driver = self._drivermgr.get_driver(ri.id)
             driver.routes_updated(ri, 'replace', route)
 
@@ -627,13 +628,12 @@ class RoutingServiceHelper():
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes
 
-    def _set_subnet_info(self, port):
+    @staticmethod
+    def _set_subnet_info(port):
         ips = port['fixed_ips']
         if not ips:
-            raise Exception(
-                _("Router port %s has no IP address") % port['id'])
+            raise Exception(_("Router port %s has no IP address") % port['id'])
         if len(ips) > 1:
-            LOG.error(_("Ignoring multiple IPs on router port %s"),
-                      port['id'])
+            LOG.error(_("Ignoring multiple IPs on router port %s"), port['id'])
         prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
         port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)

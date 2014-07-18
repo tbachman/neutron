@@ -32,7 +32,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def router_added(self, router_info):
-        """A logical router is assigned to the hosting device.
+        """A logical router was assigned to the hosting device.
 
         :param router_info: RouterInfo object for this router
         :return None
@@ -41,7 +41,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def router_removed(self, router_info):
-        """A logical router is de-assigned from the hosting device.
+        """A logical router was de-assigned from the hosting device.
 
         :param router_info: RouterInfo object for this router
         :return None
@@ -51,7 +51,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def internal_network_added(self, router_info, port):
-        """An internal network is connected to a router.
+        """An internal network was connected to a router.
 
         :param router_info: RouterInfo object for this router
         :param port : port dictionary for the port where the internal
@@ -62,7 +62,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def internal_network_removed(self, router_info, port):
-        """An internal network is removed from a router.
+        """An internal network was removed from a router.
 
         :param router_info: RouterInfo object for this router
         :param port : port dictionary for the port where the internal
@@ -73,7 +73,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def external_gateway_added(self, router_info, ex_gw_port):
-        """An external network is added to a router.
+        """An external network was added to a router.
 
         :param router_info: RouterInfo object of the router
         :param ex_gw_port : port dictionary for the port where the external
@@ -84,7 +84,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def external_gateway_removed(self, router_info, ex_gw_port):
-        """An external network is removed from the router.
+        """An external network was removed from the router.
 
         :param router_info: RouterInfo object of the router
         :param ex_gw_port : port dictionary for the port where the external
@@ -108,7 +108,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def disable_internal_network_NAT(self, router_info, port, ex_gw_port):
-        """Diable NAT on an internal network.
+        """Disable NAT on an internal network.
 
         :param router_info: RouterInfo object for this router
         :param port       : port dictionary for the port where the internal
@@ -122,7 +122,7 @@ class RoutingDriverBase(object):
     @abc.abstractmethod
     def floating_ip_added(self, router_info, ex_gw_port,
                           floating_ip, fixed_ip):
-        """A floating IP is added.
+        """A floating IP was added.
 
         :param router_info: RouterInfo object for this router
         :param ex_gw_port : port dictionary for the port where the external
@@ -137,7 +137,7 @@ class RoutingDriverBase(object):
     @abc.abstractmethod
     def floating_ip_removed(self, router_info, ex_gw_port,
                             floating_ip, fixed_ip):
-        """A floating IP is removed.
+        """A floating IP was removed.
 
         :param router_info: RouterInfo object for this router
         :param ex_gw_port : port dictionary for the port where the external
@@ -150,7 +150,7 @@ class RoutingDriverBase(object):
 
     @abc.abstractmethod
     def routes_updated(self, router_info, action, route):
-        """Routes are updated for router.
+        """Routes were updated for router.
 
         :param router_info: RouterInfo object for this router
         :param action : Action on the route , either 'replace' or 'delete'

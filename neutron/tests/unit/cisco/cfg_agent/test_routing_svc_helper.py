@@ -97,25 +97,25 @@ class TestRouterInfo(base.BaseTestCase):
                        'gw_port': self.ex_gw_port}
 
     def test_router_info_create(self):
-        id = _uuid()
+        router_id = _uuid()
         fake_router = {}
-        ri = RouterInfo(id, fake_router)
+        ri = RouterInfo(router_id, fake_router)
 
-        self.assertTrue(ri.router_name().endswith(id))
+        self.assertTrue(ri.router_name().endswith(router_id))
 
     def test_router_info_create_with_router(self):
-        id = _uuid()
-        ri = RouterInfo(id, self.router)
-        self.assertTrue(ri.router_name().endswith(id))
+        router_id = _uuid()
+        ri = RouterInfo(router_id, self.router)
+        self.assertTrue(ri.router_name().endswith(router_id))
         self.assertEqual(ri.router, self.router)
         self.assertEqual(ri._router, self.router)
         self.assertTrue(ri.snat_enabled)
         self.assertIsNone(ri.ex_gw_port)
 
     def test_router_info_create_snat_disabled(self):
-        id = _uuid()
+        router_id = _uuid()
         self.router['enable_snat'] = False
-        ri = RouterInfo(id, self.router)
+        ri = RouterInfo(router_id, self.router)
         self.assertFalse(ri.snat_enabled)
 
 
@@ -155,9 +155,9 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.l3pluginApi_cls_p = mock.patch(
             'neutron.plugins.cisco.cfg_agent.service_helpers.'
             'routing_svc_helper.CiscoRoutingPluginApi')
-        l3pluginApi_cls = self.l3pluginApi_cls_p.start()
+        l3plugin_api_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
-        l3pluginApi_cls.return_value = self.plugin_api
+        l3plugin_api_cls.return_value = self.plugin_api
         self.plugin_api.get_routers = mock.MagicMock()
         self.looping_call_p = mock.patch(
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
@@ -282,7 +282,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.routing_helper._process_router(ri)
 
         self.driver.routes_updated.assert_called_with(ri, 'replace',
-                                                    fake_route1)
+                                                      fake_route1)
 
         # Now we replace fake_route1 with fake_route2. This should cause driver
         # to be invoked to delete fake_route1 and 'replace'(==add or replace)
@@ -373,20 +373,19 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.assertNotIn(routers[0]['id'], self.routing_helper.router_info)
 
     def test_router_deleted(self):
-        self.routing_helper.router_deleted(None, [FAKE_ID])
+        self.routing_helper.router_deleted([FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_routers_updated(self):
-        self.routing_helper.routers_updated(None, [FAKE_ID])
+        self.routing_helper.routers_updated([FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_removed_from_agent(self):
-        self.routing_helper.router_removed_from_agent(None,
-                                                     {'router_id': FAKE_ID})
+        self.routing_helper.router_removed_from_agent({'router_id': FAKE_ID})
         self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_added_to_agent(self):
-        self.routing_helper.router_added_to_agent(None, [FAKE_ID])
+        self.routing_helper.router_added_to_agent([FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_process_router_delete(self):
@@ -483,7 +482,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
         router1, port = prepare_router_data()
 
-        def routers_data(context, router_ids=None, hd_ids=[]):
+        def routers_data(context, router_ids=None, hd_ids=None):
             if router_ids:
                 return [router1]
         self.plugin_api.get_routers.side_effect = routers_data
@@ -508,7 +507,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         router, port = prepare_router_data()
         device_id = router['hosting_device']['id']
 
-        def routers_data(context, router_ids=None, hd_ids=[]):
+        def routers_data(context, router_ids=None, hd_ids=None):
             if hd_ids:
                 self.assertEqual([device_id], hd_ids)
                 return [router]

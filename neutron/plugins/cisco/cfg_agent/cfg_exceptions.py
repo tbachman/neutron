@@ -32,7 +32,7 @@ class CSR1kvInitializationException(DriverException):
 class CSR1kvConnectionException(DriverException):
     """Connection exception when connecting to CSR1kv hosting device."""
     message = (_("Failed connecting to CSR1kv. Reason: %(reason)s. "
-                 "Connection params are Host:%(host)s, "
+                 "Connection params are User:%(user)s, Host:%(host)s, "
                  "Port:%(port)s, Device timeout:%(timeout)s."))
 
 

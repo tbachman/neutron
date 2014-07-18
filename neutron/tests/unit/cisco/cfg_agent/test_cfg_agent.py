@@ -76,19 +76,19 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.conf.register_opts(cfg_agent.CiscoCfgAgent.OPTS)
         cfg.CONF.set_override('report_interval', 0, 'AGENT')
         super(TestCiscoCfgAgentWIthStateReporting, self).setUp()
-        self.devmgr_pluginApi_cls_p = mock.patch(
+        self.devmgr_plugin_api_cls_p = mock.patch(
             'neutron.plugins.cisco.cfg_agent.cfg_agent.'
             'CiscoDeviceManagementApi')
-        devmgr_pluginApi_cls = self.devmgr_pluginApi_cls_p.start()
+        devmgr_plugin_api_cls = self.devmgr_plugin_api_cls_p.start()
         self.devmgr_plugin_api = mock.Mock()
-        devmgr_pluginApi_cls.return_value = self.devmgr_plugin_api
+        devmgr_plugin_api_cls.return_value = self.devmgr_plugin_api
         self.devmgr_plugin_api.register_for_duty.return_value = True
 
-        self.pluginreportstateAPI_cls_p = mock.patch(
+        self.plugin_reportstate_api_cls_p = mock.patch(
             'neutron.agent.rpc.PluginReportStateAPI')
-        pluginreportstateAPI_cls = self.pluginreportstateAPI_cls_p.start()
+        plugin_reportstate_api_cls = self.plugin_reportstate_api_cls_p.start()
         self.pluginreportstateAPI = mock.Mock()
-        pluginreportstateAPI_cls.return_value = self.pluginreportstateAPI
+        plugin_reportstate_api_cls.return_value = self.pluginreportstateAPI
 
         self.looping_call_p = mock.patch(
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
@@ -103,11 +103,11 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
     def test_agent_registration_success_after_2_tries(self):
         return_values = [True, False, False]
 
-        def side_effect(self):
+        def register_for_duty(context):
             return return_values.pop()
 
         self.devmgr_plugin_api.register_for_duty = mock.Mock(
-            side_effect=side_effect)
+            side_effect=register_for_duty)
         cfg_agent.REGISTRATION_RETRY_DELAY = 0.01
         agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         self.assertEqual(agent.devmgr_rpc.register_for_duty.call_count, 3)
