@@ -13,17 +13,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo import messaging
+
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as q_const
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.db import agents_db
 from neutron.db import api as db_api
 from neutron.db import dhcp_rpc_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron import manager
 from neutron.openstack.common import log
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import uuidutils
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2 import driver_api as api
@@ -46,21 +46,16 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
     #   1.0 Initial version (from openvswitch/linuxbridge)
     #   1.1 Support Security Group RPC
 
+    # FIXME(ihrachys): we can't use n_rpc.RpcCallback here due to
+    # inheritance problems
+    target = messaging.Target(version=RPC_API_VERSION)
+
     def __init__(self, notifier, type_manager):
         # REVISIT(kmestery): This depends on the first three super classes
         # not having their own __init__ functions. If an __init__() is added
         # to one, this could break. Fix this and add a unit test to cover this
         # test in H3.
         super(RpcCallbacks, self).__init__(notifier, type_manager)
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
     @classmethod
     def _device_to_port_id(cls, device):
@@ -203,7 +198,7 @@ class RpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                                   q_const.PORT_STATUS_ACTIVE)
 
 
-class AgentNotifierApi(proxy.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin,
                        type_tunnel.TunnelAgentRpcApiMixin):
     """Agent side of the openvswitch rpc API.

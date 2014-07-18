@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -118,6 +116,8 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.patch('neutron.plugins.openvswitch.agent.ovs_neutron_agent.'
                        'OVSNeutronAgent.setup_ancillary_bridges',
                        return_value=[]),
+            mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                       'set_secure_mode'),
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                        'get_local_port_mac',
                        return_value='00:00:00:00:00:01'),
@@ -484,6 +484,16 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             self.assertEqual(self.agent.phys_ofports["physnet1"],
                              "int_ofport")
 
+    def test_get_veth_name(self):
+            bridge1 = "A_REALLY_LONG_BRIDGE_NAME1"
+            bridge2 = "A_REALLY_LONG_BRIDGE_NAME2"
+            self.assertEqual(len(self.agent.get_veth_name('int-', bridge1)),
+                             n_const.DEVICE_NAME_MAX_LEN)
+            self.assertEqual(len(self.agent.get_veth_name('int-', bridge2)),
+                             n_const.DEVICE_NAME_MAX_LEN)
+            self.assertNotEqual(self.agent.get_veth_name('int-', bridge1),
+                                self.agent.get_veth_name('int-', bridge2))
+
     def test_port_unbound(self):
         with mock.patch.object(self.agent, "reclaim_local_vlan") as reclvl_fn:
             self.agent.enable_tunneling = True
@@ -612,19 +622,19 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.patch.object(self.agent.tun_br, 'delete_flows'),
         ) as (mod_flow_fn, del_flow_fn):
             self.agent.fdb_remove(None, fdb_entry)
-            del_flow_fn.assert_has_calls([
-                mock.call(table=constants.ARP_RESPONDER,
-                          proto='arp',
-                          dl_vlan='vlan2',
-                          nw_dst=FAKE_IP1),
-                mock.call(table=constants.UCAST_TO_TUN,
-                          dl_vlan='vlan2',
-                          dl_dst=FAKE_MAC)
-            ])
             mod_flow_fn.assert_called_with(table=constants.FLOOD_TO_TUN,
                                            dl_vlan='vlan2',
                                            actions='strip_vlan,'
                                            'set_tunnel:seg2,output:1')
+            expected = [mock.call(table=constants.ARP_RESPONDER,
+                                  proto='arp',
+                                  dl_vlan='vlan2',
+                                  nw_dst=FAKE_IP1),
+                        mock.call(table=constants.UCAST_TO_TUN,
+                                  dl_vlan='vlan2',
+                                  dl_dst=FAKE_MAC),
+                        mock.call(in_port='2')]
+            del_flow_fn.assert_has_calls(expected)
 
     def test_fdb_add_port(self):
         self._prepare_l2_pop_ofports()
@@ -729,7 +739,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                 'gre-1', 'remote_ip', p_const.TYPE_GRE)
             add_tunnel_port_fn.assert_called_once_with(
                 'gre-1', 'remote_ip', self.agent.local_ip, p_const.TYPE_GRE,
-                self.agent.vxlan_udp_port)
+                self.agent.vxlan_udp_port, self.agent.dont_fragment)
             log_error_fn.assert_called_once_with(
                 _("Failed to set-up %(type)s tunnel port to %(ip)s"),
                 {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
@@ -746,10 +756,27 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                 'gre-1', 'remote_ip', p_const.TYPE_GRE)
             add_tunnel_port_fn.assert_called_once_with(
                 'gre-1', 'remote_ip', self.agent.local_ip, p_const.TYPE_GRE,
-                self.agent.vxlan_udp_port)
+                self.agent.vxlan_udp_port, self.agent.dont_fragment)
             log_exc_fn.assert_called_once_with(
                 _("ofport should have a value that can be "
                   "interpreted as an integer"))
+            log_error_fn.assert_called_once_with(
+                _("Failed to set-up %(type)s tunnel port to %(ip)s"),
+                {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
+            self.assertEqual(ofport, 0)
+
+    def test_setup_tunnel_port_error_negative_df_disabled(self):
+        with contextlib.nested(
+            mock.patch.object(self.agent.tun_br, 'add_tunnel_port',
+                              return_value='-1'),
+            mock.patch.object(ovs_neutron_agent.LOG, 'error')
+        ) as (add_tunnel_port_fn, log_error_fn):
+            self.agent.dont_fragment = False
+            ofport = self.agent.setup_tunnel_port(
+                'gre-1', 'remote_ip', p_const.TYPE_GRE)
+            add_tunnel_port_fn.assert_called_once_with(
+                'gre-1', 'remote_ip', self.agent.local_ip, p_const.TYPE_GRE,
+                self.agent.vxlan_udp_port, self.agent.dont_fragment)
             log_error_fn.assert_called_once_with(
                 _("Failed to set-up %(type)s tunnel port to %(ip)s"),
                 {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
@@ -895,6 +922,8 @@ class AncillaryBridgesTest(base.BaseTestCase):
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                        'get_local_port_mac',
                        return_value='00:00:00:00:00:01'),
+            mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                       'set_secure_mode'),
             mock.patch('neutron.agent.linux.ovs_lib.get_bridges',
                        return_value=bridges),
             mock.patch(

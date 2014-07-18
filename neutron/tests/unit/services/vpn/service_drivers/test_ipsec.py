@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Nachi Ueno, NTT I3, Inc.
 # All Rights Reserved.
 #
@@ -37,7 +35,7 @@ FAKE_HOST = 'fake_host'
 class TestIPsecDriver(base.BaseTestCase):
     def setUp(self):
         super(TestIPsecDriver, self).setUp()
-        mock.patch('neutron.openstack.common.rpc.create_connection').start()
+        mock.patch('neutron.common.rpc.create_connection').start()
 
         l3_agent = mock.Mock()
         l3_agent.host = FAKE_HOST

@@ -23,7 +23,7 @@ from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
@@ -47,8 +47,6 @@ from neutron.extensions import providernet as provider
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.common import utils as plugin_utils
 from neutron.plugins.openvswitch.common import config  # noqa
@@ -59,7 +57,8 @@ from neutron.plugins.openvswitch import ovs_db_v2
 LOG = logging.getLogger(__name__)
 
 
-class OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
+class OVSRpcCallbacks(n_rpc.RpcCallback,
+                      dhcp_rpc_base.DhcpRpcCallbackMixin,
                       l3_rpc_base.L3RpcCallbackMixin,
                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
@@ -70,17 +69,9 @@ class OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
     RPC_API_VERSION = '1.1'
 
     def __init__(self, notifier, tunnel_type):
+        super(OVSRpcCallbacks, self).__init__()
         self.notifier = notifier
         self.tunnel_type = tunnel_type
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
     @classmethod
     def get_port_from_device(cls, device):
@@ -182,7 +173,7 @@ class OVSRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         return entry
 
 
-class AgentNotifierApi(proxy.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin):
     '''Agent side of the openvswitch rpc API.
 
@@ -334,20 +325,20 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.notifier = AgentNotifierApi(topics.AGENT)
         self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         )
         self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
-            l3_rpc_agent_api.L3AgentNotify
+            l3_rpc_agent_api.L3AgentNotifyAPI()
         )
-        self.callbacks = OVSRpcCallbacks(self.notifier, self.tunnel_type)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [OVSRpcCallbacks(self.notifier, self.tunnel_type),
+                          agents_db.AgentExtRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def _parse_network_vlan_ranges(self):
         try:

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -27,7 +25,7 @@ class AgentRPCPluginApi(base.BaseTestCase):
         agent = rpc.PluginApi('fake_topic')
         ctxt = context.RequestContext('fake_user', 'fake_project')
         expect_val = 'foo'
-        with mock.patch('neutron.openstack.common.rpc.call') as rpc_call:
+        with mock.patch('neutron.common.rpc.RpcProxy.call') as rpc_call:
             rpc_call.return_value = expect_val
             func_obj = getattr(agent, method)
             if method == 'tunnel_sync':
@@ -83,31 +81,31 @@ class AgentPluginReportState(base.BaseTestCase):
 
 class AgentRPCMethods(base.BaseTestCase):
     def test_create_consumers(self):
-        dispatcher = mock.Mock()
+        endpoints = [mock.Mock()]
         expected = [
             mock.call(new=True),
-            mock.call().create_consumer('foo-topic-op', dispatcher,
+            mock.call().create_consumer('foo-topic-op', endpoints,
                                         fanout=True),
-            mock.call().consume_in_thread()
+            mock.call().consume_in_threads()
         ]
 
-        call_to_patch = 'neutron.openstack.common.rpc.create_connection'
+        call_to_patch = 'neutron.common.rpc.create_connection'
         with mock.patch(call_to_patch) as create_connection:
-            rpc.create_consumers(dispatcher, 'foo', [('topic', 'op')])
+            rpc.create_consumers(endpoints, 'foo', [('topic', 'op')])
             create_connection.assert_has_calls(expected)
 
     def test_create_consumers_with_node_name(self):
-        dispatcher = mock.Mock()
+        endpoints = [mock.Mock()]
         expected = [
             mock.call(new=True),
-            mock.call().create_consumer('foo-topic-op', dispatcher,
+            mock.call().create_consumer('foo-topic-op', endpoints,
                                         fanout=True),
-            mock.call().create_consumer('foo-topic-op.node1', dispatcher,
+            mock.call().create_consumer('foo-topic-op.node1', endpoints,
                                         fanout=False),
-            mock.call().consume_in_thread()
+            mock.call().consume_in_threads()
         ]
 
-        call_to_patch = 'neutron.openstack.common.rpc.create_connection'
+        call_to_patch = 'neutron.common.rpc.create_connection'
         with mock.patch(call_to_patch) as create_connection:
-            rpc.create_consumers(dispatcher, 'foo', [('topic', 'op', 'node1')])
+            rpc.create_consumers(endpoints, 'foo', [('topic', 'op', 'node1')])
             create_connection.assert_has_calls(expected)

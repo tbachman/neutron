@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -30,6 +28,7 @@ from neutron.api.v2 import attributes
 from neutron.api.v2 import router
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
+from neutron.common import ipv6_utils
 from neutron.common import test_lib
 from neutron.common import utils
 from neutron import context
@@ -1396,6 +1395,24 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 self.assertEqual(ips[1]['subnet_id'], subnet2['subnet']['id'])
                 self._delete('ports', port3['port']['id'])
                 self._delete('ports', port4['port']['id'])
+
+    def test_ip_allocation_for_ipv6_subnet_slaac_adddress_mode(self):
+        res = self._create_network(fmt=self.fmt, name='net',
+                                   admin_state_up=True)
+        network = self.deserialize(self.fmt, res)
+        v6_subnet = self._make_subnet(self.fmt, network,
+                                      gateway='fe80::1',
+                                      cidr='fe80::/80',
+                                      ip_version=6,
+                                      ipv6_ra_mode=None,
+                                      ipv6_address_mode=constants.IPV6_SLAAC)
+        port = self._make_port(self.fmt, network['network']['id'])
+        self.assertEqual(len(port['port']['fixed_ips']), 1)
+        port_mac = port['port']['mac_address']
+        subnet_cidr = v6_subnet['subnet']['cidr']
+        eui_addr = str(ipv6_utils.get_ipv6_addr_by_EUI64(subnet_cidr,
+                                                         port_mac))
+        self.assertEqual(port['port']['fixed_ips'][0]['ip_address'], eui_addr)
 
     def test_range_allocation(self):
         with self.subnet(gateway_ip='10.0.0.3',
@@ -3327,6 +3344,56 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             with self.subnet(network=network) as subnet:
                 data = {'subnet': {'ipv6_address_mode':
                                    constants.DHCPV6_STATEFUL}}
+                req = self.new_update_request('subnets', data,
+                                              subnet['subnet']['id'])
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_int,
+                                 webob.exc.HTTPClientError.code)
+
+    def test_update_subnet_allocation_pools(self):
+        """Test that we can successfully update with sane params.
+
+        This will create a subnet with specified allocation_pools
+        Then issue an update (PUT) to update these using correct
+        (i.e. non erroneous) params. Finally retrieve the updated
+        subnet and verify.
+        """
+        allocation_pools = [{'start': '192.168.0.2', 'end': '192.168.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='192.168.0.0/24') as subnet:
+                data = {'subnet': {'allocation_pools': [
+                        {'start': '192.168.0.10', 'end': '192.168.0.20'},
+                        {'start': '192.168.0.30', 'end': '192.168.0.40'}]}}
+                req = self.new_update_request('subnets', data,
+                                              subnet['subnet']['id'])
+                #check res code but then do GET on subnet for verification
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_code, 200)
+                req = self.new_show_request('subnets', subnet['subnet']['id'],
+                                            self.fmt)
+                res = self.deserialize(self.fmt, req.get_response(self.api))
+                self.assertEqual(len(res['subnet']['allocation_pools']), 2)
+                res_vals = res['subnet']['allocation_pools'][0].values() +\
+                    res['subnet']['allocation_pools'][1].values()
+                for pool_val in ['10', '20', '30', '40']:
+                    self.assertTrue('192.168.0.%s' % (pool_val) in res_vals)
+
+    #updating alloc pool to something outside subnet.cidr
+    def test_update_subnet_allocation_pools_invalid_pool_for_cidr(self):
+        """Test update alloc pool to something outside subnet.cidr.
+
+        This makes sure that an erroneous allocation_pool specified
+        in a subnet update (outside subnet cidr) will result in an error.
+        """
+        allocation_pools = [{'start': '192.168.0.2', 'end': '192.168.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='192.168.0.0/24') as subnet:
+                data = {'subnet': {'allocation_pools': [
+                        {'start': '10.0.0.10', 'end': '10.0.0.20'}]}}
                 req = self.new_update_request('subnets', data,
                                               subnet['subnet']['id'])
                 res = req.get_response(self.api)

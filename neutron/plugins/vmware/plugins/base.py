@@ -107,6 +107,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                                    "mac-learning",
                                    "multi-provider",
                                    "network-gateway",
+                                   "nvp-qos",
                                    "port-security",
                                    "provider",
                                    "qos-queue",
@@ -1124,6 +1125,27 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 self._process_network_queue_mapping(context, net, net_queue_id)
             self._process_l3_update(context, net, network['network'])
             self._extend_network_dict_provider(context, net)
+        # If provided, update port name on backend; treat backend failures as
+        # not critical (log error, but do not raise)
+        if 'name' in network['network']:
+            # in case of chained switches update name only for the first one
+            nsx_switch_ids = nsx_utils.get_nsx_switch_ids(
+                context.session, self.cluster, id)
+            if not nsx_switch_ids or len(nsx_switch_ids) < 1:
+                LOG.warn(_("Unable to find NSX mappings for neutron "
+                           "network:%s"), id)
+            try:
+                switchlib.update_lswitch(self.cluster,
+                                         nsx_switch_ids[0],
+                                         network['network']['name'])
+            except api_exc.NsxApiException as e:
+                LOG.warn(_("Logical switch update on NSX backend failed. "
+                           "Neutron network id:%(net_id)s; "
+                           "NSX lswitch id:%(lswitch_id)s;"
+                           "Error:%(error)s"),
+                         {'net_id': id, 'lswitch_id': nsx_switch_ids[0],
+                          'error': e})
+
         return net
 
     def create_port(self, context, port):
@@ -2324,7 +2346,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         # NOTE(salv-orlando): Pre-generating Neutron ID for security group.
         neutron_id = str(uuid.uuid4())
         nsx_secgroup = secgrouplib.create_security_profile(
-            self.cluster, neutron_id, tenant_id, s)
+            self.cluster, tenant_id, neutron_id, s)
         with context.session.begin(subtransactions=True):
             s['id'] = neutron_id
             sec_group = super(NsxPluginV2, self).create_security_group(

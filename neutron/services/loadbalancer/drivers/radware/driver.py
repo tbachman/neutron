@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Radware LTD.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -19,13 +17,16 @@
 import base64
 import copy
 import httplib
-import Queue
-import socket
+import netaddr
 import threading
 import time
 
+
 import eventlet
+eventlet.monkey_patch(thread=True)
+
 from oslo.config import cfg
+from six.moves import queue as Queue
 
 from neutron.api.v2 import attributes
 from neutron.common import log as call_log
@@ -38,8 +39,6 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services.loadbalancer.drivers import abstract_driver
 from neutron.services.loadbalancer.drivers.radware import exceptions as r_exc
-
-eventlet.monkey_patch(thread=True)
 
 LOG = logging.getLogger(__name__)
 
@@ -61,6 +60,8 @@ CREATE_SERVICE_HEADER = {'Content-Type':
 driver_opts = [
     cfg.StrOpt('vdirect_address',
                help=_('IP address of vDirect server.')),
+    cfg.StrOpt('ha_secondary_address',
+               help=_('IP address of secondary vDirect server.')),
     cfg.StrOpt('vdirect_user',
                default='vDirect',
                help=_('vDirect user name.')),
@@ -173,8 +174,10 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
         self.l2_l3_setup_params = rad.l2_l3_setup_params
         self.l4_action_name = rad.l4_action_name
         self.actions_to_skip = rad.actions_to_skip
-        vdirect_address = cfg.CONF.radware.vdirect_address
+        vdirect_address = rad.vdirect_address
+        sec_server = rad.ha_secondary_address
         self.rest_client = vDirectRESTClient(server=vdirect_address,
+                                             secondary_server=sec_server,
                                              user=rad.vdirect_user,
                                              password=rad.vdirect_password)
         self.queue = Queue.Queue()
@@ -185,54 +188,56 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
         self.completion_handler.setDaemon(True)
         self.completion_handler_started = False
 
+    def _populate_vip_graph(self, context, vip):
+        ext_vip = self.plugin.populate_vip_graph(context, vip)
+        vip_network_id = self._get_vip_network_id(context, ext_vip)
+        pool_network_id = self._get_pool_network_id(context, ext_vip)
+
+        # if VIP and PIP are different, we need an IP address for the PIP
+        # so create port on PIP's network and use its IP address
+        if vip_network_id != pool_network_id:
+            pip_address = self._create_port_for_pip(
+                context,
+                vip['tenant_id'],
+                _make_pip_name_from_vip(vip),
+                pool_network_id)
+            ext_vip['pip_address'] = pip_address
+        else:
+            ext_vip['pip_address'] = vip['address']
+
+        ext_vip['vip_network_id'] = vip_network_id
+        ext_vip['pool_network_id'] = pool_network_id
+        return ext_vip
+
     def create_vip(self, context, vip):
         log_info = {'vip': vip,
                     'extended_vip': 'NOT_ASSIGNED',
-                    'vip_network_id': 'NOT_ASSIGNED',
-                    'service_name': 'NOT_ASSIGNED',
-                    'pip_info': 'NOT_ASSIGNED'}
+                    'service_name': 'NOT_ASSIGNED'}
         try:
-            extended_vip = self.plugin.populate_vip_graph(context, vip)
-            vip_network_id = self._get_vip_network_id(context, extended_vip)
-            pool_network_id = self._get_pool_network_id(context, extended_vip)
-            service_name = self._get_service(vip_network_id, pool_network_id,
-                                             vip['tenant_id'])
-            log_info['extended_vip'] = extended_vip
-            log_info['vip_network_id'] = vip_network_id
+            ext_vip = self._populate_vip_graph(context, vip)
+
+            service_name = self._get_service(ext_vip)
+            log_info['extended_vip'] = ext_vip
             log_info['service_name'] = service_name
 
             self._create_workflow(
                 vip['pool_id'], self.l4_wf_name,
                 {"service": service_name})
-            # if VIP and PIP are different, we need an IP address for the PIP
-            # so create port on PIP's network and use its IP address
-            if vip_network_id != pool_network_id:
-                pip_address = self._create_port_for_pip(
-                    context,
-                    vip['tenant_id'],
-                    _make_pip_name_from_vip(vip),
-                    pool_network_id)
-                extended_vip['pip_address'] = pip_address
-                log_info['pip_info'] = 'pip_address: ' + pip_address
-            else:
-                extended_vip['pip_address'] = extended_vip['address']
-                log_info['pip_info'] = 'vip == pip: %(address)s' % extended_vip
             self._update_workflow(
                 vip['pool_id'],
-                self.l4_action_name, extended_vip, context)
+                self.l4_action_name, ext_vip, context)
 
         finally:
             LOG.debug(_('vip: %(vip)s, '
                         'extended_vip: %(extended_vip)s, '
-                        'network_id: %(vip_network_id)s, '
-                        'service_name: %(service_name)s, '
-                        'pip_info: %(pip_info)s'), log_info)
+                        'service_name: %(service_name)s, '),
+                      log_info)
 
     def update_vip(self, context, old_vip, vip):
-        extended_vip = self.plugin.populate_vip_graph(context, vip)
+        ext_vip = self._populate_vip_graph(context, vip)
         self._update_workflow(
             vip['pool_id'], self.l4_action_name,
-            extended_vip, context, False, lb_db.Vip, vip['id'])
+            ext_vip, context, False, lb_db.Vip, vip['id'])
 
     def delete_vip(self, context, vip):
         """Delete a Vip
@@ -243,8 +248,8 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
 
         """
 
-        extended_vip = self.plugin.populate_vip_graph(context, vip)
-        params = _translate_vip_object_graph(extended_vip,
+        ext_vip = self._populate_vip_graph(context, vip)
+        params = _translate_vip_object_graph(ext_vip,
                                              self.plugin, context)
         ids = params.pop('__ids__')
 
@@ -273,7 +278,7 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
             self._remove_workflow(ids, context, delete_pip_nport_function)
 
         except r_exc.RESTRequestFailure:
-            pool_id = extended_vip['pool_id']
+            pool_id = ext_vip['pool_id']
             LOG.exception(_('Failed to remove workflow %s. '
                             'Going to set vip to ERROR status'),
                           pool_id)
@@ -313,10 +318,10 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
                 raise loadbalancer.PoolInUse(pool_id=pool['id'])
             else:
                 vip = self.plugin.get_vip(context, vip_id)
-                extended_vip = self.plugin.populate_vip_graph(context, vip)
+                ext_vip = self._populate_vip_graph(context, vip)
                 self._update_workflow(
                     pool['id'], self.l4_action_name,
-                    extended_vip, context, delete, lb_db.Pool, pool['id'])
+                    ext_vip, context, delete, lb_db.Pool, pool['id'])
         else:
             if delete:
                 self.plugin._delete_db_pool(context, pool['id'])
@@ -341,10 +346,10 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
             context, member['pool_id']).get('vip_id')
         if vip_id:
             vip = self.plugin.get_vip(context, vip_id)
-            extended_vip = self.plugin.populate_vip_graph(context, vip)
+            ext_vip = self._populate_vip_graph(context, vip)
             self._update_workflow(
                 member['pool_id'], self.l4_action_name,
-                extended_vip, context,
+                ext_vip, context,
                 delete, lb_db.Member, member['id'])
         # We have to delete this member but it is not connected to a vip yet
         elif delete:
@@ -387,9 +392,9 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
 
         if vip_id:
             vip = self.plugin.get_vip(context, vip_id)
-            extended_vip = self.plugin.populate_vip_graph(context, vip)
+            ext_vip = self._populate_vip_graph(context, vip)
             self._update_workflow(pool_id, self.l4_action_name,
-                                  extended_vip, context,
+                                  ext_vip, context,
                                   delete, lb_db.PoolMonitorAssociation,
                                   health_monitor['id'])
         elif delete:
@@ -492,8 +497,7 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
                       resource, None, None),
                       [202])
 
-    def _get_service(self, vip_network_id, pool_network_id,
-                     tenant_id):
+    def _get_service(self, ext_vip):
         """Get a service name.
 
         if you can't find one,
@@ -502,20 +506,21 @@ class LoadBalancerDriver(abstract_driver.LoadBalancerAbstractDriver):
         """
         if not self.workflow_templates_exists:
             self._verify_workflow_templates()
-        if vip_network_id != pool_network_id:
-            networks_name = '%s_%s' % (vip_network_id, pool_network_id)
+        if ext_vip['vip_network_id'] != ext_vip['pool_network_id']:
+            networks_name = '%s_%s' % (ext_vip['vip_network_id'],
+                                       ext_vip['pool_network_id'])
             self.l2_l3_ctor_params["twoleg_enabled"] = True
         else:
-            networks_name = vip_network_id
+            networks_name = ext_vip['vip_network_id']
             self.l2_l3_ctor_params["twoleg_enabled"] = False
         incoming_service_name = 'srv_%s' % (networks_name,)
         service_name = self._get_available_service(incoming_service_name)
         if not service_name:
             LOG.debug(
                 'Could not find a service named ' + incoming_service_name)
-            service_name = self._create_service(vip_network_id,
-                                                pool_network_id,
-                                                tenant_id)
+            service_name = self._create_service(ext_vip['vip_network_id'],
+                                                ext_vip['pool_network_id'],
+                                                ext_vip['tenant_id'])
             self.l2_l3_ctor_params["service"] = incoming_service_name
             wf_name = 'l2_l3_' + networks_name
             self._create_workflow(
@@ -633,6 +638,7 @@ class vDirectRESTClient:
 
     def __init__(self,
                  server='localhost',
+                 secondary_server=None,
                  user=None,
                  password=None,
                  port=2189,
@@ -640,6 +646,7 @@ class vDirectRESTClient:
                  timeout=5000,
                  base_uri=''):
         self.server = server
+        self.secondary_server = secondary_server
         self.port = port
         self.ssl = ssl
         self.base_uri = base_uri
@@ -651,14 +658,48 @@ class vDirectRESTClient:
             raise r_exc.AuthenticationMissing()
 
         debug_params = {'server': self.server,
+                        'sec_server': self.secondary_server,
                         'port': self.port,
                         'ssl': self.ssl}
         LOG.debug(_('vDirectRESTClient:init server=%(server)s, '
-                  'port=%(port)d, '
-                  'ssl=%(ssl)r'), debug_params)
+                    'secondary server=%(sec_server)s, '
+                    'port=%(port)d, '
+                    'ssl=%(ssl)r'), debug_params)
+
+    def _flip_servers(self):
+        LOG.warning(_('Fliping servers. Current is: %(server)s, '
+                      'switching to %(secondary)s'),
+                    {'server': self.server,
+                     'secondary': self.secondary_server})
+        self.server, self.secondary_server = self.secondary_server, self.server
+
+    def _recover(self, action, resource, data, headers, binary=False):
+        if self.server and self.secondary_server:
+            self._flip_servers()
+            resp = self._call(action, resource, data,
+                              headers, binary)
+            return resp
+        else:
+            LOG.exception(_('REST client is not able to recover '
+                            'since only one vDirect server is '
+                            'configured.'))
+            return -1, None, None, None
+
+    def call(self, action, resource, data, headers, binary=False):
+        resp = self._call(action, resource, data, headers, binary)
+        if resp[RESP_STATUS] == -1:
+            LOG.warning(_('vDirect server is not responding (%s).'),
+                        self.server)
+            return self._recover(action, resource, data, headers, binary)
+        elif resp[RESP_STATUS] in (301, 307):
+            LOG.warning(_('vDirect server is not active (%s).'),
+                        self.server)
+            return self._recover(action, resource, data, headers, binary)
+        else:
+            return resp
 
     @call_log.log
-    def call(self, action, resource, data, headers, binary=False):
+    def _call(self, action, resource, data, headers, binary=False):
         if resource.startswith('http'):
             uri = resource
         else:
@@ -701,11 +742,11 @@ class vDirectRESTClient:
                 # response was not JSON, ignore the exception
                 pass
             ret = (response.status, response.reason, respstr, respdata)
-        except (socket.timeout, socket.error) as e:
+        except Exception as e:
             log_dict = {'action': action, 'e': e}
             LOG.error(_('vdirectRESTClient: %(action)s failure, %(e)r'),
                       log_dict)
-            ret = 0, None, None, None
+            ret = -1, None, None, None
         conn.close()
         return ret
 
@@ -853,7 +894,14 @@ class OperationCompletionHandler(threading.Thread):
 
 def _rest_wrapper(response, success_codes=[202]):
     """Wrap a REST call and make sure a valid status is returned."""
-    if response[RESP_STATUS] not in success_codes:
+    if not response:
+        raise r_exc.RESTRequestFailure(
+            status=-1,
+            reason="Unknown",
+            description="Unknown",
+            success_codes=success_codes
+        )
+    elif response[RESP_STATUS] not in success_codes:
         raise r_exc.RESTRequestFailure(
             status=response[RESP_STATUS],
             reason=response[RESP_REASON],
@@ -942,13 +990,17 @@ TRANSLATION_DEFAULTS = {'session_persistence_type': 'none',
                         'session_persistence_cookie_name': 'none',
                         'url_path': '/',
                         'http_method': 'GET',
-                        'expected_codes': '200'
+                        'expected_codes': '200',
+                        'subnet': '255.255.255.255',
+                        'mask': '255.255.255.255',
+                        'gw': '255.255.255.255',
                         }
 VIP_PROPERTIES = ['address', 'protocol_port', 'protocol', 'connection_limit',
                   'admin_state_up', 'session_persistence_type',
                   'session_persistence_cookie_name']
 POOL_PROPERTIES = ['protocol', 'lb_method', 'admin_state_up']
-MEMBER_PROPERTIES = ['address', 'protocol_port', 'weight', 'admin_state_up']
+MEMBER_PROPERTIES = ['address', 'protocol_port', 'weight', 'admin_state_up',
+                     'subnet', 'mask', 'gw']
 HEALTH_MONITOR_PROPERTIES = ['type', 'delay', 'timeout', 'max_retries',
                              'admin_state_up', 'url_path', 'http_method',
                              'expected_codes', 'id']
@@ -990,12 +1042,37 @@ def _translate_vip_object_graph(extended_vip, plugin, context):
             'pool'][pool_property]
     for member_property in MEMBER_PROPERTIES:
         trans_vip[_create_key('member', member_property)] = []
+
+    two_leg = (extended_vip['pip_address'] != extended_vip['address'])
+    if two_leg:
+        pool_subnet = plugin._core_plugin.get_subnet(
+            context, extended_vip['pool']['subnet_id'])
+
     for member in extended_vip['members']:
         if member['status'] != constants.PENDING_DELETE:
+            if (two_leg and netaddr.IPAddress(member['address'])
+                not in netaddr.IPNetwork(pool_subnet['cidr'])):
+                member_ports = plugin._core_plugin.get_ports(
+                    context,
+                    filters={'fixed_ips': {'ip_address': [member['address']]},
+                             'tenant_id': [extended_vip['tenant_id']]})
+                if len(member_ports) == 1:
+                    member_subnet = plugin._core_plugin.get_subnet(
+                        context,
+                        member_ports[0]['fixed_ips'][0]['subnet_id'])
+                    member_network = netaddr.IPNetwork(member_subnet['cidr'])
+                    member['subnet'] = str(member_network.network)
+                    member['mask'] = str(member_network.netmask)
+                else:
+                    member['subnet'] = member['address']
+
+                member['gw'] = pool_subnet['gateway_ip']
+
             for member_property in MEMBER_PROPERTIES:
                 trans_vip[_create_key('member', member_property)].append(
                     member.get(member_property,
                                TRANSLATION_DEFAULTS.get(member_property)))
+
     for hm_property in HEALTH_MONITOR_PROPERTIES:
         trans_vip[
             _create_key('hm', _trans_prop_name(hm_property))] = []

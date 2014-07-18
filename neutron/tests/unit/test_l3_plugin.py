@@ -38,9 +38,9 @@ from neutron.extensions import l3
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as service_constants
+from neutron.tests import fake_notifier
 from neutron.tests.unit import test_agent_ext_plugin
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension
@@ -351,10 +351,11 @@ class L3NatTestCaseMixin(object):
                             neutron_context=neutron_context)
 
     def _remove_external_gateway_from_router(self, router_id, network_id,
-                                             expected_code=exc.HTTPOk.code):
+                                             expected_code=exc.HTTPOk.code,
+                                             external_gw_info=None):
         return self._update('routers', router_id,
                             {'router': {'external_gateway_info':
-                                       {}}},
+                                        external_gw_info}},
                             expected_code=expected_code)
 
     def _router_interface_action(self, action, router_id, subnet_id, port_id,
@@ -519,6 +520,18 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
             for k, v in expected_value:
                 self.assertEqual(router['router'][k], v)
 
+    def test_router_create_call_extensions(self):
+        self.extension_called = False
+
+        def _extend_router_dict_test_attr(*args, **kwargs):
+            self.extension_called = True
+
+        db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+            l3.ROUTERS, [_extend_router_dict_test_attr])
+        self.assertFalse(self.extension_called)
+        with self.router():
+            self.assertTrue(self.extension_called)
+
     def test_router_create_with_gwinfo(self):
         with self.subnet() as s:
             self._set_net_external(s['subnet']['network_id'])
@@ -615,9 +628,13 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                     net_id = (body['router']
                               ['external_gateway_info']['network_id'])
                     self.assertEqual(net_id, s2['subnet']['network_id'])
+                    # Validate that we can clear the gateway with
+                    # an empty dict, in any other case, we fall back
+                    # on None as default value
                     self._remove_external_gateway_from_router(
                         r['router']['id'],
-                        s2['subnet']['network_id'])
+                        s2['subnet']['network_id'],
+                        external_gw_info={})
 
     def test_router_update_gateway_with_existed_floatingip(self):
         with self.subnet() as subnet:
@@ -643,7 +660,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                              'subnet.create.end',
                              'router.interface.create',
                              'router.interface.delete']
-        test_notifier.NOTIFICATIONS = []
+        fake_notifier.reset()
         with self.router() as r:
             with self.subnet() as s:
                 body = self._router_interface_action('add',
@@ -666,9 +683,9 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
                 self.assertEqual(
                     set(exp_notifications),
-                    set(n['event_type'] for n in test_notifier.NOTIFICATIONS))
+                    set(n['event_type'] for n in fake_notifier.NOTIFICATIONS))
 
-                for n in test_notifier.NOTIFICATIONS:
+                for n in fake_notifier.NOTIFICATIONS:
                     if n['event_type'].startswith('router.interface.'):
                         payload = n['payload']['router_interface']
                         self.assertIn('id', payload)
@@ -1880,9 +1897,8 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
         ext_mgr = ext_mgr or L3TestExtensionManager()
 
         if self.mock_rescheduling:
-            rescheduling_patcher = mock.patch(
-                '%s._check_router_needs_rescheduling' % plugin)
-            rescheduling_patcher.start().return_value = False
+            mock.patch('%s._check_router_needs_rescheduling' % plugin,
+                       new=lambda *a: False).start()
 
         super(L3BaseForIntTests, self).setUp(plugin=plugin, ext_mgr=ext_mgr,
                                              service_plugins=service_plugins)

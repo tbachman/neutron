@@ -81,7 +81,7 @@ class TunnelTest(base.BaseTestCase):
 
         self.INT_BRIDGE = 'integration_bridge'
         self.TUN_BRIDGE = 'tunnel_bridge'
-        self.MAP_TUN_BRIDGE = 'tunnel_bridge_mapping'
+        self.MAP_TUN_BRIDGE = 'tun_br_map'
         self.NET_MAPPING = {'net1': self.MAP_TUN_BRIDGE}
         self.INT_OFPORT = 11111
         self.TUN_OFPORT = 22222
@@ -105,9 +105,8 @@ class TunnelTest(base.BaseTestCase):
         ]
 
         self.mock_int_bridge = self.ovs_bridges[self.INT_BRIDGE]
-        self.mock_int_bridge.get_local_port_mac.return_value = '000000000001'
         self.mock_int_bridge_expected = [
-            mock.call.get_local_port_mac(),
+            mock.call.set_secure_mode(),
             mock.call.delete_port('patch-tun'),
             mock.call.remove_all_flows(),
             mock.call.add_flow(priority=1, actions='normal'),
@@ -121,12 +120,12 @@ class TunnelTest(base.BaseTestCase):
         self.mock_map_tun_bridge_expected = [
             mock.call.remove_all_flows(),
             mock.call.add_flow(priority=1, actions='normal'),
-            mock.call.delete_port('phy-tunnel_bridge_mapping'),
+            mock.call.delete_port('phy-%s' % self.MAP_TUN_BRIDGE),
             mock.call.add_port(self.intb),
         ]
         self.mock_int_bridge.add_port.return_value = None
         self.mock_int_bridge_expected += [
-            mock.call.delete_port('int-tunnel_bridge_mapping'),
+            mock.call.delete_port('int-%s' % self.MAP_TUN_BRIDGE),
             mock.call.add_port(self.inta)
         ]
         self.inta_expected = [mock.call.link.set_up()]
@@ -198,13 +197,13 @@ class TunnelTest(base.BaseTestCase):
         self.device_exists = mock.patch.object(ip_lib, 'device_exists').start()
         self.device_exists.return_value = True
         self.device_exists_expected = [
-            mock.call('tunnel_bridge_mapping', 'sudo'),
-            mock.call('int-tunnel_bridge_mapping', 'sudo'),
+            mock.call(self.MAP_TUN_BRIDGE, 'sudo'),
+            mock.call('int-%s' % self.MAP_TUN_BRIDGE, 'sudo'),
         ]
 
         self.ipdevice = mock.patch.object(ip_lib, 'IPDevice').start()
         self.ipdevice_expected = [
-            mock.call('int-tunnel_bridge_mapping', 'sudo'),
+            mock.call('int-%s' % self.MAP_TUN_BRIDGE, 'sudo'),
             mock.call().link.delete()
         ]
         self.ipwrapper = mock.patch.object(ip_lib, 'IPWrapper').start()
@@ -212,8 +211,8 @@ class TunnelTest(base.BaseTestCase):
         add_veth.return_value = [self.inta, self.intb]
         self.ipwrapper_expected = [
             mock.call('sudo'),
-            mock.call().add_veth('int-tunnel_bridge_mapping',
-                                 'phy-tunnel_bridge_mapping')
+            mock.call().add_veth('int-%s' % self.MAP_TUN_BRIDGE,
+                                 'phy-%s' % self.MAP_TUN_BRIDGE)
         ]
 
         self.get_bridges = mock.patch.object(ovs_lib, 'get_bridges').start()
@@ -248,11 +247,12 @@ class TunnelTest(base.BaseTestCase):
         self._verify_mock_call(self.execute, self.execute_expected)
 
     def test_construct(self):
-        ovs_neutron_agent.OVSNeutronAgent(self.INT_BRIDGE,
-                                          self.TUN_BRIDGE,
-                                          '10.0.0.1', self.NET_MAPPING,
-                                          'sudo', 2, ['gre'],
-                                          self.VETH_MTU)
+        agent = ovs_neutron_agent.OVSNeutronAgent(self.INT_BRIDGE,
+                                                  self.TUN_BRIDGE,
+                                                  '10.0.0.1', self.NET_MAPPING,
+                                                  'sudo', 2, ['gre'],
+                                                  self.VETH_MTU)
+        self.assertEqual(agent.agent_id, 'ovs-agent-%s' % cfg.CONF.host)
         self._verify_mock_calls()
 
     # TODO(ethuleau): Initially, local ARP responder is be dependent to the
@@ -291,24 +291,12 @@ class TunnelTest(base.BaseTestCase):
         self._verify_mock_calls()
 
     def test_construct_vxlan(self):
-        with mock.patch.object(ovs_lib, 'get_installed_ovs_klm_version',
-                               return_value="1.10") as klm_ver:
-            with mock.patch.object(ovs_lib, 'get_installed_ovs_usr_version',
-                                   return_value="1.10") as usr_ver:
-                with mock.patch.object(ovs_lib, 'get_installed_kernel_version',
-                                       return_value=(
-                                           constants.
-                                           MINIMUM_LINUX_KERNEL_OVS_VXLAN
-                                       )) as kernel_ver:
-                    ovs_neutron_agent.OVSNeutronAgent(self.INT_BRIDGE,
-                                                      self.TUN_BRIDGE,
-                                                      '10.0.0.1',
-                                                      self.NET_MAPPING,
-                                                      'sudo', 2, ['vxlan'],
-                                                      self.VETH_MTU)
-        klm_ver.assert_called_once_with()
-        kernel_ver.assert_called_once_with()
-        usr_ver.assert_called_once_with('sudo')
+        ovs_neutron_agent.OVSNeutronAgent(self.INT_BRIDGE,
+                                          self.TUN_BRIDGE,
+                                          '10.0.0.1',
+                                          self.NET_MAPPING,
+                                          'sudo', 2, ['vxlan'],
+                                          self.VETH_MTU)
         self._verify_mock_calls()
 
     def test_provision_local_vlan(self):
@@ -520,7 +508,7 @@ class TunnelTest(base.BaseTestCase):
         self.mock_tun_bridge.add_tunnel_port.return_value = tunnel_port
         self.mock_tun_bridge_expected += [
             mock.call.add_tunnel_port('gre-1', '10.0.10.1', '10.0.0.1',
-                                      'gre', 4789),
+                                      'gre', 4789, True),
             mock.call.add_flow(priority=1, in_port=tunnel_port,
                                actions='resubmit(,2)')
         ]

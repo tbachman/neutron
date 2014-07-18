@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 Red Hat, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -82,6 +80,9 @@ agent_opts = [
                        "remote mac and IPs and improve tunnel scalability")),
     cfg.BoolOpt('arp_responder', default=False,
                 help=_("Enable local ARP responder if it is supported")),
+    cfg.BoolOpt('dont_fragment', default=True,
+                help=_("Set or un-set the don't fragment (DF) bit on "
+                       "outgoing IP packet carrying GRE/VXLAN tunnel")),
 ]
 
 

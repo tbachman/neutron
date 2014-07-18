@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -49,7 +47,8 @@ class FakePort1:
     id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
     admin_state_up = True
     device_owner = 'foo1'
-    fixed_ips = [FakeIPAllocation('192.168.0.2')]
+    fixed_ips = [FakeIPAllocation('192.168.0.2',
+                                  'dddddddd-dddd-dddd-dddd-dddddddddddd')]
     mac_address = '00:00:80:aa:bb:cc'
 
     def __init__(self):
@@ -60,7 +59,8 @@ class FakePort2:
     id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
     admin_state_up = False
     device_owner = 'foo2'
-    fixed_ips = [FakeIPAllocation('fdca:3ba5:a17a:4ba3::2')]
+    fixed_ips = [FakeIPAllocation('fdca:3ba5:a17a:4ba3::2',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff')]
     mac_address = '00:00:f3:aa:bb:cc'
 
     def __init__(self):
@@ -71,9 +71,24 @@ class FakePort3:
     id = '44444444-4444-4444-4444-444444444444'
     admin_state_up = True
     device_owner = 'foo3'
-    fixed_ips = [FakeIPAllocation('192.168.0.3'),
-                 FakeIPAllocation('fdca:3ba5:a17a:4ba3::3')]
+    fixed_ips = [FakeIPAllocation('192.168.0.3',
+                                  'dddddddd-dddd-dddd-dddd-dddddddddddd'),
+                 FakeIPAllocation('fdca:3ba5:a17a:4ba3::3',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff')]
     mac_address = '00:00:0f:aa:bb:cc'
+
+    def __init__(self):
+        self.extra_dhcp_opts = []
+
+
+class FakePort4:
+
+    id = 'gggggggg-gggg-gggg-gggg-gggggggggggg'
+    admin_state_up = False
+    device_owner = 'foo3'
+    fixed_ips = [FakeIPAllocation('192.168.0.4',
+                                  'ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
+    mac_address = '00:16:3E:C2:77:1D'
 
     def __init__(self):
         self.extra_dhcp_opts = []
@@ -126,8 +141,8 @@ class FakeV4HostRouteGateway:
 
 
 class FakeV6HostRoute:
-    destination = 'gdca:3ba5:a17a:4ba3::/64'
-    nexthop = 'gdca:3ba5:a17a:4ba3::1'
+    destination = '2001:0200:feed:7ac0::/64'
+    nexthop = '2001:0200:feed:7ac0::1'
 
 
 class FakeV4Subnet:
@@ -193,7 +208,9 @@ class FakeV6Subnet:
     gateway_ip = 'fdca:3ba5:a17a:4ba3::1'
     enable_dhcp = True
     host_routes = [FakeV6HostRoute]
-    dns_nameservers = ['gdca:3ba5:a17a:4ba3::1']
+    dns_nameservers = ['2001:0200:feed:7ac0::1']
+    ipv6_ra_mode = None
+    ipv6_address_mode = None
 
 
 class FakeV4SubnetNoDHCP:
@@ -204,6 +221,17 @@ class FakeV4SubnetNoDHCP:
     enable_dhcp = False
     host_routes = []
     dns_nameservers = []
+
+
+class FakeV6SubnetSlaac:
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+    ip_version = 6
+    cidr = 'ffda:3ba5:a17a:4ba3::/64'
+    gateway_ip = 'ffda:3ba5:a17a:4ba3::1'
+    enable_dhcp = True
+    host_routes = [FakeV6HostRoute]
+    ipv6_address_mode = constants.IPV6_SLAAC
+    ipv6_ra_mode = None
 
 
 class FakeV4SubnetNoGateway:
@@ -368,6 +396,13 @@ class FakeV4NetworkPxe3Ports:
                 DhcpOpt(opt_name='tftp-server', opt_value='192.168.0.7'),
                 DhcpOpt(opt_name='server-ip-address', opt_value='192.168.0.7'),
                 DhcpOpt(opt_name='bootfile-name', opt_value='pxelinux3.0')]
+
+
+class FakeDualStackNetworkSingleDHCP:
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+
+    subnets = [FakeV4Subnet(), FakeV6SubnetSlaac()]
+    ports = [FakePort1(), FakePort4(), FakeRouterPort()]
 
 
 class LocalChild(dhcp.DhcpLocalProcess):
@@ -750,18 +785,19 @@ class TestDnsmasq(TestBase):
             max_leases=256)
 
     def test_output_opts_file(self):
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:tag1,option:dns-server,%s
-tag:tag1,option:classless-static-route,%s,%s
-tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
-                                  fake_v6_cidr, fake_v6,
-                                  fake_v6_cidr, fake_v6)
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:tag1,option:dns-server,%s\n'
+            'tag:tag1,option:classless-static-route,%s,%s\n'
+            'tag:tag1,249,%s,%s').lstrip() % (fake_v6,
+                                              fake_v6_cidr, fake_v6,
+                                              fake_v6_cidr, fake_v6)
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
@@ -772,11 +808,11 @@ tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_gateway_route(self):
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
         expected = """
 tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:router,10.0.0.1
+tag:tag0,option:router,192.168.0.1
 tag:tag1,option:dns-server,%s
 tag:tag1,option:classless-static-route,%s,%s
 tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
@@ -816,11 +852,12 @@ tag:tag0,option:router,192.168.0.1""".lstrip()
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_single_dhcp(self):
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1""".lstrip()
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1').lstrip()
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
             dm = dhcp.Dnsmasq(self.conf, FakeDualNetworkSingleDHCP(),
@@ -830,11 +867,12 @@ tag:tag0,option:router,192.168.0.1""".lstrip()
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_single_dhcp_ver2_48(self):
-        expected = """
-tag0,option:dns-server,8.8.8.8
-tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag0,249,20.0.0.1/24,20.0.0.1
-tag0,option:router,192.168.0.1""".lstrip()
+        expected = (
+            'tag0,option:dns-server,8.8.8.8\n'
+            'tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag0,option:router,192.168.0.1').lstrip()
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
             dm = dhcp.Dnsmasq(self.conf, FakeDualNetworkSingleDHCP(),
@@ -862,10 +900,12 @@ tag:tag0,option:router""".lstrip()
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_no_neutron_router_on_subnet(self):
-        expected = """
-tag:tag0,option:classless-static-route,169.254.169.254/32,192.168.1.2
-tag:tag0,249,169.254.169.254/32,192.168.1.2
-tag:tag0,option:router,192.168.1.1""".lstrip()
+        expected = (
+            'tag:tag0,option:classless-static-route,'
+            '169.254.169.254/32,192.168.1.2,0.0.0.0/0,192.168.1.1\n'
+            'tag:tag0,249,169.254.169.254/32,192.168.1.2,'
+            '0.0.0.0/0,192.168.1.1\n'
+            'tag:tag0,option:router,192.168.1.1').lstrip()
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
@@ -880,17 +920,24 @@ tag:tag0,option:router,192.168.1.1""".lstrip()
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_pxe_2port_1net(self):
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:tftp-server,192.168.0.3
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:server-ip-address,192.168.0.2
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:bootfile-name,pxelinux.0
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:tftp-server,192.168.0.3
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:server-ip-address,192.168.0.2
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux.0"""
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:tftp-server,192.168.0.3\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:server-ip-address,192.168.0.2\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:bootfile-name,pxelinux.0\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:tftp-server,192.168.0.3\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:server-ip-address,192.168.0.2\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:bootfile-name,pxelinux.0')
         expected = expected.lstrip()
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
@@ -902,17 +949,24 @@ tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux.0"""
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_pxe_2port_1net_diff_details(self):
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:tftp-server,192.168.0.3
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:server-ip-address,192.168.0.2
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:bootfile-name,pxelinux.0
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:tftp-server,192.168.0.5
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:server-ip-address,192.168.0.5
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux.0"""
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:tftp-server,192.168.0.3\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:server-ip-address,192.168.0.2\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:bootfile-name,pxelinux.0\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:tftp-server,192.168.0.5\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:server-ip-address,192.168.0.5\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:bootfile-name,pxelinux.0')
         expected = expected.lstrip()
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
@@ -924,20 +978,30 @@ tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux.0"""
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_pxe_3port_1net_diff_details(self):
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:tftp-server,192.168.0.3
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:server-ip-address,192.168.0.2
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:bootfile-name,pxelinux.0
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:tftp-server,192.168.0.5
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:server-ip-address,192.168.0.5
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux2.0
-tag:44444444-4444-4444-4444-444444444444,option:tftp-server,192.168.0.7
-tag:44444444-4444-4444-4444-444444444444,option:server-ip-address,192.168.0.7
-tag:44444444-4444-4444-4444-444444444444,option:bootfile-name,pxelinux3.0"""
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:tftp-server,192.168.0.3\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:server-ip-address,192.168.0.2\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:bootfile-name,pxelinux.0\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:tftp-server,192.168.0.5\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:server-ip-address,192.168.0.5\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:bootfile-name,pxelinux2.0\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:tftp-server,192.168.0.7\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:server-ip-address,192.168.0.7\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:bootfile-name,pxelinux3.0')
         expected = expected.lstrip()
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
@@ -950,20 +1014,30 @@ tag:44444444-4444-4444-4444-444444444444,option:bootfile-name,pxelinux3.0"""
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_output_opts_file_pxe_3port_2net(self):
-        expected = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:tftp-server,192.168.0.3
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:server-ip-address,192.168.0.2
-tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,option:bootfile-name,pxelinux.0
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:tftp-server,192.168.1.3
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:server-ip-address,192.168.1.2
-tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux2.0
-tag:44444444-4444-4444-4444-444444444444,option:tftp-server,192.168.1.3
-tag:44444444-4444-4444-4444-444444444444,option:server-ip-address,192.168.1.2
-tag:44444444-4444-4444-4444-444444444444,option:bootfile-name,pxelinux3.0"""
+        expected = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:tftp-server,192.168.0.3\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:server-ip-address,192.168.0.2\n'
+            'tag:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee,'
+            'option:bootfile-name,pxelinux.0\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:tftp-server,192.168.1.3\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:server-ip-address,192.168.1.2\n'
+            'tag:ffffffff-ffff-ffff-ffff-ffffffffffff,'
+            'option:bootfile-name,pxelinux2.0\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:tftp-server,192.168.1.3\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:server-ip-address,192.168.1.2\n'
+            'tag:44444444-4444-4444-4444-444444444444,'
+            'option:bootfile-name,pxelinux3.0')
         expected = expected.lstrip()
 
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
@@ -1004,18 +1078,19 @@ tag:44444444-4444-4444-4444-444444444444,option:bootfile-name,pxelinux3.0"""
             'host-192-168-0-1\n'
         ).lstrip()
         exp_opt_name = '/dhcp/cccccccc-cccc-cccc-cccc-cccccccccccc/opts'
-        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
-        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
-        exp_opt_data = """
-tag:tag0,option:dns-server,8.8.8.8
-tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
-tag:tag0,249,20.0.0.1/24,20.0.0.1
-tag:tag0,option:router,192.168.0.1
-tag:tag1,option:dns-server,%s
-tag:tag1,option:classless-static-route,%s,%s
-tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
-                                  fake_v6_cidr, fake_v6,
-                                  fake_v6_cidr, fake_v6)
+        fake_v6 = '2001:0200:feed:7ac0::1'
+        fake_v6_cidr = '2001:0200:feed:7ac0::/64'
+        exp_opt_data = (
+            'tag:tag0,option:dns-server,8.8.8.8\n'
+            'tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1,'
+            '0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,249,20.0.0.1/24,20.0.0.1,0.0.0.0/0,192.168.0.1\n'
+            'tag:tag0,option:router,192.168.0.1\n'
+            'tag:tag1,option:dns-server,%s\n'
+            'tag:tag1,option:classless-static-route,%s,%s\n'
+            'tag:tag1,249,%s,%s').lstrip() % (fake_v6,
+                                              fake_v6_cidr, fake_v6,
+                                              fake_v6_cidr, fake_v6)
         return (exp_host_name, exp_host_data,
                 exp_addn_name, exp_addn_data,
                 exp_opt_name, exp_opt_data,)
@@ -1210,3 +1285,17 @@ tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
 
     def test_check_version_failed_cmd_execution(self):
         self._check_version('Error while executing command', 0)
+
+    def test_only_populates_dhcp_enabled_subnets(self):
+        exp_host_name = '/dhcp/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/host'
+        exp_host_data = ('00:00:80:aa:bb:cc,host-192-168-0-2.openstacklocal,'
+                         '192.168.0.2\n'
+                         '00:16:3E:C2:77:1D,host-192-168-0-4.openstacklocal,'
+                         '192.168.0.4\n'
+                         '00:00:0f:rr:rr:rr,host-192-168-0-1.openstacklocal,'
+                         '192.168.0.1\n').lstrip()
+        dm = dhcp.Dnsmasq(self.conf, FakeDualStackNetworkSingleDHCP(),
+                          version=float(2.59))
+        dm._output_hosts_file()
+        self.safe.assert_has_calls([mock.call(exp_host_name,
+                                              exp_host_data)])

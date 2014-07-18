@@ -23,7 +23,9 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
 from neutron.common import exceptions as exc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
+from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.db import allowedaddresspairs_db as addr_pair_db
 from neutron.db import db_base_plugin_v2
@@ -44,7 +46,6 @@ from neutron.openstack.common import importutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log
-from neutron.openstack.common import rpc as c_rpc
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import config  # noqa
@@ -125,14 +126,14 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         )
 
-    def start_rpc_listener(self):
-        self.callbacks = rpc.RpcCallbacks(self.notifier, self.type_manager)
+    def start_rpc_listeners(self):
+        self.endpoints = [rpc.RpcCallbacks(self.notifier, self.type_manager),
+                          agents_db.AgentExtRpcCallback()]
         self.topic = topics.PLUGIN
-        self.conn = c_rpc.create_connection(new=True)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher,
+        self.conn = n_rpc.create_connection(new=True)
+        self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
-        return self.conn.consume_in_thread()
+        return self.conn.consume_in_threads()
 
     def _process_provider_segment(self, segment):
         network_type = self._get_attribute(segment, provider.NETWORK_TYPE)

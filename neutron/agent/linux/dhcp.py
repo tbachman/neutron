@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -77,17 +75,46 @@ WIN2k3_STATIC_DNS = 249
 NS_PREFIX = 'qdhcp-'
 
 
-class DictModel(object):
+class DictModel(dict):
     """Convert dict into an object that provides attribute access to values."""
-    def __init__(self, d):
-        for key, value in d.iteritems():
-            if isinstance(value, list):
-                value = [DictModel(item) if isinstance(item, dict) else item
-                         for item in value]
-            elif isinstance(value, dict):
-                value = DictModel(value)
 
-            setattr(self, key, value)
+    def __init__(self, *args, **kwargs):
+        """Convert dict values to DictModel values."""
+        super(DictModel, self).__init__(*args, **kwargs)
+
+        def needs_upgrade(item):
+            """Check if `item` is a dict and needs to be changed to DictModel.
+            """
+            return isinstance(item, dict) and not isinstance(item, DictModel)
+
+        def upgrade(item):
+            """Upgrade item if it needs to be upgraded."""
+            if needs_upgrade(item):
+                return DictModel(item)
+            else:
+                return item
+
+        for key, value in self.iteritems():
+            if isinstance(value, (list, tuple)):
+                # Keep the same type but convert dicts to DictModels
+                self[key] = type(value)(
+                    (upgrade(item) for item in value)
+                )
+            elif needs_upgrade(value):
+                # Change dict instance values to DictModel instance values
+                self[key] = DictModel(value)
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as e:
+            raise AttributeError(e)
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+    def __delattr__(self, name):
+        del self[name]
 
 
 class NetModel(DictModel):
@@ -337,9 +364,14 @@ class Dnsmasq(DhcpLocalProcess):
             if subnet.ip_version == 4:
                 mode = 'static'
             else:
-                # TODO(mark): how do we indicate other options
-                # ra-only, slaac, ra-nameservers, and ra-stateless.
-                mode = 'static'
+                # Note(scollins) If the IPv6 attributes are not set, set it as
+                # static to preserve previous behavior
+                if (not getattr(subnet, 'ipv6_ra_mode', None) and
+                        not getattr(subnet, 'ipv6_address_mode', None)):
+                    mode = 'static'
+                elif getattr(subnet, 'ipv6_ra_mode', None) is None:
+                    # RA mode is not set - do not launch dnsmasq
+                    continue
             if self.version >= self.MINIMUM_VERSION:
                 set_tag = 'set:'
             else:
@@ -416,8 +448,18 @@ class Dnsmasq(DhcpLocalProcess):
             name,  # Host name and domain name in the format 'hostname.domain'.
         )
         """
+        v6_nets = dict((subnet.id, subnet) for subnet in
+                       self.network.subnets if subnet.ip_version == 6)
         for port in self.network.ports:
             for alloc in port.fixed_ips:
+                # Note(scollins) Only create entries that are
+                # associated with the subnet being managed by this
+                # dhcp agent
+                if alloc.subnet_id in v6_nets:
+                    ra_mode = v6_nets[alloc.subnet_id].ipv6_ra_mode
+                    addr_mode = v6_nets[alloc.subnet_id].ipv6_address_mode
+                    if (ra_mode is None and addr_mode == constants.IPV6_SLAAC):
+                        continue
                 hostname = 'host-%s' % alloc.ip_address.replace(
                     '.', '-').replace(':', '-')
                 fqdn = '%s.%s' % (hostname, self.conf.dhcp_domain)
@@ -537,7 +579,8 @@ class Dnsmasq(DhcpLocalProcess):
             host_routes = []
             for hr in subnet.host_routes:
                 if hr.destination == "0.0.0.0/0":
-                    gateway = hr.nexthop
+                    if not gateway:
+                        gateway = hr.nexthop
                 else:
                     host_routes.append("%s,%s" % (hr.destination, hr.nexthop))
 
@@ -550,6 +593,8 @@ class Dnsmasq(DhcpLocalProcess):
                 )
 
             if host_routes:
+                if gateway and subnet.ip_version == 4:
+                    host_routes.append("%s,%s" % ("0.0.0.0/0", gateway))
                 options.append(
                     self._format_option(i, 'classless-static-route',
                                         ','.join(host_routes)))

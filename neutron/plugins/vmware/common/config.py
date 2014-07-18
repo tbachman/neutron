@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 VMware, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -116,7 +114,7 @@ connection_opts = [
                default=30,
                help=_('Total time limit for a cluster request')),
     cfg.IntOpt('http_timeout',
-               default=10,
+               default=30,
                help=_('Time before aborting a request')),
     cfg.IntOpt('retries',
                default=2,

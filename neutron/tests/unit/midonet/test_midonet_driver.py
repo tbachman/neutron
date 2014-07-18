@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (C) 2012 Midokura Japan K.K.
 # Copyright (C) 2013 Midokura PTE LTD
 # All Rights Reserved.
@@ -19,8 +17,6 @@
 # @author: Rossella Sblendido, Midokura Japan KK
 
 import mock
-import sys
-sys.modules["midonetclient"] = mock.Mock()
 
 from neutron.agent.common import config
 from neutron.agent.linux import dhcp

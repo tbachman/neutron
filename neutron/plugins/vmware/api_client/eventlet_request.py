@@ -16,9 +16,9 @@
 
 import eventlet
 import httplib
-import json
 import urllib
 
+from neutron.openstack.common import jsonutils as json
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.api_client import request
 
@@ -74,12 +74,12 @@ class EventletApiRequest(request.ApiRequest):
 
         self._green_thread = None
         # Retrieve and store this instance's unique request id.
-        self._request_id = self.CURRENT_REQUEST_ID
+        self._request_id = EventletApiRequest.CURRENT_REQUEST_ID
         # Update the class variable that tracks request id.
         # Request IDs wrap around at MAXIMUM_REQUEST_ID
         next_request_id = self._request_id + 1
         next_request_id %= self.MAXIMUM_REQUEST_ID
-        self.CURRENT_REQUEST_ID = next_request_id
+        EventletApiRequest.CURRENT_REQUEST_ID = next_request_id
 
     @classmethod
     def _spawn(cls, func, *args, **kwargs):

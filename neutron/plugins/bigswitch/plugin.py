@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -57,7 +56,7 @@ from neutron.api import extensions as neutron_extensions
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import constants as const
 from neutron.common import exceptions
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import context as qcontext
@@ -82,7 +81,6 @@ from neutron import manager
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
 from neutron.plugins.bigswitch import config as pl_config
 from neutron.plugins.bigswitch.db import porttracker_db
 from neutron.plugins.bigswitch import extensions
@@ -96,7 +94,7 @@ SYNTAX_ERROR_MESSAGE = _('Syntax error in server config file, aborting plugin')
 METADATA_SERVER_IP = '169.254.169.254'
 
 
-class AgentNotifierApi(rpc.proxy.RpcProxy,
+class AgentNotifierApi(n_rpc.RpcProxy,
                        sg_rpc.SecurityGroupAgentRpcApiMixin):
 
     BASE_RPC_API_VERSION = '1.1'
@@ -114,14 +112,11 @@ class AgentNotifierApi(rpc.proxy.RpcProxy,
                          topic=self.topic_port_update)
 
 
-class RestProxyCallbacks(sg_rpc_base.SecurityGroupServerRpcCallbackMixin,
+class RestProxyCallbacks(n_rpc.RpcCallback,
+                         sg_rpc_base.SecurityGroupServerRpcCallbackMixin,
                          dhcp_rpc_base.DhcpRpcCallbackMixin):
 
     RPC_API_VERSION = '1.1'
-
-    def create_rpc_dispatcher(self):
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
 
     def get_port_from_device(self, device):
         port_id = re.sub(r"^tap", "", device)
@@ -167,22 +162,17 @@ class NeutronRestProxyV2Base(db_base_plugin_v2.NeutronDbPluginV2,
     supported_extension_aliases = ["binding"]
     servers = None
 
-    def __init__(self, server_timeout=None):
-        super(NeutronRestProxyV2Base, self).__init__()
-        # This base class is not intended to be instantiated directly.
-        # Extending class should set ServerPool.
-        if not self.servers:
-            LOG.warning(_("ServerPool not set!"))
-
     def _get_all_data(self, get_ports=True, get_floating_ips=True,
                       get_routers=True):
         admin_context = qcontext.get_admin_context()
         networks = []
-
-        all_networks = self.get_networks(admin_context) or []
+        # this method is used by the ML2 driver so it can't directly invoke
+        # the self.get_(ports|networks) methods
+        plugin = manager.NeutronManager.get_plugin()
+        all_networks = plugin.get_networks(admin_context) or []
         for net in all_networks:
             mapped_network = self._get_mapped_network_with_subnets(net)
-            flips_n_ports = {}
+            flips_n_ports = mapped_network
             if get_floating_ips:
                 flips_n_ports = self._get_network_with_floatingips(
                     mapped_network)
@@ -190,8 +180,8 @@ class NeutronRestProxyV2Base(db_base_plugin_v2.NeutronDbPluginV2,
             if get_ports:
                 ports = []
                 net_filter = {'network_id': [net.get('id')]}
-                net_ports = self.get_ports(admin_context,
-                                           filters=net_filter) or []
+                net_ports = plugin.get_ports(admin_context,
+                                             filters=net_filter) or []
                 for port in net_ports:
                     mapped_port = self._map_state_and_status(port)
                     mapped_port['attachment'] = {
@@ -471,7 +461,7 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
             self._aliases = aliases
         return self._aliases
 
-    def __init__(self, server_timeout=None):
+    def __init__(self):
         super(NeutronRestProxyV2, self).__init__()
         LOG.info(_('NeutronRestProxy: Starting plugin. Version=%s'),
                  version.version_string_with_vcs())
@@ -484,7 +474,7 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         self.add_meta_server_route = cfg.CONF.RESTPROXY.add_meta_server_route
 
         # init network ctrl connections
-        self.servers = servermanager.ServerPool(server_timeout)
+        self.servers = servermanager.ServerPool()
         self.servers.get_topo_function = self._get_all_data
         self.servers.get_topo_function_args = {'get_ports': True,
                                                'get_floating_ips': True,
@@ -503,7 +493,7 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         LOG.debug(_("NeutronRestProxyV2: initialization done"))
 
     def _setup_rpc(self):
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.topic = topics.PLUGIN
         self.notifier = AgentNotifierApi(topics.AGENT)
         # init dhcp agent support
@@ -511,12 +501,12 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         self.agent_notifiers[const.AGENT_TYPE_DHCP] = (
             self._dhcp_agent_notifier
         )
-        self.callbacks = RestProxyCallbacks()
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
-        self.conn.create_consumer(self.topic, self.dispatcher,
+        self.endpoints = [RestProxyCallbacks(),
+                          agents_db.AgentExtRpcCallback()]
+        self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def create_network(self, context, network):
         """Create a network.

@@ -13,7 +13,11 @@
 #    under the License.
 #
 
+import sys
+
 import eventlet
+eventlet.monkey_patch()
+
 import netaddr
 from oslo.config import cfg
 
@@ -24,7 +28,9 @@ from neutron.agent.linux import ip_lib
 from neutron.agent.linux import iptables_manager
 from neutron.agent.linux import ovs_lib  # noqa
 from neutron.agent import rpc as agent_rpc
+from neutron.common import config as common_config
 from neutron.common import constants as l3_constants
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils as common_utils
 from neutron import context
@@ -36,8 +42,6 @@ from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import periodic_task
 from neutron.openstack.common import processutils
-from neutron.openstack.common.rpc import common as rpc_common
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron import service as neutron_service
 from neutron.services.firewall.agents.l3reference import firewall_l3_agent
@@ -50,7 +54,7 @@ RPC_LOOP_INTERVAL = 1
 FLOATING_IP_CIDR_SUFFIX = '/32'
 
 
-class L3PluginApi(proxy.RpcProxy):
+class L3PluginApi(n_rpc.RpcProxy):
     """Agent side of the l3 agent RPC API.
 
     API version history:
@@ -76,9 +80,9 @@ class L3PluginApi(proxy.RpcProxy):
     def get_external_network_id(self, context):
         """Make a remote process call to retrieve the external network id.
 
-        @raise common.RemoteError: with TooManyExternalNetworks
-                                   as exc_type if there are
-                                   more than one external network
+        @raise n_rpc.RemoteError: with TooManyExternalNetworks as
+                                  exc_type if there are more than one
+                                  external network
         """
         return self.call(context,
                          self.make_msg('get_external_network_id',
@@ -324,7 +328,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             self.target_ex_net_id = self.plugin_rpc.get_external_network_id(
                 self.context)
             return self.target_ex_net_id
-        except rpc_common.RemoteError as e:
+        except n_rpc.RemoteError as e:
             with excutils.save_and_reraise_exception() as ctx:
                 if e.exc_type == 'TooManyExternalNetworks':
                     ctx.reraise = False
@@ -857,7 +861,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
             self._process_routers(routers, all_routers=True)
             self.fullsync = False
             LOG.debug(_("_sync_routers_task successfully completed"))
-        except rpc_common.RPCException:
+        except n_rpc.RPCException:
             LOG.exception(_("Failed synchronizing routers due to RPC error"))
             self.fullsync = True
             return
@@ -968,7 +972,6 @@ class L3NATAgentWithStateReport(L3NATAgent):
 
 
 def main(manager='neutron.agent.l3_agent.L3NATAgentWithStateReport'):
-    eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(L3NATAgent.OPTS)
     config.register_interface_driver_opts_helper(conf)
@@ -977,7 +980,7 @@ def main(manager='neutron.agent.l3_agent.L3NATAgentWithStateReport'):
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)
     conf.register_opts(external_process.OPTS)
-    conf(project='neutron')
+    common_config.init(sys.argv[1:])
     config.setup_logging(conf)
     server = neutron_service.Service.create(
         binary='neutron-l3-agent',

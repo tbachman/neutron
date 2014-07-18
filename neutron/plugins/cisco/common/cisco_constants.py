@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2011 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -103,3 +101,9 @@ LOGICAL_NETWORK_SUFFIX = '_log_net'
 ENCAPSULATION_PROFILE_SUFFIX = '_profile'
 
 UUID_LENGTH = 36
+
+# Nexus vlan and vxlan segment range
+NEXUS_VLAN_RESERVED_MIN = 3968
+NEXUS_VLAN_RESERVED_MAX = 4047
+NEXUS_VXLAN_MIN = 4096
+NEXUS_VXLAN_MAX = 16000000

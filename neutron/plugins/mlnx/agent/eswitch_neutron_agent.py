@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Mellanox Technologies, Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,19 +19,20 @@ import sys
 import time
 
 import eventlet
+eventlet.monkey_patch()
+
 from oslo.config import cfg
 
 from neutron.agent import rpc as agent_rpc
 from neutron.agent import securitygroups_rpc as sg_rpc
-from neutron.common import config as logging_config
+from neutron.common import config as common_config
 from neutron.common import constants as q_constants
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils as q_utils
 from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import common as rpc_common
-from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.mlnx.agent import utils
 from neutron.plugins.mlnx.common import config  # noqa
@@ -144,7 +143,8 @@ class EswitchManager(object):
         self.network_map[network_id] = data
 
 
-class MlnxEswitchRpcCallbacks(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
+class MlnxEswitchRpcCallbacks(n_rpc.RpcCallback,
+                              sg_rpc.SecurityGroupAgentRpcCallbackMixin):
 
     # Set RPC API version to 1.0 by default.
     # history
@@ -152,6 +152,7 @@ class MlnxEswitchRpcCallbacks(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
     RPC_API_VERSION = '1.1'
 
     def __init__(self, context, agent):
+        super(MlnxEswitchRpcCallbacks, self).__init__()
         self.context = context
         self.agent = agent
         self.eswitch = agent.eswitch
@@ -202,19 +203,10 @@ class MlnxEswitchRpcCallbacks(sg_rpc.SecurityGroupAgentRpcCallbackMixin):
                         port['mac_address'],
                         self.agent.agent_id,
                         cfg.CONF.host)
-            except rpc_common.Timeout:
+            except n_rpc.MessagingTimeout:
                 LOG.error(_("RPC timeout while updating port %s"), port['id'])
         else:
             LOG.debug(_("No port %s defined on agent."), port['id'])
-
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version,
-        or support more than one class as the target of rpc messages,
-        override this method.
-        """
-        return dispatcher.RpcDispatcher([self])
 
 
 class MlnxEswitchPluginApi(agent_rpc.PluginApi,
@@ -265,14 +257,12 @@ class MlnxEswitchNeutronAgent(sg_rpc.SecurityGroupAgentRpcMixin):
         # RPC network init
         self.context = context.get_admin_context_without_session()
         # Handle updates from service
-        self.callbacks = MlnxEswitchRpcCallbacks(self.context,
-                                                 self)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [MlnxEswitchRpcCallbacks(self.context, self)]
         # Define the listening consumers for the agent
         consumers = [[topics.PORT, topics.UPDATE],
                      [topics.NETWORK, topics.DELETE],
                      [topics.SECURITY_GROUP, topics.UPDATE]]
-        self.connection = agent_rpc.create_consumers(self.dispatcher,
+        self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers)
 
@@ -417,9 +407,8 @@ class MlnxEswitchNeutronAgent(sg_rpc.SecurityGroupAgentRpcMixin):
 
 
 def main():
-    eventlet.monkey_patch()
-    cfg.CONF(project='neutron')
-    logging_config.setup_logging(cfg.CONF)
+    common_config.init(sys.argv[1:])
+    common_config.setup_logging(cfg.CONF)
 
     try:
         interface_mappings = q_utils.parse_mappings(

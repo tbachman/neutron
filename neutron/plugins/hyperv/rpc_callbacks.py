@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cloudbase Solutions SRL
 # All Rights Reserved.
 #
@@ -17,8 +15,7 @@
 # @author: Alessandro Pilotti, Cloudbase Solutions Srl
 
 from neutron.common import constants as q_const
-from neutron.common import rpc as q_rpc
-from neutron.db import agents_db
+from neutron.common import rpc as n_rpc
 from neutron.db import dhcp_rpc_base
 from neutron.db import l3_rpc_base
 from neutron.openstack.common import log as logging
@@ -29,6 +26,7 @@ LOG = logging.getLogger(__name__)
 
 
 class HyperVRpcCallbacks(
+        n_rpc.RpcCallback,
         dhcp_rpc_base.DhcpRpcCallbackMixin,
         l3_rpc_base.L3RpcCallbackMixin):
 
@@ -36,17 +34,9 @@ class HyperVRpcCallbacks(
     RPC_API_VERSION = '1.1'
 
     def __init__(self, notifier):
+        super(HyperVRpcCallbacks, self).__init__()
         self.notifier = notifier
         self._db = hyperv_db.HyperVPluginDB()
-
-    def create_rpc_dispatcher(self):
-        '''Get the rpc dispatcher for this manager.
-
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        '''
-        return q_rpc.PluginRpcDispatcher([self,
-                                         agents_db.AgentExtRpcCallback()])
 
     def get_device_details(self, rpc_context, **kwargs):
         """Agent requests device details."""

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -20,35 +18,40 @@
 from oslo.config import cfg
 
 from neutron.common import exceptions as n_exception
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as neutron_context
 from neutron.db import api as qdbapi
 from neutron.db.firewall import firewall_db
 from neutron.extensions import firewall as fw_ext
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.common import constants as const
 
 
 LOG = logging.getLogger(__name__)
 
 
-class FirewallCallbacks(object):
+class FirewallCallbacks(n_rpc.RpcCallback):
     RPC_API_VERSION = '1.0'
 
     def __init__(self, plugin):
+        super(FirewallCallbacks, self).__init__()
         self.plugin = plugin
-
-    def create_rpc_dispatcher(self):
-        return q_rpc.PluginRpcDispatcher([self])
 
     def set_firewall_status(self, context, firewall_id, status, **kwargs):
         """Agent uses this to set a firewall's status."""
         LOG.debug(_("set_firewall_status() called"))
         with context.session.begin(subtransactions=True):
             fw_db = self.plugin._get_firewall(context, firewall_id)
+            # ignore changing status if firewall expects to be deleted
+            # That case means that while some pending operation has been
+            # performed on the backend, neutron server received delete request
+            # and changed firewall status to const.PENDING_DELETE
+            if fw_db.status == const.PENDING_DELETE:
+                LOG.debug(_("Firewall %(fw_id)s in PENDING_DELETE state, "
+                            "not changing to %(status)s"),
+                          {'fw_id': firewall_id, 'status': status})
+                return False
             #TODO(xuhanp): Remove INACTIVE status and use DOWN to
             # be consistent with other network resources
             if status in (const.ACTIVE, const.INACTIVE, const.DOWN):
@@ -63,13 +66,15 @@ class FirewallCallbacks(object):
         LOG.debug(_("firewall_deleted() called"))
         with context.session.begin(subtransactions=True):
             fw_db = self.plugin._get_firewall(context, firewall_id)
-            if fw_db.status == const.PENDING_DELETE:
+            # allow to delete firewalls in ERROR state
+            if fw_db.status in (const.PENDING_DELETE, const.ERROR):
                 self.plugin.delete_db_firewall_object(context, firewall_id)
                 return True
             else:
+                LOG.warn(_('Firewall %(fw)s unexpectedly deleted by agent, '
+                           'status was %(status)s'),
+                         {'fw': firewall_id, 'status': fw_db.status})
                 fw_db.status = const.ERROR
-                LOG.warn(_('Firewall %s unexpectedly deleted by agent.'),
-                         firewall_id)
                 return False
 
     def get_firewalls_for_tenant(self, context, **kwargs):
@@ -96,7 +101,7 @@ class FirewallCallbacks(object):
         return fw_tenant_list
 
 
-class FirewallAgentApi(proxy.RpcProxy):
+class FirewallAgentApi(n_rpc.RpcProxy):
     """Plugin side of plugin to agent RPC API."""
 
     API_VERSION = '1.0'
@@ -155,14 +160,12 @@ class FirewallPlugin(firewall_db.Firewall_db_mixin):
         """Do the initialization for the firewall service plugin here."""
         qdbapi.register_models()
 
-        self.callbacks = FirewallCallbacks(self)
+        self.endpoints = [FirewallCallbacks(self)]
 
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(
-            topics.FIREWALL_PLUGIN,
-            self.callbacks.create_rpc_dispatcher(),
-            fanout=False)
-        self.conn.consume_in_thread()
+            topics.FIREWALL_PLUGIN, self.endpoints, fanout=False)
+        self.conn.consume_in_threads()
 
         self.agent_rpc = FirewallAgentApi(
             topics.L3_AGENT,

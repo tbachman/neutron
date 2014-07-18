@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cloudbase Solutions SRL
 # Copyright 2013 Pedro Navarro Perez
 # All Rights Reserved.
@@ -54,7 +52,7 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
 
         mock.patch('neutron.openstack.common.loopingcall.'
                    'FixedIntervalLoopingCall',
-                   new=MockFixedIntervalLoopingCall)
+                   new=MockFixedIntervalLoopingCall).start()
         cfg.CONF.set_default('firewall_driver',
                              'neutron.agent.firewall.NoopFirewallDriver',
                              group='SECURITYGROUP')
@@ -212,15 +210,10 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
     def test_main(self):
         with mock.patch.object(hyperv_neutron_agent,
                                'HyperVNeutronAgent') as plugin:
-            with mock.patch.object(hyperv_neutron_agent.cfg, 'CONF') as cfg:
-                with mock.patch('eventlet.monkey_patch') as eventlet:
-                    with mock.patch.object(
-                        hyperv_neutron_agent,
-                        'logging_config') as logging_config:
+            with mock.patch.object(hyperv_neutron_agent,
+                                   'common_config') as common_config:
+                hyperv_neutron_agent.main()
 
-                        hyperv_neutron_agent.main()
-
-                        self.assertTrue(cfg.called)
-                        self.assertTrue(eventlet.called)
-                        self.assertTrue(logging_config.setup_logging.called)
-                        plugin.assert_has_calls([mock.call().daemon_loop()])
+                self.assertTrue(common_config.init.called)
+                self.assertTrue(common_config.setup_logging.called)
+                plugin.assert_has_calls([mock.call().daemon_loop()])
