@@ -138,12 +138,12 @@ class RoutingServiceHelper():
 
     ### Notifications from Plugin ####
 
-    def router_deleted(self, router_ids):
+    def router_deleted(self, context, routers):
         """Deal with router deletion RPC message."""
-        LOG.debug('Got router deleted notification for %s', router_ids)
-        self.removed_routers.update(router_ids)
+        LOG.debug('Got router deleted notification for %s', routers)
+        self.removed_routers.update(routers)
 
-    def routers_updated(self, routers):
+    def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""
         LOG.debug('Got routers updated notification :%s', routers)
         if routers:
@@ -152,13 +152,13 @@ class RoutingServiceHelper():
                 routers = [router['id'] for router in routers]
             self.updated_routers.update(routers)
 
-    def router_removed_from_agent(self, payload):
+    def router_removed_from_agent(self, context, payload):
         LOG.debug('Got router removed from agent :%r', payload)
         self.removed_routers.add(payload['router_id'])
 
-    def router_added_to_agent(self, payload):
+    def router_added_to_agent(self, context, payload):
         LOG.debug('Got router added to agent :%r', payload)
-        self.routers_updated(payload)
+        self.routers_updated(context, payload)
 
     # Routing service helper public methods
 

@@ -51,7 +51,7 @@ class TestHostingDevice(base.BaseTestCase):
     def setUp(self):
         super(TestHostingDevice, self).setUp()
         self.status = device_status.DeviceStatus()
-        self.status._is_pingable = mock.MagicMock(return_value=True)
+        device_status._is_pingable = mock.MagicMock(return_value=True)
 
         self.hosting_device = {'id': 123,
                                'host_type': 'CSR1kv',
@@ -75,9 +75,9 @@ class TestHostingDevice(base.BaseTestCase):
     def test_is_hosting_device_reachable_negative(self):
         self.assertEqual(0, len(self.status.backlog_hosting_devices))
         self.hosting_device['created_at'] = self.created_at_str  # Back to str
-        self.status._is_pingable.return_value = False
+        device_status._is_pingable.return_value = False
 
-        self.assertFalse(self.status._is_pingable('1.2.3.4'))
+        self.assertFalse(device_status._is_pingable('1.2.3.4'))
         self.assertIsNone(self.status.is_hosting_device_reachable(
             self.hosting_device))
         self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
@@ -139,7 +139,7 @@ class TestHostingDevice(base.BaseTestCase):
         self.hosting_device['created_at'] = create_timestamp(BOOT_TIME + 10)
         hd = self.hosting_device
         hd_id = hd['id']
-        self.status._is_pingable.return_value = True
+        device_status._is_pingable.return_value = True
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                       'routers': [
                                                           self.router_id]}
@@ -160,7 +160,7 @@ class TestHostingDevice(base.BaseTestCase):
         #Inserted in backlog now
         hd['backlog_insertion_ts'] = create_timestamp(NOW, type=TYPE_DATETIME)
         hd_id = hd['id']
-        self.status._is_pingable.return_value = False
+        device_status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                       'routers': [
                                                           self.router_id]}
@@ -183,7 +183,7 @@ class TestHostingDevice(base.BaseTestCase):
                                                       type=TYPE_DATETIME)
 
         hd_id = hd['id']
-        self.status._is_pingable.return_value = False
+        device_status._is_pingable.return_value = False
         self.status.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                       'routers': [
                                                           self.router_id]}

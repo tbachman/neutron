@@ -373,19 +373,20 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.assertNotIn(routers[0]['id'], self.routing_helper.router_info)
 
     def test_router_deleted(self):
-        self.routing_helper.router_deleted([FAKE_ID])
+        self.routing_helper.router_deleted(None, [FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_routers_updated(self):
-        self.routing_helper.routers_updated([FAKE_ID])
+        self.routing_helper.routers_updated(None, [FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_removed_from_agent(self):
-        self.routing_helper.router_removed_from_agent({'router_id': FAKE_ID})
+        self.routing_helper.router_removed_from_agent(None,
+                                                      {'router_id': FAKE_ID})
         self.assertIn(FAKE_ID, self.routing_helper.removed_routers)
 
     def test_added_to_agent(self):
-        self.routing_helper.router_added_to_agent([FAKE_ID])
+        self.routing_helper.router_added_to_agent(None, [FAKE_ID])
         self.assertIn(FAKE_ID, self.routing_helper.updated_routers)
 
     def test_process_router_delete(self):

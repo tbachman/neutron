@@ -228,7 +228,7 @@ class CiscoCfgAgent(manager.Manager):
             self.devmgr_rpc.report_dead_hosting_devices(context,
                                                         hd_ids=res['dead'])
 
-    def hosting_devices_removed(self, payload):
+    def hosting_devices_removed(self, context, payload):
         """Deal with hosting device removed RPC message."""
         try:
             if payload['hosting_data']:
