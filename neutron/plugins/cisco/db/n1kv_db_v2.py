@@ -25,11 +25,14 @@ import re
 from sqlalchemy.orm import exc
 from sqlalchemy.sql import and_
 
+from neutron import manager
 from neutron.api.v2 import attributes
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
 import neutron.db.api as db
 from neutron.db import models_v2
+from neutron.db import securitygroups_db as sg_db
+from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_exceptions as c_exc
@@ -272,6 +275,7 @@ def get_network_binding(db_session, network_id):
                        to fetch
     :returns: binding object
     """
+    db_session = (db_session or db.get_session())
     try:
         return (db_session.query(n1kv_models_v2.N1kvNetworkBinding).
                 filter_by(network_id=network_id).
@@ -997,6 +1001,39 @@ def _policy_profile_in_use(profile_id):
                filter_by(profile_id=profile_id).first())
         return bool(ret)
 
+def get_port_from_device(port_id):
+    """Get port from database."""
+    LOG.debug(_("get_port_from_device()"))
+    session = db.get_session()
+    sg_binding_port = sg_db.SecurityGroupPortBinding.port_id
+
+    query = session.query(models_v2.Port,
+                          sg_db.SecurityGroupPortBinding.security_group_id)
+    query = query.outerjoin(sg_db.SecurityGroupPortBinding,
+                            models_v2.Port.id == sg_binding_port)
+    query = query.filter(models_v2.Port.id == port_id)
+    port_and_sgs = query.all()
+    if not port_and_sgs:
+        return None
+    port = port_and_sgs[0][0]
+    plugin = manager.NeutronManager.get_plugin()
+    port_dict = plugin._make_port_dict(port)
+    port_dict[ext_sg.SECURITYGROUPS] = [
+        sg_id for port_, sg_id in port_and_sgs if sg_id]
+    port_dict['security_group_rules'] = []
+    port_dict['security_group_source_groups'] = []
+    port_dict['fixed_ips'] = [ip['ip_address']
+                              for ip in port['fixed_ips']]
+    return port_dict
+
+def get_port(port_id):
+    LOG.debug(_("get_port()"))
+    session = db.get_session()
+    try:
+        port = session.query(models_v2.Port).filter_by(id=port_id).one()
+    except exc.NoResultFound:
+        port = None
+    return port
 
 class NetworkProfile_db_mixin(object):
 

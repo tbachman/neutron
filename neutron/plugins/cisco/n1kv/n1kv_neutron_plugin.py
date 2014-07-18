@@ -24,6 +24,8 @@ import eventlet
 
 from oslo.config import cfg as q_conf
 
+from neutron import manager
+from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
@@ -32,6 +34,7 @@ from neutron.common import exceptions as n_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.common import utils
+from neutron.common import constants as q_const
 from neutron import context as ncontext
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
@@ -43,13 +46,16 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_rpc_base
 from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa 
+from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import portbindings
+from neutron.extensions import securitygroup as ext_sg
 from neutron.extensions import providernet
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.openstack.common import uuidutils as uuidutils
+from neutron.openstack.common.rpc import proxy
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
 from neutron.plugins.cisco.common import cisco_exceptions
@@ -65,7 +71,8 @@ LOG = logging.getLogger(__name__)
 
 
 class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                       l3_rpc_base.L3RpcCallbackMixin):
+                       l3_rpc_base.L3RpcCallbackMixin,
+                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
@@ -81,10 +88,135 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         return q_rpc.PluginRpcDispatcher([self,
                                           agents_db.AgentExtRpcCallback()])
 
+    """
+    Make these RPC calls specific to firewall config. Execute these
+    only if firewall is enabled else these will act as stubs for agent
+    to run on compute node
+    """
+    @classmethod
+    def get_port_from_device(cls, device):
+        LOG.debug(_("get_port_from_device ()"))
+        if (N1kvNeutronPluginV2()._is_firewall_enabled() == True):
+            port = n1kv_db_v2.get_port_from_device(device)
+            if port:
+                port['device'] = device
+        else:
+            port = {}
+        return port
+
+    def get_device_details(self, rpc_context, **kwargs):
+        """Agent requests device details."""
+        LOG.debug(_("get_device_details()"))
+        if (N1kvNeutronPluginV2()._is_firewall_enabled() == True):
+            agent_id = kwargs.get('agent_id')
+            device = kwargs.get('device')
+            port = n1kv_db_v2.get_port(device)
+            if port:
+                binding = n1kv_db_v2.get_network_binding(None, port['network_id'])
+                entry = {'device': device,
+                         'network_id': port['network_id'],
+                         'port_id': port['id'],
+                         'admin_state_up': port['admin_state_up'],
+                         'network_type': binding.network_type,
+                         'segmentation_id': binding.segmentation_id,
+                         'physical_network': binding.physical_network}
+                new_status = (q_const.PORT_STATUS_ACTIVE if port['admin_state_up']
+                              else q_const.PORT_STATUS_DOWN)
+                if port['status'] != new_status:
+                    n1kv_db_v2.set_port_status(port['id'], new_status)
+            else:
+                entry = {'device': device}
+                LOG.debug(_("get_device_details(): Device %s cannot be found "
+                            "in database"), device)
+        else:
+            entry ={}
+        return entry
+
+    def update_device_up(self, rpc_context, **kwargs):
+        """Device is up on agent."""
+        LOG.debug(_("update_device_up()"))
+        if (N1kvNeutronPluginV2()._is_firewall_enabled() == True):
+            agent_id = kwargs.get('agent_id')
+            device = kwargs.get('device')
+            host = kwargs.get('host')
+            port = n1kv_db_v2.get_port(device)
+            plugin = manager.NeutronManager.get_plugin()
+            if port:
+                if (host and
+                    not plugin.get_port_host(rpc_context, port['id']) == host):
+                    return
+                elif port['status'] != q_const.PORT_STATUS_ACTIVE:
+                    n1kv_db_v2.set_port_status(port['id'],
+                                              q_const.PORT_STATUS_ACTIVE)
+            else:
+                LOG.debug(_("update_device_up(): Port %s can not be "
+                            "found in database"), port)
+
+    def update_device_down(self, rpc_context, **kwargs):
+        """Device no longer exists on agent."""
+        LOG.debug(_("update_device_down()"))
+        if (N1kvNeutronPluginV2()._is_firewall_enabled() == True):
+            agent_id = kwargs.get('agent_id')
+            device = kwargs.get('device')
+            host = kwargs.get('host')
+            port = n1kv_db_v2.get_port(device)
+            if port:
+                entry = {'device': device,
+                         'exists': True}
+                plugin = manager.NeutronManager.get_plugin()
+                if (host and
+                    not plugin.get_port_host(rpc_context, port['id']) == host):
+                    LOG.debug(_("update_device_down(): "
+                                "Device %(device)s not bound to the "
+                                "agent host %(host)s"),
+                                {'device': device, 'host': host})
+
+                elif port['status'] != q_const.PORT_STATUS_DOWN:
+                    # Set port status to DOWN
+                    n1kv_db_v2.set_port_status(port['id'],
+                                              q_const.PORT_STATUS_DOWN)
+            else:
+                entry = {'device': device,
+                         'exists': False}
+                LOG.debug(_("update_device_down(): Port %s can not be "
+                            "found in database"), port)
+        else:
+            entry = {}
+        return entry
+
+class AgentNotifierApi(proxy.RpcProxy,
+                       sg_rpc.SecurityGroupAgentRpcApiMixin):
+    '''Agent side rpc API.
+
+    API version history:
+        1.0 - Initial version.
+
+    '''
+
+    BASE_RPC_API_VERSION = '1.0'
+
+    def __init__(self, topic):
+        super(AgentNotifierApi, self).__init__(
+            topic=topic, default_version=self.BASE_RPC_API_VERSION)
+        self.topic_port_update = topics.get_topic_name(topic,
+                                                       topics.PORT,
+                                                       topics.UPDATE)
+
+    def port_update(self, context, port, network_type, segmentation_id,
+                    physical_network):
+        LOG.debug(_("port_update()"))
+        self.fanout_cast(context,
+                         self.make_msg('port_update',
+                                       port=port,
+                                       network_type=network_type,
+                                       segmentation_id=segmentation_id,
+                                       physical_network=physical_network),
+                         topic=self.topic_port_update)
 
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
                           extraroute_db.ExtraRoute_db_mixin,
+                          sg_db_rpc.SecurityGroupServerRpcMixin,
                           portbindings_db.PortBindingMixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
@@ -103,12 +235,20 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     # This attribute specifies whether the plugin supports or not
     # bulk operations.
     __native_bulk_support = False
-    supported_extension_aliases = ["provider", "agent", "quotas",
-                                   "n1kv", "network_profile",
+    _supported_extension_aliases = ["provider", "agent", "quotas",
+                                   "n1kv", "network_profile", "security-group",
                                    "policy_profile", "external-net", "router",
                                    "binding", "credential",
                                    "l3_agent_scheduler",
                                    "dhcp_agent_scheduler"]
+
+    @property
+    def supported_extension_aliases(self):
+        if not hasattr(self, '_aliases'):
+            aliases = self._supported_extension_aliases[:]
+            sg_rpc.disable_security_group_extension_by_config(aliases)
+            self._aliases = aliases
+        return self._aliases
 
     def __init__(self, configfile=None):
         """
@@ -125,7 +265,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             portbindings.VIF_DETAILS: {
                 # TODO(rkukura): Replace with new VIF security details
                 portbindings.CAP_PORT_FILTER:
-                'security-group' in self.supported_extension_aliases}}
+                'security-group' in self.supported_extension_aliases,
+                portbindings.OVS_HYBRID_PLUG: self._is_firewall_enabled()}}
         network_db_v2.delete_all_n1kv_credentials()
         c_cred.Store.initialize()
         self._setup_vsm()
@@ -147,6 +288,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+        self.notifier = AgentNotifierApi(topics.AGENT)
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
@@ -173,6 +315,18 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                               "ports": False,}
         # Spawn a thread for full sync
         eventlet.spawn(self._sync_vsm)
+
+    def _is_firewall_enabled(self):
+        firewall_driver = q_conf.CONF.SECURITYGROUP.firewall_driver
+        if not firewall_driver:
+            firewall_driver = 'neutron.agent.firewall.NoopFirewallDriver'
+
+        if (firewall_driver == 'neutron.agent.firewall.NoopFirewallDriver'):
+            enable_ovs_hybrid_plug = False
+        else:
+            enable_ovs_hybrid_plug = True
+
+        return enable_ovs_hybrid_plug
 
     def _poll_policy_profiles(self):
         """Start a green thread to pull policy profiles from VSM."""
@@ -1214,6 +1368,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         segment_pairs = None
         LOG.debug(_('Create network: profile_id=%s'), profile_id)
         session = context.session
+        #set up default security groups
+        tenant_id = self._get_tenant_id_for_create(
+            context, network['network'])
+        self._ensure_default_security_group(context, tenant_id)
         with session.begin(subtransactions=True):
             if not network_type:
                 # tenant network
@@ -1486,6 +1644,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('Create port: profile_id=%s'), profile_id)
         session = context.session
         with session.begin(subtransactions=True):
+            self._ensure_default_security_group_on_port(context, port)
+            sgids = self._get_security_groups_on_port(context, port)
             pt = super(N1kvNeutronPluginV2, self).create_port(context,
                                                               port)
             n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
@@ -1519,6 +1679,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             # Extract policy profile for VM network create in VSM.
             if not p_profile:
                 p_profile = n1kv_db_v2.get_policy_profile(session, profile_id)
+            self._process_port_create_security_group(context, pt, sgids)
         try:
             self._send_create_port_request(context,
                                            pt,
@@ -1531,6 +1692,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 self._delete_port_db(context, pt, vm_network)
         else:
             LOG.debug(_("Created port: %s"), pt)
+            self.notify_security_groups_member_updated(context, pt)
             return pt
 
     def update_port(self, context, id, port):
@@ -1542,13 +1704,27 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: updated port object
         """
         LOG.debug(_("Update port: %s"), id)
+        need_port_update_notify = False
         with context.session.begin(subtransactions=True):
+            original_port = super(N1kvNeutronPluginV2,
+                                      self).get_port(context, id)
             updated_port = super(N1kvNeutronPluginV2,
                                  self).update_port(context, id, port)
             self._process_portbindings_create_and_update(context,
                                                          port['port'],
                                                          updated_port)
             self._extend_port_dict_profile(context, updated_port)
+            need_port_update_notify |= self.update_security_group_on_port(context, id,
+                                           port, original_port, updated_port)
+            need_port_update_notify |= self.is_security_group_member_updated(
+                                          context, original_port, updated_port)
+            if need_port_update_notify:
+                binding = n1kv_db_v2.get_network_binding(None,
+                                                    updated_port['network_id'])
+                self.notifier.port_update(context, updated_port,
+                                      binding.network_type,
+                                      binding.segmentation_id,
+                                      binding.physical_network)
         return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
@@ -1591,7 +1767,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 n1kv_db_v2.delete_vm_network(context.session,
                                              port[n1kv.PROFILE_ID],
                                              port['network_id'])
+            self._delete_port_security_group_bindings(context, id)
             super(N1kvNeutronPluginV2, self).delete_port(context, port['id'])
+            self.notify_security_groups_member_updated(context, port)
 
     def get_port(self, context, id, fields=None):
         """
