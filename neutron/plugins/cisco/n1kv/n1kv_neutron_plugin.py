@@ -1335,9 +1335,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug(_('_send_delete_port_request: %s'), port['id'])
         self.pool.spawn(self.n1kvclient.delete_n1kv_port,
                         vm_network['name'], port['id']).wait()
-        if vm_network['port_count'] == 0:
-            self.pool.spawn(self.n1kvclient.delete_vm_network,
-                            vm_network['name']).wait()
 
     def _get_segmentation_id(self, context, id):
         """
