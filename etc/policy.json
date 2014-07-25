@@ -63,7 +63,9 @@
     "delete_port": "rule:admin_or_owner",
 
     "create_router:external_gateway_info:enable_snat": "rule:admin_only",
+    "create_router:distributed": "rule:admin_only",
     "update_router:external_gateway_info:enable_snat": "rule:admin_only",
+    "update_router:distributed": "rule:admin_only",
 
     "create_firewall": "",
     "get_firewall": "rule:admin_or_owner",
@@ -104,7 +106,6 @@
 
     "create_router": "rule:regular_user",
     "get_router": "rule:admin_or_owner",
-    "get_router:routerhost:hosting_device": "rule:admin_only",
     "update_router:add_router_interface": "rule:admin_or_owner",
     "update_router:remove_router_interface": "rule:admin_or_owner",
     "delete_router": "rule:admin_or_owner",
@@ -122,16 +123,6 @@
     "update_policy_profiles": "rule:admin_only",
     "get_policy_profiles": "",
     "get_policy_profile": "",
-
-    "create_hosting_device": "rule:admin_only",
-    "get_hosting_device": "rule:admin_only",
-    "update_hosting_device": "rule:admin_only",
-    "delete_hosting_device": "rule:admin_only",
-
-    "create_hosting_device_template": "rule:admin_only",
-    "get_hosting_device_template": "rule:admin_only",
-    "update_hosting_device_template": "rule:admin_only",
-    "delete_hosting_device_template": "rule:admin_only",
 
     "create_metering_label": "rule:admin_only",
     "delete_metering_label": "rule:admin_only",
