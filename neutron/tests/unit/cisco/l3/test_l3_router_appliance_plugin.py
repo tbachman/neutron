@@ -23,8 +23,6 @@ from neutron.extensions import extraroute
 from neutron.extensions import l3
 from neutron.manager import NeutronManager
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.notifier import api as notifier_api
-from neutron.openstack.common.notifier import test_notifier
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.extensions import routertype
