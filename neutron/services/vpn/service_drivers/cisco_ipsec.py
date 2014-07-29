@@ -14,7 +14,10 @@
 
 
 from neutron.common import rpc as n_rpc
+from neutron.db.vpn import vpn_db
+from neutron import manager
 from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import service_drivers
 from neutron.services.vpn.service_drivers import cisco_csr_db as csr_id_map
@@ -25,6 +28,15 @@ LOG = logging.getLogger(__name__)
 
 IPSEC = 'ipsec'
 BASE_IPSEC_VERSION = '1.0'
+LIFETIME_LIMITS = {'IKE Policy': {'min': 60, 'max': 86400},
+                   'IPSec Policy': {'min': 120, 'max': 2592000}}
+MIN_CSR_MTU = 1500
+MAX_CSR_MTU = 9192
+
+# TODO(pcm): When available obtain this from the Cisco plugin constants
+# from neutron.plugins.cisco.device_manager.plugging_drivers import (
+#    n1kv_plugging_constants as n1kv_constants)
+T2_PORT_NAME = "t2_p:"
 
 
 class CiscoCsrIPsecVpnDriverCallBack(n_rpc.RpcCallback):
@@ -40,13 +52,42 @@ class CiscoCsrIPsecVpnDriverCallBack(n_rpc.RpcCallback):
         super(CiscoCsrIPsecVpnDriverCallBack, self).__init__()
         self.driver = driver
 
+    @property
+    def l3_plugin(self):
+        try:
+            return self._l3_plugin
+        except AttributeError:
+            self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
+                constants.L3_ROUTER_NAT)
+            return self._l3_plugin
+
+    def create_rpc_dispatcher(self):
+        return n_rpc.PluginRpcDispatcher([self])
+
+    def get_vpn_services_using(self, context, router_id):
+        LOG.debug("PCM: Collecting VPN services on router %s", router_id)
+        query = context.session.query(vpn_db.VPNService)
+        query = query.join(vpn_db.IPsecSiteConnection)
+        query = query.join(vpn_db.IKEPolicy)
+        query = query.join(vpn_db.IPsecPolicy)
+        query = query.join(vpn_db.IPsecPeerCidr)
+        query = query.filter(vpn_db.VPNService.router_id == router_id)
+        return query.all()
+
     def get_vpn_services_on_host(self, context, host=None):
-        """Retuns info on the vpnservices on the host."""
-        plugin = self.driver.service_plugin
-        vpnservices = plugin._get_agent_hosting_vpn_services(
-            context, host)
-        return [self.driver._make_vpnservice_dict(vpnservice, context)
-                for vpnservice in vpnservices]
+        """Returns info on the VPN services on the host."""
+        routers = self.l3_plugin.get_active_routers_for_host(context, host)
+        host_vpn_services = []
+        for router in routers:
+            LOG.debug("PCM: router=%s %s", router['id'], router)
+            vpn_services = self.get_vpn_services_using(context, router['id'])
+            LOG.debug("PCM: services on host %s", vpn_services)
+            for vpn_service in vpn_services:
+                host_vpn_services.append(
+                    self.driver._make_vpnservice_dict(context, vpn_service,
+                                                      router))
+        LOG.debug("PCM: have vpn_services %s", host_vpn_services)
+        return host_vpn_services
 
     def update_status(self, context, status):
         """Update status of all vpnservices."""
@@ -65,6 +106,28 @@ class CiscoCsrIPsecVpnAgentApi(service_drivers.BaseIPsecVpnAgentApi,
         super(CiscoCsrIPsecVpnAgentApi, self).__init__(
             topics.CISCO_IPSEC_AGENT_TOPIC, topic, default_version)
 
+    def _agent_notification(self, context, method, router_id,
+                            version=None, **kwargs):
+        """Notify update for the agent.
+
+        Find the host for the router being notified and then
+        dispatches a notification for the VPN device driver.
+        """
+        admin_context = context.is_admin and context or context.elevated()
+        if not version:
+            version = self.RPC_API_VERSION
+        host = self.l3_plugin.get_host_for_router(admin_context, router_id)
+        LOG.debug(_('Notify agent at %(topic)s.%(host)s the message '
+                    '%(method)s %(args)s for router %(router)s'),
+                  {'topic': self.to_agent_topic,
+                   'host': host,
+                   'method': method,
+                   'args': kwargs,
+                   'router': router_id})
+        self.cast(context, self.make_msg(method, **kwargs),
+                  version=version,
+                  topic='%s.%s' % (self.to_agent_topic, host))
+
 
 class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
 
@@ -81,6 +144,16 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         self.conn.consume_in_threads()
         self.agent_rpc = CiscoCsrIPsecVpnAgentApi(
             topics.CISCO_IPSEC_AGENT_TOPIC, BASE_IPSEC_VERSION)
+        self._l3_plugin = None
+        LOG.debug("PCM: Initialized service driver")
+
+    @property
+    def l3_plugin(self):
+        if self._l3_plugin is None:
+            self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
+                constants.L3_ROUTER_NAT)
+            LOG.debug("PCM: Have L3 plugin %s", self._l3_plugin)
+        return self._l3_plugin
 
     @property
     def service_type(self):
@@ -90,6 +163,7 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
         vpnservice = self.service_plugin._get_vpnservice(
             context, ipsec_site_connection['vpnservice_id'])
         csr_id_map.create_tunnel_mapping(context, ipsec_site_connection)
+        LOG.debug("PCM: sending create notification")
         self.agent_rpc.vpnservice_updated(context, vpnservice['router_id'],
                                           reason='ipsec-conn-create')
 
@@ -144,14 +218,37 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                 'ike_policy_id': u'%d' % ike_id,
                 'ipsec_policy_id': u'%s' % ipsec_id}
 
-    def _make_vpnservice_dict(self, vpnservice, context):
+    def _create_tunnel_interface(self, router_info):
+        # Use the first inteface
+        port = router_info['_interfaces'][0]['hosting_info']
+        vlan = port['segmentation_id']
+        # Port name "currently" is t{1,2}_p:1, as only one router per CSR,
+        # but will keep a semi-generic algorithm
+        port_name = port['hosting_port_name']
+        name, sep, num = port_name.partition(':')
+        # TODO(pcm): When available use n1kv_constants.T2_PORT_NAME
+        offset = 1 if name in T2_PORT_NAME else 0
+        if_num = int(num) * 2 + offset
+        return 'GigabitEthernet%d.%d' % (if_num, vlan)
+
+    def _get_router_info(self, router_info, external_ip):
+        LOG.debug("PCM: Getting router info %s", router_info)
+        hosting_device = router_info['hosting_device']
+        return {'rest_mgmt_ip': hosting_device['management_ip_address'],
+                'external_ip': external_ip,
+                'username': hosting_device['credentials']['username'],
+                'password': hosting_device['credentials']['password'],
+                'tunnel_if_name': self._create_tunnel_interface(router_info),
+                'protocol_port': 443,  # TODO(pcm) Available from router?
+                'timeout': 30}  # Hard-coded for now
+
+    def _make_vpnservice_dict(self, context, vpnservice, router_info):
         """Collect all info on service, including Cisco info per IPSec conn."""
         vpnservice_dict = dict(vpnservice)
         vpnservice_dict['ipsec_conns'] = []
-        vpnservice_dict['subnet'] = dict(
-            vpnservice.subnet)
-        vpnservice_dict['external_ip'] = vpnservice.router.gw_port[
-            'fixed_ips'][0]['ip_address']
+        vpnservice_dict['subnet'] = dict(vpnservice.subnet)
+        vpnservice_dict['router_info'] = self._get_router_info(router_info,
+            vpnservice.router.gw_port['fixed_ips'][0]['ip_address'])
         for ipsec_conn in vpnservice.ipsec_site_connections:
             ipsec_conn_dict = dict(ipsec_conn)
             ipsec_conn_dict['ike_policy'] = dict(ipsec_conn.ikepolicy)

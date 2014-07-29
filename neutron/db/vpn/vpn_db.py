@@ -616,6 +616,7 @@ class VPNPluginRpcDbMixin():
         agent = plugin._get_agent_by_type_and_host(
             context, n_constants.AGENT_TYPE_L3, host)
         if not agent.admin_state_up:
+            LOG.debug("PCM: Agent is not admin up on %s", host)
             return []
         query = context.session.query(VPNService)
         query = query.join(IPsecSiteConnection)
@@ -627,6 +628,7 @@ class VPNPluginRpcDbMixin():
                            VPNService.router_id)
         query = query.filter(
             l3_agent_db.RouterL3AgentBinding.l3_agent_id == agent.id)
+        LOG.debug("PCM: query for VPN services %s", query)
         return query
 
     def update_status_by_agent(self, context, service_status_info_list):

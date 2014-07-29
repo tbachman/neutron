@@ -334,24 +334,15 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         self.addCleanup(dbapi.clear_db)
         mock.patch('neutron.common.rpc.create_connection').start()
 
-        l3_agent = mock.Mock()
-        l3_agent.host = FAKE_HOST
-        plugin = mock.Mock()
-        plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
-        plugin_p = mock.patch('neutron.manager.NeutronManager.get_plugin')
-        get_plugin = plugin_p.start()
-        get_plugin.return_value = plugin
-        service_plugin_p = mock.patch(
-            'neutron.manager.NeutronManager.get_service_plugins')
-        get_service_plugin = service_plugin_p.start()
-        get_service_plugin.return_value = {constants.L3_ROUTER_NAT: plugin}
-
         service_plugin = mock.Mock()
-        service_plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
+        service_plugin.get_host_for_router.return_value = FAKE_HOST
         service_plugin._get_vpnservice.return_value = {
             'router_id': _uuid()
         }
-        self.db_update_mock = service_plugin.update_ipsec_site_conn_status
+        get_service_plugin = mock.patch(
+            'neutron.manager.NeutronManager.get_service_plugins').start()
+        get_service_plugin.return_value = {
+            constants.L3_ROUTER_NAT: service_plugin}
         self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(service_plugin)
         mock.patch.object(csr_db, 'create_tunnel_mapping').start()
         self.context = n_ctx.Context('some_user', 'some_tenant')
@@ -391,3 +382,56 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
         self._test_update(self.driver.delete_vpnservice,
                           [FAKE_VPN_SERVICE],
                           {'reason': 'vpn-service-delete'})
+
+
+class TestCiscoIPsecDriverRequests(base.BaseTestCase):
+
+    """Test handling device driver requests for service info."""
+
+    def setUp(self):
+        super(TestCiscoIPsecDriverRequests, self).setUp()
+        mock.patch('neutron.common.rpc.create_connection').start()
+
+        service_plugin = mock.Mock()
+        self.driver = ipsec_driver.CiscoCsrIPsecVPNDriver(service_plugin)
+
+    def test_build_router_tunnel_interface_name(self):
+        """Check formation of tunnel interface name for CSR router."""
+        router_info = {
+            '_interfaces': [
+                {'hosting_info': {'segmentation_id': 100,
+                               'hosting_port_name': 't1_p:1'}}
+            ]
+        }
+        self.assertEqual('GigabitEthernet2.100',
+                         self.driver._create_tunnel_interface(router_info))
+        router_info = {
+            '_interfaces': [
+                {'hosting_info': {'segmentation_id': 200,
+                                  'hosting_port_name': 't2_p:1'}}
+            ]
+        }
+        self.assertEqual('GigabitEthernet3.200',
+                         self.driver._create_tunnel_interface(router_info))
+
+    def test_build_router_info(self):
+        """Check creation of CSR info to send to device driver."""
+        router_info = {
+            'hosting_device': {
+                'management_ip_address': '1.1.1.1',
+                'credentials': {'username': 'me', 'password': 'secret'}
+            },
+            '_interfaces': [
+                {'hosting_info': {'segmentation_id': 100,
+                                  'hosting_port_name': 't1_p:1'}}
+            ]
+        }
+        expected = {'rest_mgmt_ip': '1.1.1.1',
+                    'external_ip': '2.2.2.2',
+                    'username': 'me',
+                    'password': 'secret',
+                    'tunnel_if_name': 'GigabitEthernet2.100',
+                    'protocol_port': 443,
+                    'timeout': 30}
+        self.assertEqual(expected,
+                         self.driver._get_router_info(router_info, '2.2.2.2'))

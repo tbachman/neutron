@@ -69,6 +69,7 @@ class CsrUnknownMappingError(exceptions.NeutronException):
                 "attribute %(attr)s of %(resource)s")
 
 
+# TODO(pcm) pull this code
 def find_available_csrs_from_config(config_files):
     """Read INI for available Cisco CSRs that driver can use.
 
@@ -138,7 +139,7 @@ def find_available_csrs_from_config(config_files):
                                 "local tunnel is not an IP address"),
                               for_router)
                     continue
-                csrs_found[for_router] = {'rest_mgmt': rest_mgmt_ip,
+                csrs_found[for_router] = {'rest_mgmt_ip': rest_mgmt_ip,
                                           'tunnel_ip': tunnel_ip,
                                           'username': username,
                                           'password': password,
@@ -205,17 +206,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
             self.report_status, context)
         self.periodic_report.start(
             interval=agent.conf.cisco_csr_ipsec.status_check_interval)
-
-        csrs_found = find_available_csrs_from_config(cfg.CONF.config_file)
-        if csrs_found:
-            LOG.info(_("Loaded %(num)d Cisco CSR configuration%(plural)s"),
-                     {'num': len(csrs_found),
-                      'plural': 's'[len(csrs_found) == 1:]})
-        else:
-            raise SystemExit(_('No Cisco CSR configurations found in: %s') %
-                             cfg.CONF.config_file)
-        self.csrs = dict([(k, csr_client.CsrRestClient(v))
-                          for k, v in csrs_found.items()])
+        LOG.debug("Device driver initialized for %s", node_topic)
 
     def vpnservice_updated(self, context, **kwargs):
         """Handle VPNaaS service driver change notifications."""
@@ -225,10 +216,10 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
 
     def create_vpn_service(self, service_data):
         """Create new entry to track VPN service and its connections."""
+        csr = csr_client.CsrRestClient(service_data['router_info'])
         vpn_service_id = service_data['id']
-        vpn_service_router = service_data['external_ip']
         self.service_state[vpn_service_id] = CiscoCsrVpnService(
-            service_data, self.csrs.get(vpn_service_router))
+            service_data, csr)
         return self.service_state[vpn_service_id]
 
     def update_connection(self, context, vpn_service_id, conn_data):
@@ -277,13 +268,6 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
     def update_service(self, context, service_data):
         """Handle notification for a single VPN Service and its connections."""
         vpn_service_id = service_data['id']
-        csr_id = service_data['external_ip']
-        if csr_id not in self.csrs:
-            LOG.error(_("Update: Skipping VPN service %(service)s as it's "
-                        "router (%(csr_id)s is not associated with a Cisco "
-                        "CSR"), {'service': vpn_service_id, 'csr_id': csr_id})
-            return
-
         if vpn_service_id in self.service_state:
             LOG.debug(_("Update: Existing VPN service %s detected"),
                       vpn_service_id)
@@ -291,6 +275,8 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         else:
             LOG.debug(_("Update: New VPN service %s detected"), vpn_service_id)
             vpn_service = self.create_vpn_service(service_data)
+            if not vpn_service:
+                return
 
         vpn_service.is_dirty = False
         vpn_service.connections_removed = False
@@ -308,6 +294,7 @@ class CiscoCsrIPsecDriver(device_drivers.DeviceDriver):
         Mark every visited connection as no longer "dirty" so they will
         not be deleted at end of sync processing.
         """
+        LOG.debug("PCM: Getting info on services")
         services_data = self.agent_rpc.get_vpn_services_on_host(context,
                                                                 self.host)
         LOG.debug("Sync updating for %d VPN services", len(services_data))
@@ -690,21 +677,10 @@ class CiscoCsrIPSecConnection(object):
     def create_site_connection_info(self, site_conn_id, ipsec_policy_id,
                                     conn_info):
         """Collect/create attributes needed for the IPSec connection."""
-        # TODO(pcm) Enable, once CSR is embedded as a Neutron router
-        # gw_ip = vpnservice['external_ip'] (need to pass in)
         mtu = conn_info['mtu']
         return {
             u'vpn-interface-name': site_conn_id,
             u'ipsec-policy-id': ipsec_policy_id,
-            u'local-device': {
-                # TODO(pcm): FUTURE - Get CSR port of interface with
-                # local subnet
-                u'ip-address': u'GigabitEthernet3',
-                # TODO(pcm): FUTURE - Get IP address of router's public
-                # I/F, once CSR is used as embedded router.
-                u'tunnel-ip-address': self.csr.tunnel_ip
-                # u'tunnel-ip-address': u'%s' % gw_ip
-            },
             u'remote-device': {
                 u'tunnel-ip-address': conn_info['peer_address']
             },

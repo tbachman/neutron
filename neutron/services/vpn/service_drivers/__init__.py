@@ -60,6 +60,15 @@ class BaseIPsecVpnAgentApi(n_rpc.RpcProxy):
         self.to_agent_topic = to_agent_topic
         super(BaseIPsecVpnAgentApi, self).__init__(topic, default_version)
 
+    @property
+    def l3_plugin(self):
+        try:
+            return self._l3_plugin
+        except AttributeError:
+            self._l3_plugin = manager.NeutronManager.get_service_plugins().get(
+                constants.L3_ROUTER_NAT)
+            return self._l3_plugin
+
     def _agent_notification(self, context, method, router_id,
                             version=None, **kwargs):
         """Notify update for the agent.
@@ -68,11 +77,9 @@ class BaseIPsecVpnAgentApi(n_rpc.RpcProxy):
         dispatch notification for the agent.
         """
         admin_context = context.is_admin and context or context.elevated()
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            constants.L3_ROUTER_NAT)
         if not version:
             version = self.RPC_API_VERSION
-        l3_agents = plugin.get_l3_agents_hosting_routers(
+        l3_agents = self.l3_plugin.get_l3_agents_hosting_routers(
             admin_context, [router_id],
             admin_state_up=True,
             active=True)
