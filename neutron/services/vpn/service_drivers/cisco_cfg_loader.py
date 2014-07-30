@@ -83,6 +83,11 @@ def find_available_csrs_from_config(config_files):
                     continue
                 except KeyError:
                     timeout = csr_client.TIMEOUT
+                m = mgmt_intf_re.match(mgmt_intf)
+                if not m:
+                    LOG.error(_("Malformed management interface name for "
+                                "Cisco CSR router entry - %s"), mgmt_intf)
+                    continue
                 try:
                     netaddr.IPAddress(rest_mgmt_ip)
                 except netaddr.core.AddrFormatError:
