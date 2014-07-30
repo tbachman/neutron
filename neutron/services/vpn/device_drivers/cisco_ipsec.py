@@ -18,7 +18,6 @@ import abc
 import collections
 import requests
 
-import netaddr
 from oslo.config import cfg
 from oslo import messaging
 import six
@@ -67,88 +66,6 @@ class CsrDriverMismatchError(exceptions.NeutronException):
 class CsrUnknownMappingError(exceptions.NeutronException):
     message = _("Device driver does not have a mapping of '%(value)s for "
                 "attribute %(attr)s of %(resource)s")
-
-
-# TODO(pcm) pull this code
-def find_available_csrs_from_config(config_files):
-    """Read INI for available Cisco CSRs that driver can use.
-
-    Loads management port, tunnel IP, user, and password information for
-    available CSRs from configuration file. Driver will use this info to
-    configure VPN connections. The CSR is associated 1:1 with a Neutron
-    router. To identify which CSR to use for a VPN service, the public
-    (GW) IP of the Neutron router will be used as an index into the CSR
-    config info.
-    """
-    multi_parser = cfg.MultiConfigParser()
-    LOG.info(_("Scanning config files %s for Cisco CSR configurations"),
-             config_files)
-    try:
-        read_ok = multi_parser.read(config_files)
-    except cfg.ParseError as pe:
-        LOG.error(_("Config file parse error: %s"), pe)
-        return {}
-
-    if len(read_ok) != len(config_files):
-        raise cfg.Error(_("Unable to parse config files %s for Cisco CSR "
-                          "info") % config_files)
-    csrs_found = {}
-    for parsed_file in multi_parser.parsed:
-        for parsed_item in parsed_file.keys():
-            device_type, sep, for_router = parsed_item.partition(':')
-            if device_type.lower() == 'cisco_csr_rest':
-                try:
-                    netaddr.IPNetwork(for_router)
-                except netaddr.core.AddrFormatError:
-                    LOG.error(_("Ignoring Cisco CSR configuration entry - "
-                                "router IP %s is not valid"), for_router)
-                    continue
-                entry = parsed_file[parsed_item]
-                # Check for missing fields
-                try:
-                    rest_mgmt_ip = entry['rest_mgmt'][0]
-                    tunnel_ip = entry['tunnel_ip'][0]
-                    username = entry['username'][0]
-                    password = entry['password'][0]
-                except KeyError as ke:
-                    LOG.error(_("Ignoring Cisco CSR for router %(router)s "
-                                "- missing %(field)s setting"),
-                              {'router': for_router, 'field': str(ke)})
-                    continue
-                # Validate fields
-                try:
-                    timeout = float(entry['timeout'][0])
-                except ValueError:
-                    LOG.error(_("Ignoring Cisco CSR for router %s - "
-                                "timeout is not a floating point number"),
-                              for_router)
-                    continue
-                except KeyError:
-                    timeout = csr_client.TIMEOUT
-                try:
-                    netaddr.IPAddress(rest_mgmt_ip)
-                except netaddr.core.AddrFormatError:
-                    LOG.error(_("Ignoring Cisco CSR for subnet %s - "
-                                "REST management is not an IP address"),
-                              for_router)
-                    continue
-                try:
-                    netaddr.IPAddress(tunnel_ip)
-                except netaddr.core.AddrFormatError:
-                    LOG.error(_("Ignoring Cisco CSR for router %s - "
-                                "local tunnel is not an IP address"),
-                              for_router)
-                    continue
-                csrs_found[for_router] = {'rest_mgmt_ip': rest_mgmt_ip,
-                                          'tunnel_ip': tunnel_ip,
-                                          'username': username,
-                                          'password': password,
-                                          'timeout': timeout}
-
-                LOG.debug(_("Found CSR for router %(router)s: %(info)s"),
-                          {'router': for_router,
-                           'info': csrs_found[for_router]})
-    return csrs_found
 
 
 class CiscoCsrIPsecVpnDriverApi(n_rpc.RpcProxy):

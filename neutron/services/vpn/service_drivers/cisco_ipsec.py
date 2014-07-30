@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
 from neutron.common import rpc as n_rpc
 from neutron.db.vpn import vpn_db
 from neutron import manager
