@@ -66,8 +66,8 @@ def find_available_csrs_from_config(config_files):
                     tunnel_ip = entry['tunnel_ip'][0]
                     username = entry['username'][0]
                     password = entry['password'][0]
-#                     host = entry['host'][0]
-#                     mgmt_intf = entry['mgmt_intf'][0]
+                    host = entry['host'][0]
+                    mgmt_intf = entry['mgmt_intf'][0]
                 except KeyError as ke:
                     LOG.error(_("Ignoring Cisco CSR for router %(router)s "
                                 "- missing %(field)s setting"),
@@ -97,15 +97,17 @@ def find_available_csrs_from_config(config_files):
                                 "local tunnel is not an IP address"),
                               for_router)
                     continue
-#                 m = mgmt_intf_re.match(mgmt_intf)
-#                 if not m:
-#                     LOG.error(_("Malformed management interface name for "
-#                                 "Cisco CSR router entry - %s"), mgmt_intf)
-#                     continue
+                m = mgmt_intf_re.match(mgmt_intf)
+                if not m:
+                    LOG.error(_("Malformed management interface name for "
+                                "Cisco CSR router entry - %s"), mgmt_intf)
+                    continue
                 csrs_found[for_router] = {'rest_mgmt_ip': rest_mgmt_ip,
                                           'tunnel_ip': tunnel_ip,
                                           'username': username,
                                           'password': password,
+                                          'host': host,
+                                          'mgmt_intf': mgmt_intf,
                                           'timeout': timeout}
 
                 LOG.debug(_("Found CSR for router %(router)s: %(info)s"),

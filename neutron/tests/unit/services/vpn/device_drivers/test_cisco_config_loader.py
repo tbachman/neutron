@@ -41,11 +41,15 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
+                                'host': 'compute-node',
+                                'mgmt_intf': 't1_p:1',
                                 'timeout': 5.0}}
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -56,11 +60,15 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'rest_mgmt = 10.20.30.1\n'
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
-                                        'password = secret\n')
+                                        'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
+                                'host': 'compute-node',
+                                'mgmt_intf': 't1_p:1',
                                 'timeout': csr_client.TIMEOUT}}
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -72,16 +80,22 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n'
                                         '[CISCO_CSR_REST:3.2.1.1]\n'
                                         'rest_mgmt = 5.5.5.3\n'
                                         'tunnel_ip = 3.2.1.6\n'
                                         'username = me\n'
-                                        'password = secret\n')
+                                        'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t2_p:1\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
+                                'host': 'compute-node',
+                                'mgmt_intf': 't1_p:1',
                                 'timeout': 5.0}}
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -93,6 +107,8 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = yes\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -103,21 +119,43 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 1.1.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n'
                                         '[CISCO_CSR_REST:2.2.2.0]\n'
-                                        'rest_mgmt = 10.20.30.1\n'
+                                        'rest_mgmt = 10.20.30.2\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n'
                                         '[CISCO_CSR_REST:3.3.3.0]\n'
-                                        'rest_mgmt = 10.20.30.1\n'
+                                        'rest_mgmt = 10.20.30.3\n'
                                         'tunnel_ip = 3.3.3.3\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n'
                                         '[CISCO_CSR_REST:4.4.4.0]\n'
-                                        'rest_mgmt = 10.20.30.1\n'
+                                        'rest_mgmt = 10.20.30.4\n'
                                         'tunnel_ip = 4.4.4.4\n'
                                         'username = me\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
+                                        'timeout = 5.0\n'
+                                        '[CISCO_CSR_REST:5.5.5.0]\n'
+                                        'rest_mgmt = 10.20.30.5\n'
+                                        'tunnel_ip = 5.5.5.5'
+                                        'username = me\n'
+                                        'password = secret\n'
+                                        'mgmt_intf = t1_p:1\n'
+                                        'timeout = 5.0\n'
+                                        '[CISCO_CSR_REST:6.6.6.0]\n'
+                                        'rest_mgmt = 10.20.30.6\n'
+                                        'tunnel_ip = 6.6.6.6'
+                                        'username = me\n'
+                                        'password = secret\n'
+                                        'host = compute-node\n'
                                         'timeout = 5.0\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -129,6 +167,8 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 4.3.2.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -140,6 +180,8 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -151,6 +193,8 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.4.5\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -175,6 +219,8 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 5.0\n')
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -187,11 +233,29 @@ class TestCiscoCsrIPsecDeviceDriverConfigLoading(base.BaseTestCase):
                                         'tunnel_ip = 3.2.1.3\n'
                                         'username = me\n'
                                         'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t1_p:1\n'
                                         'timeout = 15.5\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '1.1.1.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
+                                'host': 'compute-node',
+                                'mgmt_intf': 't1_p:1',
                                 'timeout': 15.5}}
         csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
+
+    def test_invalid_management_interface(self):
+        """Failure test of invalid management interface name."""
+        """Failure test of config file missing a value for attribute."""
+        cfg_file = self.create_tempfile('[CISCO_CSR_REST:3.2.1.1]\n'
+                                        'rest_mgmt = 1.1.1.1\n'
+                                        'tunnel_ip = 3.2.1.3\n'
+                                        'username = me\n'
+                                        'password = secret\n'
+                                        'host = compute-node\n'
+                                        'mgmt_intf = t3_p:1\n'
+                                        'timeout = 5.0\n')
+        csrs_found = cfg_loader.find_available_csrs_from_config([cfg_file])
+        self.assertEqual({}, csrs_found)
