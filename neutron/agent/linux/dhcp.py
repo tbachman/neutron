@@ -29,6 +29,7 @@ from oslo.config import cfg
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.common import constants
 from neutron.common import exceptions
 from neutron.openstack.common import importutils
 from neutron.openstack.common import jsonutils
@@ -315,6 +316,7 @@ class Dnsmasq(DhcpLocalProcess):
             '--pid-file=%s' % self.get_conf_file_name(
                 'pid', ensure_conf_dir=True),
             '--dhcp-hostsfile=%s' % self._output_hosts_file(),
+            '--addn-hosts=%s' % self._output_addn_hosts_file(),
             '--dhcp-optsfile=%s' % self._output_opts_file(),
             '--leasefile-ro',
         ]
@@ -387,6 +389,7 @@ class Dnsmasq(DhcpLocalProcess):
             return
 
         self._output_hosts_file()
+        self._output_addn_hosts_file()
         self._output_opts_file()
         if self.active:
             cmd = ['kill', '-HUP', self.pid]
@@ -396,30 +399,75 @@ class Dnsmasq(DhcpLocalProcess):
         LOG.debug(_('Reloading allocations for network: %s'), self.network.id)
         self.device_manager.update(self.network)
 
-    def _output_hosts_file(self):
-        """Writes a dnsmasq compatible hosts file."""
-        r = re.compile('[:.]')
-        buf = StringIO.StringIO()
+    def _iter_hosts(self):
+        """Iterate over hosts.
 
+        For each host on the network we yield a tuple containing:
+        (
+            port,  # a DictModel instance representing the port.
+            alloc,  # a DictModel instance of the allocated ip and subnet.
+            host_name,  # Host name.
+            name,  # Host name and domain name in the format 'hostname.domain'.
+        )
+        """
+        r = re.compile('[:.]')
         for port in self.network.ports:
             for alloc in port.fixed_ips:
-                name = 'host-%s.%s' % (r.sub('-', alloc.ip_address),
-                                       self.conf.dhcp_domain)
-                set_tag = ''
-                if getattr(port, 'extra_dhcp_opts', False):
-                    if self.version >= self.MINIMUM_VERSION:
-                        set_tag = 'set:'
+                hostname = 'host-%s' % r.sub('-', alloc.ip_address)
+                fqdn = '%s.%s' % (hostname, self.conf.dhcp_domain)
+                yield (port, alloc, hostname, fqdn)
 
-                    buf.write('%s,%s,%s,%s%s\n' %
-                              (port.mac_address, name, alloc.ip_address,
-                               set_tag, port.id))
-                else:
-                    buf.write('%s,%s,%s\n' %
-                              (port.mac_address, name, alloc.ip_address))
+    def _output_hosts_file(self):
+        """Writes a dnsmasq compatible dhcp hosts file.
 
+        The generated file is sent to the --dhcp-hostsfile option of dnsmasq,
+        and lists the hosts on the network which should receive a dhcp lease.
+        Each line in this file is in the form::
+
+            'mac_address,FQDN,ip_address'
+
+        IMPORTANT NOTE: a dnsmasq instance does not resolve hosts defined in
+        this file if it did not give a lease to a host listed in it (e.g.:
+        multiple dnsmasq instances on the same network if this network is on
+        multiple network nodes). This file is only defining hosts which
+        should receive a dhcp lease, the hosts resolution in itself is
+        defined by the `_output_addn_hosts_file` method.
+        """
+        buf = StringIO.StringIO()
+        for (port, alloc, hostname, name) in self._iter_hosts():
+            set_tag = ''
+            if getattr(port, 'extra_dhcp_opts', False):
+                if self.version >= self.MINIMUM_VERSION:
+                    set_tag = 'set:'
+
+                buf.write('%s,%s,%s,%s%s\n' %
+                          (port.mac_address, name, alloc.ip_address,
+                           set_tag, port.id))
+            else:
+                buf.write('%s,%s,%s\n' %
+                          (port.mac_address, name, alloc.ip_address))
         name = self.get_conf_file_name('host')
         utils.replace_file(name, buf.getvalue())
         return name
+
+    def _output_addn_hosts_file(self):
+        """Writes a dnsmasq compatible additional hosts file.
+
+        The generated file is sent to the --addn-hosts option of dnsmasq,
+        and lists the hosts on the network which should be resolved even if
+        the dnsmaq instance did not give a lease to the host (see the
+        `_output_hosts_file` method).
+        Each line in this file is in the same form as a standard /etc/hosts
+        file.
+        """
+        buf = StringIO.StringIO()
+        for (port, alloc, hostname, fqdn) in self._iter_hosts():
+            # It is compulsory to write the `fqdn` before the `hostname` in
+            # order to obtain it in PTR responses.
+            buf.write('%s\t%s %s\n' % (alloc.ip_address, fqdn, hostname))
+        addn_hosts = self.get_conf_file_name('addn_hosts')
+        utils.replace_file(addn_hosts, buf.getvalue())
+        return addn_hosts
 
     def _output_opts_file(self):
         """Write a dnsmasq compatible options file."""
@@ -445,12 +493,8 @@ class Dnsmasq(DhcpLocalProcess):
                     host_routes.append("%s,%s" % (hr.destination, hr.nexthop))
 
             # Add host routes for isolated network segments
-            enable_metadata = (
-                self.conf.enable_isolated_metadata
-                and not subnet.gateway_ip
-                and subnet.ip_version == 4)
 
-            if enable_metadata:
+            if self._enable_metadata(subnet):
                 subnet_dhcp_ip = subnet_to_interface_ip[subnet.id]
                 host_routes.append(
                     '%s/32,%s' % (METADATA_DEFAULT_IP, subnet_dhcp_ip)
@@ -518,6 +562,25 @@ class Dnsmasq(DhcpLocalProcess):
             option = 'option:%s' % option
 
         return ','.join((set_tag + tag, '%s' % option) + args)
+
+    def _enable_metadata(self, subnet):
+        '''Determine if the metadata route will be pushed to hosts on subnet.
+
+        If subnet has a Neutron router attached, we want the hosts to get
+        metadata from the router's proxy via their default route instead.
+        '''
+        if self.conf.enable_isolated_metadata and subnet.ip_version == 4:
+            if subnet.gateway_ip is None:
+                return True
+            else:
+                for port in self.network.ports:
+                    if port.device_owner == constants.DEVICE_OWNER_ROUTER_INTF:
+                        for alloc in port.fixed_ips:
+                            if alloc.subnet_id == subnet.id:
+                                return False
+                return True
+        else:
+            return False
 
     @classmethod
     def lease_update(cls):
@@ -739,3 +802,4 @@ class DeviceManager(object):
 
         self.plugin.release_dhcp_port(network.id,
                                       self.get_device_id(network))
+
