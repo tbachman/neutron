@@ -13,11 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Aruna Kushwaha, Cisco Systems Inc.
-# @author: Abhishek Raut, Cisco Systems Inc.
-# @author: Rudrajit Tapadar, Cisco Systems Inc.
-# @author: Sergey Sudakovich, Cisco Systems Inc.
 
 import netaddr
 import re
@@ -697,6 +692,14 @@ def get_vm_network(db_session, policy_profile_id, network_id):
         raise c_exc.VMNetworkNotFound(name=name)
 
 
+def get_vm_networks(db_session):
+    """Retrieve all vm networks.
+
+    :param db_session: database session
+    """
+    return db_session.query(n1kv_models_v2.N1kVmNetwork)
+
+
 def add_vm_network(db_session,
                    name,
                    policy_profile_id,
@@ -968,6 +971,19 @@ def _get_profile_bindings(db_session, profile_type=None):
                             filter_by(profile_type=profile_type))
         return profile_bindings
     return db_session.query(n1kv_models_v2.ProfileBinding)
+
+
+def _policy_profile_in_use(profile_id):
+    """Checks if a policy profile is being used in a port binding.
+
+    :param segment_id: UUID of the policy profile to be checked
+    :returns: boolean
+    """
+    db_session = db.get_session()
+    with db_session.begin(subtransactions=True):
+        ret = (db_session.query(n1kv_models_v2.N1kvPortBinding).
+               filter_by(profile_id=profile_id).first())
+        return bool(ret)
 
 
 class NetworkProfile_db_mixin(object):
