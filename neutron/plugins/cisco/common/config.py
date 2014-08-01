@@ -87,6 +87,8 @@ cisco_n1k_opts = [
                help=_("N1K http timeout duration in seconds")),
     cfg.IntOpt('http_pool_size', default=4,
                help=_("Number of threads to use to make HTTP requests")),
+    cfg.BoolOpt('enable_sync_on_start', default=False,
+                help=_("Initiate full sync with VSM on neutron start.")),
 ]
 
 cfg.CONF.register_opts(cisco_opts, "CISCO")
