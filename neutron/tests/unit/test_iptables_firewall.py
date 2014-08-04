@@ -80,6 +80,7 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                                '-j $ifake_dev'),
                  call.add_rule(
                      'ifake_dev', '-m state --state INVALID -j DROP'),
+                 call.add_rule('ifake_dev', '-j $sfake_dev'),
                  call.add_rule(
                      'ifake_dev',
                      '-m state --state RELATED,ESTABLISHED -j RETURN'),
@@ -101,6 +102,7 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                  call.add_rule(
                      'sfake_dev', '-m mac --mac-source ff:ff:ff:ff '
                      '-s 10.0.0.1 -j RETURN'),
+                 call.add_rule('sfake_dev', '-d 10.0.0.1 -j RETURN'),
                  call.add_rule('sfake_dev', '-j DROP'),
                  call.add_rule(
                      'ofake_dev',
@@ -747,11 +749,28 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                                '-m physdev --physdev-out tapfake_dev '
                                '--physdev-is-bridged '
                                '-j $ifake_dev'),
-                 call.add_rule(
-                     'ifake_dev', '-m state --state INVALID -j DROP'),
-                 call.add_rule(
-                     'ifake_dev',
-                     '-m state --state RELATED,ESTABLISHED -j RETURN')]
+                 ]
+        if ethertype == 'IPv6':
+            for icmp6_type in constants.ICMPV6_ALLOWED_TYPES:
+                calls.append(
+                    call.add_rule('ifake_dev',
+                                  '-p icmpv6 --icmpv6-type %s -j RETURN' %
+                                  icmp6_type))
+
+        if ethertype == 'IPv4':
+            calls += [call.add_rule('ifake_dev',
+                                    '-m state --state INVALID -j DROP'),
+                      call.add_rule('ifake_dev',
+                                    '-j $sfake_dev'),
+                      call.add_rule('ifake_dev',
+                                    '-m state --state RELATED,ESTABLISHED '
+                                    '-j RETURN')]
+        else:
+            calls += [call.add_rule('ifake_dev',
+                                    '-m state --state INVALID -j DROP'),
+                      call.add_rule('ifake_dev',
+                                    '-m state --state RELATED,ESTABLISHED '
+                                    '-j RETURN')]
 
         if ingress_expected_call:
             calls.append(ingress_expected_call)
@@ -775,6 +794,9 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                       'sfake_dev',
                       '-m mac --mac-source ff:ff:ff:ff -s %s -j RETURN'
                       % prefix),
+                  call.add_rule(
+                      'sfake_dev',
+                      '-d %s -j RETURN' % prefix),
                   call.add_rule('sfake_dev', '-j DROP'),
                   dhcp_rule,
                   call.add_rule('ofake_dev', '-j $sfake_dev')]
@@ -824,6 +846,8 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                  call.add_rule(
                      'ifake_dev', '-m state --state INVALID -j DROP'),
                  call.add_rule(
+                     'ifake_dev', '-j $sfake_dev'),
+                 call.add_rule(
                      'ifake_dev',
                      '-m state --state RELATED,ESTABLISHED -j RETURN'),
                  call.add_rule('ifake_dev', '-j RETURN'),
@@ -846,6 +870,9 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                      'sfake_dev',
                      '-m mac --mac-source ff:ff:ff:ff -s 10.0.0.1 '
                      '-j RETURN'),
+                 call.add_rule(
+                     'sfake_dev',
+                     '-d 10.0.0.1 -j RETURN'),
                  call.add_rule('sfake_dev', '-j DROP'),
                  call.add_rule(
                      'ofake_dev',
@@ -878,6 +905,7 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                  call.add_rule(
                      'ifake_dev',
                      '-m state --state INVALID -j DROP'),
+                 call.add_rule('ifake_dev', '-j $sfake_dev'),
                  call.add_rule(
                      'ifake_dev',
                      '-m state --state RELATED,ESTABLISHED -j RETURN'),
@@ -898,7 +926,11 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                  call.add_chain('sfake_dev'),
                  call.add_rule(
                      'sfake_dev',
-                     '-m mac --mac-source ff:ff:ff:ff -s 10.0.0.1 -j RETURN'),
+                     '-m mac --mac-source ff:ff:ff:ff:ff:ff -s 10.0.0.1 '
+                     '-j RETURN'),
+                 call.add_rule(
+                     'sfake_dev',
+                     '-d %s -j RETURN' % prefix),
                  call.add_rule('sfake_dev', '-j DROP'),
                  call.add_rule(
                      'ofake_dev',
@@ -1028,6 +1060,7 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                                '-j $ifake_dev'),
                  call.add_rule(
                      'ifake_dev', '-m state --state INVALID -j DROP'),
+                 call.add_rule('ifake_dev', '-j $sfake_dev'),
                  call.add_rule(
                      'ifake_dev',
                      '-m state --state RELATED,ESTABLISHED -j RETURN'),
@@ -1048,10 +1081,16 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                  call.add_chain('sfake_dev'),
                  call.add_rule(
                      'sfake_dev',
-                     '-m mac --mac-source ff:ff:ff:ff -s 10.0.0.1 -j RETURN'),
+                     '-m mac --mac-source ff:ff:ff:ff:ff:ff -s 10.0.0.1 '
+                     '-j RETURN'),
+                 call.add_rule('sfake_dev', '-d 10.0.0.1 -j RETURN'),
                  call.add_rule(
                      'sfake_dev',
-                     '-m mac --mac-source ff:ff:ff:ff -s 10.0.0.2 -j RETURN'),
+                     '-m mac --mac-source ff:ff:ff:ff:ff:ff -s 10.0.0.2 '
+                     '-j RETURN'),
+                 call.add_rule(
+                     'sfake_dev',
+                     '-d 10.0.0.2 -j RETURN'),
                  call.add_rule('sfake_dev', '-j DROP'),
                  call.add_rule(
                      'ofake_dev',
@@ -1089,6 +1128,7 @@ class IptablesFirewallTestCase(base.BaseTestCase):
                                '-j $ifake_dev'),
                  call.add_rule(
                      'ifake_dev', '-m state --state INVALID -j DROP'),
+                 call.add_rule('ifake_dev', '-j $sfake_dev'),
                  call.add_rule(
                      'ifake_dev',
                      '-m state --state RELATED,ESTABLISHED -j RETURN'),

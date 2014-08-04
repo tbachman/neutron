@@ -203,6 +203,10 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                     table.add_rule(chain_name,
                                    '-m mac --mac-source %s -s %s -j RETURN'
                                    % (mac, ip))
+
+                    table.add_rule(chain_name,
+                                   '-d %s -j RETURN' % ip)
+
             table.add_rule(chain_name, '-j DROP')
             rules.append('-j $%s' % chain_name)
 
@@ -260,16 +264,19 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                 ipv6_iptables_rule)
             ipv4_iptables_rule += self._drop_dhcp_rule()
         ipv4_iptables_rule += self._convert_sgr_to_iptables_rules(
-            ipv4_sg_rules)
+            ipv4_sg_rules, port, "4", direction)
         ipv6_iptables_rule += self._convert_sgr_to_iptables_rules(
-            ipv6_sg_rules)
+            ipv6_sg_rules, port, "6", direction)
         self._add_rule_to_chain_v4v6(chain_name,
                                      ipv4_iptables_rule,
                                      ipv6_iptables_rule)
 
-    def _convert_sgr_to_iptables_rules(self, security_group_rules):
+    def _convert_sgr_to_iptables_rules(self, security_group_rules,
+                                       port, proto_version, direction):
         iptables_rules = []
         self._drop_invalid_packets(iptables_rules)
+        if proto_version == "4" and direction == INGRESS_DIRECTION:
+            self._drop_ingress_spoofing_rules(iptables_rules, port)
         self._allow_established(iptables_rules)
         for rule in security_group_rules:
             # These arguments MUST be in the format iptables-save will
@@ -305,6 +312,10 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         # Allow established connections
         iptables_rules += ['-m state --state RELATED,ESTABLISHED -j RETURN']
         return iptables_rules
+
+    def _drop_ingress_spoofing_rules(self, iptables_rules, port):
+        chain_name = self._port_chain_name(port, SPOOF_FILTER)
+        iptables_rules += ['-j $%s' % chain_name]
 
     def _protocol_arg(self, protocol):
         if not protocol:
