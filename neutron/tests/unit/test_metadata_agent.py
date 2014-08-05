@@ -275,7 +275,7 @@ class TestUnixDomainWSGIServer(base.BaseTestCase):
     def test_start(self):
         mock_app = mock.Mock()
         with mock.patch.object(self.server, 'pool') as pool:
-            self.server.start(mock_app, '/the/path')
+            self.server.start(mock_app, '/the/path', workers=0, backlog=128)
             self.eventlet.assert_has_calls([
                 mock.call.listen(
                     '/the/path',
@@ -288,6 +288,22 @@ class TestUnixDomainWSGIServer(base.BaseTestCase):
                 mock_app,
                 self.eventlet.listen.return_value
             )
+
+    @mock.patch('neutron.openstack.common.service.ProcessLauncher')
+    def test_start_multiple_workers(self, process_launcher):
+        launcher = process_launcher.return_value
+
+        mock_app = mock.Mock()
+        self.server.start(mock_app, '/the/path', workers=2, backlog=128)
+        launcher.running = True
+        launcher.launch_service.assert_called_once_with(self.server._server,
+                                                        workers=2)
+
+        self.server.stop()
+        self.assertFalse(launcher.running)
+
+        self.server.wait()
+        launcher.wait.assert_called_once_with()
 
     def test_run(self):
         with mock.patch.object(agent, 'logging') as logging:
@@ -310,6 +326,8 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
         self.cfg = self.cfg_p.start()
         self.addCleanup(self.cfg_p.stop)
         self.cfg.CONF.metadata_proxy_socket = '/the/path'
+        self.cfg.CONF.metadata_workers = 0
+        self.cfg.CONF.metadata_backlog = 128
 
     def test_init_doesnot_exists(self):
         with mock.patch('os.path.isdir') as isdir:
@@ -373,7 +391,8 @@ class TestUnixDomainMetadataProxy(base.BaseTestCase):
                         server.assert_has_calls([
                             mock.call('neutron-metadata-agent'),
                             mock.call().start(handler.return_value,
-                                              '/the/path'),
+                                              '/the/path', workers=0,
+                                              backlog=128),
                             mock.call().wait()]
                         )
 
