@@ -700,7 +700,9 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
             self.assertTrue(self.dhcp.needs_resync)
 
     def test_subnet_update_end(self):
-        payload = dict(subnet=dict(network_id=fake_network.id))
+        payload = dict(subnet=dict(network_id=fake_network.id,
+                                   cidr=fake_subnet1.cidr,
+                                   gateway_ip=fake_subnet1.gateway_ip))
         self.cache.get_network_by_id.return_value = fake_network
         self.plugin.get_network_info.return_value = fake_network
 
@@ -717,7 +719,9 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                   subnets=[fake_subnet1, fake_subnet3],
                                   ports=[fake_port1]))
 
-        payload = dict(subnet=dict(network_id=fake_network.id))
+        payload = dict(subnet=dict(network_id=fake_network.id,
+                                   cidr=fake_subnet1.cidr,
+                                   gateway_ip=fake_subnet1.gateway_ip))
         self.cache.get_network_by_id.return_value = fake_network
         self.plugin.get_network_info.return_value = new_state
 
@@ -734,7 +738,9 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                    subnets=[fake_subnet1, fake_subnet3],
                                    ports=[fake_port1]))
 
-        payload = dict(subnet_id=fake_subnet1.id)
+        payload = dict(subnet_id=fake_subnet1.id,
+                       cidr=fake_subnet1.cidr,
+                       gateway_ip=fake_subnet1.gateway_ip)
         self.cache.get_network_by_subnet_id.return_value = prev_state
         self.cache.get_network_by_id.return_value = prev_state
         self.plugin.get_network_info.return_value = fake_network
