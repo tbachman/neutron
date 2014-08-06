@@ -752,6 +752,11 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                            'subnet_id': subnet.id,
                            'cidr': subnet.cidr})
                 raise q_exc.InvalidInput(error_message=err_msg)
+        new_ip = netaddr.IPNetwork(new_subnet_cidr)
+        if new_ip.size < 8:
+            err_msg = (_("%s has size %d") % (new_subnet_cidr, new_ip.size))
+            LOG.error(err_msg)
+            raise q_exc.InvalidInput(error_message=err_msg)
 
     def _validate_allocation_pools(self, ip_pools, subnet_cidr):
         """Validate IP allocation pools.
