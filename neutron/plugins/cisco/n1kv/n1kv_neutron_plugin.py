@@ -308,6 +308,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # Maintain a flag that tracks whether a full sync is required
         # Set the flag to True to sync with VSM on neutron restarts
         self.full_sync = c_conf.CISCO_N1K.enable_sync_on_start
+        self.sync_on_error = c_conf.CISCO_N1K.enable_sync_on_error
         # Maintain a dict to track whether a resource needs to be synced
         self.sync_resource = {"network_profiles": False,
                               "networks": False,
@@ -379,7 +380,7 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                             func_obj = getattr(self, func_name)(admin_context,
                                                                 vsm_resources)
             except cisco_exceptions.VSMConnectionFailed:
-                LOG.warning(_('VSM SYNC failed.'))
+                LOG.warning(_('VSM SYNC failed because of Connection Failure.'))
             except Exception as e:
                 LOG.error(_("VSM SYNC thread exception: %s"), e) 
             # Sleep for a predefined interval
@@ -660,6 +661,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             self._remove_all_fake_policy_profiles()
         except (cisco_exceptions.VSMError,
                 cisco_exceptions.VSMConnectionFailed):
+            if self.sync_on_error:
+                self.full_sync = True
             LOG.warning(_('No policy profile populated from VSM'))
 
     def _extend_network_dict_provider(self, context, network):
