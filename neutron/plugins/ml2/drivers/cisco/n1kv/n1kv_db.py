@@ -15,7 +15,7 @@
 #
 # @author: Abhishek Raut, Cisco Systems Inc.
 
-from sqlalchemy.orm.exc import sa_exc
+import sqlalchemy.orm.exc as sa_exc
 
 import neutron.db.api as db
 from neutron.openstack.common import log as logging
@@ -31,7 +31,7 @@ class N1kvDbModel(object):
     """DB Model to manage all Nexus1000V DB interactions."""
 
     def __init__(self):
-        self.db_session = db_api.get_session()
+        self.db_session = db.get_session()
 
     def add_network_profile(self, netp_name, netp_type):
         """Create a network profile."""

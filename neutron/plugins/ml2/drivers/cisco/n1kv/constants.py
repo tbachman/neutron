@@ -24,3 +24,8 @@ NEXUS_VXLAN_MAX = 16000000
 VM_NETWORK_PREFIX = 'vmn_'
 BRIDGE_DOMAIN_SUFFIX = '_bd'
 LOGICAL_NETWORK_SUFFIX = '_log_net'
+
+
+# VSM response keys
+PROPERTIES = 'properties'
+ID = 'id'

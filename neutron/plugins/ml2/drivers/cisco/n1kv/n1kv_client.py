@@ -23,8 +23,8 @@ from oslo.config import cfg
 
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
-from neutron.plugins.ml2.cisco.n1kv import constants as n1kv_const
-from neutron.plugins.ml2.cisco.n1kv import exceptions as n1kv_exc
+from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
+from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 
 LOG = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class Client(object):
         self.password = cfg.CONF.ml2_cisco_n1kv.password
         self.action_prefix = 'http://%s/api/n1k' % self.n1kv_vsm_ip
         self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
-        required_opts = ('url', 'username', 'password')
+        required_opts = ('n1kv_vsm_ip', 'username', 'password')
         for opt in required_opts:
             if not getattr(self, opt):
                 raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')

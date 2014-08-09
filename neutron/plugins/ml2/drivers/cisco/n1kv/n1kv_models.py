@@ -81,7 +81,6 @@ class N1kVmNetwork(model_base.BASEV2):
 
     name = sa.Column(sa.String(80), primary_key=True)
     profile_id = sa.Column(sa.String(36),
-                           sa.ForeignKey('cisco_ml2_n1kv_policy_profiles.'
-                                         'profile_id'))
+                           sa.ForeignKey('cisco_ml2_n1kv_policy_profiles.id'))
     network_id = sa.Column(sa.String(36))
     port_count = sa.Column(sa.Integer)

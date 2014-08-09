@@ -25,8 +25,9 @@ from oslo.config import cfg
 
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
-from neutron.plugins.common import p_const
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers.cisco.n1kv import config # noqa
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_client
@@ -38,6 +39,7 @@ LOG = log.getLogger(__name__)
 class N1KVMechanismDriver(api.MechanismDriver):
 
     def initialize(self):
+        n1kv_conf = cfg.CONF.ml2_cisco_n1kv
         self.n1kv_db = n1kv_db.N1kvDbModel()
         self.n1kvclient = n1kv_client.Client()
 
@@ -82,7 +84,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
                 n1kv_exc.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
 
-    def _ensure_network_profiles_created_on_vsm(netp_vlan_name,
+    def _ensure_network_profiles_created_on_vsm(self,
+                                                netp_vlan_name,
                                                 netp_vxlan_name):
         # Make sure logical networks and network profiles exist
         # on the VSM

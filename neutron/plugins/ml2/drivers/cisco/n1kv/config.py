@@ -19,11 +19,11 @@ from oslo.config import cfg
 
 
 n1kv_opts = [
-    cfg.StrOpt('n1kv_vsm_ip'
+    cfg.StrOpt('n1kv_vsm_ip',
                help=_("IP Address of the Cisco Nexus1000V VSM")),
-    cfg.StrOpt('username'
+    cfg.StrOpt('username',
                help=_("Username for the Cisco Nexus1000V VSM")),
-    cfg.StrOpt('password'
+    cfg.StrOpt('password',
                help=_("Password for the Cisco Nexus1000V VSM"), secret=True),
     cfg.StrOpt('default_vlan_network_profile', default='default-vlan-np',
                help=_("Cisco Nexus1000V default network profile for VLAN "
