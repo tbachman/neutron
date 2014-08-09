@@ -21,9 +21,9 @@ from oslo.config import cfg
 n1kv_opts = [
     cfg.StrOpt('n1kv_vsm_ip'
                help=_("IP Address of the Cisco Nexus1000V VSM")),
-    cfg.StrOpt('n1kv_username'
+    cfg.StrOpt('username'
                help=_("Username for the Cisco Nexus1000V VSM")),
-    cfg.StrOpt('n1kv_password'
+    cfg.StrOpt('password'
                help=_("Password for the Cisco Nexus1000V VSM"), secret=True),
     cfg.StrOpt('default_vlan_network_profile', default='default-vlan-np',
                help=_("Cisco Nexus1000V default network profile for VLAN "
@@ -33,6 +33,11 @@ n1kv_opts = [
                       "networks")),
     cfg.StrOpt('default_policy_profile', default='default-pp',
                help=_("Cisco Nexus1000V default policy profile")),
+    cfg.IntOpt('poll_duration', default=60,
+               help=_("Cisco Nexus1000V policy profile polling duration in "
+                      "seconds")),
+    cfg.IntOpt('http_pool_size', default=4,
+               help=_("Number of threads to use to make HTTP requests")),
     cfg.IntOpt('http_timeout', default=15,
                help=_("HTTP timeout, in seconds, for connections to the "
                       "Nexus1000V VSM")),
