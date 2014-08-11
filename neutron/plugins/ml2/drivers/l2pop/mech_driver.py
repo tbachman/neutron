@@ -164,7 +164,7 @@ class L2populationMechanismDriver(api.MechanismDriver,
                           "configuration."))
             return
 
-        segment = context.bound_segment
+        segment = context.bottom_bound_segment
         if not segment:
             LOG.warning(_("Port %(port)s updated by agent %(agent)s "
                           "isn't bound to any segment"),
