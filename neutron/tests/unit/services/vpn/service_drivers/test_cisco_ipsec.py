@@ -336,6 +336,10 @@ class TestCiscoIPsecDriver(base.BaseTestCase):
 
         service_plugin = mock.Mock()
         service_plugin.get_host_for_router.return_value = FAKE_HOST
+        # TODO(pcm): Remove when Cisco L3 router plugin support available
+        mock.patch('neutron.services.vpn.service_drivers.'
+                   'cisco_cfg_loader.get_host_for_router',
+                   return_value=FAKE_HOST).start()
         service_plugin._get_vpnservice.return_value = {
             'router_id': _uuid()
         }

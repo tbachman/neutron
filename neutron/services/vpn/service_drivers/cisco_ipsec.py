@@ -19,9 +19,10 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import service_drivers
+from neutron.services.vpn.service_drivers import (
+    cisco_cfg_loader as workaround)
 from neutron.services.vpn.service_drivers import cisco_csr_db as csr_id_map
 from neutron.services.vpn.service_drivers import cisco_validator
-
 
 LOG = logging.getLogger(__name__)
 
@@ -75,7 +76,9 @@ class CiscoCsrIPsecVpnDriverCallBack(n_rpc.RpcCallback):
 
     def get_vpn_services_on_host(self, context, host=None):
         """Returns info on the VPN services on the host."""
-        routers = self.l3_plugin.get_active_routers_for_host(context, host)
+        # TODO(pcm): Use this, once Cisco L3 router plugin support up-streamed
+        # routers = self.l3_plugin.get_active_routers_for_host(context, host)
+        routers = workaround.get_active_routers_for_host(context, host)
         host_vpn_services = []
         for router in routers:
             LOG.debug("PCM: router=%s %s", router['id'], router)
@@ -115,7 +118,9 @@ class CiscoCsrIPsecVpnAgentApi(service_drivers.BaseIPsecVpnAgentApi,
         admin_context = context.is_admin and context or context.elevated()
         if not version:
             version = self.RPC_API_VERSION
-        host = self.l3_plugin.get_host_for_router(admin_context, router_id)
+        # TODO(pcm): Use this, when Cisco L3 router plugin support up-streamed
+        # host = self.l3_plugin.get_host_for_router(admin_context, router_id)
+        host = workaround.get_host_for_router(admin_context, router_id)
         LOG.debug(_('Notify agent at %(topic)s.%(host)s the message '
                     '%(method)s %(args)s for router %(router)s'),
                   {'topic': self.to_agent_topic,
