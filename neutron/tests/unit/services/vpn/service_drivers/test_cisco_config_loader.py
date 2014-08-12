@@ -69,16 +69,14 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
                                 'host': 'compute-node',
-                                'mgmt_intf': 't1_p:1',
-                                'mgmt_vlan': 100,
+                                'mgmt_intf': 'GigabitEthernet3',
                                 'timeout': 5.0}}
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -92,15 +90,13 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n')
+            'mgmt_intf = GigabitEthernet3\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
                                 'host': 'compute-node',
-                                'mgmt_intf': 't1_p:1',
-                                'mgmt_vlan': 100,
+                                'mgmt_intf': 'GigabitEthernet3',
                                 'timeout': csr_client.TIMEOUT}}
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -114,8 +110,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
             '[CISCO_CSR_REST:3.2.1.1]\n'
             'rest_mgmt = 5.5.5.3\n'
@@ -123,15 +118,13 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t2_p:1\n'
-            'mgmt_vlan = 101\n')
+            'mgmt_intf = GigabitEthernet3\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '10.20.30.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
                                 'host': 'compute-node',
-                                'mgmt_intf': 't1_p:1',
-                                'mgmt_vlan': 100,
+                                'mgmt_intf': 'GigabitEthernet3',
                                 'timeout': 5.0}}
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -145,23 +138,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
-            'timeout = yes\n')
-        csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
-        self.assertEqual({}, csrs_found)
-
-    def test_fail_loading_config_with_invalid_vlan(self):
-        """Failure test of invalid management VLAN in config info."""
-        cfg_file = create_tempfile(
-            '[CISCO_CSR_REST:3.2.1.1]\n'
-            'rest_mgmt = 10.20.30.1\n'
-            'tunnel_ip = 3.2.1.3\n'
-            'username = me\n'
-            'password = secret\n'
-            'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = abc\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = yes\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -175,8 +152,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
 
             '[CISCO_CSR_REST:2.2.2.0]\n'
@@ -185,8 +161,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
 
             '[CISCO_CSR_REST:3.3.3.0]\n'
@@ -195,8 +170,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             # No username
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
 
             '[CISCO_CSR_REST:4.4.4.0]\n'
@@ -205,8 +179,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             # No password
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
 
             '[CISCO_CSR_REST:5.5.5.0]\n'
@@ -215,8 +188,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             # No host
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n'
 
             '[CISCO_CSR_REST:6.6.6.0]\n'
@@ -226,17 +198,6 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'password = secret\n'
             'host = compute-node\n'
             # No mgmt_intf
-            'mgmt_vlan = 100\n'
-            'timeout = 5.0\n'
-
-            '[CISCO_CSR_REST:5.5.5.0]\n'
-            'rest_mgmt = 10.20.30.5\n'
-            'tunnel_ip = 5.5.5.5'
-            'username = me\n'
-            'password = secret\n'
-            'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            # No mgmt_vlan
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -250,8 +211,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -265,8 +225,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -280,8 +239,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -308,8 +266,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -324,16 +281,14 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 15.5\n')
         expected = {'3.2.1.1': {'rest_mgmt_ip': '1.1.1.1',
                                 'tunnel_ip': '3.2.1.3',
                                 'username': 'me',
                                 'password': 'secret',
                                 'host': 'compute-node',
-                                'mgmt_intf': 't1_p:1',
-                                'mgmt_vlan': 100,
+                                'mgmt_intf': 'GigabitEthernet3',
                                 'timeout': 15.5}}
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual(expected, csrs_found)
@@ -347,8 +302,7 @@ class TestCiscoCsrServiceDriverConfigLoading(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = compute-node\n'
-            'mgmt_intf = t3_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet9\n'
             'timeout = 5.0\n')
         csrs_found = cfg_loader.get_available_csrs_from_config([cfg_file])
         self.assertEqual({}, csrs_found)
@@ -369,7 +323,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
+            'mgmt_intf = GigabitEthernet1\n'
             'mgmt_vlan = 100\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
@@ -387,8 +341,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
         mock.patch(CISCO_GET_ROUTER_IP, return_value='5.5.5.5').start()
@@ -405,8 +358,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
         mock.patch(CISCO_GET_ROUTER_IP, return_value=None).start()
@@ -429,8 +381,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet2\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
         mock.patch(CISCO_GET_ROUTER_ID,
@@ -441,8 +392,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
                 'management_ip_address': '10.20.30.1',
                 'credentials': {'username': 'me', 'password': 'secret'}
             },
-            '_interfaces': [{'hosting_info': {'segmentation_id': 100,
-                                              'hosting_port_name': 't1_p:1'}}]
+            'mgmt_intf': 'GigabitEthernet2'
         }
         routers = cfg_loader.get_active_routers_for_host(self.context,
                                                          "ubuntu")
@@ -457,8 +407,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet2\n'
             'timeout = 5.0\n'
             '[CISCO_CSR_REST:4.3.2.1]\n'
             'rest_mgmt = 10.20.30.2\n'
@@ -466,8 +415,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = you\n'
             'password = insecure\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 200\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
         mock.patch(CISCO_GET_ROUTER_ID,
@@ -478,8 +426,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
                 'management_ip_address': '10.20.30.1',
                 'credentials': {'username': 'me', 'password': 'secret'}
             },
-            '_interfaces': [{'hosting_info': {'segmentation_id': 100,
-                                              'hosting_port_name': 't1_p:1'}}]
+            'mgmt_intf': 'GigabitEthernet2'
         }
         expected_b = {
             'id': '456',
@@ -487,8 +434,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
                 'management_ip_address': '10.20.30.2',
                 'credentials': {'username': 'you', 'password': 'insecure'}
             },
-            '_interfaces': [{'hosting_info': {'segmentation_id': 200,
-                                              'hosting_port_name': 't1_p:1'}}]
+            'mgmt_intf': 'GigabitEthernet3'
         }
         routers = cfg_loader.get_active_routers_for_host(self.context,
                                                          "ubuntu")
@@ -510,8 +456,7 @@ class TestCiscoCsrRouterInfo(base.BaseTestCase):
             'username = me\n'
             'password = secret\n'
             'host = ubuntu\n'
-            'mgmt_intf = t1_p:1\n'
-            'mgmt_vlan = 100\n'
+            'mgmt_intf = GigabitEthernet3\n'
             'timeout = 5.0\n')
         cfg.CONF.set_override('config_file', [cfg_file])
         mock.patch(CISCO_GET_ROUTER_ID,

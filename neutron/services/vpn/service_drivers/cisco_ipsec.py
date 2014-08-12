@@ -223,17 +223,19 @@ class CiscoCsrIPsecVPNDriver(service_drivers.VpnDriver):
                 'ipsec_policy_id': u'%s' % ipsec_id}
 
     def _create_tunnel_interface(self, router_info):
-        # Use the first inteface
-        port = router_info['_interfaces'][0]['hosting_info']
-        vlan = port['segmentation_id']
-        # Port name "currently" is t{1,2}_p:1, as only one router per CSR,
-        # but will keep a semi-generic algorithm
-        port_name = port['hosting_port_name']
-        name, sep, num = port_name.partition(':')
-        # TODO(pcm): When available use n1kv_constants.T2_PORT_NAME
-        offset = 1 if name in T2_PORT_NAME else 0
-        if_num = int(num) * 2 + offset
-        return 'GigabitEthernet%d.%d' % (if_num, vlan)
+        return router_info['mgmt_intf']
+# TODO(pcm): Enable this code, once Cisco L3 router plugin up-streamed
+#         # Use the first inteface
+#         port = router_info['_interfaces'][0]['hosting_info']
+#         vlan = port['segmentation_id']
+#         # Port name "currently" is t{1,2}_p:1, as only one router per CSR,
+#         # but will keep a semi-generic algorithm
+#         port_name = port['hosting_port_name']
+#         name, sep, num = port_name.partition(':')
+#         # TODO(pcm): When available use n1kv_constants.T2_PORT_NAME
+#         offset = 1 if name in T2_PORT_NAME else 0
+#         if_num = int(num) * 2 + offset
+#         return 'GigabitEthernet%d.%d' % (if_num, vlan)
 
     def _get_router_info(self, router_info, external_ip):
         LOG.debug("PCM: Getting router info %s", router_info)

@@ -40,7 +40,7 @@ from neutron.services.vpn.device_drivers import (
 
 
 LOG = logging.getLogger(__name__)
-mgmt_intf_re = re.compile(r'^t[12]_p:1')
+mgmt_intf_re = re.compile(r'^GigabitEthernet[123]')
 
 
 def get_available_csrs_from_config(config_files):
@@ -85,7 +85,6 @@ def get_available_csrs_from_config(config_files):
                     password = entry['password'][0]
                     host = entry['host'][0]
                     mgmt_intf = entry['mgmt_intf'][0]
-                    vlan_as_string = entry['mgmt_vlan'][0]
                 except KeyError as ke:
                     LOG.error(_LE("Ignoring Cisco CSR for router %(router)s "
                                   "- missing %(field)s setting"),
@@ -101,13 +100,6 @@ def get_available_csrs_from_config(config_files):
                     continue
                 except KeyError:
                     timeout = csr_client.TIMEOUT
-                try:
-                    mgmt_vlan = int(vlan_as_string)
-                except ValueError:
-                    LOG.error(_LE("Ignoring Cisco CSR for router %s - "
-                                  "mgmt_vlan is not an integer"),
-                              for_router)
-                    continue
                 m = mgmt_intf_re.match(mgmt_intf)
                 if not m:
                     LOG.error(_LE("Malformed management interface name for "
@@ -138,7 +130,6 @@ def get_available_csrs_from_config(config_files):
                                           'password': password,
                                           'host': host,
                                           'mgmt_intf': mgmt_intf,
-                                          'mgmt_vlan': mgmt_vlan,
                                           'timeout': timeout}
 
                 LOG.debug("Found CSR for router %(router)s: %(info)s",
@@ -172,12 +163,7 @@ def get_active_routers_for_host(context, host):
                         'credentials': {'username': info['username'],
                                         'password': info['password']}
                     },
-                    '_interfaces': [{
-                        'hosting_info': {
-                            'segmentation_id': info['mgmt_vlan'],
-                            'hosting_port_name': info['mgmt_intf']
-                        }
-                    }]
+                    'mgmt_intf': info['mgmt_intf']
                 })
     return routers
 
