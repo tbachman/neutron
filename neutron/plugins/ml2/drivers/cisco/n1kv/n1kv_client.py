@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut (abhraut@cisco.com), Cisco Systems Inc.
 
 import base64
 import eventlet
@@ -21,8 +19,10 @@ import requests
 
 from oslo.config import cfg
 
+from neutron.extensions import providernet
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 
@@ -66,11 +66,6 @@ class Client(object):
     ip-pool:
     Each ip-pool represents a subnet on the Nexus1000V VSM.
 
-    vm-network:
-    vm-network refers to a network-segment and policy-profile.
-    It maintains a list of ports that uses the network-segment and
-    policy-profile this vm-network refers to.
-
 
     WORK FLOW:
 
@@ -96,8 +91,6 @@ class Client(object):
     network_segment_path = "/network-segment/%s"
     network_segment_pool_path = "/network-segment-pool/%s"
     ip_pool_path = "/ip-pool-template/%s"
-    ports_path = "/kvm/vm-network/%s/ports"
-    port_path = "/kvm/vm-network/%s/ports/%s"
     vm_networks_path = "/kvm/vm-network"
     vm_network_path = "/kvm/vm-network/%s"
     bridge_domains_path = "/kvm/bridge-domain"
@@ -127,22 +120,19 @@ class Client(object):
         """
         return self._get(self.port_profiles_path)
 
-    def create_logical_network(self, network_profile, tenant_id):
+    def _create_logical_network(self, network_profile):
         """
         Create a logical network on the VSM.
 
         :param network_profile: network profile dict
-        :param tenant_id: UUID representing the tenant
         """
-        LOG.debug(_("Logical network"))
-        body = {'description': network_profile['name'],
-                'tenantId': tenant_id}
-        logical_network_name = (network_profile['id'] +
+        body = {'description': network_profile.name}
+        logical_network_name = (network_profile.id +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
         return self._post(self.logical_network_path % logical_network_name,
                           body=body)
 
-    def delete_logical_network(self, logical_network_name):
+    def _delete_logical_network(self, logical_network_name):
         """
         Delete a logical network on VSM.
 
@@ -152,35 +142,22 @@ class Client(object):
         return self._delete(
             self.logical_network_path % logical_network_name)
 
-    def create_network_segment_pool(self, network_profile, tenant_id):
+    def create_network_segment_pool(self, network_profile):
         """
         Create a network segment pool on the VSM.
 
         :param network_profile: network profile dict
-        :param tenant_id: UUID representing the tenant
         """
-        LOG.debug(_("network_segment_pool"))
-        logical_network_name = (network_profile['id'] +
+        self._create_logical_network(network_profile)
+        logical_network_name = (network_profile.id +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
-        body = {'name': network_profile['name'],
-                'description': network_profile['name'],
-                'id': network_profile['id'],
-                'logicalNetwork': logical_network_name,
-                'tenantId': tenant_id}
+        body = {'name': network_profile.name,
+                'description': network_profile.name,
+                'id': network_profile.id,
+                'logicalNetwork': logical_network_name}
         return self._post(
-            self.network_segment_pool_path % network_profile['id'],
+            self.network_segment_pool_path % network_profile.id,
             body=body)
-
-    def update_network_segment_pool(self, network_profile):
-        """
-        Update a network segment pool on the VSM.
-
-        :param network_profile: network profile dict
-        """
-        body = {'name': network_profile['name'],
-                'description': network_profile['name']}
-        return self._post(self.network_segment_pool_path %
-                          network_profile['id'], body=body)
 
     def delete_network_segment_pool(self, network_segment_pool_id):
         """
@@ -191,6 +168,47 @@ class Client(object):
         """
         return self._delete(self.network_segment_pool_path %
                             network_segment_pool_id)
+
+    def create_network_segment(self, network, network_profile):
+        """
+        Create a network segment on the VSM.
+
+        :param network: network dict
+        :param network_profile: network profile object
+        """
+        body = {'publishName': network['id'],
+                'description': network['name'],
+                'id': network['id'],
+                'tenantId': network['tenant_id'],
+                'mode': 'access',
+                'segmentType': network_profile.segment_type,
+                'networkSegmentPool': network_profile.id}
+        if network[providernet.NETWORK_TYPE] == p_const.TYPE_VLAN:
+            body['vlan'] = network[providernet.SEGMENTATION_ID]
+        elif network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+            bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
+            # Create a bridge domain on VSM
+            body['bridgeDomain'] = bd_name
+        return self._post(self.network_segment_path % network['id'],
+                          body=body)
+
+    def update_network_segment(self, updated_network):
+        """
+        Update a network segment on the VSM.
+
+        :param updated_network: updated network dict
+        """
+        body = {'description': updated_network['name']}
+        return self._post(self.network_segment_path % updated_network['id'],
+                          body=body)
+
+    def delete_network_segment(self, network_segment_id):
+        """
+        Delete a network segment on the VSM.
+
+        :param network_segment_id: UUID representing the network segment
+        """
+        return self._delete(self.network_segment_path % network_segment_id)
 
     def _do_request(self, method, action, body=None,
                     headers=None):
@@ -226,7 +244,7 @@ class Client(object):
                                    timeout=self.timeout).wait()
         except Exception as e:
             raise n1kv_exc.VSMConnectionFailed(reason=e)
-        LOG.debug(_("status_code %s"), resp.status_code)
+        LOG.debug("status_code %s", resp.status_code)
         if resp.status_code == requests.codes.OK:
             if 'application/json' in resp.headers['content-type']:
                 try:
@@ -234,7 +252,7 @@ class Client(object):
                 except ValueError:
                     return {}
             elif 'text/plain' in resp.headers['content-type']:
-                LOG.debug(_("VSM: %s"), resp.text)
+                LOG.debug("VSM: %s", resp.text)
         else:
             raise n1kv_exc.VSMError(reason=resp.text)
 

@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut (abhraut@cisco.com), Cisco Systems Inc.
 
 """
 ML2 Mechanism Driver for Cisco Nexus1000V distributed virtual switches.
@@ -23,9 +21,11 @@ import eventlet
 
 from oslo.config import cfg
 
+from neutron.common import exceptions as n_exc
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.cisco.n1kv import config # noqa
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
@@ -46,10 +46,12 @@ class N1KVMechanismDriver(api.MechanismDriver):
         # Populate policy profiles from the VSM
         eventlet.spawn(self._poll_policy_profiles)
         # Get VLAN/VXLAN network profiles name
-        netp_vlan = cfg.CONF.ml2_cisco_n1kv.default_vlan_network_profile
-        netp_vxlan = cfg.CONF.ml2_cisco_n1kv.default_vxlan_network_profile
+        self.netp_vlan_name = (cfg.CONF.ml2_cisco_n1kv.
+                               default_vlan_network_profile)
+        self.netp_vxlan_name = (cfg.CONF.ml2_cisco_n1kv.
+                                default_vxlan_network_profile)
         # Ensure network profiles are created on the VSM
-        self._ensure_network_profiles_created_on_vsm(netp_vlan, netp_vxlan)
+        self._ensure_network_profiles_created_on_vsm()
 
     def _poll_policy_profiles(self):
         """Start a green thread to pull policy profiles from VSM."""
@@ -84,57 +86,90 @@ class N1KVMechanismDriver(api.MechanismDriver):
                 n1kv_exc.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
 
-    def _ensure_network_profiles_created_on_vsm(self,
-                                                netp_vlan_name,
-                                                netp_vxlan_name):
+    def _ensure_network_profiles_created_on_vsm(self):
         # Make sure logical networks and network profiles exist
         # on the VSM
-        netp_vlan = self.n1kv_db.get_network_profile(netp_vlan_name)
-        netp_vxlan = self.n1kv_db.get_network_profile(netp_vxlan_name)
-        if not netp_vlan:
-            # Create a network profile of type VLAN on VSM and Neutron
-            netp_vlan = self.n1kv_db.add_network_profile(netp_vlan_name,
+        try:
+            netp_vlan = self.n1kv_db.get_network_profile_by_type(p_const.TYPE_VLAN)
+        except n1kv_exc.NetworkProfileNotFound:
+            # Create a network profile of type VLAN in Neutron DB
+            netp_vlan = self.n1kv_db.add_network_profile(self.netp_vlan_name,
                                                          p_const.TYPE_VLAN)
-        if not netp_vxlan:
-            # Create a network profile of type VXLAN on VSM and Neutron
-            netp_vxlan = self.n1kv_db.add_network_profile(netp_vxlan_name,
+            # Create a network profile of type VLAN on the VSM
+            self.n1kvclient.create_network_segment_pool(netp_vlan)
+        try:
+            netp_vxlan = self.n1kv_db.get_network_profile_by_type(p_const.TYPE_VXLAN)
+        except n1kv_exc.NetworkProfileNotFound:
+            # Create a network profile of type VXLAN in Neutron DB
+            netp_vxlan = self.n1kv_db.add_network_profile(self.netp_vxlan_name,
                                                           p_const.TYPE_VXLAN)
+            # Create a network profile of type VXLAN on the VSM
+            self.n1kvclient.create_network_segment_pool(netp_vxlan)
 
     def create_network_precommit(self, context):
-        pass
+        """Update network binding information."""
+        network = context.current
+        segment = context.network_segments[0]
+        network_type = segment['network_type']
+        if network_type not in [p_const.TYPE_VLAN, p_const.TYPE_VXLAN]:
+            msg = _("Cisco Nexus1000V: Failed to create unsupported type of "
+                    "network. Network type VLAN and VXLAN supported.")
+            raise n_exc.InvalidInput(error_message=msg) 
+        netp = self.n1kv_db.get_network_profile_by_type(network_type)
+        kwargs = {"network_id": network['id'],
+                  "network_type": network_type,
+                  "segmentation_id": segment['segmentation_id'],
+                  "netp_id": netp['id']}
+        self.n1kv_db.add_network_binding(**kwargs)
 
     def create_network_postcommit(self, context):
-        pass
-
-    def update_network_precommit(self, context):
-        pass
+        """Send network parameters to the VSM."""
+        network = context.current
+        segment = context.network_segments[0]
+        network_type = segment['network_type']
+        netp = self.n1kv_db.get_network_profile_by_type(network_type)
+        try:
+            self.n1kvclient.create_network_segment(network, netp)
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            LOG.info(e.message)
+            raise ml2_exc.MechanismDriverError()
+        LOG.info(_("Create network(postcommit) succeeded for network: "
+                   "%(network_id)s of type: %(network_type)s with segment "
+                   "id: %(segment_id)s"),
+                 {"network_id": network['id'],
+                  "network_type": network_type,
+                  "segment_id": segment['segmentation_id']})
 
     def update_network_postcommit(self, context):
-        pass
-
-    def delete_network_precommit(self, context):
-        pass
+        """Send updated network parameters to the VSM."""
+        updated_network = context.current
+        old_network = context.original
+        # Perform network update on VSM in case of network name change only.
+        if updated_network['name'] != old_network['name']:
+            try:
+                self.n1kvclient.update_network_segment(updated_network)
+            except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+                LOG.info(e.message)
+                raise ml2_exc.MechanismDriverError()
+        LOG.info(_("Update network(postcommit) succeeded for network: %s",
+                   old_network['id']))
 
     def delete_network_postcommit(self, context):
-        pass
-
-    def create_subnet_precommit(self, context):
-        pass
-
-    def create_subnet_postcommit(self, context):
-        pass
-
-    def update_subnet_precommit(self, context):
-        pass
-
-    def update_subnet_postcommit(self, context):
-        pass
-
-    def delete_subnet_precommit(self, context):
-        pass
-
-    def delete_subnet_postcommit(self, context):
-        pass
+        """Send network delete request to the VSM."""
+        network = context.current
+        segment = context.network_segments[0]
+        network_type = segment['network_type']
+        try:
+            self.n1kvclient.delete_network_segment(network['id'])
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            LOG.info(e.message)
+            raise ml2_exc.MechanismDriverError()
+        LOG.info(_("Delete network(postcommit) succeeded for network: "
+                   "%(network_id)s of type: %(network_type)s with segment "
+                   "id: %(segment_id)s"),
+                 {"network_id": network['id'],
+                  "network_type": network_type,
+                  "segment_id": segment['segmentation_id']})
 
     def create_port_precommit(self, context):
         pass

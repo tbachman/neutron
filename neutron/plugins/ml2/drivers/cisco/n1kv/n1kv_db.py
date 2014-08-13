@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut, Cisco Systems Inc.
 
 import sqlalchemy.orm.exc as sa_exc
 
@@ -35,28 +33,23 @@ class N1kvDbModel(object):
 
     def add_network_profile(self, netp_name, netp_type):
         """Create a network profile."""
-        pass
+        netp = n1kv_models.NetworkProfile(name=netp_name,
+                                          segment_type=netp_type)
+        self.db_session.add(netp)
+        return netp
 
-    def get_network_profile(self, netp_name):
-        """Retrieve a network profile."""
+    def get_network_profile_by_type(self, segment_type):
+        """Retrieve a network profile using its type."""
         try:
             return (self.db_session.query(n1kv_models.NetworkProfile).
-                    filter_by(name=netp_name).one())
+                    filter_by(segment_type=segment_type).one())
         except sa_exc.NoResultFound:
-            return None
-
-    def remove_network_profile(self, netp_name):
-        """Delete a network profile."""
-        nprofile = self.get_network_profile(netp_name)
-        if nprofile:
-            self.db_session.delete(nprofile)
-            self.db_session.flush()
+            raise n1kv_exc.NetworkProfileNotFound(profile=segment_type)
 
     def add_policy_profile(self, id, pprofile_name):
         """Create a policy profile."""
         pprofile = n1kv_models.PolicyProfile(id=id, name=pprofile_name)
         self.db_session.add(pprofile)
-        self.db_session.flush()
         return pprofile
 
     def get_policy_profiles(self):
@@ -69,4 +62,38 @@ class N1kvDbModel(object):
                     filter_by(id=pprofile_id).first())
         if pprofile:
             self.db_session.delete(pprofile)
-            self.db_session.flush()
+
+    def add_network_binding(self,
+                            network_id,
+                            network_type,
+                            segmentation_id,
+                            netp_id):
+        """
+        Create the network to network profile binding.
+
+        :param network_id: UUID representing the network
+        :param network_type: string representing type of network (VLAN, VXLAN)
+        :param segmentation_id: integer representing VLAN or VXLAN ID
+        :param netp_id: network profile ID based on which this network
+                        is created
+        """
+        binding = n1kv_models.N1kvNetworkBinding(network_id=network_id,
+                                                 network_type=network_type,
+                                                 segmentation_id=segmentation_id,
+                                                 profile_id=netp_id)
+        self.db_session.add(binding)
+        return binding
+
+    def get_network_binding(self, network_id):
+        """Retrieve network binding."""
+        try:
+            return (self.db_session.query(n1kv_models.N1kvNetworkBinding).
+                    filter_by(network_id=network_id).one())
+        except sa_exc.NoResultFound:
+            raise n1kv_exc.NetworkBindingNotFound(network_id=network_id)
+
+    def remove_network_binding(self, network_id):
+        """Delete the network to network profile binding."""
+        binding = self.get_network_binding(network_id)
+        if binding:
+            self.db_sesion.delete(binding)

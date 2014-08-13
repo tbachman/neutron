@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut(abhraut@cisco.com), Cisco Systems Inc.
 
 import sqlalchemy as sa
 
@@ -72,15 +70,3 @@ class N1kvNetworkBinding(model_base.BASEV2):
     segmentation_id = sa.Column(sa.Integer)
     profile_id = sa.Column(sa.String(36),
                            sa.ForeignKey('cisco_ml2_n1kv_network_profiles.id'))
-
-
-class N1kVmNetwork(model_base.BASEV2):
-
-    """Represents VM Network information."""
-    __tablename__ = 'cisco_ml2_n1kv_vmnetworks'
-
-    name = sa.Column(sa.String(80), primary_key=True)
-    profile_id = sa.Column(sa.String(36),
-                           sa.ForeignKey('cisco_ml2_n1kv_policy_profiles.id'))
-    network_id = sa.Column(sa.String(36))
-    port_count = sa.Column(sa.Integer)

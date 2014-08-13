@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut (abhraut@cisco.com), Cisco Systems Inc.
 
 """Exceptions used by Cisco Nexus1000V ML2 mechanism driver."""
 
@@ -30,12 +28,24 @@ class VSMError(exceptions.NeutronException):
     message = _("Internal VSM Error: %(reason)s.")
 
 
-class NetworkProfileNotFound(exceptions.NotFound):
-    """Network Profile with the given UUID/name cannot be found."""
-    message = _("Network Profile %(profile)s could not be found.")
-
-
 class NetworkProfileAlreadyExists(exceptions.NeutronException):
     """Network Profile cannot be created since it already exists."""
     message = _("Network Profile %(profile_id)s "
                 "already exists.")
+
+
+class NetworkBindingNotFound(exceptions.NotFound):
+    """Network Binding for network cannot be found."""
+    message = _("Network Binding for network %(network_id)s could "
+                "not be found.")
+
+
+class PortBindingNotFound(exceptions.NotFound):
+    """Port Binding for port cannot be found."""
+    message = _("Port Binding for port %(port_id)s could "
+                "not be found.")
+
+
+class NetworkProfileNotFound(exceptions.NotFound):
+    """Network Profile with given UUID/name/network-type cannot be found."""
+    message = _("Network Profile %(profile)s could not be found.")
