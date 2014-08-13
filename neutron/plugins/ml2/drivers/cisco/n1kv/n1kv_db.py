@@ -57,6 +57,14 @@ class N1kvDbModel(object):
         """Retrieve all policy profiles."""
         return self.db_session.query(n1kv_models.PolicyProfile)
 
+    def get_policy_profile_by_name(self, name):
+        """Retrieve policy profile by name."""
+        try:
+            return (self.db_session.query(n1kv_models.PolicyProfile).
+                    filter_by(name=name).one())
+        except sa_exc.NoResultFound:
+            raise n1kv_exc.PolicyProfileNotFound(profile=name)
+
     def remove_policy_profile(self, pprofile_id):
         """Delete a policy profile."""
         pprofile = (self.db_session.query(n1kv_models.PolicyProfile).
@@ -93,8 +101,17 @@ class N1kvDbModel(object):
         except sa_exc.NoResultFound:
             raise n1kv_exc.NetworkBindingNotFound(network_id=network_id)
 
-    def remove_network_binding(self, network_id):
-        """Delete the network to network profile binding."""
-        binding = self.get_network_binding(network_id)
-        if binding:
-            self.db_sesion.delete(binding)
+    def add_policy_binding(self, port_id, pprofile_id):
+        """Create the port to policy profile binding."""
+        binding = n1kv_models.N1kvPortBinding(port_id=port_id,
+                                              profile_id=pprofile_id)
+        self.db_session.add(binding)
+        return binding
+
+    def get_policy_binding(self, port_id):
+        """Retrieve port to policy profile binding."""
+        try:
+            return (self.db_session.query(n1kv_models.N1kvPortBinding).
+                    filter_by(port_id=port_id).one())
+        except sa_exc.NoResultFound:
+            raise n1kv_exc.PortBindingNotFound(port_id=port_id)

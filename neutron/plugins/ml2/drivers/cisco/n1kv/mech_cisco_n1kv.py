@@ -21,6 +21,7 @@ import eventlet
 
 from oslo.config import cfg
 
+from neutron.common import constants as n_const
 from neutron.common import exceptions as n_exc
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
@@ -52,6 +53,10 @@ class N1KVMechanismDriver(api.MechanismDriver):
                                 default_vxlan_network_profile)
         # Ensure network profiles are created on the VSM
         self._ensure_network_profiles_created_on_vsm()
+        self.vif_type = portbindings.VIF_TYPE_OVS
+        self.vif_details = {portbindings.CAP_PORT_FILTER: True,
+                            portbindings.OVS_HYBRID_PLUG: True}
+        self.supported_network_types = [p_const.TYPE_VLAN, p_const.TYPE_VXLAN]
 
     def _poll_policy_profiles(self):
         """Start a green thread to pull policy profiles from VSM."""
@@ -90,7 +95,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
         # Make sure logical networks and network profiles exist
         # on the VSM
         try:
-            netp_vlan = self.n1kv_db.get_network_profile_by_type(p_const.TYPE_VLAN)
+            netp_vlan = self.n1kv_db.get_network_profile_by_type(
+                p_const.TYPE_VLAN)
         except n1kv_exc.NetworkProfileNotFound:
             # Create a network profile of type VLAN in Neutron DB
             netp_vlan = self.n1kv_db.add_network_profile(self.netp_vlan_name,
@@ -98,7 +104,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
             # Create a network profile of type VLAN on the VSM
             self.n1kvclient.create_network_segment_pool(netp_vlan)
         try:
-            netp_vxlan = self.n1kv_db.get_network_profile_by_type(p_const.TYPE_VXLAN)
+            netp_vxlan = self.n1kv_db.get_network_profile_by_type(
+                p_const.TYPE_VXLAN)
         except n1kv_exc.NetworkProfileNotFound:
             # Create a network profile of type VXLAN in Neutron DB
             netp_vxlan = self.n1kv_db.add_network_profile(self.netp_vxlan_name,
@@ -111,7 +118,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
         network = context.current
         segment = context.network_segments[0]
         network_type = segment['network_type']
-        if network_type not in [p_const.TYPE_VLAN, p_const.TYPE_VXLAN]:
+        if network_type not in self.supported_network_types:
             msg = _("Cisco Nexus1000V: Failed to create unsupported type of "
                     "network. Network type VLAN and VXLAN supported.")
             raise n_exc.InvalidInput(error_message=msg) 
@@ -166,25 +173,76 @@ class N1KVMechanismDriver(api.MechanismDriver):
             raise ml2_exc.MechanismDriverError()
         LOG.info(_("Delete network(postcommit) succeeded for network: "
                    "%(network_id)s of type: %(network_type)s with segment "
-                   "id: %(segment_id)s"),
+                   "ID: %(segment_id)s"),
                  {"network_id": network['id'],
                   "network_type": network_type,
                   "segment_id": segment['segmentation_id']})
 
     def create_port_precommit(self, context):
-        pass
+        """Create port to policy profile bindings."""
+        port = context.current
+        try:
+            policy_profile = self.n1kv_db.get_policy_profile_by_name(
+                cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+        except n1kv_exc.PolicyProfileNotFound as e:
+            LOG.info(e.message)
+            raise ml2_exc.MechanismDriverError()
+        self.n1kv_db.add_policy_binding(port['id'], policy_profile.id)
 
     def create_port_postcommit(self, context):
-        pass
-
-    def update_port_precommit(self, context):
-        pass
-
-    def update_port_postcommit(self, context):
-        pass
-
-    def delete_port_precommit(self, context):
-        pass
+        """Send port parameters to the VSM."""
+        port = context.current
+        policy_profile = self.n1kv_db.get_policy_profile_by_name(
+            cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+        vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
+                                      policy_profile.id,
+                                      port['network_id'])
+        try:
+            self.n1kvclient.create_n1kv_port(port,
+                                             vmnetwork_name,
+                                             policy_profile)
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            LOG.info(e.message)
+            raise ml2_exc.MechanismDriverError()
+        LOG.info(_("Create port(postcommit) succeeded for port: "
+                   "%(id)s on network: %(network_id)s with policy "
+                   "profile ID: %(profile_id)s"),
+                 {"network_id": port['network_id'],
+                  "id": port['id'],
+                  "profile_id": policy_profile.id})
 
     def delete_port_postcommit(self, context):
-        pass
+        """Send delete port notification to the VSM."""
+        port = context.current
+        policy_profile = self.n1kv_db.get_policy_profile_by_name(
+            cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+        vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
+                                      policy_profile.id,
+                                      port['network_id'])
+        try:
+            self.n1kvclient.delete_n1kv_port(vmnetwork_name, port['id'])
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            LOG.info(e.message)
+            raise ml2_exc.MechanismDriverError()
+        LOG.info(_("Delete port(postcommit) succeeded for port: "
+                   "%(id)s on network: %(network_id)s with policy "
+                   "profile ID: %(profile_id)s"),
+                 {"network_id": port['network_id'],
+                  "id": port['id'],
+                  "profile_id": policy_profile.id})
+
+    def bind_port(self, context):
+        segments = context.network.network_segments
+        for segment in segments:
+            if segment[api.NETWORK_TYPE] in self.supported_network_types:
+                context.set_binding(segment[api.ID],
+                                    self.vif_type,
+                                    self.vif_details,
+                                    status=n_const.PORT_STATUS_ACTIVE)
+                return
+            else:
+                LOG.info(_("Port binding rejected for segment ID %(id)s, "
+                           "segment %(segment)s and network type %(nettype)s"),
+                         {'id': segment[api.ID],
+                          'segment': segment[api.SEGMENTATION_ID],
+                          'nettype': segment[api.NETWORK_TYPE]})

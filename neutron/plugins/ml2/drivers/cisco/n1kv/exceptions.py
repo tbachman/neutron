@@ -49,3 +49,8 @@ class PortBindingNotFound(exceptions.NotFound):
 class NetworkProfileNotFound(exceptions.NotFound):
     """Network Profile with given UUID/name/network-type cannot be found."""
     message = _("Network Profile %(profile)s could not be found.")
+
+
+class PolicyProfileNotFound(exceptions.NotFound):
+    """Policy Profile with given UUID/name cannot be found."""
+    message = _("Policy Profile %(profile)s could not be found.")

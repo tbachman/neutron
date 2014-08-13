@@ -88,6 +88,8 @@ class Client(object):
 
     # Define paths for the URI where the client connects for HTTP requests.
     port_profiles_path = "/virtual-port-profile"
+    ports_path = "/kvm/vm-network/%s/ports"
+    port_path = "/kvm/vm-network/%s/ports/%s"
     network_segment_path = "/network-segment/%s"
     network_segment_pool_path = "/network-segment-pool/%s"
     ip_pool_path = "/ip-pool-template/%s"
@@ -209,6 +211,38 @@ class Client(object):
         :param network_segment_id: UUID representing the network segment
         """
         return self._delete(self.network_segment_path % network_segment_id)
+
+    def create_n1kv_port(self, port, vmnetwork_name, policy_profile):
+        """
+        Create a port on the VSM.
+
+        :param port: port dict
+        :param vmnetwork_name: name of the VM network
+        :param policy_profile: policy profile object
+        """
+        body = {'name': vmnetwork_name,
+                'networkSegmentId': port['network_id'],
+                'networkSegment': port['network_id'],
+                'portProfile': policy_profile.name,
+                'portProfileId': policy_profile.id,
+                'tenantId': port['tenant_id'],
+                'portId': port['id'],
+                'macAddress': port['mac_address'],
+                }
+        if port.get('fixed_ips'):
+            body['ipAddress'] = port['fixed_ips'][0]['ip_address']
+            body['subnetId'] = port['fixed_ips'][0]['subnet_id']
+        return self._post(self.vm_networks_path,
+                          body=body)
+
+    def delete_n1kv_port(self, vmnetwork_name, port_id):
+        """
+        Delete a port on the VSM.
+
+        :param vmnetwork_name: name of the VM network which imports this port
+        :param port_id: UUID of the port
+        """
+        return self._delete(self.port_path % (vmnetwork_name, port_id))
 
     def _do_request(self, method, action, body=None,
                     headers=None):
