@@ -20,6 +20,7 @@ import requests
 from oslo.config import cfg
 
 from neutron.extensions import providernet
+from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
@@ -189,11 +190,19 @@ class Client(object):
             body['vlan'] = network[providernet.SEGMENTATION_ID]
         elif network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
             # Create a bridge domain on VSM
+            bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             self._create_bridge_domain(network)
-            body['bridgeDomain'] = (network['id'] +
-                                    n1kv_const.BRIDGE_DOMAIN_SUFFIX)
-        return self._post(self.network_segment_path % network['id'],
-                          body=body)
+            body['bridgeDomain'] = bd_name
+        try:
+            return self._post(self.network_segment_path % network['id'],
+                              body=body)
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
+            with excutils.save_and_reraise_exception():
+                # Clean up the bridge domain from the VSM for VXLAN networks.
+                # Reraise the exception so that caller method executes further
+                # clean up.
+                if network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+                    self._delete_bridge_domain(bd_name)
 
     def update_network_segment(self, updated_network):
         """
