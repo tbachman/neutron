@@ -188,9 +188,10 @@ class Client(object):
         if network[providernet.NETWORK_TYPE] == p_const.TYPE_VLAN:
             body['vlan'] = network[providernet.SEGMENTATION_ID]
         elif network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
-            bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             # Create a bridge domain on VSM
-            body['bridgeDomain'] = bd_name
+            self._create_bridge_domain(network)
+            body['bridgeDomain'] = (network['id'] +
+                                    n1kv_const.BRIDGE_DOMAIN_SUFFIX)
         return self._post(self.network_segment_path % network['id'],
                           body=body)
 
@@ -204,13 +205,45 @@ class Client(object):
         return self._post(self.network_segment_path % updated_network['id'],
                           body=body)
 
-    def delete_network_segment(self, network_segment_id):
+    def delete_network_segment(self, network_segment_id, network_type):
         """
         Delete a network segment on the VSM.
 
         :param network_segment_id: UUID representing the network segment
+        :param network_type: type of network to be deleted
         """
+        if network_type == p_const.TYPE_VXLAN:
+            bd_name = network_segment_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
+            self._delete_bridge_domain(bd_name)
         return self._delete(self.network_segment_path % network_segment_id)
+
+    def _create_bridge_domain(self, network):
+        """
+        Create a bridge domain on VSM.
+
+        :param network: network dict
+        """
+        groupIp = cfg.CONF.ml2_type_vxlan.vxlan_group
+        if groupIp:
+            vxlan_subtype = n1kv_const.MODE_NATIVE_VXLAN
+        else:
+            vxlan_subtype = n1kv_const.MODE_UNICAST
+        body = {'name': network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX,
+                'segmentId': network[providernet.SEGMENTATION_ID],
+                'subType': vxlan_subtype,
+                'tenantId': network['tenant_id']}
+        if groupIp:
+            body['groupIp'] = groupIp
+        return self._post(self.bridge_domains_path,
+                          body=body)
+
+    def _delete_bridge_domain(self, name):
+        """
+        Delete a bridge domain on VSM.
+
+        :param name: name of the bridge domain to be deleted
+        """
+        return self._delete(self.bridge_domain_path % name)
 
     def create_n1kv_port(self, port, vmnetwork_name, policy_profile):
         """

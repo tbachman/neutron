@@ -20,6 +20,7 @@ NEXUS_VLAN_RESERVED_MAX = 4047
 NEXUS_VXLAN_MIN = 4096
 NEXUS_VXLAN_MAX = 16000000
 
+
 # Affix values
 VM_NETWORK_PREFIX = 'vmn_'
 BRIDGE_DOMAIN_SUFFIX = '_bd'
@@ -29,3 +30,8 @@ LOGICAL_NETWORK_SUFFIX = '_log_net'
 # VSM response keys
 PROPERTIES = 'properties'
 ID = 'id'
+
+
+# VXLAN modes
+MODE_NATIVE_VXLAN = 'native_vxlan'
+MODE_UNICAST = 'unicast'

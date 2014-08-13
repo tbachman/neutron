@@ -40,7 +40,6 @@ LOG = log.getLogger(__name__)
 class N1KVMechanismDriver(api.MechanismDriver):
 
     def initialize(self):
-        n1kv_conf = cfg.CONF.ml2_cisco_n1kv
         self.n1kv_db = n1kv_db.N1kvDbModel()
         self.n1kvclient = n1kv_client.Client()
 
@@ -113,14 +112,34 @@ class N1KVMechanismDriver(api.MechanismDriver):
             # Create a network profile of type VXLAN on the VSM
             self.n1kvclient.create_network_segment_pool(netp_vxlan)
 
+    def _validate_segment_id_for_nexus(self, segment_id,  network_type):
+        """Validate the segment id for a given network type."""
+        is_segment_valid = True
+        if (network_type == p_const.TYPE_VLAN and
+            (segment_id in range(n1kv_const.NEXUS_VLAN_RESERVED_MIN,
+                                 n1kv_const.NEXUS_VLAN_RESERVED_MAX))):
+            is_segment_valid = False
+        elif (network_type == p_const.TYPE_VXLAN and
+              segment_id < n1kv_const.NEXUS_VXLAN_MIN):
+            is_segment_valid = False
+        if not is_segment_valid:
+            msg = (_("Segment ID: %(seg_id)s for network type: %(net_type)s "
+                     "is unsupported on Cisco Nexus devices.") %
+                   {"seg_id": segment_id,
+                    "net_type": network_type})
+            raise n_exc.InvalidInput(error_message=msg)
+
     def create_network_precommit(self, context):
         """Update network binding information."""
         network = context.current
         segment = context.network_segments[0]
         network_type = segment['network_type']
+        self._validate_segment_id_for_nexus(segment['segmentation_id'],
+                                            network_type)
         if network_type not in self.supported_network_types:
-            msg = _("Cisco Nexus1000V: Failed to create unsupported type of "
-                    "network. Network type VLAN and VXLAN supported.")
+            msg = _("Cisco Nexus1000V: Failed to create unsupported network "
+                    "type: %s. Network type VLAN and VXLAN "
+                    "supported.", network_type)
             raise n_exc.InvalidInput(error_message=msg) 
         netp = self.n1kv_db.get_network_profile_by_type(network_type)
         kwargs = {"network_id": network['id'],
@@ -167,7 +186,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
         segment = context.network_segments[0]
         network_type = segment['network_type']
         try:
-            self.n1kvclient.delete_network_segment(network['id'])
+            self.n1kvclient.delete_network_segment(network['id'], network_type)
         except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
             LOG.info(e.message)
             raise ml2_exc.MechanismDriverError()
