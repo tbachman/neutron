@@ -675,7 +675,8 @@ class TestDnsmasq(TestBase):
 
             with mock.patch.object(dhcp.sys, 'argv') as argv:
                 argv.__getitem__.side_effect = fake_argv
-                dm = dhcp.Dnsmasq(self.conf, network, version=dhcp.Dnsmasq.MINIMUM_VERSION)
+                dm = dhcp.Dnsmasq(self.conf, network,
+                                  version=dhcp.Dnsmasq.MINIMUM_VERSION)
                 dm.spawn_process()
                 self.assertTrue(mocks['_output_opts_file'].called)
                 self.execute.assert_called_once_with(expected,
@@ -818,7 +819,8 @@ tag:tag0,option:router""".lstrip()
         self.safe.assert_called_once_with('/foo/opts', expected)
 
     def test_release_lease(self):
-        dm = dhcp.Dnsmasq(self.conf, FakeDualNetwork(), version=dhcp.Dnsmasq.MINIMUM_VERSION)
+        dm = dhcp.Dnsmasq(self.conf, FakeDualNetwork(),
+                          version=dhcp.Dnsmasq.MINIMUM_VERSION)
         dm.release_lease(mac_address=FakePort2.mac_address,
                          removed_ips=[FakePort2.fixed_ips[0].ip_address])
         exp_args = ['ip', 'netns', 'exec', 'qdhcp-ns', 'dhcp_release',
@@ -844,7 +846,8 @@ tag:ffffffff-ffff-ffff-ffff-ffffffffffff,option:bootfile-name,pxelinux.0"""
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
             fp = FakeV4NetworkPxe2Ports()
-            dm = dhcp.Dnsmasq(self.conf, fp, version=dhcp.Dnsmasq.MINIMUM_VERSION)
+            dm = dhcp.Dnsmasq(self.conf, fp,
+                              version=dhcp.Dnsmasq.MINIMUM_VERSION)
             dm._output_opts_file()
 
         self.safe.assert_called_once_with('/foo/opts', expected)

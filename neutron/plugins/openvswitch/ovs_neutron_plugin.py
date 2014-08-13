@@ -592,9 +592,11 @@ class OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                 my_network_id = original_port['network_id']
                 my_device_owner = updated_port['device_owner']
                 my_network = super(OVSNeutronPluginV2, self).get_network(
-                    context,my_network_id, None)
-                if my_network.get('shared') and my_device_owner != "network:dhcp":
-                    msg = _("allowed-address-pairs is not supported on a shared network")
+                    context, my_network_id, None)
+                if my_network.get('shared') and \
+                    my_device_owner != "network:dhcp":
+                    msg = _("allowed-address-pairs is not \
+                          supported on a shared network")
                     raise q_exc.InvalidInput(error_message=msg)
                 self._delete_allowed_address_pairs(context, id)
                 self._process_create_allowed_address_pairs(

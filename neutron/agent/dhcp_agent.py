@@ -28,10 +28,10 @@ from neutron.agent.linux import interface
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants
 from neutron.common import exceptions
+from neutron.common import exceptions as q_exc
 from neutron.common import legacy
 from neutron.common import topics
 from neutron.common import utils
-from neutron.common import exceptions as q_exc
 from neutron import context
 from neutron import manager
 from neutron.openstack.common import importutils
@@ -288,13 +288,17 @@ class DhcpAgent(manager.Manager):
         try:
             ip = netaddr.IPNetwork(payload['subnet']['cidr'])
             if ip.size < 8:
-                msg = _("%s has size %d") % (payload['subnet']['cidr'], ip.size)
+                msg = (_("%cidr)s has size %(size)d") %
+                       {'subnet': payload['subnet']['cidr'],
+                        'size': ip.size})
                 raise q_exc.BadRequest(resource='subnet', msg=msg)
-            gw = netaddr.IPAddress(payload['subnet']['gateway_ip'])            
+            gw = netaddr.IPAddress(payload['subnet']['gateway_ip'])
             if gw not in ip:
-                msg = _("%s is not in network %s") % (payload['subnet']['gateway_ip'], payload['subnet']['cidr'])
+                msg = (_("%(gateway)s is not in network %(cidr)s") %
+                       {'gateway': payload['subnet']['gateway_ip'],
+                        'cidr': payload['subnet']['cidr']})
                 raise q_exc.BadRequest(resource='subnet', msg=msg)
-        except:
+        except Exception:
             raise
         network_id = payload['subnet']['network_id']
         self.refresh_dhcp_helper(network_id)

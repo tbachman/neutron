@@ -825,4 +825,3 @@ class DeviceManager(object):
 
         self.plugin.release_dhcp_port(network.id,
                                       self.get_device_id(network))
-

@@ -754,7 +754,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 raise q_exc.InvalidInput(error_message=err_msg)
         new_ip = netaddr.IPNetwork(new_subnet_cidr)
         if new_ip.size < 8:
-            err_msg = (_("%s has size %d") % (new_subnet_cidr, new_ip.size))
+            err_msg = (_("%(subnet)s has size %(size)d") %
+                       {'subnet': new_subnet_cidr, 'size': new_ip.size})
             LOG.error(err_msg)
             raise q_exc.InvalidInput(error_message=err_msg)
 
