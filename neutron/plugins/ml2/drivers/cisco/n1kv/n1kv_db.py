@@ -36,6 +36,7 @@ class N1kvDbModel(object):
         netp = n1kv_models.NetworkProfile(name=netp_name,
                                           segment_type=netp_type)
         self.db_session.add(netp)
+        self.db_session.flush()
         return netp
 
     def get_network_profile_by_type(self, segment_type):
