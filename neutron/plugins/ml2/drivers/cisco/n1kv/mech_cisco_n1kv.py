@@ -40,7 +40,6 @@ LOG = log.getLogger(__name__)
 class N1KVMechanismDriver(api.MechanismDriver):
 
     def initialize(self):
-        self.n1kv_db = n1kv_db.N1kvDbModel()
         self.n1kvclient = n1kv_client.Client()
 
         # Populate policy profiles from the VSM
@@ -75,17 +74,17 @@ class N1KVMechanismDriver(api.MechanismDriver):
                               [n1kv_const.PROPERTIES][n1kv_const.ID])
                 vsm_profiles[profile_id] = profile_name
             # Fetch policy profiles previously populated
-            for profile in self.n1kv_db.get_policy_profiles():
+            for profile in n1kv_db.get_policy_profiles():
                 plugin_profiles_set.add(profile.id)
             vsm_profiles_set = set(vsm_profiles)
             # Update database if the profile sets differ.
             if vsm_profiles_set ^ plugin_profiles_set:
                 # Add profiles in database if new profiles were created in VSM
                 for pid in vsm_profiles_set - plugin_profiles_set:
-                    self.n1kv_db.add_policy_profile(pid, vsm_profiles[pid])
+                    n1kv_db.add_policy_profile(pid, vsm_profiles[pid])
                 # Delete profiles from database if profiles were deleted in VSM
                 for pid in plugin_profiles_set - vsm_profiles_set:
-                    self.n1kv_db.remove_policy_profile(pid)
+                    n1kv_db.remove_policy_profile(pid)
         except (n1kv_exc.VSMError,
                 n1kv_exc.VSMConnectionFailed):
             LOG.warning(_('No policy profile populated from VSM'))
@@ -94,21 +93,21 @@ class N1KVMechanismDriver(api.MechanismDriver):
         # Make sure logical networks and network profiles exist
         # on the VSM
         try:
-            netp_vlan = self.n1kv_db.get_network_profile_by_type(
+            netp_vlan = n1kv_db.get_network_profile_by_type(
                 p_const.TYPE_VLAN)
         except n1kv_exc.NetworkProfileNotFound:
             # Create a network profile of type VLAN in Neutron DB
-            netp_vlan = self.n1kv_db.add_network_profile(self.netp_vlan_name,
-                                                         p_const.TYPE_VLAN)
+            netp_vlan = n1kv_db.add_network_profile(self.netp_vlan_name,
+                                                    p_const.TYPE_VLAN)
             # Create a network profile of type VLAN on the VSM
             self.n1kvclient.create_network_segment_pool(netp_vlan)
         try:
-            netp_vxlan = self.n1kv_db.get_network_profile_by_type(
+            netp_vxlan = n1kv_db.get_network_profile_by_type(
                 p_const.TYPE_VXLAN)
         except n1kv_exc.NetworkProfileNotFound:
             # Create a network profile of type VXLAN in Neutron DB
-            netp_vxlan = self.n1kv_db.add_network_profile(self.netp_vxlan_name,
-                                                          p_const.TYPE_VXLAN)
+            netp_vxlan = n1kv_db.add_network_profile(self.netp_vxlan_name,
+                                                     p_const.TYPE_VXLAN)
             # Create a network profile of type VXLAN on the VSM
             self.n1kvclient.create_network_segment_pool(netp_vxlan)
 
@@ -134,6 +133,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
         network = context.current
         segment = context.network_segments[0]
         network_type = segment['network_type']
+        session = context._plugin_context.session
         self._validate_segment_id_for_nexus(segment['segmentation_id'],
                                             network_type)
         if network_type not in self.supported_network_types:
@@ -141,19 +141,21 @@ class N1KVMechanismDriver(api.MechanismDriver):
                      "type: %s. Network type VLAN and VXLAN "
                      "supported.") % network_type)
             raise n_exc.InvalidInput(error_message=msg)
-        netp = self.n1kv_db.get_network_profile_by_type(network_type)
+        netp = n1kv_db.get_network_profile_by_type(network_type, session)
         kwargs = {"network_id": network['id'],
                   "network_type": network_type,
+                  "db_session": session,
                   "segment_id": segment['segmentation_id'],
                   "netp_id": netp['id']}
-        self.n1kv_db.add_network_binding(**kwargs)
+        n1kv_db.add_network_binding(**kwargs)
 
     def create_network_postcommit(self, context):
         """Send network parameters to the VSM."""
         network = context.current
         segment = context.network_segments[0]
         network_type = segment['network_type']
-        netp = self.n1kv_db.get_network_profile_by_type(network_type)
+        session = context._plugin_context.session
+        netp = n1kv_db.get_network_profile_by_type(network_type, session)
         try:
             self.n1kvclient.create_network_segment(network, netp)
         except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
@@ -200,19 +202,21 @@ class N1KVMechanismDriver(api.MechanismDriver):
     def create_port_precommit(self, context):
         """Create port to policy profile bindings."""
         port = context.current
+        session = context._plugin_context.session
         try:
-            policy_profile = self.n1kv_db.get_policy_profile_by_name(
-                cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+            policy_profile = n1kv_db.get_policy_profile_by_name(
+                cfg.CONF.ml2_cisco_n1kv.default_policy_profile, session)
         except n1kv_exc.PolicyProfileNotFound as e:
             LOG.info(e.message)
             raise ml2_exc.MechanismDriverError()
-        self.n1kv_db.add_policy_binding(port['id'], policy_profile.id)
+        n1kv_db.add_policy_binding(port['id'], policy_profile.id, session)
 
     def create_port_postcommit(self, context):
         """Send port parameters to the VSM."""
         port = context.current
-        policy_profile = self.n1kv_db.get_policy_profile_by_name(
-            cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+        session = context._plugin_context.session
+        policy_profile = n1kv_db.get_policy_profile_by_name(
+            cfg.CONF.ml2_cisco_n1kv.default_policy_profile, session)
         vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
                                       policy_profile.id,
                                       port['network_id'])
@@ -233,8 +237,9 @@ class N1KVMechanismDriver(api.MechanismDriver):
     def delete_port_postcommit(self, context):
         """Send delete port notification to the VSM."""
         port = context.current
-        policy_profile = self.n1kv_db.get_policy_profile_by_name(
-            cfg.CONF.ml2_cisco_n1kv.default_policy_profile)
+        session = context._plugin_context.session
+        policy_profile = n1kv_db.get_policy_profile_by_name(
+            cfg.CONF.ml2_cisco_n1kv.default_policy_profile, session)
         vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
                                       policy_profile.id,
                                       port['network_id'])
