@@ -197,12 +197,11 @@ fi
 
 echo -n "Checking if 'Network_Node_template' is registered as hosting device template in $osn ..."
 if [ "$plugin" == "n1kv" ]; then
-   db="cisco_$osn"
    agent_driver="neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver"
 else
-   db="csr1kv_ovs_$osn"
    agent_driver="neutron.plugins.cisco.cfg_agent.dummy_driver.DummyRoutingDriver"
 fi
+db="$osn"
 sql_statement="SELECT id FROM hostingdevicetemplates WHERE id='11111110-2222-3333-4444-555555555555'"
 hasTemplate=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
