@@ -24,6 +24,7 @@ from neutron.openstack.common import excutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.ml2.drivers.cisco.n1kv import config  # noqa
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 

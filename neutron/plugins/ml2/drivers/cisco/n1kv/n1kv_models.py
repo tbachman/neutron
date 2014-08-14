@@ -15,7 +15,6 @@
 
 import sqlalchemy as sa
 
-from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.plugins.common import constants

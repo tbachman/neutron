@@ -28,7 +28,7 @@ from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.ml2.drivers.cisco.n1kv import config # noqa
+from neutron.plugins.ml2.drivers.cisco.n1kv import config  # noqa
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_client
@@ -112,7 +112,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
             # Create a network profile of type VXLAN on the VSM
             self.n1kvclient.create_network_segment_pool(netp_vxlan)
 
-    def _validate_segment_id_for_nexus(self, segment_id,  network_type):
+    def _validate_segment_id_for_nexus(self, segment_id, network_type):
         """Validate the segment id for a given network type."""
         is_segment_valid = True
         if (network_type == p_const.TYPE_VLAN and
@@ -137,10 +137,10 @@ class N1KVMechanismDriver(api.MechanismDriver):
         self._validate_segment_id_for_nexus(segment['segmentation_id'],
                                             network_type)
         if network_type not in self.supported_network_types:
-            msg = _("Cisco Nexus1000V: Failed to create unsupported network "
-                    "type: %s. Network type VLAN and VXLAN "
-                    "supported.", network_type)
-            raise n_exc.InvalidInput(error_message=msg) 
+            msg = (_("Cisco Nexus1000V: Failed to create unsupported network "
+                     "type: %s. Network type VLAN and VXLAN "
+                     "supported.") % network_type)
+            raise n_exc.InvalidInput(error_message=msg)
         netp = self.n1kv_db.get_network_profile_by_type(network_type)
         kwargs = {"network_id": network['id'],
                   "network_type": network_type,
@@ -177,8 +177,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
             except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
                 LOG.info(e.message)
                 raise ml2_exc.MechanismDriverError()
-        LOG.info(_("Update network(postcommit) succeeded for network: %s",
-                   old_network['id']))
+        LOG.info(_("Update network(postcommit) succeeded for network: %s") %
+                 old_network['id'])
 
     def delete_network_postcommit(self, context):
         """Send network delete request to the VSM."""

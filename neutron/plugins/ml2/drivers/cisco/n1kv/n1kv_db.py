@@ -75,20 +75,20 @@ class N1kvDbModel(object):
     def add_network_binding(self,
                             network_id,
                             network_type,
-                            segmentation_id,
+                            segment_id,
                             netp_id):
         """
         Create the network to network profile binding.
 
         :param network_id: UUID representing the network
         :param network_type: string representing type of network (VLAN, VXLAN)
-        :param segmentation_id: integer representing VLAN or VXLAN ID
+        :param segment_id: integer representing VLAN or VXLAN ID
         :param netp_id: network profile ID based on which this network
                         is created
         """
         binding = n1kv_models.N1kvNetworkBinding(network_id=network_id,
                                                  network_type=network_type,
-                                                 segmentation_id=segmentation_id,
+                                                 segmentation_id=segment_id,
                                                  profile_id=netp_id)
         self.db_session.add(binding)
         return binding
