@@ -144,7 +144,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
         netp = self.n1kv_db.get_network_profile_by_type(network_type)
         kwargs = {"network_id": network['id'],
                   "network_type": network_type,
-                  "segmentation_id": segment['segmentation_id'],
+                  "segment_id": segment['segmentation_id'],
                   "netp_id": netp['id']}
         self.n1kv_db.add_network_binding(**kwargs)
 
