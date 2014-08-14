@@ -150,12 +150,11 @@ else
 fi
 
 echo -n "Checking if credential '$csr1kvCredentialId' exits..."
+db="$osn"
 if [ "$plugin" == "n1kv" ]; then
-   db="cisco_$osn"
    hd_driver="neutron.plugins.cisco.device_manager.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
    plugging_driver="neutron.plugins.cisco.device_manager.plugging_drivers.n1kv_trunking_driver.N1kvTrunkingPlugDriver"
 else
-   db="csr1kv_ovs_$osn"
    hd_driver="neutron.plugins.cisco.device_manager.hosting_device_drivers.csr1kv_hd_driver.CSR1kvHostingDeviceDriver"
    plugging_driver="neutron.plugins.cisco.device_manager.plugging_drivers.ovs_trunking_driver.OvsTrunkingPlugDriver"
 fi
@@ -201,7 +200,6 @@ if [ "$plugin" == "n1kv" ]; then
 else
    agent_driver="neutron.plugins.cisco.cfg_agent.dummy_driver.DummyRoutingDriver"
 fi
-db="$osn"
 sql_statement="SELECT id FROM hostingdevicetemplates WHERE id='11111110-2222-3333-4444-555555555555'"
 hasTemplate=`mysql $mysql_auth -e "use $db; $sql_statement" | awk '/id/ { print "Yes" }'`
 
