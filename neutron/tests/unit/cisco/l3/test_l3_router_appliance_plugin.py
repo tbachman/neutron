@@ -22,6 +22,9 @@ import neutron
 from neutron.api.v2 import attributes
 from neutron import context as n_context
 from neutron.db import agents_db
+from neutron.db import api as qdbapi
+from neutron.db import common_db_mixin
+from neutron.db import model_base
 from neutron.extensions import providernet as pnet
 from neutron import manager
 from neutron.openstack.common import timeutils
@@ -30,7 +33,6 @@ from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb
 from neutron.plugins.cisco.l3.rpc import l3_router_cfgagent_rpc_cb
-from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.cisco.l3 import service_vm_lib
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.cisco.l3 import device_handling_test_support
@@ -100,18 +102,23 @@ class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
 
 # A set routes capable L3 routing service plugin class supporting appliances
 class TestApplianceL3RouterServicePlugin(
-    agents_db.AgentDbMixin, test_l3_plugin.TestL3NatServicePlugin,
+    agents_db.AgentDbMixin, common_db_mixin.CommonDbMixin,
     device_handling_db.DeviceHandlingMixin,
     l3_router_appliance_db.L3RouterApplianceDBMixin):
 
     supported_extension_aliases = ["router", "extraroute"]
-    # Disable notifications from l3 base class to l3 agents
-    l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
 
     def __init__(self):
+        qdbapi.register_models(base=model_base.BASEV2)
         self._setup_backlog_handling()
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager()
         super(TestApplianceL3RouterServicePlugin, self).__init__()
+
+    def get_plugin_type(self):
+        return service_constants.L3_ROUTER_NAT
+
+    def get_plugin_description(self):
+        return "L3 Routing Service Plugin for testing"
 
 
 class L3RouterApplianceTestCaseBase(
@@ -184,6 +191,10 @@ class L3RouterApplianceVMTestCase(
 
         self._mock_svc_vm_create_delete()
 
+    def test_floatingip_with_assoc_fails(self):
+        self._test_floatingip_with_assoc_fails(
+            'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
+
 
 class L3RouterApplianceVMTestCaseXML(L3RouterApplianceVMTestCase):
     fmt = 'xml'
@@ -209,18 +220,18 @@ class CfgAgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
             '.L3RouterJointAgentNotifyAPI')
         plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
-        oldNotify = plugin.l3_rpc_notifier
+        oldNotify = plugin.l3_cfg_rpc_notifier
         try:
             with mock.patch(l3_rpc_agent_api_str) as notifyApi:
-                plugin.l3_rpc_notifier = notifyApi
+                plugin.l3_cfg_rpc_notifier = notifyApi
                 kargs = [item for item in args]
                 kargs.append(notifyApi)
                 target_func(*kargs)
         except Exception:
-            plugin.l3_rpc_notifier = oldNotify
+            plugin.l3_cfg_rpc_notifier = oldNotify
             raise
         else:
-            plugin.l3_rpc_notifier = oldNotify
+            plugin.l3_cfg_rpc_notifier = oldNotify
 
 
 DB_PLUGIN_KLASS = ('neutron.tests.unit.cisco.l3.ovs_neutron_plugin.'

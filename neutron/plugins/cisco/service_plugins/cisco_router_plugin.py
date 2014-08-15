@@ -14,22 +14,18 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from oslo.config import cfg
-
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import api as qdbapi
-from neutron.db import db_base_plugin_v2
+from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron import manager
-import neutron.plugins
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
                                           l3_router_rpc)
 from neutron.plugins.cisco.l3.rpc import devices_cfgagent_rpc_cb as devices_rpc
-from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.common import constants
 
 
@@ -44,14 +40,10 @@ class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
 
     @property
     def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
+        return manager.NeutronManager.get_plugin()
 
 
-class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
+class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
                         agents_db.AgentDbMixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         device_handling_db.DeviceHandlingMixin):
@@ -69,15 +61,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     def __init__(self):
         qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
-        basepath = neutron.plugins.__path__[0]
-        ext_paths = [basepath + '/cisco/extensions']
-        cp = cfg.CONF.api_extensions_path
-        to_add = ""
-        for ext_path in ext_paths:
-            if cp.find(ext_path) == -1:
-                to_add += ':' + ext_path
-        if to_add != "":
-            cfg.CONF.set_override('api_extensions_path', cp + to_add)
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
         self._setup_device_handling()
@@ -86,8 +69,6 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = n_rpc.create_connection(new=True)
-        # Disable notifications from l3 base class to l3 agents
-        self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
         self.endpoints = [CiscoRouterPluginRpcCallbacks(self)]
         self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)

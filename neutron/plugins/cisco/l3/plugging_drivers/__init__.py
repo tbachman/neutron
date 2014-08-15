@@ -134,7 +134,7 @@ class PluginSidePluggingDriver(object):
                               hosting_device_id):
         """Allocates a hosting port for a logical port.
 
-        Schedules a logical port to a hosting port. Not that the hosting port
+        Schedules a logical port to a hosting port. Note that the hosting port
         may be the logical port itself.
 
         returns: a dict {'allocated_port_id': <id of allocated port>,

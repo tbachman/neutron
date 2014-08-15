@@ -41,16 +41,22 @@ LOG = logging.getLogger(__name__)
 
 DEVICE_HANDLING_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
-               help=_("Name of the L3 admin tenant.")),
+               help=_('Name of the L3 admin tenant.')),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
-               help=_("Name of management network for device configuration. "
-                      "Default value is osn_mgmt_nw")),
+               help=_('Name of management network for device configuration. '
+                      'Default value is osn_mgmt_nw')),
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
-               help=_("Default security group applied on management port. "
-                      "Default value is mgmt_sec_grp.")),
+               help=_('Default security group applied on management port. '
+                      'Default value is mgmt_sec_grp.')),
     cfg.IntOpt('cfg_agent_down_time', default=60,
                help=_('Seconds of no status update until a cfg agent '
                       'is considered down.')),
+    cfg.BoolOpt('ensure_nova_running', default=True,
+                help=_('Ensure that Nova is running before attempting to '
+                       'create any VM.'))
+]
+
+CSR1KV_OPTS = [
     cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
                help=_('Name of Glance image for CSR1kv.')),
     cfg.StrOpt('csr1kv_flavor', default=621,
@@ -63,19 +69,21 @@ DEVICE_HANDLING_OPTS = [
                default=('neutron.plugins.cisco.l3.hosting_device_drivers.'
                         'csr1kv_hd_driver.CSR1kvHostingDeviceDriver'),
                help=_('Hosting device driver for CSR1kv.')),
+    cfg.StrOpt('csr1kv_cfgagent_router_driver',
+               default=('neutron.plugins.cisco.cfg_agent.device_drivers.'
+                        'csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver'),
+               help=_('Config agent driver for CSR1kv.')),
     cfg.IntOpt('csr1kv_booting_time', default=420,
                help=_('Booting time in seconds before a CSR1kv '
                       'becomes operational.')),
     cfg.StrOpt('csr1kv_username', default='stack',
                help=_('Username to use for CSR1kv configurations.')),
     cfg.StrOpt('csr1kv_password', default='cisco',
-               help=_('Password to use for CSR1kv configurations.')),
-    cfg.BoolOpt('ensure_nova_running', default=True,
-                help=_("Ensure that Nova is running before attempting to"
-                       "create any CSR1kv VM."))
+               help=_('Password to use for CSR1kv configurations.'))
 ]
 
-cfg.CONF.register_opts(DEVICE_HANDLING_OPTS)
+cfg.CONF.register_opts(DEVICE_HANDLING_OPTS, "general")
+cfg.CONF.register_opts(CSR1KV_OPTS, "hosting_devices")
 
 
 class DeviceHandlingMixin(object):
@@ -109,14 +117,15 @@ class DeviceHandlingMixin(object):
                                        tenant_name=tenant,
                                        auth_url=auth_url)
             try:
-                tenant = keystone.tenants.find(name=cfg.CONF.l3_admin_tenant)
+                tenant = keystone.tenants.find(
+                    name=cfg.CONF.general.l3_admin_tenant)
                 cls._l3_tenant_uuid = tenant.id
             except k_exceptions.NotFound:
                 LOG.error(_('No tenant with a name or ID of %s exists.'),
-                          cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.general.l3_admin_tenant)
             except k_exceptions.NoUniqueMatch:
                 LOG.error(_('Multiple tenants matches found for %s'),
-                          cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.general.l3_admin_tenant)
         return cls._l3_tenant_uuid
 
     @classmethod
@@ -129,22 +138,23 @@ class DeviceHandlingMixin(object):
             net = manager.NeutronManager.get_plugin().get_networks(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
-                 'name': [cfg.CONF.management_network]},
+                 'name': [cfg.CONF.general.management_network]},
                 ['id', 'subnets'])
             if len(net) == 1:
                 num_subnets = len(net[0]['subnets'])
                 if num_subnets == 0:
-                    LOG.error(_('The management network has no subnet. '
-                                'Please assign one.'))
+                    LOG.error(_('The virtual management network has no '
+                                'subnet. Please assign one.'))
                     return
                 elif num_subnets > 1:
-                    LOG.info(_('The management network has %d subnets. The '
-                               'first one will be used.'), num_subnets)
+                    LOG.info(_('The virtual management network has %d '
+                               'subnets. The first one will be used.'),
+                             num_subnets)
                 cls._mgmt_nw_uuid = net[0].get('id')
             elif len(net) > 1:
                 # Management network must have a unique name.
-                LOG.error(_('The management network for does not have unique '
-                            'name. Please ensure that it is.'))
+                LOG.error(_('The virtual management network does not have '
+                            'unique name. Please ensure that it is.'))
             else:
                 # Management network has not been created.
                 LOG.error(_('There is no virtual management network. Please '
@@ -163,20 +173,19 @@ class DeviceHandlingMixin(object):
             res = manager.NeutronManager.get_plugin().get_security_groups(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
-                 'name': [cfg.CONF.default_security_group]},
+                 'name': [cfg.CONF.general.default_security_group]},
                 ['id'])
             if len(res) == 1:
-                sec_grp_id = res[0].get('id', None)
-                cls._mgmt_sec_grp_id = sec_grp_id
+                cls._mgmt_sec_grp_id = res[0].get('id')
             elif len(res) > 1:
                 # the mgmt sec group must be unique.
-                LOG.error(_('The security group for the management network '
-                            'does not have unique name. Please ensure that '
-                            'it is.'))
+                LOG.error(_('The security group for the virtual management '
+                            'network does not have unique name. Please ensure '
+                            'that it is.'))
             else:
                 # CSR Mgmt security group is not present.
-                LOG.error(_('There is no security group for the management '
-                            'network. Please create one.'))
+                LOG.error(_('There is no security group for the virtual '
+                            'management network. Please create one.'))
         return cls._mgmt_sec_grp_id
 
     def get_hosting_device_driver(self):
@@ -186,7 +195,7 @@ class DeviceHandlingMixin(object):
         else:
             try:
                 self._hosting_device_driver = importutils.import_object(
-                    cfg.CONF.csr1kv_device_driver)
+                    cfg.CONF.hosting_devices.csr1kv_device_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
                 LOG.exception(_('Error loading hosting device driver'))
             return self._hosting_device_driver
@@ -198,7 +207,7 @@ class DeviceHandlingMixin(object):
         else:
             try:
                 self._plugging_driver = importutils.import_object(
-                    cfg.CONF.csr1kv_plugging_driver)
+                    cfg.CONF.hosting_devices.csr1kv_plugging_driver)
             except (ImportError, TypeError, n_exc.NeutronException):
                 LOG.exception(_('Error loading plugging driver'))
             return self._plugging_driver
@@ -252,8 +261,8 @@ class DeviceHandlingMixin(object):
             their resources with information about the device hosting their
             logical resource.
         """
-        credentials = {'username': cfg.CONF.csr1kv_username,
-                       'password': cfg.CONF.csr1kv_password}
+        credentials = {'username': cfg.CONF.hosting_devices.csr1kv_username,
+                       'password': cfg.CONF.hosting_devices.csr1kv_password}
         mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
                    if hosting_device.management_port else None)
         return {'id': hosting_device.id,
@@ -261,12 +270,12 @@ class DeviceHandlingMixin(object):
                 'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
-                'booting_time': cfg.CONF.csr1kv_booting_time,
+                'booting_time': cfg.CONF.hosting_devices.csr1kv_booting_time,
                 'cfg_agent_id': hosting_device.cfg_agent_id}
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
-                      timeout=cfg.CONF.cfg_agent_down_time):
+                      timeout=cfg.CONF.general.cfg_agent_down_time):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
     def get_cfg_agents_for_hosting_devices(self, context, hosting_device_ids,
@@ -325,7 +334,7 @@ class DeviceHandlingMixin(object):
         auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
         u_name = cfg.CONF.keystone_authtoken.admin_user
         pw = cfg.CONF.keystone_authtoken.admin_password
-        tenant = cfg.CONF.l3_admin_tenant
+        tenant = cfg.CONF.general.l3_admin_tenant
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
             user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
 
@@ -346,7 +355,7 @@ class DeviceHandlingMixin(object):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
-        if cfg.CONF.ensure_nova_running and not self._nova_running:
+        if cfg.CONF.general.ensure_nova_running and not self._nova_running:
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
@@ -371,9 +380,9 @@ class DeviceHandlingMixin(object):
             # Required ports could not be created
             return
         vm_instance = self._svc_vm_mgr.dispatch_service_vm(
-            context, 'CSR1kv_nrouter', cfg.CONF.csr1kv_image,
-            cfg.CONF.csr1kv_flavor, hosting_device_drv, res['mgmt_port'],
-            res.get('ports'))
+            context, 'CSR1kv_nrouter', cfg.CONF.hosting_devices.csr1kv_image,
+            cfg.CONF.hosting_devices.csr1kv_flavor, hosting_device_drv,
+            res['mgmt_port'], res.get('ports'))
         with context.session.begin(subtransactions=True):
             if vm_instance is not None:
                 dev_data.update(
@@ -436,16 +445,16 @@ class DeviceHandlingMixin(object):
 
     def _select_cfgagent(self, context, hosting_device):
         """Selects Cisco cfg agent that will configure <hosting_device>."""
+        if not hosting_device:
+            LOG.debug('Hosting device to schedule not specified')
+            return
+        elif hosting_device.cfg_agent:
+            LOG.debug('Hosting device %(hd_id)s has already been '
+                      'assigned to Cisco cfg agent %(agent_id)s',
+                      {'hd_id': id,
+                       'agent_id': hosting_device.cfg_agent.id})
+            return
         with context.session.begin(subtransactions=True):
-            if not hosting_device:
-                LOG.debug('Hosting device to schedule not specified')
-                return
-            elif hosting_device.cfg_agent:
-                LOG.debug('Hosting device %(hd_id)s has already been '
-                          'assigned to Cisco cfg agent %(agent_id)s',
-                          {'hd_id': id,
-                           'agent_id': hosting_device.cfg_agent.id})
-                return
             active_cfg_agents = self._get_cfg_agents(context, active=True)
             if not active_cfg_agents:
                 LOG.warn(_('There are no active Cisco cfg agents'))

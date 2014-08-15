@@ -54,7 +54,7 @@ N1KV_TRUNKING_DRIVER_OPTS = [
                       "trunk networks for VLAN segmented traffic).")),
 ]
 
-cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS)
+cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS, "n1kv")
 
 MIN_LL_VLAN_TAG = 10
 MAX_LL_VLAN_TAG = 200
@@ -80,11 +80,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     @property
     def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
+        return manager.NeutronManager.get_plugin()
 
     @classmethod
     def _get_profile_id(cls, p_type, resource, name):
@@ -124,21 +120,23 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._mgmt_port_profile_id is None:
             cls._mgmt_port_profile_id = cls._get_profile_id(
                 'port_profile', 'N1kv port profile',
-                cfg.CONF.management_port_profile)
+                cfg.CONF.n1kv.management_port_profile)
         return cls._mgmt_port_profile_id
 
     @classmethod
     def t1_port_profile_id(cls):
         if cls._t1_port_profile_id is None:
             cls._t1_port_profile_id = cls._get_profile_id(
-                'port_profile', 'N1kv port profile', cfg.CONF.t1_port_profile)
+                'port_profile', 'N1kv port profile',
+                cfg.CONF.n1kv.t1_port_profile)
         return cls._t1_port_profile_id
 
     @classmethod
     def t2_port_profile_id(cls):
         if cls._t2_port_profile_id is None:
             cls._t2_port_profile_id = cls._get_profile_id(
-                'port_profile', 'N1kv port profile', cfg.CONF.t2_port_profile)
+                'port_profile', 'N1kv port profile',
+                cfg.CONF.n1kv.t2_port_profile)
         return cls._t2_port_profile_id
 
     @classmethod
@@ -146,7 +144,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._t1_network_profile_id is None:
             cls._t1_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
-                cfg.CONF.t1_network_profile)
+                cfg.CONF.n1kv.t1_network_profile)
         return cls._t1_network_profile_id
 
     @classmethod
@@ -154,7 +152,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._t2_network_profile_id is None:
             cls._t2_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
-                cfg.CONF.t2_network_profile)
+                cfg.CONF.n1kv.t2_network_profile)
         return cls._t2_network_profile_id
 
     def create_hosting_device_resources(self, context, complementary_id,

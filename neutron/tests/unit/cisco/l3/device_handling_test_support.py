@@ -55,7 +55,8 @@ class DeviceHandlingTestSupportMixin(object):
         self.get_policy_profiles_fcn.return_value = [{'id': "4321"}]
 
     def _create_mgmt_nw_for_tests(self, fmt):
-        self._mgmt_nw = self._make_network(fmt, cfg.CONF.management_network,
+        self._mgmt_nw = self._make_network(fmt,
+                                           cfg.CONF.general.management_network,
                                            True, tenant_id="L3AdminTenantId",
                                            shared=False)
         self._mgmt_subnet = self._make_subnet(fmt, self._mgmt_nw,

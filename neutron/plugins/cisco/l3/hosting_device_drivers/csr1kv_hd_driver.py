@@ -35,7 +35,7 @@ CSR1KV_HD_DRIVER_OPTS = [
                help=_("CSR1kv configdrive template file.")),
 ]
 
-cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
+cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS, "hosting_devices")
 
 
 class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
@@ -53,8 +53,9 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
                   '<gw>': subnet_data['gateway_ip'],
                   '<name_server>': '8.8.8.8'}
         try:
-            cfg_template_filename = (cfg.CONF.templates_path + "/" +
-                                     cfg.CONF.csr1kv_configdrive_template)
+            cfg_template_filename = (
+                cfg.CONF.general.templates_path + "/" +
+                cfg.CONF.hosting_devices.csr1kv_configdrive_template)
             vm_cfg_filename = self._unique_cfgdrive_filename(mgmtport['id'])
             with open(cfg_template_filename, 'r') as cfg_template_file:
                 with open(vm_cfg_filename, "w") as vm_cfg_file:
@@ -79,13 +80,9 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
 
     def _unique_cfgdrive_filename(self, uuid):
         end = CFG_DRIVE_UUID_START + CFG_DRIVE_UUID_LEN
-        return (cfg.CONF.service_vm_config_path + "/csr1kv_" +
+        return (cfg.CONF.general.service_vm_config_path + "/csr1kv_" +
                 uuid[CFG_DRIVE_UUID_START:end] + ".cfg")
 
     @property
     def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
+        return manager.NeutronManager.get_plugin()

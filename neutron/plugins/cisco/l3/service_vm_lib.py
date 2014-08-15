@@ -38,7 +38,7 @@ SERVICE_VM_LIB_OPTS = [
                help=_("Path to config drive files for service VM instances.")),
 ]
 
-cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS)
+cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS, "general")
 
 
 class ServiceVMManager(object):
@@ -50,11 +50,7 @@ class ServiceVMManager(object):
 
     @property
     def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
+        return manager.NeutronManager.get_plugin()
 
     def nova_services_up(self):
         """Checks if required Nova services are up and running.

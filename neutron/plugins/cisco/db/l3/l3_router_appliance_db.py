@@ -23,6 +23,7 @@ from sqlalchemy.sql import expression as expr
 
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
+from neutron.common import rpc as n_rpc
 from neutron import context as n_context
 from neutron.db import extraroute_db
 from neutron.db import l3_db
@@ -39,17 +40,13 @@ LOG = logging.getLogger(__name__)
 
 
 ROUTER_APPLIANCE_OPTS = [
-    cfg.StrOpt('csr1kv_cfgagent_router_driver',
-               default=('neutron.plugins.cisco.cfg_agent.device_drivers.'
-                        'csr1kv.csr1kv_routing_driver.CSR1kvRoutingDriver'),
-               help=_('Config agent driver for CSR1kv.')),
     cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
                       'non-scheduled routers.')),
 ]
 
-cfg.CONF.register_opts(ROUTER_APPLIANCE_OPTS)
+cfg.CONF.register_opts(ROUTER_APPLIANCE_OPTS, "general")
 
 
 class RouterCreateInternalError(n_exc.NeutronException):
@@ -64,7 +61,7 @@ class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
 
-class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
+class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     """Mixin class implementing Neutron's routing service using appliances."""
 
     # Dictionary of routers for which new scheduling attempts should
@@ -149,6 +146,17 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             super(L3RouterApplianceDBMixin, self).delete_router(context, id)
         self.l3_cfg_rpc_notifier.router_deleted(context, router)
 
+    def notify_router_interface_action(
+            self, context, router_interface_info, routers, action):
+        l3_method = '%s_router_interface' % action
+        self.l3_cfg_rpc_notifier.routers_updated(context, routers, l3_method)
+
+        mapping = {'add': 'create', 'remove': 'delete'}
+        notifier = n_rpc.get_notifier('network')
+        router_event = 'router.interface.%s' % mapping[action]
+        notifier.info(context, router_event,
+                      {'router_interface': router_interface_info})
+
     def add_router_interface(self, context, router_id, interface_info):
         with context.session.begin(subtransactions=True):
             info = (super(L3RouterApplianceDBMixin, self).
@@ -156,8 +164,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             routers = [self.get_router(context, router_id)]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-        self.l3_cfg_rpc_notifier.routers_updated(context, routers,
-                                                 'add_router_interface')
+        self.notify_router_interface_action(context, info, routers, 'add')
         return info
 
     def remove_router_interface(self, context, router_id, interface_info):
@@ -182,8 +189,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             info = (super(L3RouterApplianceDBMixin, self).
                     remove_router_interface(context, router_id,
                                             interface_info))
-        self.l3_cfg_rpc_notifier.routers_updated(context, routers,
-                                                 'remove_router_interface')
+        self.notify_router_interface_action(context, info, routers, 'remove')
         return info
 
     def create_floatingip(
@@ -377,7 +383,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     def _setup_backlog_handling(self):
         self._heartbeat = loopingcall.FixedIntervalLoopingCall(
             self._process_backlogged_routers)
-        self._heartbeat.start(interval=cfg.CONF.backlog_processing_interval)
+        self._heartbeat.start(
+            interval=cfg.CONF.general.backlog_processing_interval)
 
     def _sync_router_backlog(self):
         LOG.info(_('Synchronizing router (scheduling) backlog'))
@@ -438,7 +445,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         router['router_type'] = {
             'id': None,
             'name': 'CSR1kv_router',
-            'cfg_agent_driver': cfg.CONF.csr1kv_cfgagent_router_driver}
+            'cfg_agent_driver': (cfg.CONF.hosting_devices
+                                 .csr1kv_cfgagent_router_driver)}
         if binding_info.hosting_device is None and schedule:
             # This router has not been scheduled to a hosting device
             # so we try to do it now.
