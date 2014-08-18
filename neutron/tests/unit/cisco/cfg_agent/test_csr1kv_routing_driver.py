@@ -145,8 +145,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
 
         self.driver.internal_network_removed(self.ri, self.port)
 
-        args = (interface, self.vlan_no, self.vrf, self.gw_ip)
-        self.driver._remove_subinterface.called_once_with(*args)
+        self.driver._remove_subinterface.assert_called_once_with(interface)
 
     def test_routes_updated(self):
         dest_net = '20.0.0.0/16'
@@ -160,12 +159,12 @@ class TestCSR1kvRouting(base.BaseTestCase):
         self.driver._remove_static_route = mock.MagicMock()
 
         self.driver.routes_updated(self.ri, 'replace', route)
-        self.driver._add_static_route.called_once_with(dest, destmask,
-                                                       next_hop, self.vrf)
+        self.driver._add_static_route.assert_called_once_with(
+            dest, destmask, next_hop, self.vrf)
 
         self.driver.routes_updated(self.ri, 'delete', route)
-        self.driver._remove_static_route.called_once_with(dest, destmask,
-                                                          next_hop, self.vrf)
+        self.driver._remove_static_route.assert_called_once_with(
+            dest, destmask, next_hop, self.vrf)
 
     def test_floatingip(self):
         floating_ip = '15.1.2.3'
@@ -179,18 +178,18 @@ class TestCSR1kvRouting(base.BaseTestCase):
 
         self.driver.floating_ip_added(self.ri, self.ex_gw_port,
                                       floating_ip, fixed_ip)
-        self.driver._add_floating_ip.called_once_with(floating_ip,
-                                                      fixed_ip, self.vrf)
+        self.driver._add_floating_ip.assert_called_once_with(
+            floating_ip, fixed_ip, self.vrf)
 
         self.driver.floating_ip_removed(self.ri, self.ex_gw_port,
                                         floating_ip, fixed_ip)
 
-        self.driver._remove_interface_nat.called_once_with(
+        self.driver._remove_interface_nat.assert_called_once_with(
             'GigabitEthernet1.1000', 'outside')
-        self.driver._remove_dyn_nat_translations.called_once_with()
-        self.driver._remove_floating_ip.called_once_with(floating_ip,
-                                                         fixed_ip, self.vrf)
-        self.driver._add_interface_nat.called_once_with(
+        self.driver._remove_dyn_nat_translations.assert_called_once_with()
+        self.driver._remove_floating_ip.assert_called_once_with(
+            floating_ip, fixed_ip, self.vrf)
+        self.driver._add_interface_nat.assert_called_once_with(
             'GigabitEthernet1.1000', 'outside')
 
     def test_external_gateway_added(self):

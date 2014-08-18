@@ -21,13 +21,12 @@ from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants as q_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.db import api as qdbapi
 from neutron.db import common_db_mixin
 from neutron.db import extraroute_db
-from neutron.db import l3_agentschedulers_db
+from neutron.db import l3_dvr_db
+from neutron.db import l3_dvrscheduler_db
 from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
-from neutron.db import model_base
 from neutron.openstack.common import importutils
 from neutron.plugins.common import constants
 
@@ -35,13 +34,17 @@ from neutron.plugins.common import constants
 class L3RouterPluginRpcCallbacks(n_rpc.RpcCallback,
                                  l3_rpc_base.L3RpcCallbackMixin):
 
-    RPC_API_VERSION = '1.1'
+    RPC_API_VERSION = '1.3'
+    # history
+    #   1.2 Added methods for DVR support
+    #   1.3 Added a method that returns the list of activated services
 
 
 class L3RouterPlugin(common_db_mixin.CommonDbMixin,
                      extraroute_db.ExtraRoute_db_mixin,
+                     l3_dvr_db.L3_NAT_with_dvr_db_mixin,
                      l3_gwmode_db.L3_NAT_db_mixin,
-                     l3_agentschedulers_db.L3AgentSchedulerDbMixin):
+                     l3_dvrscheduler_db.L3_DVRsch_db_mixin):
 
     """Implementation of the Neutron L3 Router Service Plugin.
 
@@ -49,16 +52,17 @@ class L3RouterPlugin(common_db_mixin.CommonDbMixin,
     router and floatingip resources and manages associated
     request/response.
     All DB related work is implemented in classes
-    l3_db.L3_NAT_db_mixin and extraroute_db.ExtraRoute_db_mixin.
+    l3_db.L3_NAT_db_mixin, l3_dvr_db.L3_NAT_with_dvr_db_mixin, and
+    extraroute_db.ExtraRoute_db_mixin.
     """
-    supported_extension_aliases = ["router", "ext-gw-mode",
+    supported_extension_aliases = ["dvr", "router", "ext-gw-mode",
                                    "extraroute", "l3_agent_scheduler"]
 
     def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         self.router_scheduler = importutils.import_object(
             cfg.CONF.router_scheduler_driver)
+        self.start_periodic_agent_status_check()
 
     def setup_rpc(self):
         # RPC support

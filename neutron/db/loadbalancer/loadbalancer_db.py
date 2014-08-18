@@ -318,25 +318,27 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             sess_qry.filter_by(vip_id=vip_id).delete()
 
     def _create_port_for_vip(self, context, vip_db, subnet_id, ip_address):
-            # resolve subnet and create port
-            subnet = self._core_plugin.get_subnet(context, subnet_id)
-            fixed_ip = {'subnet_id': subnet['id']}
-            if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
-                fixed_ip['ip_address'] = ip_address
+        # resolve subnet and create port
+        subnet = self._core_plugin.get_subnet(context, subnet_id)
+        fixed_ip = {'subnet_id': subnet['id']}
+        if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
+            fixed_ip['ip_address'] = ip_address
 
-            port_data = {
-                'tenant_id': vip_db.tenant_id,
-                'name': 'vip-' + vip_db.id,
-                'network_id': subnet['network_id'],
-                'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                'admin_state_up': False,
-                'device_id': '',
-                'device_owner': '',
-                'fixed_ips': [fixed_ip]
-            }
+        port_data = {
+            'tenant_id': vip_db.tenant_id,
+            'name': 'vip-' + vip_db.id,
+            'network_id': subnet['network_id'],
+            'mac_address': attributes.ATTR_NOT_SPECIFIED,
+            'admin_state_up': False,
+            'device_id': '',
+            'device_owner': '',
+            'fixed_ips': [fixed_ip]
+        }
 
-            port = self._core_plugin.create_port(context, {'port': port_data})
-            vip_db.port_id = port['id']
+        port = self._core_plugin.create_port(context, {'port': port_data})
+        vip_db.port_id = port['id']
+        # explicitly sync session with db
+        context.session.flush()
 
     def create_vip(self, context, vip):
         v = vip['vip']
@@ -384,17 +386,21 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 context.session.flush()
             except exception.DBDuplicateEntry:
                 raise loadbalancer.VipExists(pool_id=v['pool_id'])
-
-            # create a port to reserve address for IPAM
-            self._create_port_for_vip(
-                context,
-                vip_db,
-                v['subnet_id'],
-                v.get('address')
-            )
-
             if pool:
                 pool['vip_id'] = vip_db['id']
+
+        try:
+            # create a port to reserve address for IPAM
+            # do it outside the transaction to avoid rpc calls
+            self._create_port_for_vip(
+                context, vip_db, v['subnet_id'], v.get('address'))
+        except Exception:
+            # catch any kind of exceptions
+            with excutils.save_and_reraise_exception():
+                context.session.delete(vip_db)
+                if pool:
+                    pool['vip_id'] = None
+                context.session.flush()
 
         return self._make_vip_dict(vip_db)
 
@@ -460,8 +466,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 pool.update({"vip_id": None})
 
             context.session.delete(vip)
-            if vip.port:  # this is a Neutron port
-                self._core_plugin.delete_port(context, vip.port.id)
+        if vip.port:  # this is a Neutron port
+            self._core_plugin.delete_port(context, vip.port.id)
 
     def get_vip(self, context, id, fields=None):
         vip = self._get_resource(context, Vip, id)

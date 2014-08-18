@@ -44,7 +44,7 @@ from oslo.config import cfg
 from neutron.common import exceptions
 from neutron.common import utils
 from neutron.openstack.common import excutils
-from neutron.openstack.common import jsonutils as json
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.bigswitch.db import consistency_db as cdb
 
@@ -112,7 +112,7 @@ class ServerProxy(object):
     def get_capabilities(self):
         try:
             body = self.rest_call('GET', CAPABILITIES_PATH)[2]
-            self.capabilities = json.loads(body)
+            self.capabilities = jsonutils.loads(body)
         except Exception:
             LOG.exception(_("Couldn't retrieve capabilities. "
                             "Newer API calls won't be supported."))
@@ -124,7 +124,7 @@ class ServerProxy(object):
     def rest_call(self, action, resource, data='', headers={}, timeout=False,
                   reconnect=False, hash_handler=None):
         uri = self.base_uri + resource
-        body = json.dumps(data)
+        body = jsonutils.dumps(data)
         if not headers:
             headers = {}
         headers['Content-type'] = 'application/json'
@@ -184,15 +184,20 @@ class ServerProxy(object):
         try:
             self.currentconn.request(action, uri, body, headers)
             response = self.currentconn.getresponse()
-            hash_handler.put_hash(response.getheader(HASH_MATCH_HEADER))
             respstr = response.read()
             respdata = respstr
             if response.status in self.success_codes:
+                hash_value = response.getheader(HASH_MATCH_HEADER)
+                # don't clear hash from DB if a hash header wasn't present
+                if hash_value is not None:
+                    hash_handler.put_hash(hash_value)
                 try:
-                    respdata = json.loads(respstr)
+                    respdata = jsonutils.loads(respstr)
                 except ValueError:
                     # response was not JSON, ignore the exception
                     pass
+            else:
+                hash_handler.close_update_session()
             ret = (response.status, response.reason, respstr, respdata)
         except httplib.HTTPException:
             # If we were using a cached connection, try again with a new one.
@@ -421,6 +426,8 @@ class ServerPool(object):
                 if not self.get_topo_function:
                     raise cfg.Error(_('Server requires synchronization, '
                                       'but no topology function was defined.'))
+                # The hash was incorrect so it needs to be removed
+                hash_handler.put_hash('')
                 data = self.get_topo_function(**self.get_topo_function_args)
                 active_server.rest_call('PUT', TOPOLOGY_PATH, data,
                                         timeout=None)

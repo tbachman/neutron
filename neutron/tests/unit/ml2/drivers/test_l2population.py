@@ -23,7 +23,6 @@ from neutron.common import constants
 from neutron.common import topics
 from neutron import context
 from neutron.db import agents_db
-from neutron.db import api as db_api
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as pnet
 from neutron import manager
@@ -81,6 +80,7 @@ L2_AGENT_4 = {
 
 PLUGIN_NAME = 'neutron.plugins.ml2.plugin.Ml2Plugin'
 NOTIFIER = 'neutron.plugins.ml2.rpc.AgentNotifierApi'
+DEVICE_OWNER_COMPUTE = 'compute:None'
 
 
 class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
@@ -130,8 +130,6 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         uptime_patch = mock.patch(uptime, return_value=190)
         uptime_patch.start()
 
-        self.addCleanup(db_api.clear_db)
-
     def tearDown(self):
         l2_consts.SUPPORTED_AGENT_TYPES = self.orig_supported_agents
         super(TestL2PopulationRpcTestCase, self).tearDown()
@@ -157,6 +155,7 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 with self.port(subnet=subnet,
@@ -216,11 +215,13 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
             host_arg = {portbindings.HOST_ID: HOST,
                         'admin_state_up': True}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID, 'admin_state_up',),
                            **host_arg) as port1:
                 host_arg = {portbindings.HOST_ID: HOST + '_2',
                             'admin_state_up': True}
                 with self.port(subnet=subnet,
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,
                                          'admin_state_up',),
                                **host_arg) as port2:
@@ -280,14 +281,17 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST + '_2'}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 with self.subnet(cidr='10.1.0.0/24') as subnet2:
                     with self.port(subnet=subnet2,
+                                   device_owner=DEVICE_OWNER_COMPUTE,
                                    arg_list=(portbindings.HOST_ID,),
                                    **host_arg):
                         host_arg = {portbindings.HOST_ID: HOST}
                         with self.port(subnet=subnet,
+                                       device_owner=DEVICE_OWNER_COMPUTE,
                                        arg_list=(portbindings.HOST_ID,),
                                        **host_arg) as port3:
                             p1 = port1['port']
@@ -350,9 +354,11 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 with self.port(subnet=subnet,
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host_arg) as port2:
                     p2 = port2['port']
@@ -395,9 +401,11 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg):
                 with self.port(subnet=subnet,
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host_arg) as port2:
                     p2 = port2['port']
@@ -434,6 +442,7 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port:
                 p1 = port['port']
@@ -445,6 +454,7 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
                                                 device=device)
 
                 with self.port(subnet=subnet,
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host_arg) as port2:
                     p2 = port2['port']
@@ -476,9 +486,11 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet,
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg):
                 with self.port(subnet=subnet,
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host_arg) as port:
                     p1 = port['port']
@@ -511,6 +523,7 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 p1 = port1['port']
@@ -594,6 +607,7 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
         with self.subnet(network=self._network) as subnet:
             host_arg = {portbindings.HOST_ID: HOST}
             with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 p1 = port1['port']
@@ -623,9 +637,11 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
             host_arg = {portbindings.HOST_ID: L2_AGENT['host']}
             host2_arg = {portbindings.HOST_ID: L2_AGENT_2['host']}
             with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host2_arg) as port2:
                     p1 = port1['port']
@@ -673,9 +689,11 @@ class TestL2PopulationRpcTestCase(test_plugin.NeutronDbPluginV2TestCase):
             host_arg = {portbindings.HOST_ID: L2_AGENT['host']}
             host2_arg = {portbindings.HOST_ID: L2_AGENT_2['host']}
             with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                           device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
                 with self.port(subnet=subnet, cidr='10.0.0.0/24',
+                               device_owner=DEVICE_OWNER_COMPUTE,
                                arg_list=(portbindings.HOST_ID,),
                                **host2_arg) as port2:
                     p1 = port1['port']

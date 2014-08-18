@@ -1,5 +1,4 @@
-# Copyright 2013 VMware, Inc.  All rights reserved.
-#
+# Copyright 2014 Juniper Networks.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,15 +13,28 @@
 #    under the License.
 #
 
-from neutron.plugins.vmware.dbexts import nsxrouter
-from neutron.plugins.vmware.extensions import distributedrouter as dist_rtr
+from neutron.common import exceptions as exc
 
 
-class DistributedRouter_mixin(nsxrouter.NsxRouterMixin):
-    """Mixin class to enable distributed router support."""
+class ContrailError(exc.NeutronException):
+    message = '%(msg)s'
 
-    nsx_attributes = (
-        nsxrouter.NsxRouterMixin.nsx_attributes + [{
-            'name': dist_rtr.DISTRIBUTED,
-            'default': False
-        }])
+
+class ContrailNotFoundError(exc.NotFound):
+    message = '%(msg)s'
+
+
+class ContrailConflictError(exc.Conflict):
+    message = '%(msg)s'
+
+
+class ContrailBadRequestError(exc.BadRequest):
+    message = '%(msg)s'
+
+
+class ContrailServiceUnavailableError(exc.ServiceUnavailable):
+    message = '%(msg)s'
+
+
+class ContrailNotAuthorizedError(exc.NotAuthorized):
+    message = '%(msg)s'

@@ -130,6 +130,10 @@ class IPWrapper(SubProcessBase):
         return (IPDevice(name1, self.root_helper, self.namespace),
                 IPDevice(name2, self.root_helper, namespace2))
 
+    def del_veth(self, name):
+        """Delete a virtual interface between two namespaces."""
+        self._as_root('', 'link', ('del', name))
+
     def ensure_namespace(self, name):
         if not self.netns.exists(name):
             ip = self.netns.add(name)
@@ -511,7 +515,10 @@ class IpNetnsCommand(IpCommandBase):
 
     def add(self, name):
         self._as_root('add', name, use_root_namespace=True)
-        return IPWrapper(self._parent.root_helper, name)
+        wrapper = IPWrapper(self._parent.root_helper, name)
+        wrapper.netns.execute(['sysctl', '-w',
+                               'net.ipv4.conf.all.promote_secondaries=1'])
+        return wrapper
 
     def delete(self, name):
         self._as_root('delete', name, use_root_namespace=True)

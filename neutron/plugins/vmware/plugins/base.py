@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
 import uuid
 
 from oslo.config import cfg
@@ -35,6 +34,7 @@ from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import extraroute_db
 from neutron.db import l3_db
+from neutron.db import l3_dvr_db
 from neutron.db import l3_gwmode_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db
@@ -51,7 +51,9 @@ from neutron.extensions import portsecurity as psec
 from neutron.extensions import providernet as pnet
 from neutron.extensions import securitygroup as ext_sg
 from neutron.openstack.common import excutils
+from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import lockutils
+from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as plugin_const
 from neutron.plugins import vmware
 from neutron.plugins.vmware.api_client import exception as api_exc
@@ -62,7 +64,6 @@ from neutron.plugins.vmware.common import securitygroups as sg_utils
 from neutron.plugins.vmware.common import sync
 from neutron.plugins.vmware.common import utils as c_utils
 from neutron.plugins.vmware.dbexts import db as nsx_db
-from neutron.plugins.vmware.dbexts import distributedrouter as dist_rtr
 from neutron.plugins.vmware.dbexts import maclearning as mac_db
 from neutron.plugins.vmware.dbexts import networkgw_db
 from neutron.plugins.vmware.dbexts import qos_db
@@ -76,7 +77,7 @@ from neutron.plugins.vmware.nsxlib import router as routerlib
 from neutron.plugins.vmware.nsxlib import secgroup as secgrouplib
 from neutron.plugins.vmware.nsxlib import switch as switchlib
 
-LOG = logging.getLogger("NeutronPlugin")
+LOG = logging.getLogger(__name__)
 
 NSX_NOSNAT_RULES_ORDER = 10
 NSX_FLOATINGIP_NAT_RULES_ORDER = 224
@@ -88,7 +89,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                   agentschedulers_db.DhcpAgentSchedulerDbMixin,
                   db_base_plugin_v2.NeutronDbPluginV2,
                   dhcpmeta_modes.DhcpMetadataAccess,
-                  dist_rtr.DistributedRouter_mixin,
+                  l3_dvr_db.L3_NAT_with_dvr_db_mixin,
                   external_net_db.External_net_db_mixin,
                   extraroute_db.ExtraRoute_db_mixin,
                   l3_gwmode_db.L3_NAT_db_mixin,
@@ -101,6 +102,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
 
     supported_extension_aliases = ["allowed-address-pairs",
                                    "binding",
+                                   "dvr",
                                    "dist-router",
                                    "ext-gw-mode",
                                    "extraroute",
@@ -298,6 +300,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 routerlib.delete_nat_rules_by_match(
                     self.cluster, nsx_router_id, "SourceNatRule",
                     max_num_expected=1, min_num_expected=0,
+                    raise_on_len_mismatch=False,
                     source_ip_addresses=cidr)
         if add_snat_rules:
             ip_addresses = self._build_ip_address_list(
@@ -745,10 +748,12 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                                webob.exc.HTTPBadRequest})
 
     def _validate_provider_create(self, context, network):
-        if not attr.is_attr_set(network.get(mpnet.SEGMENTS)):
+        segments = network.get(mpnet.SEGMENTS)
+        if not attr.is_attr_set(segments):
             return
 
-        for segment in network[mpnet.SEGMENTS]:
+        mpnet.check_duplicate_segments(segments)
+        for segment in segments:
             network_type = segment.get(pnet.NETWORK_TYPE)
             physical_network = segment.get(pnet.PHYSICAL_NETWORK)
             segmentation_id = segment.get(pnet.SEGMENTATION_ID)
@@ -877,56 +882,10 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
 
     def _convert_to_nsx_transport_zones(self, cluster, network=None,
                                         bindings=None):
-        nsx_transport_zones_config = []
-
-        # Convert fields from provider request to nsx format
-        if (network and not attr.is_attr_set(
-            network.get(mpnet.SEGMENTS))):
-            return [{"zone_uuid": cluster.default_tz_uuid,
-                     "transport_type": cfg.CONF.NSX.default_transport_type}]
-
-        # Convert fields from db to nsx format
-        if bindings:
-            transport_entry = {}
-            for binding in bindings:
-                if binding.binding_type in [c_utils.NetworkTypes.FLAT,
-                                            c_utils.NetworkTypes.VLAN]:
-                    transport_entry['transport_type'] = (
-                        c_utils.NetworkTypes.BRIDGE)
-                    transport_entry['binding_config'] = {}
-                    vlan_id = binding.vlan_id
-                    if vlan_id:
-                        transport_entry['binding_config'] = (
-                            {'vlan_translation': [{'transport': vlan_id}]})
-                else:
-                    transport_entry['transport_type'] = binding.binding_type
-                transport_entry['zone_uuid'] = binding.phy_uuid
-                nsx_transport_zones_config.append(transport_entry)
-            return nsx_transport_zones_config
-
-        for transport_zone in network.get(mpnet.SEGMENTS):
-            for value in [pnet.NETWORK_TYPE, pnet.PHYSICAL_NETWORK,
-                          pnet.SEGMENTATION_ID]:
-                if transport_zone.get(value) == attr.ATTR_NOT_SPECIFIED:
-                    transport_zone[value] = None
-
-            transport_entry = {}
-            transport_type = transport_zone.get(pnet.NETWORK_TYPE)
-            if transport_type in [c_utils.NetworkTypes.FLAT,
-                                  c_utils.NetworkTypes.VLAN]:
-                transport_entry['transport_type'] = c_utils.NetworkTypes.BRIDGE
-                transport_entry['binding_config'] = {}
-                vlan_id = transport_zone.get(pnet.SEGMENTATION_ID)
-                if vlan_id:
-                    transport_entry['binding_config'] = (
-                        {'vlan_translation': [{'transport': vlan_id}]})
-            else:
-                transport_entry['transport_type'] = transport_type
-            transport_entry['zone_uuid'] = (
-                transport_zone[pnet.PHYSICAL_NETWORK] or
-                cluster.default_tz_uuid)
-            nsx_transport_zones_config.append(transport_entry)
-        return nsx_transport_zones_config
+        # TODO(salv-orlando): Remove this method and call nsx-utils direct
+        return nsx_utils.convert_to_nsx_transport_zones(
+            cluster.default_tz_uuid, network, bindings,
+            default_transport_type=cfg.CONF.NSX.default_transport_type)
 
     def _convert_to_transport_zones_dict(self, network):
         """Converts the provider request body to multiprovider.
@@ -1027,14 +986,6 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
 
     def delete_network(self, context, id):
         external = self._network_is_external(context, id)
-        # Before deleting ports, ensure the peer of a NSX logical
-        # port with a patch attachment is removed too
-        port_filter = {'network_id': [id],
-                       'device_owner': [constants.DEVICE_OWNER_ROUTER_INTF]}
-        router_iface_ports = self.get_ports(context, filters=port_filter)
-        for port in router_iface_ports:
-            nsx_switch_id, nsx_port_id = nsx_utils.get_nsx_switch_and_port_id(
-                context.session, self.cluster, id)
         # Before removing entry from Neutron DB, retrieve NSX switch
         # identifiers for removing them from backend
         if not external:
@@ -1044,41 +995,15 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             self._process_l3_delete(context, id)
             super(NsxPluginV2, self).delete_network(context, id)
 
-        # clean up network owned ports
-        for port in router_iface_ports:
-            try:
-                if nsx_port_id:
-                    nsx_router_id = nsx_utils.get_nsx_router_id(
-                        context.session, self.cluster, port['device_id'])
-                    routerlib.delete_peer_router_lport(self.cluster,
-                                                       nsx_router_id,
-                                                       nsx_switch_id,
-                                                       nsx_port_id)
-                else:
-                    LOG.warning(_("A nsx lport identifier was not found for "
-                                  "neutron port '%s'. Unable to remove "
-                                  "the peer router port for this switch port"),
-                                port['id'])
-
-            except (TypeError, KeyError,
-                    api_exc.NsxApiException,
-                    api_exc.ResourceNotFound):
-                # Do not raise because the issue might as well be that the
-                # router has already been deleted, so there would be nothing
-                # to do here
-                LOG.warning(_("Ignoring exception as this means the peer for "
-                              "port '%s' has already been deleted."),
-                            nsx_port_id)
-
         # Do not go to NSX for external networks
         if not external:
             try:
                 switchlib.delete_networks(self.cluster, id, lswitch_ids)
-                LOG.debug(_("delete_network completed for tenant: %s"),
-                          context.tenant_id)
             except n_exc.NotFound:
-                LOG.warning(_("Did not found lswitch %s in NSX"), id)
+                LOG.warning(_("The following logical switches were not found "
+                              "on the NSX backend:%s"), lswitch_ids)
         self.handle_network_dhcp_access(context, id, action='delete_network')
+        LOG.debug("Delete network complete for network: %s", id)
 
     def get_network(self, context, id, fields=None):
         with context.session.begin(subtransactions=True):
@@ -1515,7 +1440,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                                          admin_state_up=r['admin_state_up'],
                                          status=lrouter['status'])
                 context.session.add(router_db)
-                self._process_nsx_router_create(context, router_db, r)
+                self._process_extra_attr_router_create(context, router_db, r)
                 # Ensure neutron router is moved into the transaction's buffer
                 context.session.flush()
                 # Add mapping between neutron and nsx identifiers
@@ -1703,6 +1628,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             routerlib.delete_nat_rules_by_match(
                 self.cluster, nsx_router_id, "SourceNatRule",
                 max_num_expected=1, min_num_expected=1,
+                raise_on_len_mismatch=False,
                 source_ip_addresses=subnet['cidr'])
 
     def add_router_interface(self, context, router_id, interface_info):
@@ -1718,10 +1644,11 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         if port_id:
             port_data = self.get_port(context, port_id)
             # If security groups are present we need to remove them as
-            # this is a router port.
+            # this is a router port and disable port security.
             if port_data['security_groups']:
                 self.update_port(context, port_id,
-                                 {'port': {'security_groups': []}})
+                                 {'port': {'security_groups': [],
+                                           psec.PORTSECURITY: False}})
             nsx_switch_id, nsx_port_id = nsx_utils.get_nsx_switch_and_port_id(
                 context.session, self.cluster, port_id)
             # Unplug current attachment from lswitch port
@@ -1806,6 +1733,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             routerlib.delete_nat_rules_by_match(
                 self.cluster, nsx_router_id, "NoSourceNatRule",
                 max_num_expected=1, min_num_expected=0,
+                raise_on_len_mismatch=False,
                 destination_ip_addresses=subnet['cidr'])
         except n_exc.NotFound:
             LOG.error(_("Logical router resource %s not found "
@@ -2039,7 +1967,11 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         except n_exc.NotFound:
             LOG.warning(_("Nat rules not found in nsx for port: %s"), id)
 
-        super(NsxPluginV2, self).disassociate_floatingips(context, port_id)
+        # NOTE(ihrachys): L3 agent notifications don't make sense for
+        # NSX VMWare plugin since there is no L3 agent in such setup, so
+        # disabling them here.
+        super(NsxPluginV2, self).disassociate_floatingips(
+            context, port_id, do_notify=False)
 
     def create_network_gateway(self, context, network_gateway):
         """Create a layer-2 network gateway.
@@ -2150,12 +2082,10 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
     def _get_nsx_device_id(self, context, device_id):
         return self._get_gateway_device(context, device_id)['nsx_id']
 
-    def _rollback_gw_device(self, context, device_id,
-                            gw_data=None, new_status=None,
-                            is_create=False, log_level=logging.ERROR):
-        LOG.log(log_level,
-                _("Rolling back database changes for gateway device %s "
-                  "because of an error in the NSX backend"), device_id)
+    def _rollback_gw_device(self, context, device_id, gw_data=None,
+                            new_status=None, is_create=False):
+        LOG.error(_LE("Rolling back database changes for gateway device %s "
+                      "because of an error in the NSX backend"), device_id)
         with context.session.begin(subtransactions=True):
             query = self._model_query(
                 context, networkgw_db.NetworkGatewayDevice).filter(
@@ -2328,7 +2258,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         nsx_device_id = self._get_nsx_device_id(context, device_id)
         super(NsxPluginV2, self).delete_gateway_device(
             context, device_id)
-        # DB operation was successful, peform NSX operation
+        # DB operation was successful, perform NSX operation
         # TODO(salv-orlando): State consistency with neutron DB
         # should be ensured even in case of backend failures
         try:
@@ -2467,12 +2397,10 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
         :param security_group_rule: list of rules to create
         """
         s = security_group_rule.get('security_group_rules')
-        tenant_id = self._get_tenant_id_for_create(context, s)
 
         # TODO(arosen) is there anyway we could avoid having the update of
         # the security group rules in nsx outside of this transaction?
         with context.session.begin(subtransactions=True):
-            self._ensure_default_security_group(context, tenant_id)
             security_group_id = self._validate_security_group_rules(
                 context, security_group_rule)
             # Check to make sure security group exists

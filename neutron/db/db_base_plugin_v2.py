@@ -17,6 +17,7 @@ import random
 
 import netaddr
 from oslo.config import cfg
+from sqlalchemy import and_
 from sqlalchemy import event
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
@@ -26,7 +27,6 @@ from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.common import ipv6_utils
 from neutron import context as ctx
-from neutron.db import api as db
 from neutron.db import common_db_mixin
 from neutron.db import models_v2
 from neutron.db import sqlalchemyutils
@@ -69,7 +69,6 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
     __native_sorting_support = True
 
     def __init__(self):
-        db.configure_db()
         if cfg.CONF.notify_nova_on_port_status_changes:
             from neutron.notifiers import nova
             # NOTE(arosen) These event listeners are here to hook into when
@@ -316,8 +315,16 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             return True
         return False
 
-    @staticmethod
-    def _check_subnet_ip(cidr, ip_address):
+    @classmethod
+    def _check_gateway_in_subnet(cls, cidr, gateway):
+        """Validate that the gateway is on the subnet."""
+        ip = netaddr.IPAddress(gateway)
+        if ip.version == 4 or (ip.version == 6 and not ip.is_link_local()):
+            return cls._check_subnet_ip(cidr, gateway)
+        return True
+
+    @classmethod
+    def _check_subnet_ip(cls, cidr, ip_address):
         """Validate that the IP address is on the subnet."""
         ip = netaddr.IPAddress(ip_address)
         net = netaddr.IPNetwork(cidr)
@@ -374,8 +381,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 filter = {'network_id': [network_id]}
                 subnets = self.get_subnets(context, filters=filter)
                 for subnet in subnets:
-                    if NeutronDbPluginV2._check_subnet_ip(subnet['cidr'],
-                                                          fixed['ip_address']):
+                    if self._check_subnet_ip(subnet['cidr'],
+                                             fixed['ip_address']):
                         found = True
                         subnet_id = subnet['id']
                         break
@@ -404,8 +411,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
 
                 # Ensure that the IP is valid on the subnet
                 if (not found and
-                    not NeutronDbPluginV2._check_subnet_ip(
-                        subnet['cidr'], fixed['ip_address'])):
+                    not self._check_subnet_ip(subnet['cidr'],
+                                              fixed['ip_address'])):
                     msg = _('IP address %s is not a valid IP for the defined '
                             'subnet') % fixed['ip_address']
                     raise n_exc.InvalidInput(error_message=msg)
@@ -667,7 +674,12 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             return
         ports = self._model_query(
             context, models_v2.Port).filter(
-                models_v2.Port.network_id == id)
+                and_(
+                    models_v2.Port.network_id == id,
+                    models_v2.Port.device_owner !=
+                    constants.DEVICE_OWNER_ROUTER_GW,
+                    models_v2.Port.device_owner !=
+                    constants.DEVICE_OWNER_FLOATINGIP))
         subnets = self._model_query(
             context, models_v2.Subnet).filter(
                 models_v2.Subnet.network_id == id)
@@ -924,8 +936,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         if attributes.is_attr_set(s.get('gateway_ip')):
             self._validate_ip_version(ip_ver, s['gateway_ip'], 'gateway_ip')
             if (cfg.CONF.force_gateway_on_subnet and
-                not NeutronDbPluginV2._check_subnet_ip(s['cidr'],
-                                                       s['gateway_ip'])):
+                not self._check_gateway_in_subnet(
+                    s['cidr'], s['gateway_ip'])):
                 error_message = _("Gateway is not valid on subnet")
                 raise n_exc.InvalidInput(error_message=error_message)
             # Ensure the gateway IP is not assigned to any port
@@ -1294,6 +1306,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         p = port['port']
 
         changed_ips = False
+        changed_device_id = False
         with context.session.begin(subtransactions=True):
             port = self._get_port(context, id)
             if 'device_owner' in p:

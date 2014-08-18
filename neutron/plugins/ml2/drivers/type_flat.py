@@ -14,6 +14,7 @@
 #    under the License.
 
 from oslo.config import cfg
+from oslo.db import exception as db_exc
 import sqlalchemy as sa
 
 from neutron.common import exceptions as exc
@@ -80,6 +81,9 @@ class FlatTypeDriver(api.TypeDriver):
     def initialize(self):
         LOG.info(_("ML2 FlatTypeDriver initialization complete"))
 
+    def is_partial_segment(self, segment):
+        return False
+
     def validate_provider_segment(self, segment):
         physical_network = segment.get(api.PHYSICAL_NETWORK)
         if not physical_network:
@@ -100,17 +104,14 @@ class FlatTypeDriver(api.TypeDriver):
         physical_network = segment[api.PHYSICAL_NETWORK]
         with session.begin(subtransactions=True):
             try:
-                alloc = (session.query(FlatAllocation).
-                         filter_by(physical_network=physical_network).
-                         with_lockmode('update').
-                         one())
-                raise exc.FlatNetworkInUse(
-                    physical_network=physical_network)
-            except sa.orm.exc.NoResultFound:
                 LOG.debug(_("Reserving flat network on physical "
                             "network %s"), physical_network)
                 alloc = FlatAllocation(physical_network=physical_network)
-                session.add(alloc)
+                alloc.save(session)
+            except db_exc.DBDuplicateEntry:
+                raise exc.FlatNetworkInUse(
+                    physical_network=physical_network)
+        return segment
 
     def allocate_tenant_segment(self, session):
         # Tenant flat networks are not supported.

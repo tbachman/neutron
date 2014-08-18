@@ -312,6 +312,8 @@ class Firewall_db_mixin(firewall.FirewallPluginBase, base_db.CommonDbMixin):
                 self._set_rules_for_policy(context, fwp_db,
                                            fwp['firewall_rules'])
                 del fwp['firewall_rules']
+            if 'audited' not in fwp or fwp['audited']:
+                fwp['audited'] = False
             fwp_db.update(fwp)
         return self._make_firewall_policy_dict(fwp_db)
 
@@ -450,6 +452,10 @@ class Firewall_db_mixin(firewall.FirewallPluginBase, base_db.CommonDbMixin):
                 # rule is inserted after reference_firewall_rule_id.
                 ref_fwr_db = self._get_firewall_rule(
                     context, ref_firewall_rule_id)
+                if ref_fwr_db.firewall_policy_id != id:
+                    raise firewall.FirewallRuleNotAssociatedWithPolicy(
+                        firewall_rule_id=ref_fwr_db['id'],
+                        firewall_policy_id=id)
                 if insert_before:
                     position = ref_fwr_db.position
                 else:

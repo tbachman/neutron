@@ -15,8 +15,8 @@
 # @author: Kyle Mestery, Cisco Systems, Inc.
 
 from oslo.config import cfg
+from oslo.db import exception as db_exc
 import sqlalchemy as sa
-from sqlalchemy.orm import exc as sa_exc
 from sqlalchemy import sql
 
 from neutron.common import exceptions as exc
@@ -25,6 +25,7 @@ from neutron.db import model_base
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2.drivers import helpers
 from neutron.plugins.ml2.drivers import type_tunnel
 
 LOG = log.getLogger(__name__)
@@ -61,14 +62,16 @@ class VxlanEndpoints(model_base.BASEV2):
     __tablename__ = 'ml2_vxlan_endpoints'
 
     ip_address = sa.Column(sa.String(64), primary_key=True)
-    udp_port = sa.Column(sa.Integer, primary_key=True, nullable=False,
-                         autoincrement=False)
+    udp_port = sa.Column(sa.Integer, nullable=False)
 
     def __repr__(self):
         return "<VxlanTunnelEndpoint(%s)>" % self.ip_address
 
 
-class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
+class VxlanTypeDriver(helpers.TypeDriverHelper, type_tunnel.TunnelTypeDriver):
+
+    def __init__(self):
+        super(VxlanTypeDriver, self).__init__(VxlanAllocation)
 
     def get_type(self):
         return p_const.TYPE_VXLAN
@@ -83,38 +86,27 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
         self._sync_vxlan_allocations()
 
     def reserve_provider_segment(self, session, segment):
-        segmentation_id = segment.get(api.SEGMENTATION_ID)
-        with session.begin(subtransactions=True):
-            try:
-                alloc = (session.query(VxlanAllocation).
-                         filter_by(vxlan_vni=segmentation_id).
-                         with_lockmode('update').
-                         one())
-                if alloc.allocated:
-                    raise exc.TunnelIdInUse(tunnel_id=segmentation_id)
-                LOG.debug(_("Reserving specific vxlan tunnel %s from pool"),
-                          segmentation_id)
-                alloc.allocated = True
-            except sa_exc.NoResultFound:
-                LOG.debug(_("Reserving specific vxlan tunnel %s outside pool"),
-                          segmentation_id)
-                alloc = VxlanAllocation(vxlan_vni=segmentation_id)
-                alloc.allocated = True
-                session.add(alloc)
+        if self.is_partial_segment(segment):
+            alloc = self.allocate_partially_specified_segment(session)
+            if not alloc:
+                raise exc.NoNetworkAvailable
+        else:
+            segmentation_id = segment.get(api.SEGMENTATION_ID)
+            alloc = self.allocate_fully_specified_segment(
+                session, vxlan_vni=segmentation_id)
+            if not alloc:
+                raise exc.TunnelIdInUse(tunnel_id=segmentation_id)
+        return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
+                api.PHYSICAL_NETWORK: None,
+                api.SEGMENTATION_ID: alloc.vxlan_vni}
 
     def allocate_tenant_segment(self, session):
-        with session.begin(subtransactions=True):
-            alloc = (session.query(VxlanAllocation).
-                     filter_by(allocated=False).
-                     with_lockmode('update').
-                     first())
-            if alloc:
-                LOG.debug(_("Allocating vxlan tunnel vni %(vxlan_vni)s"),
-                          {'vxlan_vni': alloc.vxlan_vni})
-                alloc.allocated = True
-                return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
-                        api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.vxlan_vni}
+        alloc = self.allocate_partially_specified_segment(session)
+        if not alloc:
+            return
+        return {api.NETWORK_TYPE: p_const.TYPE_VXLAN,
+                api.PHYSICAL_NETWORK: None,
+                api.SEGMENTATION_ID: alloc.vxlan_vni}
 
     def release_segment(self, session, segment):
         vxlan_vni = segment[api.SEGMENTATION_ID]
@@ -204,13 +196,12 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
     def add_endpoint(self, ip, udp_port=VXLAN_UDP_PORT):
         LOG.debug(_("add_vxlan_endpoint() called for ip %s"), ip)
         session = db_api.get_session()
-        with session.begin(subtransactions=True):
-            try:
-                vxlan_endpoint = (session.query(VxlanEndpoints).
-                                  filter_by(ip_address=ip).
-                                  with_lockmode('update').one())
-            except sa_exc.NoResultFound:
-                vxlan_endpoint = VxlanEndpoints(ip_address=ip,
-                                                udp_port=udp_port)
-                session.add(vxlan_endpoint)
-            return vxlan_endpoint
+        try:
+            vxlan_endpoint = VxlanEndpoints(ip_address=ip,
+                                            udp_port=udp_port)
+            vxlan_endpoint.save(session)
+        except db_exc.DBDuplicateEntry:
+            vxlan_endpoint = (session.query(VxlanEndpoints).
+                              filter_by(ip_address=ip).one())
+            LOG.warning(_("Vxlan endpoint with ip %s already exists"), ip)
+        return vxlan_endpoint

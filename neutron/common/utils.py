@@ -184,7 +184,7 @@ def subprocess_popen(args, stdin=None, stdout=None, stderr=None, shell=False,
 
 
 def parse_mappings(mapping_list, unique_values=True):
-    """Parse a list of of mapping strings into a dictionary.
+    """Parse a list of mapping strings into a dictionary.
 
     :param mapping_list: a list of strings of the form '<key>:<value>'
     :param unique_values: values must be unique if True
@@ -269,6 +269,15 @@ def log_opt_values(log):
 
 def is_valid_vlan_tag(vlan):
     return q_const.MIN_VLAN_TAG <= vlan <= q_const.MAX_VLAN_TAG
+
+
+def get_random_mac(base_mac):
+    mac = [int(base_mac[0], 16), int(base_mac[1], 16),
+           int(base_mac[2], 16), random.randint(0x00, 0xff),
+           random.randint(0x00, 0xff), random.randint(0x00, 0xff)]
+    if base_mac[3] != '00':
+        mac[3] = int(base_mac[3], 16)
+    return ':'.join(["%02x" % x for x in mac])
 
 
 def get_random_string(length):

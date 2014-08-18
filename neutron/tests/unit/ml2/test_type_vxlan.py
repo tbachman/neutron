@@ -14,6 +14,7 @@
 #    under the License.
 # @author: Kyle Mestery, Cisco Systems, Inc.
 
+import mock
 from oslo.config import cfg
 from six import moves
 import testtools
@@ -24,7 +25,7 @@ from neutron.db import api as db
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_vxlan
-from neutron.tests import base
+from neutron.tests.unit import testlib_api
 
 
 TUNNEL_IP_ONE = "10.10.10.10"
@@ -39,10 +40,9 @@ VXLAN_UDP_PORT_ONE = 9999
 VXLAN_UDP_PORT_TWO = 8888
 
 
-class VxlanTypeTest(base.BaseTestCase):
+class VxlanTypeTest(testlib_api.SqlTestCase):
     def setUp(self):
         super(VxlanTypeTest, self).setUp()
-        db.configure_db()
         cfg.CONF.set_override('vni_ranges', [TUNNEL_RANGES],
                               group='ml2_type_vxlan')
         cfg.CONF.set_override('vxlan_group', MULTICAST_GROUP,
@@ -51,7 +51,6 @@ class VxlanTypeTest(base.BaseTestCase):
         self.driver.vxlan_vni_ranges = TUNNEL_RANGES
         self.driver._sync_vxlan_allocations()
         self.session = db.get_session()
-        self.addCleanup(db.clear_db)
 
     def test_vxlan_tunnel_type(self):
         self.assertEqual(self.driver.get_type(), p_const.TYPE_VXLAN)
@@ -65,8 +64,10 @@ class VxlanTypeTest(base.BaseTestCase):
             self.driver.validate_provider_segment(segment)
 
         segment[api.PHYSICAL_NETWORK] = None
-        with testtools.ExpectedException(exc.InvalidInput):
-            self.driver.validate_provider_segment(segment)
+        self.driver.validate_provider_segment(segment)
+
+        segment[api.SEGMENTATION_ID] = 1
+        self.driver.validate_provider_segment(segment)
 
     def test_sync_tunnel_allocations(self):
         self.assertIsNone(
@@ -116,13 +117,25 @@ class VxlanTypeTest(base.BaseTestCase):
                           get_vxlan_allocation(self.session,
                                                (TUN_MAX + 5 + 1)))
 
-    def test_reserve_provider_segment(self):
+    def test_partial_segment_is_partial_segment(self):
         segment = {api.NETWORK_TYPE: 'vxlan',
-                   api.PHYSICAL_NETWORK: 'None',
+                   api.PHYSICAL_NETWORK: None,
+                   api.SEGMENTATION_ID: None}
+        self.assertTrue(self.driver.is_partial_segment(segment))
+
+    def test_specific_segment_is_not_partial_segment(self):
+        segment = {api.NETWORK_TYPE: 'vxlan',
+                   api.PHYSICAL_NETWORK: None,
                    api.SEGMENTATION_ID: 101}
-        self.driver.reserve_provider_segment(self.session, segment)
+        self.assertFalse(self.driver.is_partial_segment(segment))
+
+    def test_reserve_provider_segment_full_specs(self):
+        segment = {api.NETWORK_TYPE: 'vxlan',
+                   api.PHYSICAL_NETWORK: None,
+                   api.SEGMENTATION_ID: 101}
+        observed = self.driver.reserve_provider_segment(self.session, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
-                                                 segment[api.SEGMENTATION_ID])
+                                                 observed[api.SEGMENTATION_ID])
         self.assertTrue(alloc.allocated)
 
         with testtools.ExpectedException(exc.TunnelIdInUse):
@@ -130,19 +143,54 @@ class VxlanTypeTest(base.BaseTestCase):
 
         self.driver.release_segment(self.session, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
-                                                 segment[api.SEGMENTATION_ID])
+                                                 observed[api.SEGMENTATION_ID])
         self.assertFalse(alloc.allocated)
 
         segment[api.SEGMENTATION_ID] = 1000
-        self.driver.reserve_provider_segment(self.session, segment)
+        observed = self.driver.reserve_provider_segment(self.session, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
-                                                 segment[api.SEGMENTATION_ID])
+                                                 observed[api.SEGMENTATION_ID])
         self.assertTrue(alloc.allocated)
 
         self.driver.release_segment(self.session, segment)
         alloc = self.driver.get_vxlan_allocation(self.session,
-                                                 segment[api.SEGMENTATION_ID])
+                                                 observed[api.SEGMENTATION_ID])
         self.assertIsNone(alloc)
+
+    def test_reserve_provider_segment(self):
+        tunnel_ids = set()
+        specs = {api.NETWORK_TYPE: 'vxlan',
+                 api.PHYSICAL_NETWORK: 'None',
+                 api.SEGMENTATION_ID: None}
+
+        for x in xrange(TUN_MIN, TUN_MAX + 1):
+            segment = self.driver.reserve_provider_segment(self.session,
+                                                           specs)
+            self.assertEqual('vxlan', segment[api.NETWORK_TYPE])
+            self.assertThat(segment[api.SEGMENTATION_ID],
+                            matchers.GreaterThan(TUN_MIN - 1))
+            self.assertThat(segment[api.SEGMENTATION_ID],
+                            matchers.LessThan(TUN_MAX + 1))
+            tunnel_ids.add(segment[api.SEGMENTATION_ID])
+
+        with testtools.ExpectedException(exc.NoNetworkAvailable):
+            segment = self.driver.reserve_provider_segment(self.session,
+                                                           specs)
+
+        segment = {api.NETWORK_TYPE: 'vxlan',
+                   api.PHYSICAL_NETWORK: 'None',
+                   api.SEGMENTATION_ID: tunnel_ids.pop()}
+        self.driver.release_segment(self.session, segment)
+        segment = self.driver.reserve_provider_segment(self.session, specs)
+        self.assertThat(segment[api.SEGMENTATION_ID],
+                        matchers.GreaterThan(TUN_MIN - 1))
+        self.assertThat(segment[api.SEGMENTATION_ID],
+                        matchers.LessThan(TUN_MAX + 1))
+        tunnel_ids.add(segment[api.SEGMENTATION_ID])
+
+        for tunnel_id in tunnel_ids:
+            segment[api.SEGMENTATION_ID] = tunnel_id
+            self.driver.release_segment(self.session, segment)
 
     def test_allocate_tenant_segment(self):
         tunnel_ids = set()
@@ -195,8 +243,16 @@ class VxlanTypeTest(base.BaseTestCase):
             elif endpoint['ip_address'] == TUNNEL_IP_TWO:
                 self.assertEqual(VXLAN_UDP_PORT_TWO, endpoint['udp_port'])
 
+    def test_add_same_ip_endpoints(self):
+        self.driver.add_endpoint(TUNNEL_IP_ONE, VXLAN_UDP_PORT_ONE)
+        with mock.patch.object(type_vxlan.LOG, 'warning') as log_warn:
+            observed = self.driver.add_endpoint(TUNNEL_IP_ONE,
+                                                VXLAN_UDP_PORT_TWO)
+            self.assertEqual(VXLAN_UDP_PORT_ONE, observed['udp_port'])
+            log_warn.assert_called_once_with(mock.ANY, TUNNEL_IP_ONE)
 
-class VxlanTypeMultiRangeTest(base.BaseTestCase):
+
+class VxlanTypeMultiRangeTest(testlib_api.SqlTestCase):
 
     TUN_MIN0 = 100
     TUN_MAX0 = 101
@@ -206,12 +262,10 @@ class VxlanTypeMultiRangeTest(base.BaseTestCase):
 
     def setUp(self):
         super(VxlanTypeMultiRangeTest, self).setUp()
-        db.configure_db()
         self.driver = type_vxlan.VxlanTypeDriver()
         self.driver.vxlan_vni_ranges = self.TUNNEL_MULTI_RANGES
         self.driver._sync_vxlan_allocations()
         self.session = db.get_session()
-        self.addCleanup(db.clear_db)
 
     def test_release_segment(self):
         segments = [self.driver.allocate_tenant_segment(self.session)

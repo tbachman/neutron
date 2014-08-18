@@ -71,23 +71,19 @@ class DeviceDriverManager(object):
                 self._drivers[resource_id] = driver
             else:
                 driver_class = resource['router_type']['cfg_agent_driver']
-                try:
-                    driver = importutils.import_object(driver_class,
-                                                       **hosting_device)
-                except ImportError:
-                    LOG.exception(_("Error loading cfg agent driver %(driver)s"
-                                    " for hosting device template "
-                                    "%(t_name)s(%(t_id)s)"),
-                                  {'driver': driver_class,
-                                   't_name': hosting_device['name'],
-                                   't_id': hd_id})
-                    with excutils.save_and_reraise_exception(reraise=False):
-                        raise cfg_exceptions.DriverNotExist(
-                            driver=driver_class)
+                driver = importutils.import_object(driver_class,
+                                                   **hosting_device)
                 self._hosting_device_routing_drivers_binding[hd_id] = driver
                 self._drivers[resource_id] = driver
             return driver
-        except (KeyError, AttributeError) as e:
+        except ImportError:
+            LOG.exception(_("Error loading cfg agent driver %(driver)s for "
+                            "hosting device template %(t_name)s(%(t_id)s)"),
+                          {'driver': driver_class, 't_id': hd_id,
+                           't_name': hosting_device['name']})
+            with excutils.save_and_reraise_exception(reraise=False):
+                raise cfg_exceptions.DriverNotExist(driver=driver_class)
+        except KeyError as e:
             with excutils.save_and_reraise_exception(reraise=False):
                 raise cfg_exceptions.DriverNotSetForMissingParameter(e)
 

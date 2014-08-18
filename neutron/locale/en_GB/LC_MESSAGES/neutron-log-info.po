@@ -3,12 +3,13 @@
 # This file is distributed under the same license as the neutron project.
 #
 # Translators:
+# Andi Chandler <andi@gowling.com>, 2014
 msgid ""
 msgstr ""
 "Project-Id-Version: Neutron\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2014-07-02 06:08+0000\n"
-"PO-Revision-Date: 2014-06-30 20:07+0000\n"
+"POT-Creation-Date: 2014-08-17 06:05+0000\n"
+"PO-Revision-Date: 2014-08-17 05:19+0000\n"
 "Last-Translator: openstackjenkins <jenkins@openstack.org>\n"
 "Language-Team: English (United Kingdom) (http://www.transifex.com/projects/p/"
 "neutron/language/en_GB/)\n"
@@ -19,12 +20,25 @@ msgstr ""
 "Generated-By: Babel 1.3\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: neutron/openstack/common/periodic_task.py:125
+#: neutron/policy.py:106
+#, python-format
+msgid ""
+"Inserting policy:%(new_policy)s in place of deprecated policy:%(old_policy)s"
+msgstr ""
+"Inserting policy:%(new_policy)s in place of deprecated policy:%(old_policy)s"
+
+#: neutron/db/l3_agentschedulers_db.py:78
+msgid ""
+"Skipping period L3 agent status check because automatic router rescheduling "
+"is disabled."
+msgstr ""
+
+#: neutron/openstack/common/periodic_task.py:126
 #, python-format
 msgid "Skipping periodic task %(task)s because its interval is negative"
 msgstr "Skipping periodic task %(task)s because its interval is negative"
 
-#: neutron/openstack/common/periodic_task.py:130
+#: neutron/openstack/common/periodic_task.py:131
 #, python-format
 msgid "Skipping periodic task %(task)s because it is disabled"
 msgstr "Skipping periodic task %(task)s because it is disabled"
@@ -41,7 +55,7 @@ msgstr "Parent process has died unexpectedly, exiting"
 #: neutron/openstack/common/service.py:271
 #, python-format
 msgid "Child caught %s, exiting"
-msgstr ""
+msgstr "Child caught %s, exiting"
 
 #: neutron/openstack/common/service.py:310
 msgid "Forking too fast, sleeping"
@@ -74,9 +88,23 @@ msgstr "Caught %s, stopping children"
 
 #: neutron/openstack/common/service.py:408
 msgid "Wait called after thread killed.  Cleaning up."
-msgstr ""
+msgstr "Wait called after thread killed.  Cleaning up."
 
 #: neutron/openstack/common/service.py:424
 #, python-format
 msgid "Waiting on %d children to exit"
 msgstr "Waiting on %d children to exit"
+
+#: neutron/plugins/mlnx/agent/eswitch_neutron_agent.py:379
+msgid "Agent out of sync with plugin!"
+msgstr ""
+
+#: neutron/tests/unit/vmware/apiclient/test_api_eventlet_request.py:63
+#, python-format
+msgid "spawned: %d"
+msgstr ""
+
+#: neutron/tests/unit/vmware/apiclient/test_api_eventlet_request.py:75
+#, python-format
+msgid "_handle_request called: %s"
+msgstr ""

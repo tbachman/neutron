@@ -17,6 +17,7 @@ import sys
 
 from neutron.cmd.sanity import checks
 from neutron.common import config
+from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import log as logging
 from oslo.config import cfg
 
@@ -54,9 +55,19 @@ def check_ovs_patch():
 def check_nova_notify():
     result = checks.nova_notify_supported()
     if not result:
-        LOG.error(_('Nova notifcations are enabled, but novaclient is not '
-                    'installed. Either disable nova notifications or install '
-                    'python-novaclient.'))
+        LOG.error(_LE('Nova notifications are enabled, but novaclient is not '
+                      'installed. Either disable nova notifications or '
+                      'install python-novaclient.'))
+    return result
+
+
+def check_arp_responder():
+    result = checks.arp_responder_supported(
+        root_helper=cfg.CONF.AGENT.root_helper)
+    if not result:
+        LOG.error(_('Check for Open vSwitch ARP responder support failed. '
+                    'Please ensure that the version of openvswitch '
+                    'being used has ARP flows support.'))
     return result
 
 
@@ -68,6 +79,8 @@ OPTS = [
                     help=_('Check for patch port support')),
     BoolOptCallback('nova_notify', check_nova_notify, default=False,
                     help=_('Check for nova notification support')),
+    BoolOptCallback('arp_responder', check_arp_responder, default=False,
+                    help=_('Check for ARP responder support')),
 ]
 
 
@@ -86,6 +99,8 @@ def enable_tests_from_config():
     if (cfg.CONF.notify_nova_on_port_status_changes or
             cfg.CONF.notify_nova_on_port_data_changes):
         cfg.CONF.set_override('nova_notify', True)
+    if cfg.CONF.AGENT.arp_responder:
+        cfg.CONF.set_override('arp_responder', True)
 
 
 def all_tests_passed():

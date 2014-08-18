@@ -24,7 +24,7 @@ from six.moves import queue as Queue
 from neutron import context
 from neutron.extensions import loadbalancer
 from neutron import manager
-from neutron.openstack.common import jsonutils as json
+from neutron.openstack.common import jsonutils
 from neutron.plugins.common import constants
 from neutron.services.loadbalancer.drivers.radware import driver
 from neutron.services.loadbalancer.drivers.radware import exceptions as r_exc
@@ -66,9 +66,9 @@ def rest_call_function_mock(action, resource, data, headers, binary=False):
 def _get_handler(resource):
     if resource == GET_200[2]:
         if rest_call_function_mock.TEMPLATES_MISSING:
-            data = json.loads('[]')
+            data = jsonutils.loads('[]')
         else:
-            data = json.loads(
+            data = jsonutils.loads(
                 '[{"name":"openstack_l2_l3"},{"name":"openstack_l4"}]'
             )
         return 200, '', '', data
@@ -76,7 +76,7 @@ def _get_handler(resource):
     if resource in GET_200:
         return 200, '', '', ''
     else:
-        data = json.loads('{"complete":"True", "success": "True"}')
+        data = jsonutils.loads('{"complete":"True", "success": "True"}')
         return 202, '', '', data
 
 
@@ -86,10 +86,10 @@ def _delete_handler(resource):
 
 def _post_handler(resource, binary):
     if re.search(r'/api/workflow/.+/action/.+', resource):
-        data = json.loads('{"uri":"some_uri"}')
+        data = jsonutils.loads('{"uri":"some_uri"}')
         return 202, '', '', data
     elif re.search(r'/api/service\?name=.+', resource):
-        data = json.loads('{"links":{"actions":{"provision":"someuri"}}}')
+        data = jsonutils.loads('{"links":{"actions":{"provision":"someuri"}}}')
         return 201, '', '', data
     elif binary:
         return 201, '', '', ''
@@ -153,6 +153,29 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
 
         self.addCleanup(radware_driver.completion_handler.join)
 
+    def test_get_pip(self):
+        """Call _get_pip twice and verify that a Port is created once."""
+        port_dict = {'fixed_ips': [{'subnet_id': '10.10.10.10',
+                                    'ip_address': '11.11.11.11'}]}
+        self.plugin_instance._core_plugin.get_ports = mock.Mock(
+            return_value=[])
+        self.plugin_instance._core_plugin.create_port = mock.Mock(
+            return_value=port_dict)
+        radware_driver = self.plugin_instance.drivers['radware']
+        radware_driver._get_pip(context.get_admin_context(),
+                                'tenant_id', 'port_name',
+                                'network_id', '10.10.10.10')
+        self.plugin_instance._core_plugin.get_ports.assert_called_once()
+        self.plugin_instance._core_plugin.create_port.assert_called_once()
+        self.plugin_instance._core_plugin.create_port.reset_mock()
+        self.plugin_instance._core_plugin.get_ports.reset_mock()
+        self.plugin_instance._core_plugin.get_ports.return_value = [port_dict]
+        radware_driver._get_pip(context.get_admin_context(),
+                                'tenant_id', 'port_name',
+                                'network_id', '10.10.10.10')
+        self.plugin_instance._core_plugin.get_ports.assert_called_once()
+        self.plugin_instance._core_plugin.create_port.assert_has_calls([])
+
     def test_rest_client_recover_was_called(self):
         """Call the real REST client and verify _recover is called."""
         radware_driver = self.plugin_instance.drivers['radware']
@@ -194,7 +217,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
         """Test the rest call failure handling by Exception raising."""
         with self.network(do_delete=False) as network:
             with self.subnet(network=network, do_delete=False) as subnet:
-                with self.pool(no_delete=True,
+                with self.pool(do_delete=False,
                                provider='radware',
                                subnet_id=subnet['subnet']['id']) as pool:
                     vip_data = {
@@ -384,7 +407,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
     def test_update_vip(self):
         with self.subnet() as subnet:
             with self.pool(provider='radware',
-                           no_delete=True,
+                           do_delete=False,
                            subnet_id=subnet['subnet']['id']) as pool:
                 vip_data = {
                     'name': 'vip1',
@@ -474,17 +497,17 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
 
         with self.network(do_delete=False) as network:
             with self.subnet(network=network, do_delete=False) as subnet:
-                with self.pool(no_delete=True,
+                with self.pool(do_delete=False,
                                provider='radware',
                                subnet_id=subnet['subnet']['id']) as pool:
                     with contextlib.nested(
                         self.member(pool_id=pool['pool']['id'],
-                                    no_delete=True),
+                                    do_delete=False),
                         self.member(pool_id=pool['pool']['id'],
                                     address='192.168.1.101',
-                                    no_delete=True),
-                        self.health_monitor(no_delete=True),
-                        self.vip(pool=pool, subnet=subnet, no_delete=True)
+                                    do_delete=False),
+                        self.health_monitor(do_delete=False),
+                        self.vip(pool=pool, subnet=subnet, do_delete=False)
                     ) as (mem1, mem2, hm, vip):
 
                         plugin.create_pool_health_monitor(
@@ -518,7 +541,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
     def test_delete_vip(self):
         with self.subnet() as subnet:
             with self.pool(provider='radware',
-                           no_delete=True,
+                           do_delete=False,
                            subnet_id=subnet['subnet']['id']) as pool:
                 vip_data = {
                     'name': 'vip1',
@@ -558,7 +581,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
         with self.subnet(cidr='10.0.0.0/24') as subnet:
             with self.subnet(cidr='10.0.1.0/24') as pool_subnet:
                 with self.pool(provider='radware',
-                               no_delete=True,
+                               do_delete=False,
                                subnet_id=pool_subnet['subnet']['id']) as pool:
                     vip_data = {
                         'name': 'vip1',
@@ -614,7 +637,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
     def test_delete_pool_with_vip(self):
         with self.subnet() as subnet:
             with self.pool(provider='radware',
-                           no_delete=True,
+                           do_delete=False,
                            subnet_id=subnet['subnet']['id']) as pool:
                 with self.vip(pool=pool, subnet=subnet):
                     self.assertRaises(loadbalancer.PoolInUse,
@@ -829,7 +852,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
             with self.pool(provider='radware',
                            subnet_id=subnet['subnet']['id']) as p:
                 with self.member(pool_id=p['pool']['id'],
-                                 no_delete=True) as m:
+                                 do_delete=False) as m:
                     with self.vip(pool=p, subnet=subnet):
 
                         # Reset mock and
@@ -870,7 +893,8 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
     def test_delete_member_without_vip(self):
         with self.subnet():
             with self.pool(provider='radware') as p:
-                with self.member(pool_id=p['pool']['id'], no_delete=True) as m:
+                with self.member(pool_id=p['pool']['id'],
+                                 do_delete=False) as m:
                     self.plugin_instance.delete_member(
                         context.get_admin_context(), m['member']['id']
                     )
@@ -915,7 +939,7 @@ class TestLoadBalancerPlugin(TestLoadBalancerPluginBase):
 
     def test_delete_pool_hm_with_vip(self):
         with self.subnet() as subnet:
-            with self.health_monitor(no_delete=True) as hm:
+            with self.health_monitor(do_delete=False) as hm:
                 with self.pool(provider='radware',
                                subnet_id=subnet['subnet']['id']) as pool:
                     with self.vip(pool=pool, subnet=subnet):

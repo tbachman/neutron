@@ -85,7 +85,7 @@ class TestFirewallCallbacks(test_db_firewall.FirewallPluginDbTestCase):
             fwp_id = fwp['firewall_policy']['id']
             with self.firewall(firewall_policy_id=fwp_id,
                                admin_state_up=test_db_firewall.ADMIN_STATE_UP,
-                               no_delete=True) as fw:
+                               do_delete=False) as fw:
                 fw_id = fw['firewall']['id']
                 with ctx.session.begin(subtransactions=True):
                     fw_db = self.plugin._get_firewall(ctx, fw_id)
@@ -184,8 +184,7 @@ class TestFirewallAgentApi(base.BaseTestCase):
         self.assertEqual(rv, self.mock_fanoutcast.return_value)
         self.mock_fanoutcast.assert_called_once_with(
             mock.sentinel.context,
-            self.mock_msg.return_value,
-            topic='topic'
+            self.mock_msg.return_value
         )
 
         self.mock_msg.assert_called_once_with(
@@ -280,8 +279,7 @@ class TestFirewallPluginBase(test_db_firewall.TestFirewallDBPlugin):
                     'firewalls', data, fw_id,
                     context=context.Context('', 'noadmin'))
                 res = req.get_response(self.ext_api)
-                # returns 404 due to security reasons
-                self.assertEqual(res.status_int, exc.HTTPNotFound.code)
+                self.assertEqual(res.status_int, exc.HTTPForbidden.code)
 
     def test_update_firewall_policy_fails_when_firewall_pending(self):
         name = "new_firewall1"
@@ -347,7 +345,7 @@ class TestFirewallPluginBase(test_db_firewall.TestFirewallDBPlugin):
         with self.firewall_policy() as fwp:
             fwp_id = fwp['firewall_policy']['id']
             with self.firewall(firewall_policy_id=fwp_id,
-                               no_delete=True) as fw:
+                               do_delete=False) as fw:
                 fw_id = fw['firewall']['id']
                 req = self.new_delete_request('firewalls', fw_id)
                 res = req.get_response(self.ext_api)

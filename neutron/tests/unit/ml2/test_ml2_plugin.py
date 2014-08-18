@@ -19,6 +19,7 @@ import testtools
 import uuid
 import webob
 
+from neutron.common import constants
 from neutron.common import exceptions as exc
 from neutron import context
 from neutron.extensions import multiprovidernet as mpnet
@@ -28,7 +29,9 @@ from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import config
+from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import driver_api
+from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.tests.unit import _test_extension_portbindings as test_bindings
 from neutron.tests.unit.ml2.drivers import mechanism_logger as mech_logger
@@ -141,7 +144,7 @@ class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
         l3plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         with contextlib.nested(
-            self.port(no_delete=True),
+            self.port(do_delete=False),
             mock.patch.object(l3plugin, 'disassociate_floatingips'),
             mock.patch.object(l3plugin, 'notify_routers_updated')
         ) as (port, disassociate_floatingips, notify):
@@ -170,6 +173,75 @@ class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
             # check that nothing is returned when notifications are handled
             # by the called method
             self.assertIsNone(l3plugin.disassociate_floatingips(ctx, port_id))
+
+
+class TestMl2DvrPortsV2(TestMl2PortsV2):
+    def setUp(self):
+        super(TestMl2DvrPortsV2, self).setUp()
+        extensions = ['router',
+                      constants.L3_AGENT_SCHEDULER_EXT_ALIAS,
+                      constants.L3_DISTRIBUTED_EXT_ALIAS]
+        self.plugin = manager.NeutronManager.get_plugin()
+        self.l3plugin = mock.Mock()
+        type(self.l3plugin).supported_extension_aliases = (
+            mock.PropertyMock(return_value=extensions))
+        self.service_plugins = {'L3_ROUTER_NAT': self.l3plugin}
+
+    def test_delete_last_vm_port(self):
+        fip_set = set()
+        ns_to_delete = {'host': 'vmhost', 'agent_id': 'vm_l3_agent',
+                        'router_id': 'my_router'}
+
+        with contextlib.nested(
+            mock.patch.object(manager.NeutronManager,
+                              'get_service_plugins',
+                              return_value=self.service_plugins),
+            self.port(do_delete=False, device_owner='compute:None'),
+            mock.patch.object(self.l3plugin, 'notify_routers_updated'),
+            mock.patch.object(self.l3plugin, 'disassociate_floatingips',
+                              return_value=fip_set),
+            mock.patch.object(self.l3plugin, 'dvr_deletens_if_no_vm',
+                              return_value=[ns_to_delete]),
+            mock.patch.object(self.l3plugin, 'remove_router_from_l3_agent')
+        ) as (get_service_plugin, port, notify, disassociate_floatingips,
+              ddinv, remove_router_from_l3_agent):
+
+            port_id = port['port']['id']
+            self.plugin.delete_port(self.context, port_id)
+
+            notify.assert_has_calls([mock.call(self.context, fip_set)])
+            remove_router_from_l3_agent.assert_has_calls([
+                mock.call(self.context, ns_to_delete['agent_id'],
+                          ns_to_delete['router_id'])
+            ])
+
+    def test_delete_last_vm_port_with_floatingip(self):
+        ns_to_delete = {'host': 'vmhost', 'agent_id': 'vm_l3_agent',
+                        'router_id': 'my_router'}
+        fip_set = set([ns_to_delete['router_id']])
+
+        with contextlib.nested(
+            mock.patch.object(manager.NeutronManager,
+                              'get_service_plugins',
+                              return_value=self.service_plugins),
+            self.port(do_delete=False, device_owner='compute:None'),
+            mock.patch.object(self.l3plugin, 'notify_routers_updated'),
+            mock.patch.object(self.l3plugin, 'disassociate_floatingips',
+                              return_value=fip_set),
+            mock.patch.object(self.l3plugin, 'dvr_deletens_if_no_vm',
+                              return_value=[ns_to_delete]),
+            mock.patch.object(self.l3plugin, 'remove_router_from_l3_agent')
+        ) as (get_service_plugins, port, notify, disassociate_floatingips,
+              ddinv, remove_router_from_l3_agent):
+
+            port_id = port['port']['id']
+            self.plugin.delete_port(self.context, port_id)
+
+            notify.assert_has_calls([mock.call(self.context, fip_set)])
+            remove_router_from_l3_agent.assert_has_calls([
+                mock.call(self.context, ns_to_delete['agent_id'],
+                          ns_to_delete['router_id'])
+            ])
 
 
 class TestMl2PortBinding(Ml2PluginV2TestCase,
@@ -224,6 +296,43 @@ class TestMl2PortBinding(Ml2PluginV2TestCase,
             self._check_port_binding_profile(port)
             port = self._show('ports', port_id)['port']
             self._check_port_binding_profile(port)
+
+    def test_return_on_concurrent_delete_and_binding(self):
+        # create a port and delete it so we have an expired mechanism context
+        with self.port() as port:
+            plugin = manager.NeutronManager.get_plugin()
+            binding = ml2_db.get_locked_port_and_binding(self.context.session,
+                                                         port['port']['id'])[1]
+            binding['host'] = 'test'
+            mech_context = driver_context.PortContext(
+                plugin, self.context, port['port'],
+                plugin.get_network(self.context, port['port']['network_id']),
+                binding)
+        with contextlib.nested(
+            mock.patch('neutron.plugins.ml2.plugin.'
+                       'db.get_locked_port_and_binding',
+                       return_value=(None, None)),
+            mock.patch('neutron.plugins.ml2.plugin.Ml2Plugin._make_port_dict')
+        ) as (glpab_mock, mpd_mock):
+            plugin._bind_port_if_needed(mech_context)
+            # called during deletion to get port
+            self.assertTrue(glpab_mock.mock_calls)
+            # should have returned before calling _make_port_dict
+            self.assertFalse(mpd_mock.mock_calls)
+
+    def test_port_binding_profile_not_changed(self):
+        profile = {'e': 5}
+        profile_arg = {portbindings.PROFILE: profile}
+        with self.port(arg_list=(portbindings.PROFILE,),
+                       **profile_arg) as port:
+            self._check_port_binding_profile(port['port'], profile)
+            port_id = port['port']['id']
+            state_arg = {'admin_state_up': True}
+            port = self._update('ports', port_id,
+                                {'port': state_arg})['port']
+            self._check_port_binding_profile(port, profile)
+            port = self._show('ports', port_id)['port']
+            self._check_port_binding_profile(port, profile)
 
 
 class TestMl2PortBindingNoSG(TestMl2PortBinding):
@@ -326,7 +435,7 @@ class TestMultiSegmentNetworks(Ml2PluginV2TestCase):
         res = network_req.get_response(self.api)
         self.assertEqual(400, res.status_int)
 
-    def test_create_network_duplicate_segments(self):
+    def test_create_network_duplicate_full_segments(self):
         data = {'network': {'name': 'net1',
                             mpnet.SEGMENTS:
                             [{pnet.NETWORK_TYPE: 'vlan',
@@ -339,6 +448,18 @@ class TestMultiSegmentNetworks(Ml2PluginV2TestCase):
         network_req = self.new_create_request('networks', data)
         res = network_req.get_response(self.api)
         self.assertEqual(400, res.status_int)
+
+    def test_create_network_duplicate_partial_segments(self):
+        data = {'network': {'name': 'net1',
+                            mpnet.SEGMENTS:
+                            [{pnet.NETWORK_TYPE: 'vlan',
+                              pnet.PHYSICAL_NETWORK: 'physnet1'},
+                             {pnet.NETWORK_TYPE: 'vlan',
+                              pnet.PHYSICAL_NETWORK: 'physnet1'}],
+                            'tenant_id': 'tenant_one'}}
+        network_req = self.new_create_request('networks', data)
+        res = network_req.get_response(self.api)
+        self.assertEqual(201, res.status_int)
 
     def test_release_segment_no_type_driver(self):
         segment = {driver_api.NETWORK_TYPE: 'faketype',
@@ -499,7 +620,7 @@ class TestFaultyMechansimDriver(Ml2PluginV2FaultyDriverTestCase):
                                    'name': 'subnet1',
                                    'tenant_id':
                                    network['network']['tenant_id'],
-                                   'gateway_ip': '10.0.2.1'}}
+                                   'gateway_ip': '10.0.20.1'}}
                 req = self.new_create_request('subnets', data)
                 res = req.get_response(self.api)
                 self.assertEqual(500, res.status_int)
@@ -526,7 +647,7 @@ class TestFaultyMechansimDriver(Ml2PluginV2FaultyDriverTestCase):
                                        'name': 'subnet1',
                                        'tenant_id':
                                        network['network']['tenant_id'],
-                                       'gateway_ip': '10.0.2.1'}}
+                                       'gateway_ip': '10.0.20.1'}}
                     subnet_req = self.new_create_request('subnets', data)
                     subnet_res = subnet_req.get_response(self.api)
                     self.assertEqual(201, subnet_res.status_int)
@@ -557,7 +678,7 @@ class TestFaultyMechansimDriver(Ml2PluginV2FaultyDriverTestCase):
                                        'name': 'subnet1',
                                        'tenant_id':
                                        network['network']['tenant_id'],
-                                       'gateway_ip': '10.0.2.1'}}
+                                       'gateway_ip': '10.0.20.1'}}
                     subnet_req = self.new_create_request('subnets', data)
                     subnet_res = subnet_req.get_response(self.api)
                     self.assertEqual(201, subnet_res.status_int)

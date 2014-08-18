@@ -38,15 +38,36 @@ STATUS_OPTS = [
 cfg.CONF.register_opts(STATUS_OPTS)
 
 
+def _is_pingable(ip):
+    """Checks whether an IP address is reachable by pinging.
+
+    Use linux utils to execute the ping (ICMP ECHO) command.
+    Sends 5 packets with an interval of 0.2 seconds and timeout of 1
+    seconds. Runtime error implies unreachability else IP is pingable.
+    :param ip: IP to check
+    :return: bool - True or False depending on pingability.
+    """
+    ping_cmd = ['ping',
+                '-c', '5',
+                '-W', '1',
+                '-i', '0.2',
+                ip]
+    try:
+        linux_utils.execute(ping_cmd, check_exit_code=True)
+        return True
+    except RuntimeError:
+        LOG.warn(_("Cannot ping ip address: %s"), ip)
+        return False
+
+
 class DeviceStatus(object):
     """Device status and backlog processing."""
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls):
         if not cls._instance:
-            cls._instance = super(DeviceStatus, cls).__new__(
-                cls, *args, **kwargs)
+            cls._instance = super(DeviceStatus, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -59,7 +80,7 @@ class DeviceStatus(object):
         wait_time = datetime.timedelta(
             seconds=cfg.CONF.hosting_device_dead_timeout)
         resp = []
-        for hd_id in self.backlog_hosting_devices.keys():
+        for hd_id in self.backlog_hosting_devices:
             hd = self.backlog_hosting_devices[hd_id]['hd']
             created_time = hd['created_at']
             boottime = datetime.timedelta(seconds=hd['booting_time'])
@@ -88,8 +109,8 @@ class DeviceStatus(object):
         hosting_device['created_at'] = datetime.datetime.strptime(
             hosting_device['created_at'], '%Y-%m-%d %H:%M:%S')
 
-        if hd_id not in self.backlog_hosting_devices.keys():
-            if self._is_pingable(hd_mgmt_ip):
+        if hd_id not in self.backlog_hosting_devices:
+            if _is_pingable(hd_mgmt_ip):
                 LOG.debug("Hosting device: %(hd_id)s@%(ip)s is reachable.",
                           {'hd_id': hd_id, 'ip': hd_mgmt_ip})
                 return True
@@ -126,7 +147,7 @@ class DeviceStatus(object):
             LOG.info(_("Checking hosting device: %(hd_id)s @ %(ip)s for "
                        "reachability."), {'hd_id': hd_id,
                                           'ip': hd['management_ip_address']})
-            if self._is_pingable(hd['management_ip_address']):
+            if _is_pingable(hd['management_ip_address']):
                 hd.pop('backlog_insertion_ts', None)
                 del self.backlog_hosting_devices[hd_id]
                 response_dict['reachable'].append(hd_id)
@@ -151,24 +172,3 @@ class DeviceStatus(object):
                     del self.backlog_hosting_devices[hd_id]
         LOG.debug("Response: %s", response_dict)
         return response_dict
-
-    def _is_pingable(self, ip):
-        """Checks whether an IP address is reachable by pinging.
-
-        Use linux utils to execute the ping (ICMP ECHO) command.
-        Sends 5 packets with an interval of 0.2 seconds and timeout of 1
-        seconds. Runtime error implies unreachability else IP is pingable.
-        :param ip: IP to check
-        :return: bool - True or False depending on pingability.
-        """
-        ping_cmd = ['ping',
-                    '-c', '5',
-                    '-W', '1',
-                    '-i', '0.2',
-                    ip]
-        try:
-            linux_utils.execute(ping_cmd, check_exit_code=True)
-            return True
-        except RuntimeError:
-            LOG.warn(_("Cannot ping ip address: %s"), ip)
-            return False

@@ -21,7 +21,6 @@ from neutron.common import exceptions as n_exception
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as neutron_context
-from neutron.db import api as qdbapi
 from neutron.db.firewall import firewall_db
 from neutron.extensions import firewall as fw_ext
 from neutron.openstack.common import log as logging
@@ -114,24 +113,21 @@ class FirewallAgentApi(n_rpc.RpcProxy):
         return self.fanout_cast(
             context,
             self.make_msg('create_firewall', firewall=firewall,
-                          host=self.host),
-            topic=self.topic
+                          host=self.host)
         )
 
     def update_firewall(self, context, firewall):
         return self.fanout_cast(
             context,
             self.make_msg('update_firewall', firewall=firewall,
-                          host=self.host),
-            topic=self.topic
+                          host=self.host)
         )
 
     def delete_firewall(self, context, firewall):
         return self.fanout_cast(
             context,
             self.make_msg('delete_firewall', firewall=firewall,
-                          host=self.host),
-            topic=self.topic
+                          host=self.host)
         )
 
 
@@ -158,7 +154,6 @@ class FirewallPlugin(firewall_db.Firewall_db_mixin):
 
     def __init__(self):
         """Do the initialization for the firewall service plugin here."""
-        qdbapi.register_models()
 
         self.endpoints = [FirewallCallbacks(self)]
 

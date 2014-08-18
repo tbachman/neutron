@@ -17,7 +17,7 @@
 
 import contextlib
 import gc
-import logging
+import logging as std_logging
 import os
 import os.path
 import sys
@@ -110,7 +110,6 @@ class BaseTestCase(testtools.TestCase):
 
     def setUp(self):
         super(BaseTestCase, self).setUp()
-
         # Ensure plugin cleanup is triggered last so that
         # test-specific cleanup has a chance to release references.
         self.addCleanup(self.cleanup_core_plugin)
@@ -120,12 +119,12 @@ class BaseTestCase(testtools.TestCase):
             self.addOnException(post_mortem_debug.exception_handler)
 
         if os.environ.get('OS_DEBUG') in TRUE_STRING:
-            _level = logging.DEBUG
+            _level = std_logging.DEBUG
         else:
-            _level = logging.INFO
+            _level = std_logging.INFO
         capture_logs = os.environ.get('OS_LOG_CAPTURE') in TRUE_STRING
         if not capture_logs:
-            logging.basicConfig(format=LOG_FORMAT, level=_level)
+            std_logging.basicConfig(format=LOG_FORMAT, level=_level)
         self.log_fixture = self.useFixture(
             fixtures.FakeLogger(
                 format=LOG_FORMAT,
@@ -138,7 +137,7 @@ class BaseTestCase(testtools.TestCase):
             fixtures.FakeLogger(
                 name='neutron.api.extensions',
                 format=LOG_FORMAT,
-                level=logging.ERROR,
+                level=std_logging.ERROR,
                 nuke_handlers=capture_logs,
             ))
 
@@ -190,6 +189,12 @@ class BaseTestCase(testtools.TestCase):
         if sys.version_info < (2, 7) and getattr(self, 'fmt', '') == 'xml':
             raise self.skipException('XML Testing Skipped in Py26')
 
+        self.setup_config()
+
+    def setup_config(self):
+        """Tests that need a non-default config can override this method."""
+        self.config_parse()
+
     def config(self, **kw):
         """Override some configuration values.
 
@@ -212,3 +217,16 @@ class BaseTestCase(testtools.TestCase):
             yield
             return
         self.fail('Execution of this test timed out')
+
+    def assertOrderedEqual(self, expected, actual):
+        expect_val = self.sort_dict_lists(expected)
+        actual_val = self.sort_dict_lists(actual)
+        self.assertEqual(expect_val, actual_val)
+
+    def sort_dict_lists(self, dic):
+        for key, value in dic.iteritems():
+            if isinstance(value, list):
+                dic[key] = sorted(value)
+            elif isinstance(value, dict):
+                dic[key] = self.sort_dict_lists(value)
+        return dic
