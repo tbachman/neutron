@@ -856,7 +856,7 @@ class HostedHostingPortBinding(BASEV2):
 
 
 #neutron/plugins/cisco/db/l3/l3_models.py
-class RouterHostingDeviceBinding(model_base.BASEV2):
+class RouterHostingDeviceBinding(BASEV2):
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
