@@ -823,7 +823,7 @@ class HostingDevice(BASEV2, HasId, HasTenant):
     management_port_id = sa.Column(sa.String(36),
                                    sa.ForeignKey('ports.id',
                                                  ondelete="SET NULL"))
-    management_port = orm.relationship(models_v2.Port)
+    management_port = orm.relationship(Port)
     protocol_port = sa.Column(sa.Integer)
     cfg_agent_id = sa.Column(sa.String(36),
                              sa.ForeignKey('agents.id'),
@@ -841,7 +841,7 @@ class HostedHostingPortBinding(BASEV2):
                                               ondelete="CASCADE"),
                                 primary_key=True)
     logical_port = orm.relationship(
-        models_v2.Port,
+        Port,
         primaryjoin='Port.id==HostedHostingPortBinding.logical_port_id',
         backref=orm.backref('hosting_info', cascade='all', uselist=False))
     port_type = sa.Column(sa.String(32))
@@ -850,7 +850,7 @@ class HostedHostingPortBinding(BASEV2):
                                 sa.ForeignKey('ports.id',
                                               ondelete='CASCADE'))
     hosting_port = orm.relationship(
-        models_v2.Port,
+        Port,
         primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')
     segmentation_tag = sa.Column(sa.Integer, autoincrement=False)
 
@@ -861,7 +861,7 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
     router = orm.relationship(
-        l3_db.Router,
+        Router,
         backref=orm.backref('hosting_info', cascade='all', uselist=False))
     auto_schedule = sa.Column(sa.Boolean, default=True, nullable=False)
     hosting_device_id = sa.Column(sa.String(36),
