@@ -17,7 +17,6 @@
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
-from neutron.db import api as qdbapi
 from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron import manager
@@ -59,7 +58,6 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
     supported_extension_aliases = ["router", "extraroute"]
 
     def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
