@@ -28,6 +28,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
        When the hosting device is a Nova VM 'id' is uuid of that VM.
     """
+    __tablename__ = 'cisco_hosting_devices'
+
     # complementary id to enable identification of associated Neutron resources
     complementary_id = sa.Column(sa.String(36))
     # manufacturer id of the device, e.g., its serial number
@@ -52,6 +54,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class HostedHostingPortBinding(model_base.BASEV2):
     """Represents binding of logical resource's port to its hosting port."""
+    __tablename__ = 'cisco_port_mappings'
+
     logical_resource_id = sa.Column(sa.String(36), primary_key=True)
     logical_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id',
@@ -77,6 +81,8 @@ class HostedHostingPortBinding(model_base.BASEV2):
 
 class RouterHostingDeviceBinding(model_base.BASEV2):
     """Represents binding between Neutron routers and their hosting devices."""
+    __tablename__ = 'cisco_router_mappings'
+
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
@@ -88,6 +94,6 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
     auto_schedule = sa.Column(sa.Boolean, default=True, nullable=False)
     # id of hosting device hosting this router, None/NULL if unscheduled.
     hosting_device_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('hostingdevices.id',
+                                  sa.ForeignKey('cisco_hosting_devices.id',
                                                 ondelete='SET NULL'))
     hosting_device = orm.relationship(HostingDevice)

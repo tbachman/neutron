@@ -42,7 +42,7 @@ def upgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
-    op.create_table('hostingdevices',
+    op.create_table('cisco_hosting_devices',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('complementary_id', sa.String(length=36), nullable=True),
@@ -54,26 +54,33 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('status', sa.String(length=16), nullable=True),
         sa.ForeignKeyConstraint(['cfg_agent_id'], ['agents.id'], ),
-        sa.ForeignKeyConstraint(['management_port_id'], ['ports.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['management_port_id'], ['ports.id'],
+                                ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('hostedhostingportbindings',
+    op.create_table('cisco_port_mappings',
         sa.Column('logical_resource_id', sa.String(length=36), nullable=False),
         sa.Column('logical_port_id', sa.String(length=36), nullable=False),
         sa.Column('port_type', sa.String(length=32), nullable=True),
         sa.Column('network_type', sa.String(length=32), nullable=True),
         sa.Column('hosting_port_id', sa.String(length=36), nullable=True),
-        sa.Column('segmentation_tag', sa.Integer(), autoincrement=False, nullable=True),
-        sa.ForeignKeyConstraint(['hosting_port_id'], ['ports.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['logical_port_id'], ['ports.id'], ondelete='CASCADE'),
+        sa.Column('segmentation_tag', sa.Integer(), autoincrement=False,
+                  nullable=True),
+        sa.ForeignKeyConstraint(['hosting_port_id'], ['ports.id'],
+                                ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['logical_port_id'], ['ports.id'],
+                                ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('logical_resource_id', 'logical_port_id')
     )
-    op.create_table('routerhostingdevicebindings',
+    op.create_table('cisco_router_mappings',
         sa.Column('router_id', sa.String(length=36), nullable=False),
         sa.Column('auto_schedule', sa.Boolean(), nullable=False),
         sa.Column('hosting_device_id', sa.String(length=36), nullable=True),
-        sa.ForeignKeyConstraint(['hosting_device_id'], ['hostingdevices.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['router_id'], ['routers.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['hosting_device_id'],
+                                ['cisco_hosting_devices.id'],
+                                ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['router_id'], ['routers.id'],
+                                ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('router_id')
     )
 
@@ -82,6 +89,6 @@ def downgrade(active_plugins=None, options=None):
     if not migration.should_run(active_plugins, migration_for_plugins):
         return
 
-    op.drop_table('routerhostingdevicebindings')
-    op.drop_table('hostedhostingportbindings')
-    op.drop_table('hostingdevices')
+    op.drop_table('cisco_router_mappings')
+    op.drop_table('cisco_port_mappings')
+    op.drop_table('cisco_hosting_devices')
