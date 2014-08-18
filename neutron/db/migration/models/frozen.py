@@ -815,6 +815,61 @@ class BrocadePort(BASEV2):
     tenant_id = sa.Column(sa.String(36))
 
 
+#neutron/plugins/cisco/db/l3/l3_models.py
+class HostingDevice(BASEV2, HasId, HasTenant):
+    complementary_id = sa.Column(sa.String(36))
+    device_id = sa.Column(sa.String(255))
+    admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
+    management_port_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey('ports.id',
+                                                 ondelete="SET NULL"))
+    management_port = orm.relationship(models_v2.Port)
+    protocol_port = sa.Column(sa.Integer)
+    cfg_agent_id = sa.Column(sa.String(36),
+                             sa.ForeignKey('agents.id'),
+                             nullable=True)
+    cfg_agent = orm.relationship(agents_db.Agent)
+    created_at = sa.Column(sa.DateTime, nullable=False)
+    status = sa.Column(sa.String(16))
+
+
+#neutron/plugins/cisco/db/l3/l3_models.py
+class HostedHostingPortBinding(BASEV2):
+    logical_resource_id = sa.Column(sa.String(36), primary_key=True)
+    logical_port_id = sa.Column(sa.String(36),
+                                sa.ForeignKey('ports.id',
+                                              ondelete="CASCADE"),
+                                primary_key=True)
+    logical_port = orm.relationship(
+        models_v2.Port,
+        primaryjoin='Port.id==HostedHostingPortBinding.logical_port_id',
+        backref=orm.backref('hosting_info', cascade='all', uselist=False))
+    port_type = sa.Column(sa.String(32))
+    network_type = sa.Column(sa.String(32))
+    hosting_port_id = sa.Column(sa.String(36),
+                                sa.ForeignKey('ports.id',
+                                              ondelete='CASCADE'))
+    hosting_port = orm.relationship(
+        models_v2.Port,
+        primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')
+    segmentation_tag = sa.Column(sa.Integer, autoincrement=False)
+
+
+#neutron/plugins/cisco/db/l3/l3_models.py
+class RouterHostingDeviceBinding(model_base.BASEV2):
+    router_id = sa.Column(sa.String(36),
+                          sa.ForeignKey('routers.id', ondelete='CASCADE'),
+                          primary_key=True)
+    router = orm.relationship(
+        l3_db.Router,
+        backref=orm.backref('hosting_info', cascade='all', uselist=False))
+    auto_schedule = sa.Column(sa.Boolean, default=True, nullable=False)
+    hosting_device_id = sa.Column(sa.String(36),
+                                  sa.ForeignKey('hostingdevices.id',
+                                                ondelete='SET NULL'))
+    hosting_device = orm.relationship(HostingDevice)
+
+
 #neutron/plugins/cisco/db/n1kv_models_v2.py
 class N1kvVlanAllocation(BASEV2):
     __tablename__ = 'cisco_n1kv_vlan_allocations'
