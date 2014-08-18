@@ -242,19 +242,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self.l3_cfg_rpc_notifier.routers_updated(context, routers,
                                                          'delete_floatingip')
 
-    def disassociate_floatingips(self, context, port_id):
-        router_ids = set()
-
+    def disassociate_floatingips(self, context, port_id, do_notify=True):
         with context.session.begin(subtransactions=True):
-            fip_qry = context.session.query(l3_db.FloatingIP)
-            floating_ips = fip_qry.filter_by(fixed_port_id=port_id)
-            for floating_ip in floating_ips:
-                router_ids.add(floating_ip['router_id'])
-                floating_ip.update({'fixed_port_id': None,
-                                    'fixed_ip_address': None,
-                                    'router_id': None})
-
-            if router_ids:
+            router_ids = super(L3RouterApplianceDBMixin,
+                               self).disassociate_floatingips(context, port_id)
+            if do_notify:
                 routers = []
                 for router_id in router_ids:
                     router = self.get_router(context, router_id)
@@ -263,6 +255,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     routers.append(router)
                 self.l3_cfg_rpc_notifier.routers_updated(
                     context, routers, 'disassociate_floatingips')
+                # since caller assumes that we handled notifications on its
+                # behalf, return nothing
+                return
+            return router_ids
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _handle_non_responding_hosting_devices(self, context, hosting_devices,
