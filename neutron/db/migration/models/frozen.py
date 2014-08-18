@@ -828,7 +828,7 @@ class HostingDevice(BASEV2, HasId, HasTenant):
     cfg_agent_id = sa.Column(sa.String(36),
                              sa.ForeignKey('agents.id'),
                              nullable=True)
-    cfg_agent = orm.relationship(agents_db.Agent)
+    cfg_agent = orm.relationship(Agent)
     created_at = sa.Column(sa.DateTime, nullable=False)
     status = sa.Column(sa.String(16))
 
