@@ -18,7 +18,6 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import common_db_mixin
-from neutron.db import model_base
 from neutron import manager
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
