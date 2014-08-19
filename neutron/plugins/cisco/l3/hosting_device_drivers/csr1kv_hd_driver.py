@@ -15,7 +15,6 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 import netaddr
-import os
 
 from oslo.config import cfg
 
@@ -56,32 +55,20 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
             cfg_template_filename = (
                 cfg.CONF.general.templates_path + "/" +
                 cfg.CONF.hosting_devices.csr1kv_configdrive_template)
-            vm_cfg_filename = self._unique_cfgdrive_filename(mgmtport['id'])
+            vm_cfg_data = ''
             with open(cfg_template_filename, 'r') as cfg_template_file:
-                with open(vm_cfg_filename, "w") as vm_cfg_file:
-                    # insert proper instance values in the template
-                    for line in cfg_template_file:
-                        tokens = line.strip('\n').split(' ')
-                        line = ' '.join(map(lambda x: params.get(x, x),
-                                            tokens)) + '\n'
-                        vm_cfg_file.write(line)
-            return {'iosxe_config.txt': vm_cfg_filename}
+                # insert proper instance values in the template
+                for line in cfg_template_file:
+                    tokens = line.strip('\n').split(' ')
+                    line = ' '.join(map(lambda x: params.get(x, x),
+                                        tokens)) + '\n'
+                    vm_cfg_data += line
+            return {'iosxe_config.txt': vm_cfg_data}
         except IOError as e:
             LOG.error(_('Failed to create config file: %s. Trying to'
                         'clean up.'), str(e))
             self.delete_configdrive_files(context, mgmtport)
             raise
-
-    def delete_configdrive_files(self, context, mgmtport):
-        try:
-            os.remove(self._unique_cfgdrive_filename(mgmtport['id']))
-        except OSError as e:
-            LOG.error(_('Failed to delete config file: %s'), str(e))
-
-    def _unique_cfgdrive_filename(self, uuid):
-        end = CFG_DRIVE_UUID_START + CFG_DRIVE_UUID_LEN
-        return (cfg.CONF.general.service_vm_config_path + "/csr1kv_" +
-                uuid[CFG_DRIVE_UUID_START:end] + ".cfg")
 
     @property
     def _core_plugin(self):
