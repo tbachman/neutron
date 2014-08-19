@@ -30,7 +30,6 @@ vsmUsername=${Q_CISCO_PLUGIN_VSM_USERNAME:-admin}
 vsmPassword=${Q_CISCO_PLUGIN_VSM_PASSWORD:-Sfish123}
 
 base_dir=/opt/stack/data/$osn/cisco
-config_drive_dir=$base_dir/config_drive
 templates_dir=$base_dir/templates
 template_name=csr1kv_cfg_template
 template_file=$templates_dir/$template_name
@@ -163,15 +162,6 @@ fi
 
 
 source ~/devstack/openrc $adminUser $L3adminTenant
-
-
-echo -n "Checking if $config_drive_dir exists..."
-if [ -d $config_drive_dir ]; then
-    echo "Yes, it does."
-else
-    echo "No, it does not. Creating it."
-    mkdir -p $config_drive_dir
-fi
 
 
 echo -n "Checking if $templates_dir exists..."
