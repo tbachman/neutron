@@ -315,21 +315,20 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
         LOG.info(_('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
+        result = self._create_csr1kv_vm_hosting_device(context.elevated())
+        if result is None:
+            # CSR1kv hosting device creation was unsuccessful so backlog
+            # it for another scheduling attempt later.
+            self.backlog_router(r_hd_binding['router'])
+            return False
         with context.session.begin(subtransactions=True):
-            result = self._create_csr1kv_vm_hosting_device(context.elevated())
-            if result is None:
-                # CSR1kv hosting device creation was unsuccessful so backlog
-                # it for another scheduling attempt later.
-                self.backlog_router(r_hd_binding['router'])
-                return False
-            else:
-                router = r_hd_binding['router']
-                r_hd_binding.hosting_device = result
-                self.remove_router_from_backlog(router['id'])
-                LOG.info(_('Successfully scheduled router %(r_id)s to '
-                           'hosting device %(d_id)s'),
-                         {'r_id': r_hd_binding['router']['id'],
-                          'd_id': result['id']})
+            router = r_hd_binding['router']
+            r_hd_binding.hosting_device = result
+            self.remove_router_from_backlog(router['id'])
+            LOG.info(_('Successfully scheduled router %(r_id)s to '
+                       'hosting device %(d_id)s'),
+                     {'r_id': r_hd_binding['router']['id'],
+                      'd_id': result['id']})
         return True
 
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
