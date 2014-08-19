@@ -42,7 +42,7 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
     def hosting_device_name(self):
         return "CSR1kv"
 
-    def create_configdrive_files(self, context, mgmtport):
+    def create_config(self, context, mgmtport):
         mgmt_ip = mgmtport['fixed_ips'][0]['ip_address']
         subnet_data = self._core_plugin.get_subnet(
             context, mgmtport['fixed_ips'][0]['subnet_id'],

@@ -127,10 +127,7 @@ class ServiceVMManager(object):
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
-            cfg_files = hosting_device_drv.create_configdrive_files(
-                context, mgmt_port)
-            files = dict((label, open(name)) for label, name in
-                         cfg_files.items())
+            files = hosting_device_drv.create_config(context, mgmt_port)
         except IOError:
             return
 
@@ -147,31 +144,20 @@ class ServiceVMManager(object):
                 nova_exc.ConnectionRefused, nova_exc.ClientException,
                 Exception) as e:
             LOG.error(_('Failed to create service VM instance: %s'), e)
-            hosting_device_drv.delete_configdrive_files(context, mgmt_port)
             return
         return {'id': server.id}
 
     #TODO(remove fake function later)
-    def delete_service_vm(self, context, vm_id, hosting_device_drv,
-                          mgmt_nw_id):
+    def delete_service_vm(self, context, vm_id):
         if self._core_plugin.__class__.__name__ != 'CSR1kv_OVSNeutronPluginV2':
-            return self.delete_service_vm_real(context, vm_id,
-                                               hosting_device_drv, mgmt_nw_id)
+            return self.delete_service_vm_real(context, vm_id)
         else:
-            return self.delete_service_vm_fake(context, vm_id,
-                                               hosting_device_drv, mgmt_nw_id)
+            return self.delete_service_vm_fake(context, vm_id)
 
-    def delete_service_vm_real(self, context, vm_id, hosting_device_drv,
-                               mgmt_nw_id):
-        result = True
-        # Get ports on management network (should be only one)
-        ports = self._core_plugin.get_ports(
-            context, filters={'device_id': [id],
-                              'network_id': [mgmt_nw_id]})
-        if ports:
-            hosting_device_drv.delete_configdrive_files(context, ports[0])
+    def delete_service_vm_real(self, context, vm_id):
         try:
             self._nclient.servers.delete(vm_id)
+            return True
         # There are several individual Nova client exceptions but they have
         # no other common base than Exception, therefore the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
@@ -182,8 +168,7 @@ class ServiceVMManager(object):
                 Exception) as e:
             LOG.error(_('Failed to delete service VM instance %(id)s, '
                         'due to %(err)s'), {'id': vm_id, 'err': e})
-            result = False
-        return result
+            return False
 
     # TODO(bobmel): Move this to fake_service_vm_lib.py file with
     # FakeServiceVMManager
@@ -194,13 +179,10 @@ class ServiceVMManager(object):
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
-            cfg_files = hosting_device_drv.create_configdrive_files(
-                context, mgmt_port)
-            files = dict((label, open(name)) for label, name in
-                         cfg_files.items())
-            LOG.info(_('Created files %(files)s with labels %(keys)s for '
+            files = hosting_device_drv.create_config(context, mgmt_port)
+            LOG.info(_('Created files %(files)s with content %(content)s for '
                        'config drive'),
-                     {'files': cfg_files.values(), 'keys': files.keys()})
+                     {'files': files.values(), 'content': files.keys()})
         except IOError:
             return
 
@@ -225,23 +207,14 @@ class ServiceVMManager(object):
 
         return myserver['server']
 
-    def delete_service_vm_fake(self, context, vm_id, hosting_device_drv,
-                               mgmt_nw_id):
-        result = True
-        # Get ports on management network (should be only one)
-        ports = self._core_plugin.get_ports(
-            context, filters={'device_id': [vm_id],
-                              'network_id': [mgmt_nw_id]})
-        if ports:
-            hosting_device_drv.delete_configdrive_files(context, ports[0])
-
+    def delete_service_vm_fake(self, context, vm_id):
         try:
             ports = self._core_plugin.get_ports(context,
                                                 filters={'device_id': [vm_id]})
             for port in ports:
                 self._core_plugin.delete_port(context, port['id'])
+            return True
         except Exception as e:
             LOG.error(_('Failed to delete service VM %(id)s due to %(err)s'),
                       {'id': vm_id, 'err': e})
-            result = False
-        return result
+            return False

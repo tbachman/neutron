@@ -32,12 +32,12 @@ class HostingDeviceDriver(object):
         pass
 
     @abc.abstractmethod
-    def create_configdrive_files(self, context, mgmtport):
-        """Creates configuration file(s) for a service VM.
+    def create_config(self, context, mgmtport):
+        """Creates configuration(s) for a service VM.
 
-        This function can be used to make initial configurations. The file(s)
-        is/are injected in the VM's file system using Nova's configdrive
-        feature.
+        This function can be used to make initial configurations. The
+        configuration(s) is/are injected in the VM's file system using
+        Nova's configdrive feature.
 
         Called when a service VM-based hosting device is to be created.
         This function should cleanup after itself in case of error.
