@@ -25,6 +25,7 @@ ID = 'id'
 NETWORK_TYPE = 'network_type'
 PHYSICAL_NETWORK = 'physical_network'
 SEGMENTATION_ID = 'segmentation_id'
+PROVIDER_SEGMENT = 'provider_segment'
 
 # The following keys are used in the binding level dictionaries
 # available via the binding_levels and original_binding_levels
