@@ -25,6 +25,7 @@ ID = 'id'
 NETWORK_TYPE = 'network_type'
 PHYSICAL_NETWORK = 'physical_network'
 SEGMENTATION_ID = 'segmentation_id'
+PROVIDER_SEGMENT = 'provider_segment'
 
 
 @six.add_metaclass(abc.ABCMeta)
