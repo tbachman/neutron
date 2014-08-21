@@ -37,7 +37,8 @@ class TestDvrPortContext(base.BaseTestCase):
                                                 plugin_context,
                                                 port,
                                                 network,
-                                                binding)
+                                                binding,
+                                                None)
         self.assertEqual('foohost', ctx.host)
 
     def test_host_super(self):
@@ -55,7 +56,8 @@ class TestDvrPortContext(base.BaseTestCase):
                                                 plugin_context,
                                                 port,
                                                 network,
-                                                binding)
+                                                binding,
+                                                None)
         self.assertEqual('host', ctx.host)
 
     def test_status(self):
@@ -72,7 +74,8 @@ class TestDvrPortContext(base.BaseTestCase):
                                                 plugin_context,
                                                 port,
                                                 network,
-                                                binding)
+                                                binding,
+                                                None)
         self.assertEqual('foostatus', ctx.status)
 
     def test_status_super(self):
@@ -90,5 +93,6 @@ class TestDvrPortContext(base.BaseTestCase):
                                                 plugin_context,
                                                 port,
                                                 network,
-                                                binding)
+                                                binding,
+                                                None)
         self.assertEqual('status', ctx.status)
