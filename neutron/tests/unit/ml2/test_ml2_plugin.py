@@ -360,7 +360,7 @@ class TestMl2PortBinding(Ml2PluginV2TestCase,
             mech_context = driver_context.PortContext(
                 plugin, self.context, port['port'],
                 plugin.get_network(self.context, port['port']['network_id']),
-                binding)
+                binding, None)
         with contextlib.nested(
             mock.patch('neutron.plugins.ml2.plugin.'
                        'db.get_locked_port_and_binding',
