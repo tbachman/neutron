@@ -215,7 +215,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             binding.vif_type = portbindings.VIF_TYPE_UNBOUND
             binding.vif_details = ''
             db.clear_binding_levels(session, port_id, original_host)
-            mech_context._binding_levels = None
+            mech_context.clear_binding_levels()
 
         if port['device_owner'] == const.DEVICE_OWNER_DVR_INTERFACE:
             binding.vif_type = portbindings.VIF_TYPE_DISTRIBUTED
