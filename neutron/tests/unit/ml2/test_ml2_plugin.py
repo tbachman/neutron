@@ -395,7 +395,6 @@ class TestMl2PortBinding(Ml2PluginV2TestCase,
                             router_id='old_router_id',
                             vif_type=portbindings.VIF_TYPE_OVS,
                             vnic_type=portbindings.VNIC_NORMAL,
-                            cap_port_filter=False,
                             status=constants.PORT_STATUS_DOWN)
         plugin = manager.NeutronManager.get_plugin()
         mock_network = {'id': 'net_id'}
@@ -406,7 +405,8 @@ class TestMl2PortBinding(Ml2PluginV2TestCase,
             with mock.patch.object(ml2_db, 'get_network_segments',
                                    return_value=[]):
                 mech_context = driver_context.DvrPortContext(
-                    self, context, 'port', mock_network, binding)
+                    self, context, {'id': 'port_id'}, mock_network,
+                    binding, None)
                 plugin._process_dvr_port_binding(mech_context, context, attrs)
                 self.assertEqual(new_router_id,
                                  mech_context._binding.router_id)

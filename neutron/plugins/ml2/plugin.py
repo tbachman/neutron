@@ -215,7 +215,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             binding.vif_type = portbindings.VIF_TYPE_UNBOUND
             binding.vif_details = ''
             db.clear_binding_levels(session, port_id, original_host)
-            mech_context._binding_levels = None
+            mech_context.clear_binding_levels()
 
         if port['device_owner'] == const.DEVICE_OWNER_DVR_INTERFACE:
             binding.vif_type = portbindings.VIF_TYPE_DISTRIBUTED
@@ -1036,9 +1036,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                     self, context, port, network, binding, levels)
                 if is_dvr_enabled and utils.is_dvr_serviced(device_owner):
                     router_info = l3plugin.dvr_deletens_if_no_port(context, id)
-                    removed_routers += router_info
-                if "compute:" in port['device_owner'] and is_dvr_enabled:
-                    router_info = l3plugin.dvr_deletens_if_no_vm(context, id)
                     removed_routers += router_info
                 self.mechanism_manager.delete_port_precommit(mech_context)
                 self._delete_port_security_group_bindings(context, id)
