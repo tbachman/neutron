@@ -475,13 +475,23 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # Retrieve networks from neutron db
         db_nets = self.get_networks(admin_context)
         db_nets_set = self._get_db_resource_set(admin_context, db_nets)
+        segment_pairs = None
         # Retrieve networks from VSM
         vsm_nets_set = set(self._get_vsm_resource("networks"))
         # Create networks on VSM which are missing from VSM
         for net_id in db_nets_set - vsm_nets_set:
             try:
                 net = self.get_network(admin_context, net_id)
-                self._send_create_network_request(admin_context, net, None)
+                profile_id = self._process_network_profile(admin_context, net)
+                netp = self.get_network_profile(admin_context, profile_id)
+                if net[providernet.NETWORK_TYPE] == c_const.NETWORK_TYPE_TRUNK:
+                    segment_pairs = (
+                        self._parse_trunk_segments(admin_context, net,
+                                                   n1kv.SEGMENT_ADD,
+                                                   netp['physical_network'],
+                                                   netp['sub_type'],
+                                                   ))
+                self._send_create_network_request(admin_context, net, segment_pairs)
             except cisco_exceptions.VSMError:
                 LOG.warning(_('VSM SYNC: Failed to create network %s'),
                             net_id)
