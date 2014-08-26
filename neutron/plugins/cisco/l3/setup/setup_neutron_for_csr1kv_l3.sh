@@ -33,7 +33,7 @@ base_dir=/opt/stack/data/$osn/cisco
 templates_dir=$base_dir/templates
 template_name=csr1kv_cfg_template
 template_file=$templates_dir/$template_name
-template_file_src=/opt/stack/$osn/$osn/plugins/cisco/device_manager/configdrive_templates/$template_name
+template_file_src=/opt/stack/$osn/$osn/plugins/cisco/l3/configdrive_templates/$template_name
 
 osnMgmtNwName=osn_mgmt_nw
 mgmtSecGrp=mgmt_sec_grp

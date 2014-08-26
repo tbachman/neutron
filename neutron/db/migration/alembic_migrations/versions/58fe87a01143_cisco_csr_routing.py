@@ -23,25 +23,14 @@ Create Date: 2014-08-18 17:14:12.506356
 
 # revision identifiers, used by Alembic.
 revision = '58fe87a01143'
-down_revision = '4eba2f05c2f4'
+down_revision = '327ee5fde2c7'
 
-# Change to ['*'] if this migration applies to all plugins
-
-migration_for_plugins = [
-    ('neutron.plugins.cisco.service_plugins.'
-     'cisco_router_plugin.CiscoRouterPlugin')
-]
 
 from alembic import op
 import sqlalchemy as sa
 
-from neutron.db import migration
-
 
 def upgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
-        return
-
     op.create_table('cisco_hosting_devices',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
@@ -64,7 +53,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('port_type', sa.String(length=32), nullable=True),
         sa.Column('network_type', sa.String(length=32), nullable=True),
         sa.Column('hosting_port_id', sa.String(length=36), nullable=True),
-        sa.Column('segmentation_tag', sa.Integer(), autoincrement=False,
+        sa.Column('segmentation_id', sa.Integer(), autoincrement=False,
                   nullable=True),
         sa.ForeignKeyConstraint(['hosting_port_id'], ['ports.id'],
                                 ondelete='CASCADE'),
@@ -86,9 +75,6 @@ def upgrade(active_plugins=None, options=None):
 
 
 def downgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
-        return
-
     op.drop_table('cisco_router_mappings')
     op.drop_table('cisco_port_mappings')
     op.drop_table('cisco_hosting_devices')

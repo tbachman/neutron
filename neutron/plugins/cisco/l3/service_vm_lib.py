@@ -71,13 +71,9 @@ class ServiceVMManager(object):
                 Exception) as e:
             LOG.error(_('Failure determining running Nova services: %s'), e)
             return False
-        for service in services:
-            if (service.binary in required and service.status == 'enabled' and
-                    service.state == 'up'):
-                required.remove(service.binary)
-            if not required:
-                return True
-        return False
+        return not bool(required.difference(
+            [service.binary for service in services
+             if service.status == 'enabled' and service.state == 'up']))
 
     def get_service_vm_status(self, vm_id):
         try:

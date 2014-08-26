@@ -246,7 +246,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         with context.session.begin(subtransactions=True):
             router_ids = super(L3RouterApplianceDBMixin,
                                self).disassociate_floatingips(context, port_id)
-            if do_notify:
+            if router_ids and do_notify:
                 routers = []
                 for router_id in router_ids:
                     router = self.get_router(context, router_id)
@@ -291,11 +291,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     router_ids.append(binding['router_id'])
                     if binding['auto_schedule']:
                         self.backlog_router(binding['router'])
-                    try:
-                        affected_resources[hd['id']].update(
-                            {'routers': router_ids})
-                    except KeyError:
-                        affected_resources[hd['id']] = {'routers': router_ids}
+                try:
+                    affected_resources[hd['id']].update(
+                        {'routers': router_ids})
+                except KeyError:
+                    affected_resources[hd['id']] = {'routers': router_ids}
 
     def get_sync_data_ext(self, context, router_ids=None, active=None):
         """Query routers and their related floating_ips, interfaces.
@@ -346,7 +346,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 router['id'] in self._backlogged_routers):
             return
         LOG.info(_('Backlogging router %s for renewed scheduling attempt '
-                   'later'), id)
+                   'later'), router['id'])
         self._backlogged_routers[router['id']] = router
 
     @lockutils.synchronized('routers', 'neutron-')
@@ -519,7 +519,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 logical_port_id=port_db['id'],
                 network_type=network_type,
                 hosting_port_id=alloc['allocated_port_id'],
-                segmentation_tag=alloc['allocated_vlan'])
+                segmentation_id=alloc['allocated_vlan'])
             context.session.add(h_info)
             context.session.expire(port_db)
         # allocation succeeded so establish connectivity for logical port

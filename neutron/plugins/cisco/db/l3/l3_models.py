@@ -65,7 +65,7 @@ class HostedHostingPortBinding(model_base.BASEV2):
         models_v2.Port,
         primaryjoin='Port.id==HostedHostingPortBinding.logical_port_id',
         backref=orm.backref('hosting_info', cascade='all', uselist=False))
-    # type of router port: router_interface, ..._gateway, ..._floatingip
+    # type of hosted port, e.g., router_interface, ..._gateway, ..._floatingip
     port_type = sa.Column(sa.String(32))
     # type of network the router port belongs to
     network_type = sa.Column(sa.String(32))
@@ -76,7 +76,7 @@ class HostedHostingPortBinding(model_base.BASEV2):
         models_v2.Port,
         primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')
     # VLAN tag for trunk ports
-    segmentation_tag = sa.Column(sa.Integer, autoincrement=False)
+    segmentation_id = sa.Column(sa.Integer, autoincrement=False)
 
 
 class RouterHostingDeviceBinding(model_base.BASEV2):

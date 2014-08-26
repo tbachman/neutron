@@ -22,9 +22,7 @@ import neutron
 from neutron.api.v2 import attributes
 from neutron import context as n_context
 from neutron.db import agents_db
-from neutron.db import api as qdbapi
 from neutron.db import common_db_mixin
-from neutron.db import model_base
 from neutron.extensions import providernet as pnet
 from neutron import manager
 from neutron.openstack.common import timeutils
@@ -109,7 +107,6 @@ class TestApplianceL3RouterServicePlugin(
     supported_extension_aliases = ["router", "extraroute"]
 
     def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
         self._setup_backlog_handling()
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager()
         super(TestApplianceL3RouterServicePlugin, self).__init__()
@@ -147,6 +144,10 @@ class L3RouterApplianceTestCaseBase(
             plugin=core_plugin, service_plugins=service_plugins,
             ext_mgr=ext_mgr)
 
+        self.core_plugin = manager.NeutronManager.get_plugin()
+        self.plugin = manager.NeutronManager.get_service_plugins().get(
+            service_constants.L3_ROUTER_NAT)
+
         self.setup_notification_driver()
 
         cfg.CONF.set_override('allow_sorting', True)
@@ -160,8 +161,9 @@ class L3RouterApplianceTestCaseBase(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-        self._mock_svc_vm_create_delete()
+        self._mock_svc_vm_create_delete(self.plugin)
         self._mock_io_file_ops()
+        self._mock_get_x_profiles(self.core_plugin)
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP
@@ -173,6 +175,8 @@ class L3RouterApplianceTestCaseBase(
             TestApplianceL3RouterServicePlugin._mgmt_nw_uuid) = None
         (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
             TestApplianceL3RouterServicePlugin._refresh_router_backlog) = True
+        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
+            TestApplianceL3RouterServicePlugin._nova_running) = False
         plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         plugin._heartbeat.stop()
@@ -189,8 +193,6 @@ class L3RouterApplianceVMTestCase(
         super(L3RouterApplianceVMTestCase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
-        self._mock_svc_vm_create_delete()
-
     def test_floatingip_with_assoc_fails(self):
         self._test_floatingip_with_assoc_fails(
             'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
@@ -204,12 +206,8 @@ class CfgAgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
                                         test_l3_plugin.L3AgentDbTestCaseBase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, ext_mgr=None):
-        self.core_plugin = TestNoL3NatPlugin()
-        # service plugin providing L3 routing
-        self.plugin = TestApplianceL3RouterServicePlugin()
         super(CfgAgentRouterApplianceVMTestCase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin, ext_mgr=ext_mgr)
-        self._mock_svc_vm_create_delete()
         # Rewire function name so we can use existing l3 agent tests
         # to test the cfg agent rpc.
         self.plugin.get_sync_data = self.plugin.get_sync_data_ext
@@ -253,21 +251,15 @@ class RouterSchedulingTestCase(L3RouterApplianceTestCaseBase,
 
     def setUp(self):
         super(RouterSchedulingTestCase, self).setUp()
-
         self.adminContext = n_context.get_admin_context()
-        self.plugin = manager.NeutronManager.get_plugin()
-        self.l3plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
-        self._mock_get_x_profiles(self.plugin)
-        self.l3plugin._nova_running = True
 
     def _register_cfg_agent(self):
         callback = agents_db.AgentExtRpcCallback()
         callback.report_state(self.adminContext,
                               agent_state={'agent_state': FIRST_CFG_AGENT},
                               time=timeutils.strtime())
-        agent_db = self.plugin.get_agents_db(self.adminContext,
-                                             filters={'host': [HOST]})
+        agent_db = self.core_plugin.get_agents_db(self.adminContext,
+                                                  filters={'host': [HOST]})
         self.agent_id1 = agent_db[0].id
 
     def _update_router_name(self, router_id, new_name='new_name'):
@@ -279,32 +271,30 @@ class RouterSchedulingTestCase(L3RouterApplianceTestCaseBase,
         with self.router() as router:
             r_id = router['router']['id']
             self._update_router_name(r_id)
-            routers = self.l3plugin.get_sync_data_ext(self.adminContext,
-                                                      [r_id])
+            routers = self.plugin.get_sync_data_ext(self.adminContext,
+                                                    [r_id])
             self.assertEqual(1, len(routers))
             hosting_device = routers[0]['hosting_device']
             self.assertIsNotNone(hosting_device)
             self.assertIsNone(hosting_device['cfg_agent_id'])
 
     def test_router_not_scheduled_to_device_without_nova_services(self):
-        self.l3plugin._nova_running = False
-        with mock.patch.object(self.l3plugin._svc_vm_mgr,
-                               'nova_services_up', create=True) as nsu:
-            nsu.return_value = False
-            with self.router() as router:
-                r_id = router['router']['id']
-                self._update_router_name(r_id)
-                routers = self.l3plugin.get_sync_data_ext(self.adminContext,
-                                                          [r_id])
-                self.assertEqual(1, len(routers))
-                hosting_device = routers[0]['hosting_device']
-                self.assertIsNone(hosting_device)
+        self._nclient_services_mock.list = self._novaclient_services_list(
+            False)
+        with self.router() as router:
+            r_id = router['router']['id']
+            self._update_router_name(r_id)
+            routers = self.plugin.get_sync_data_ext(self.adminContext,
+                                                    [r_id])
+            self.assertEqual(1, len(routers))
+            hosting_device = routers[0]['hosting_device']
+            self.assertIsNone(hosting_device)
 
     def test_router_scheduled_to_device_and_cfg_agent(self):
         self._register_cfg_agent()
         cfg_rpc = l3_router_cfgagent_rpc_cb.L3RouterCfgRpcCallbackMixin()
-        cfg_rpc._core_plugin = self.plugin
-        cfg_rpc._l3plugin = self.l3plugin
+        cfg_rpc._core_plugin = self.core_plugin
+        cfg_rpc._l3plugin = self.plugin
         with self.router() as router:
             r_id = router['router']['id']
             self._update_router_name(r_id)
@@ -317,15 +307,15 @@ class RouterSchedulingTestCase(L3RouterApplianceTestCaseBase,
 
     def test_dead_device_is_removed(self):
         cfg_dh_rpc = devices_cfgagent_rpc_cb.DeviceCfgRpcCallbackMixin()
-        cfg_dh_rpc._l3plugin = self.l3plugin
+        cfg_dh_rpc._l3plugin = self.plugin
         with mock.patch(
                 'neutron.plugins.cisco.l3.rpc.l3_router_rpc_joint_agent_api.'
                 'L3RouterJointAgentNotifyAPI.hosting_devices_removed') as (
                 mock_notify):
             with self.router() as router:
                 r_id = router['router']['id']
-                routers_1 = self.l3plugin.get_sync_data_ext(self.adminContext,
-                                                            [r_id])
+                routers_1 = self.plugin.get_sync_data_ext(self.adminContext,
+                                                          [r_id])
                 self.assertEqual(1, len(routers_1))
                 hosting_device_1 = routers_1[0]['hosting_device']
                 self.assertIsNotNone(hosting_device_1)
@@ -343,19 +333,19 @@ class RouterSchedulingTestCase(L3RouterApplianceTestCaseBase,
     def test_cfg_agent_registration_triggers_autoscheduling(self):
         with self.router() as router:
             r_id = router['router']['id']
-            routers_1 = self.l3plugin.get_sync_data_ext(self.adminContext,
-                                                        [r_id])
+            routers_1 = self.plugin.get_sync_data_ext(self.adminContext,
+                                                      [r_id])
             self.assertEqual(1, len(routers_1))
             hosting_device_1 = routers_1[0]['hosting_device']
             self.assertIsNotNone(hosting_device_1)
             self.assertIsNone(hosting_device_1['cfg_agent_id'])
             cfg_dh_rpc = devices_cfgagent_rpc_cb.DeviceCfgRpcCallbackMixin()
-            cfg_dh_rpc._l3plugin = self.l3plugin
+            cfg_dh_rpc._l3plugin = self.plugin
             self._register_cfg_agent()
             res = cfg_dh_rpc.register_for_duty(self.adminContext, host=HOST)
             self.assertTrue(res)
-            routers_2 = self.l3plugin.get_sync_data_ext(self.adminContext,
-                                                        [r_id])
+            routers_2 = self.plugin.get_sync_data_ext(self.adminContext,
+                                                      [r_id])
             self.assertEqual(1, len(routers_2))
             hosting_device_2 = routers_2[0]['hosting_device']
             self.assertIsNotNone(hosting_device_2)

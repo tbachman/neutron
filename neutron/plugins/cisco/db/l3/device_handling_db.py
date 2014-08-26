@@ -188,6 +188,7 @@ class DeviceHandlingMixin(object):
                             'management network. Please create one.'))
         return cls._mgmt_sec_grp_id
 
+    @classmethod
     def get_hosting_device_driver(self):
         """Returns device driver."""
         if self._hosting_device_driver:
@@ -200,6 +201,7 @@ class DeviceHandlingMixin(object):
                 LOG.exception(_('Error loading hosting device driver'))
             return self._hosting_device_driver
 
+    @classmethod
     def get_hosting_device_plugging_driver(self):
         """Returns  plugging driver."""
         if self._plugging_driver:
@@ -226,7 +228,7 @@ class DeviceHandlingMixin(object):
                                  hosting_device_ids[0])
         return query
 
-    def handle_non_responding_hosting_devices(self, context, cfg_agent,
+    def handle_non_responding_hosting_devices(self, context, host,
                                               hosting_device_ids):
         with context.session.begin(subtransactions=True):
             e_context = context.elevated()
@@ -250,9 +252,12 @@ class DeviceHandlingMixin(object):
             except AttributeError:
                 pass
             for hd in hosting_devices:
-                if self._process_non_responsive_hosting_device(e_context, hd):
-                    self.l3_cfg_rpc_notifier.hosting_devices_removed(
-                        context, hosting_info, False, cfg_agent)
+                if not self._process_non_responsive_hosting_device(e_context,
+                                                                   hd):
+                    # exclude this device since we did not remove it
+                    del hosting_info[hd['id']]
+            self.l3_cfg_rpc_notifier.hosting_devices_removed(
+                context, hosting_info, False, host)
 
     def get_device_info_for_agent(self, hosting_device):
         """Returns information about <hosting_device> needed by config agent.
@@ -355,9 +360,9 @@ class DeviceHandlingMixin(object):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
-        if cfg.CONF.general.ensure_nova_running and not self._nova_running:
+        if (cfg.CONF.general.ensure_nova_running and not self._nova_running):
             if self._svc_vm_mgr.nova_services_up():
-                self._nova_running = True
+                self.__class__._nova_running = True
             else:
                 LOG.info(_('Not all Nova services are up and running. '
                            'Skipping this CSR1kv vm create request.'))
@@ -407,15 +412,13 @@ class DeviceHandlingMixin(object):
         if hosting_device is None:
             return
         plugging_drv = self.get_hosting_device_plugging_driver()
-        hosting_device_drv = self.get_hosting_device_driver()
-        if plugging_drv is None or hosting_device_drv is None:
+        if plugging_drv is None:
             return
         res = plugging_drv.get_hosting_device_resources(
             context, hosting_device['id'], hosting_device['complementary_id'],
             self.l3_tenant_id(), self.mgmt_nw_id())
-        if not self._svc_vm_mgr.delete_service_vm(
-                context, hosting_device['id'], hosting_device_drv,
-                self.mgmt_nw_id()):
+        if not self._svc_vm_mgr.delete_service_vm(context,
+                                                  hosting_device['id']):
             LOG.error(_('Failed to delete hosting device %s service VM. '
                         'Will un-register it anyway.'),
                       hosting_device['id'])
