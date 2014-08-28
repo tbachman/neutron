@@ -22,6 +22,7 @@ import netaddr
 from oslo.config import cfg
 from webob import exc
 
+from neutron.api.rpc.handlers import l3_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
@@ -33,7 +34,6 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_attrs_db
 from neutron.db import l3_db
 from neutron.db import l3_dvr_db
-from neutron.db import l3_rpc_base
 from neutron.extensions import external_net
 from neutron.extensions import l3
 from neutron.extensions import portbindings
@@ -48,7 +48,7 @@ from neutron.tests.unit import test_agent_ext_plugin
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension
 from neutron.tests.unit import test_db_plugin
-
+from neutron.tests.unit import testlib_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -1920,7 +1920,8 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
         self._test_notify_op_agent(self._test_floatingips_op_agent)
 
 
-class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
+class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase,
+                        testlib_plugin.NotificationSetupHelper):
 
     mock_rescheduling = True
 
@@ -1941,7 +1942,8 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
         self.setup_notification_driver()
 
 
-class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
+class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase,
+                        testlib_plugin.NotificationSetupHelper):
 
     def setUp(self, plugin=None, ext_mgr=None):
         # the plugin without L3 support
@@ -1990,15 +1992,15 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                                self.subnet(),
                                self.subnet()) as (r, s1, s2):
             self._set_net_external(s1['subnet']['network_id'])
-            l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
+            l3_rpc_cb = l3_rpc.L3RpcCallback()
             self._register_one_l3_agent(
                 host='host1',
                 ext_net_id=s1['subnet']['network_id'])
             self._register_one_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id=s2['subnet']['network_id'])
-            l3_rpc.sync_routers(self.adminContext,
-                                host='host1')
+            l3_rpc_cb.sync_routers(self.adminContext,
+                                   host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(
@@ -2021,15 +2023,15 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                                self.subnet(),
                                self.subnet()) as (r, s1, s2):
             self._set_net_external(s1['subnet']['network_id'])
-            l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
+            l3_rpc_cb = l3_rpc.L3RpcCallback()
             self._register_one_l3_agent(
                 host='host1',
                 ext_net_id=s1['subnet']['network_id'])
             self._register_one_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id='', ext_bridge='')
-            l3_rpc.sync_routers(self.adminContext,
-                                host='host1')
+            l3_rpc_cb.sync_routers(self.adminContext,
+                                   host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(
@@ -2059,17 +2061,17 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                         expected_code=exc.HTTPBadRequest.code)
 
 
-class L3RpcCallbackMixinTestCase(base.BaseTestCase):
+class L3RpcCallbackTestCase(base.BaseTestCase):
 
     def setUp(self):
-        super(L3RpcCallbackMixinTestCase, self).setUp()
+        super(L3RpcCallbackTestCase, self).setUp()
         self.mock_plugin = mock.patch.object(
-            l3_rpc_base.L3RpcCallbackMixin,
+            l3_rpc.L3RpcCallback,
             'plugin', new_callable=mock.PropertyMock).start()
         self.mock_l3plugin = mock.patch.object(
-            l3_rpc_base.L3RpcCallbackMixin,
+            l3_rpc.L3RpcCallback,
             'l3plugin', new_callable=mock.PropertyMock).start()
-        self.mixin = l3_rpc_base.L3RpcCallbackMixin()
+        self.l3_rpc_cb = l3_rpc.L3RpcCallback()
 
     def test__ensure_host_set_on_port_update_on_concurrent_delete(self):
         port_id = 'foo_port_id'
@@ -2080,12 +2082,12 @@ class L3RpcCallbackMixinTestCase(base.BaseTestCase):
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_BINDING_FAILED
         }
         router_id = 'foo_router_id'
-        self.mixin.plugin.update_port.side_effect = n_exc.PortNotFound(
+        self.l3_rpc_cb.plugin.update_port.side_effect = n_exc.PortNotFound(
             port_id=port_id)
-        with mock.patch.object(l3_rpc_base.LOG, 'debug') as mock_log:
-            self.mixin._ensure_host_set_on_port(
+        with mock.patch.object(l3_rpc.LOG, 'debug') as mock_log:
+            self.l3_rpc_cb._ensure_host_set_on_port(
                 mock.ANY, mock.ANY, port, router_id)
-        self.mixin.plugin.update_port.assert_called_once_with(
+        self.l3_rpc_cb.plugin.update_port.assert_called_once_with(
             mock.ANY, port_id, {'port': {'binding:host_id': mock.ANY}})
         self.assertTrue(mock_log.call_count)
         expected_message = ('Port foo_port_id not found while updating '

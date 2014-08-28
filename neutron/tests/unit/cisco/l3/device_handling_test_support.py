@@ -45,16 +45,6 @@ class DeviceHandlingTestSupportMixin(object):
         self.tenant_id_fcn = self.tenant_id_fcn_p.start()
         self.tenant_id_fcn.return_value = "L3AdminTenantId"
 
-    def _mock_get_x_profiles(self, plugin):
-        # Mock N1kv plugin's get_network/policy_profile functions.
-        self.get_net_profiles_fcn = mock.patch.object(
-            plugin, 'get_network_profiles', create=True).start()
-        self.get_net_profiles_fcn.return_value = [{'id': "1234"}]
-
-        self.get_policy_profiles_fcn = mock.patch.object(
-            plugin, 'get_policy_profiles', create=True).start()
-        self.get_policy_profiles_fcn.return_value = [{'id': "4321"}]
-
     def _create_mgmt_nw_for_tests(self, fmt):
         self._mgmt_nw = self._make_network(fmt,
                                            cfg.CONF.general.management_network,

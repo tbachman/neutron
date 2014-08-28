@@ -37,6 +37,7 @@ from neutron.tests.unit.cisco.l3 import device_handling_test_support
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
 from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit import testlib_plugin
 
 
 CORE_PLUGIN_KLASS = ('neutron.tests.unit.cisco.l3.'
@@ -97,6 +98,12 @@ class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
                 attributes.NETWORKS, res, network)
         return self._fields(res, fields)
 
+    def get_network_profiles(self, context, filters=None, fields=None):
+        return [{'id': "1234"}]
+
+    def get_policy_profiles(self, context, filters=None, fields=None):
+        return [{'id': "4321"}]
+
 
 # A set routes capable L3 routing service plugin class supporting appliances
 class TestApplianceL3RouterServicePlugin(
@@ -120,6 +127,7 @@ class TestApplianceL3RouterServicePlugin(
 
 class L3RouterApplianceTestCaseBase(
     test_db_plugin.NeutronDbPluginV2TestCase,
+    testlib_plugin.NotificationSetupHelper,
         device_handling_test_support.DeviceHandlingTestSupportMixin):
 
     def setUp(self, core_plugin=None, l3_plugin=None, ext_mgr=None):
@@ -163,7 +171,6 @@ class L3RouterApplianceTestCaseBase(
         self._create_mgmt_nw_for_tests(self.fmt)
         self._mock_svc_vm_create_delete(self.plugin)
         self._mock_io_file_ops()
-        self._mock_get_x_profiles(self.core_plugin)
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP

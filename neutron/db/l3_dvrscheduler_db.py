@@ -20,6 +20,7 @@ from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
 from neutron.common import constants as q_const
+from neutron.common import utils as n_utils
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db as l3agent_sch_db
 from neutron.db import model_base
@@ -49,7 +50,45 @@ class CentralizedSnatL3AgentBinding(model_base.BASEV2):
 
 
 class L3_DVRsch_db_mixin(l3agent_sch_db.L3AgentSchedulerDbMixin):
-    """Mixin class for L3 DVR scheduler."""
+    """Mixin class for L3 DVR scheduler.
+
+    DVR currently supports the following use cases:
+
+     - East/West (E/W) traffic between VMs: this is handled in a
+       distributed manner across Compute Nodes without a centralized element.
+       This includes E/W traffic between VMs on the same Compute Node.
+     - North/South traffic for Floating IPs (FIP N/S): this is supported on the
+       distributed routers on Compute Nodes without any centralized element.
+     - North/South traffic for SNAT (SNAT N/S): this is supported via a
+       centralized element that handles the SNAT traffic.
+
+    To support these use cases,  DVR routers rely on an L3 agent that runs on a
+    central node (also known as Network Node or Service Node),  as well as, L3
+    agents that run individually on each Compute Node of an OpenStack cloud.
+
+    Each L3 agent creates namespaces to route traffic according to the use
+    cases outlined above.  The mechanism adopted for creating and managing
+    these namespaces is via (Router,  Agent) binding and Scheduling in general.
+
+    The main difference between distributed routers and centralized ones is
+    that in the distributed case,  multiple bindings will exist,  one for each
+    of the agents participating in the routed topology for the specific router.
+
+    These bindings are created in the following circumstances:
+
+    - A subnet is added to a router via router-interface-add, and that subnet
+      has running VM's deployed in it.  A binding will be created between the
+      router and any L3 agent whose Compute Node is hosting the VM(s).
+    - An external gateway is set to a router via router-gateway-set.  A binding
+      will be created between the router and the L3 agent running centrally
+      on the Network Node.
+
+    Therefore,  any time a router operation occurs (create, update or delete),
+    scheduling will determine whether the router needs to be associated to an
+    L3 agent, just like a regular centralized router, with the difference that,
+    in the distributed case,  the bindings required are established based on
+    the state of the router and the Compute Nodes.
+    """
 
     def dvr_update_router_addvm(self, context, port):
         ips = port['fixed_ips']
@@ -97,17 +136,18 @@ class L3_DVRsch_db_mixin(l3agent_sch_db.L3AgentSchedulerDbMixin):
             subnet_ids.add(int_subnet)
         return subnet_ids
 
-    def check_vm_exists_on_subnet(self, context, host, port_id, subnet_id):
-        """Check if there is any vm exists on the subnet_id."""
+    def check_ports_active_on_host_and_subnet(self, context, host,
+                                         port_id, subnet_id):
+        """Check if there is any dvr serviceable port on the subnet_id."""
         filter_sub = {'fixed_ips': {'subnet_id': [subnet_id]}}
         ports = self._core_plugin.get_ports(context, filters=filter_sub)
         for port in ports:
-            if ("compute:" in port['device_owner']
+            if (n_utils.is_dvr_serviced(port['device_owner'])
                 and port['status'] == 'ACTIVE'
                 and port['binding:host_id'] == host
                 and port['id'] != port_id):
-                LOG.debug('DVR: VM exists for subnet %(subnet_id)s on host '
-                          '%(host)s', {'subnet_id': subnet_id,
+                LOG.debug('DVR: Active port exists for subnet %(subnet_id)s '
+                          'on host %(host)s', {'subnet_id': subnet_id,
                                        'host': host})
                 return True
         return False
@@ -126,10 +166,10 @@ class L3_DVRsch_db_mixin(l3agent_sch_db.L3AgentSchedulerDbMixin):
             subnet_ids = self.get_subnet_ids_on_router(context, router_id)
             vm_exists_on_subnet = False
             for subnet in subnet_ids:
-                if self.check_vm_exists_on_subnet(context,
-                                                  port_host,
-                                                  port_id,
-                                                  subnet):
+                if self.check_ports_active_on_host_and_subnet(context,
+                                                              port_host,
+                                                              port_id,
+                                                              subnet):
                     vm_exists_on_subnet = True
                     break
 

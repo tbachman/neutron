@@ -39,6 +39,7 @@ from neutron.openstack.common import importutils
 from neutron.tests import base
 from neutron.tests.unit import test_extensions
 from neutron.tests.unit import testlib_api
+from neutron.tests.unit import testlib_plugin
 
 DB_PLUGIN_KLASS = 'neutron.db.db_base_plugin_v2.NeutronDbPluginV2'
 
@@ -61,7 +62,8 @@ def _fake_get_sorting_helper(self, request):
     return api_common.SortingEmulatedHelper(request, self._attr_info)
 
 
-class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
+class NeutronDbPluginV2TestCase(testlib_api.WebTestCase,
+                                testlib_plugin.PluginSetupHelper):
     fmt = 'json'
     resource_prefix_map = {}
 
@@ -580,8 +582,7 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         resource = resource.replace('-', '_')
         resources = resources.replace('-', '_')
         expected_res = [item[resource]['id'] for item in items]
-        self.assertEqual(sorted([n['id'] for n in res[resources]]),
-                         sorted(expected_res))
+        self.assertEqual(expected_res, [n['id'] for n in res[resources]])
 
     def _test_list_with_pagination(self, resource, items, sort,
                                    limit, expected_page_num,
@@ -614,10 +615,9 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                                                          '', content_type)
                         self.assertEqual(len(res[resources]),
                                          limit)
-        self.assertEqual(page_num, expected_page_num)
-        self.assertEqual(sorted([n[verify_key] for n in items_res]),
-                         sorted([item[resource][verify_key]
-                                for item in items]))
+        self.assertEqual(expected_page_num, page_num)
+        self.assertEqual([item[resource][verify_key] for item in items],
+                         [n[verify_key] for n in items_res])
 
     def _test_list_with_pagination_reverse(self, resource, items, sort,
                                            limit, expected_page_num,
@@ -653,11 +653,10 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                                                          '', content_type)
                         self.assertEqual(len(res[resources]),
                                          limit)
-        self.assertEqual(page_num, expected_page_num)
+        self.assertEqual(expected_page_num, page_num)
         expected_res = [item[resource]['id'] for item in items]
         expected_res.reverse()
-        self.assertEqual(sorted([n['id'] for n in item_res]),
-                         sorted(expected_res))
+        self.assertEqual(expected_res, [n['id'] for n in item_res])
 
 
 class TestBasicGet(NeutronDbPluginV2TestCase):
@@ -1298,6 +1297,20 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 # Check configuring of duplicate IP
                 kwargs = {"fixed_ips": [{'subnet_id': subnet['subnet']['id'],
                                          'ip_address': ips[0]['ip_address']}]}
+                net_id = port['port']['network_id']
+                res = self._create_port(self.fmt, net_id=net_id, **kwargs)
+                self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
+
+    def test_generated_duplicate_ip_ipv6(self):
+        with self.subnet(ip_version=6,
+                         cidr="2014::/64",
+                         ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
+            with self.port(subnet=subnet,
+                           fixed_ips=[{'subnet_id': subnet['subnet']['id'],
+                                       'ip_address':
+                                       "2014::1322:33ff:fe44:5566"}]) as port:
+                # Check configuring of duplicate IP
+                kwargs = {"mac_address": "11:22:33:44:55:66"}
                 net_id = port['port']['network_id']
                 res = self._create_port(self.fmt, net_id=net_id, **kwargs)
                 self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)

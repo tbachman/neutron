@@ -685,6 +685,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         ip_wrapper_root = ip_lib.IPWrapper(self.root_helper)
         ip_wrapper = ip_wrapper_root.ensure_namespace(name)
         ip_wrapper.netns.execute(['sysctl', '-w', 'net.ipv4.ip_forward=1'])
+        if self.use_ipv6:
+            ip_wrapper.netns.execute(['sysctl', '-w',
+                                      'net.ipv6.conf.all.forwarding=1'])
 
     def _create_router_namespace(self, ri):
         self._create_namespace(ri.ns_name)
@@ -816,6 +819,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         ip_devs = ip_wrapper.get_devices(exclude_loopback=True)
         return [ip_dev.name for ip_dev in ip_devs]
 
+    @common_utils.exception_logger()
     def process_router(self, ri):
         # TODO(mrsmith) - we shouldn't need to check here
         if 'distributed' not in ri.router:
@@ -1233,7 +1237,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
     def external_gateway_updated(self, ri, ex_gw_port, interface_name):
         preserve_ips = []
         if ri.router['distributed']:
-            ns_name = self.get_snat_ns_name(ri.router['id'])
+            if (self.conf.agent_mode == 'dvr_snat' and
+                ri.router['gw_port_host'] == self.host):
+                ns_name = self.get_snat_ns_name(ri.router['id'])
+            else:
+                # no centralized SNAT gateway for this node/agent
+                LOG.debug("not hosting snat for router: %", ri.router['id'])
+                return
         else:
             ns_name = ri.ns_name
             floating_ips = self.get_floating_ips(ri)
