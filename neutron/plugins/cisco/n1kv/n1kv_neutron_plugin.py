@@ -1562,8 +1562,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # and l3-router.  If so, we should prevent deletion.
         if self.full_sync:
             raise cisco_exceptions.FullSyncInProgress
-        if self.l3plugin and l3_port_check:
-            self.l3plugin.prevent_l3_port_deletion(context, id)
+        if l3_port_check:
+            self.prevent_l3_port_deletion(context, id)
         with context.session.begin(subtransactions=True):
             port = self.get_port(context, id)
             vm_network = n1kv_db_v2.get_vm_network(context.session,
