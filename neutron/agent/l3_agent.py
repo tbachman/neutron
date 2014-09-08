@@ -316,7 +316,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         self.router_info[router_id] = ri
         if self.conf.use_namespaces:
             self._create_router_namespace(ri)
-        for c, r in self.metadata_filter_rules():
+        for c, r in self.metadata_filter_rules(ri):
             ri.iptables_manager.ipv4['filter'].add_rule(c, r)
         for c, r in self.metadata_nat_rules():
             ri.iptables_manager.ipv4['nat'].add_rule(c, r)
@@ -335,7 +335,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         ri.router[l3_constants.INTERFACE_KEY] = []
         ri.router[l3_constants.FLOATINGIP_KEY] = []
         self.process_router(ri)
-        for c, r in self.metadata_filter_rules():
+        for c, r in self.metadata_filter_rules(ri):
             ri.iptables_manager.ipv4['filter'].remove_rule(c, r)
         for c, r in self.metadata_nat_rules():
             ri.iptables_manager.ipv4['nat'].remove_rule(c, r)
@@ -572,12 +572,19 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
                                namespace=ri.ns_name(),
                                prefix=EXTERNAL_DEV_PREFIX)
 
-    def metadata_filter_rules(self):
+    def metadata_filter_rules(self, ri):
         rules = []
+        ex_gw_port = self._get_ex_gw_port(ri)
+        ex_gw_port_id = (ex_gw_port and ex_gw_port['id'] or
+                         ri.ex_gw_port and ri.ex_gw_port['id'])
+        interface_name = self.get_external_device_name(ex_gw_port_id)
         if self.conf.enable_metadata_proxy:
             rules.append(('INPUT', '-s 0.0.0.0/0 -d 127.0.0.1 '
                           '-p tcp -m tcp --dport %s '
                           '-j ACCEPT' % self.conf.metadata_port))
+            rules.append(('INPUT', '-i %s '
+                          '-m conntrack ! --ctstate ESTABLISHED,RELATED '
+                          '-j DROP' % interface_name))
         return rules
 
     def metadata_nat_rules(self):
