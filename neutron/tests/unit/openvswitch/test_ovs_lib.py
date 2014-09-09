@@ -1,4 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
 
 # Copyright 2012, Nicira, Inc.
 #
@@ -24,6 +24,79 @@ from neutron.agent.linux import utils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
+
+
+class TestBaseOVS(base.BaseTestCase):
+
+    def setUp(self):
+        super(TestBaseOVS, self).setUp()
+        self.root_helper = 'sudo'
+        self.ovs = ovs_lib.BaseOVS(self.root_helper)
+        self.br_name = 'bridge1'
+
+    def test_add_bridge(self):
+        with mock.patch.object(self.ovs, 'run_vsctl') as mock_vsctl:
+            bridge = self.ovs.add_bridge(self.br_name)
+
+        mock_vsctl.assert_called_with(["--", "--may-exist",
+                                       "add-br", self.br_name])
+        self.assertEqual(bridge.br_name, self.br_name)
+        self.assertEqual(bridge.root_helper, self.ovs.root_helper)
+
+    def test_delete_bridge(self):
+        with mock.patch.object(self.ovs, 'run_vsctl') as mock_vsctl:
+            self.ovs.delete_bridge(self.br_name)
+        mock_vsctl.assert_called_with(["--", "--if-exists", "del-br",
+                                       self.br_name])
+
+    def test_bridge_exists_returns_true(self):
+        with mock.patch.object(self.ovs, 'run_vsctl') as mock_vsctl:
+            self.assertTrue(self.ovs.bridge_exists(self.br_name))
+        mock_vsctl.assert_called_with(['br-exists', self.br_name],
+                                      check_error=True)
+
+    def test_bridge_exists_returns_false_for_exit_code_2(self):
+        with mock.patch.object(self.ovs, 'run_vsctl',
+                               side_effect=RuntimeError('Exit code: 2\n')):
+            self.assertFalse(self.ovs.bridge_exists('bridge1'))
+
+    def test_bridge_exists_raises_unknown_exception(self):
+        with mock.patch.object(self.ovs, 'run_vsctl',
+                               side_effect=RuntimeError()):
+            with testtools.ExpectedException(RuntimeError):
+                self.ovs.bridge_exists('bridge1')
+
+    def test_get_bridge_name_for_port_name_returns_bridge_for_valid_port(self):
+        port_name = 'bar'
+        with mock.patch.object(self.ovs, 'run_vsctl',
+                               return_value=self.br_name) as mock_vsctl:
+            bridge = self.ovs.get_bridge_name_for_port_name(port_name)
+        self.assertEqual(bridge, self.br_name)
+        mock_vsctl.assert_called_with(['port-to-br', port_name],
+                                      check_error=True)
+
+    def test_get_bridge_name_for_port_name_returns_none_for_exit_code_1(self):
+        with mock.patch.object(self.ovs, 'run_vsctl',
+                               side_effect=RuntimeError('Exit code: 1\n')):
+            self.assertFalse(self.ovs.get_bridge_name_for_port_name('bridge1'))
+
+    def test_get_bridge_name_for_port_name_raises_unknown_exception(self):
+        with mock.patch.object(self.ovs, 'run_vsctl',
+                               side_effect=RuntimeError()):
+            with testtools.ExpectedException(RuntimeError):
+                self.ovs.get_bridge_name_for_port_name('bridge1')
+
+    def _test_port_exists(self, br_name, result):
+        with mock.patch.object(self.ovs,
+                               'get_bridge_name_for_port_name',
+                               return_value=br_name):
+            self.assertEqual(self.ovs.port_exists('bar'), result)
+
+    def test_port_exists_returns_true_for_bridge_name(self):
+        self._test_port_exists(self.br_name, True)
+
+    def test_port_exists_returns_false_for_none(self):
+        self._test_port_exists(None, False)
 
 
 class OVS_Lib_Test(base.BaseTestCase):
@@ -66,12 +139,23 @@ class OVS_Lib_Test(base.BaseTestCase):
 
         self.mox.VerifyAll()
 
+    def test_create(self):
+        self.br.add_bridge(self.BR_NAME)
+        self.mox.ReplayAll()
+
+        self.br.create()
+        self.mox.VerifyAll()
+
+    def test_destroy(self):
+        self.br.delete_bridge(self.BR_NAME)
+        self.mox.ReplayAll()
+
+        self.br.destroy()
+        self.mox.VerifyAll()
+
     def test_reset_bridge(self):
-        utils.execute(["ovs-vsctl", self.TO, "--",
-                       "--if-exists", "del-br", self.BR_NAME],
-                      root_helper=self.root_helper)
-        utils.execute(["ovs-vsctl", self.TO, "add-br", self.BR_NAME],
-                      root_helper=self.root_helper)
+        self.br.destroy()
+        self.br.create()
         self.mox.ReplayAll()
 
         self.br.reset_bridge()
@@ -212,6 +296,53 @@ class OVS_Lib_Test(base.BaseTestCase):
         self.br.delete_flows(flow='deleted_flow_1')
         self.br.defer_apply_off()
         self.mox.VerifyAll()
+
+    def test_defer_apply_flows_concurrently(self):
+        add_mod_flow = mock.patch.object(self.br,
+                                         'add_or_mod_flow_str').start()
+        add_mod_flow.side_effect = ['added_flow_1', 'modified_flow_1',
+                                    'added_flow_2', 'modified_flow_2']
+        flow_expr = mock.patch.object(self.br, '_build_flow_expr_arr').start()
+        flow_expr.side_effect = [['deleted_flow_1'], ['deleted_flow_2']]
+        run_ofctl = mock.patch.object(self.br, 'run_ofctl').start()
+
+        def run_ofctl_fake(cmd, args, process_input=None):
+            self.br.defer_apply_on()
+            if cmd == 'add-flows':
+                self.br.add_flow(flow='added_flow_2')
+            elif cmd == 'del-flows':
+                self.br.delete_flows(flow='deleted_flow_2')
+            elif cmd == 'mod-flows':
+                self.br.mod_flow(flow='modified_flow_2')
+        run_ofctl.side_effect = run_ofctl_fake
+
+        self.br.defer_apply_on()
+        self.br.add_flow(flow='added_flow_1')
+        self.br.delete_flows(flow='deleted_flow_1')
+        self.br.mod_flow(flow='modified_flow_1')
+        self.br.defer_apply_off()
+
+        run_ofctl.side_effect = None
+        self.br.defer_apply_off()
+
+        add_mod_flow.assert_has_calls([
+            mock.call(flow='added_flow_1'),
+            mock.call(flow='modified_flow_1'),
+            mock.call(flow='added_flow_2'),
+            mock.call(flow='modified_flow_2')
+        ])
+        flow_expr.assert_has_calls([
+            mock.call(delete=True, flow='deleted_flow_1'),
+            mock.call(delete=True, flow='deleted_flow_2')
+        ])
+        run_ofctl.assert_has_calls([
+            mock.call('add-flows', ['-'], 'added_flow_1\n'),
+            mock.call('del-flows', ['-'], 'deleted_flow_1\n'),
+            mock.call('mod-flows', ['-'], 'modified_flow_1\n'),
+            mock.call('add-flows', ['-'], 'added_flow_2\n'),
+            mock.call('del-flows', ['-'], 'deleted_flow_2\n'),
+            mock.call('mod-flows', ['-'], 'modified_flow_2\n')
+        ])
 
     def test_add_tunnel_port(self):
         pname = "tap99"
@@ -475,3 +606,26 @@ class OVS_Lib_Test(base.BaseTestCase):
                         return_value=mock.Mock(address=None)):
             with testtools.ExpectedException(Exception):
                 self.br.get_local_port_mac()
+
+    def test_get_vif_port_by_id(self):
+        iface_id = "tap99id"
+        iface_name = "tap99"
+        execute_mock = mock.patch.object(
+            utils, "execute", spec=utils.execute).start()
+        self.addCleanup(mock.patch.stopall)
+        json = ('external_ids : {attached-mac="fa:16:3e:3f:59:d7",'
+                ' iface-id="%(id)s"} name : "%(name)s" ofport : 8' %
+                {'id': iface_id, 'name': iface_name})
+        find_if_mock_call = mock.call(["ovs-vsctl", self.TO, "--",
+                                       "--columns=external_ids,name,ofport",
+                                       "find", "Interface",
+                                       'external_ids:iface-id="%s"' %
+                                       'tap99id'],
+                                      root_helper=self.root_helper)
+        iface_br_mock_call = mock.call(["ovs-vsctl", self.TO,
+                                        "iface-to-br",
+                                        iface_name],
+                                       root_helper=self.root_helper)
+        execute_mock.side_effect = [json, self.BR_NAME]
+        self.br.get_vif_port_by_id(iface_id)
+        execute_mock.assert_has_calls([find_if_mock_call, iface_br_mock_call])

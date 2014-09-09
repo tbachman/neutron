@@ -855,7 +855,8 @@ def create_lport(cluster, lswitch_uuid, tenant_id, neutron_port_id,
 
 
 def create_router_lport(cluster, lrouter_uuid, tenant_id, neutron_port_id,
-                        display_name, admin_status_enabled, ip_addresses):
+                        display_name, admin_status_enabled, ip_addresses,
+                        mac_address=None):
     """Creates a logical port on the assigned logical router."""
     tags = [dict(scope='os_tid', tag=tenant_id),
             dict(scope='q_port_id', tag=neutron_port_id),
@@ -868,6 +869,10 @@ def create_router_lport(cluster, lrouter_uuid, tenant_id, neutron_port_id,
         ip_addresses=ip_addresses,
         type="LogicalRouterPortConfig"
     )
+    # Only add the mac_address to lport_obj if present. This is because
+    # when creating the fake_ext_gw there is no mac_address present.
+    if mac_address:
+        lport_obj['mac_address'] = mac_address
     path = _build_uri_path(LROUTERPORT_RESOURCE,
                            parent_resource_id=lrouter_uuid)
     result = do_request(HTTP_POST, path, json.dumps(lport_obj),
@@ -1134,13 +1139,13 @@ def update_security_group_rules(cluster, spid, rules):
 
 def delete_security_profile(cluster, spid):
     path = "/ws.v1/security-profile/%s" % spid
-
     try:
         do_request(HTTP_DELETE, path, cluster=cluster)
-    except exception.NotFound as e:
-        # FIXME(salv-orlando): should not raise NeutronException
-        LOG.error(format_exception("Unknown", e, locals()))
-        raise exception.NeutronException()
+    except exception.NotFound:
+        # This is not necessarily an error condition
+        LOG.warn(_("Unable to find security profile %s on NSX backend"),
+                 spid)
+        raise
 
 
 def _create_nat_match_obj(**kwargs):

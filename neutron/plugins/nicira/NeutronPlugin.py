@@ -280,7 +280,8 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             lrouter_port = nvplib.create_router_lport(
                 cluster, router_id, port_data.get('tenant_id', 'fake'),
                 port_data.get('id', 'fake'), port_data.get('name', 'fake'),
-                port_data.get('admin_state_up', True), ip_addresses)
+                port_data.get('admin_state_up', True), ip_addresses,
+                port_data.get('mac_address'))
             LOG.debug(_("Created NVP router port:%s"), lrouter_port['uuid'])
         except NvpApiClient.NvpApiException:
             LOG.exception(_("Unable to create port on NVP logical router %s"),
@@ -749,7 +750,8 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 cluster,
                 neutron_port['network_id'],
                 neutron_port['id'])
-        except NvpApiClient.NvpApiException:
+        except (NvpApiClient.NvpApiException, q_exc.NotFound):
+            nvp_port = None
             LOG.exception(_("Unable to find NVP uuid for Neutron port %s"),
                           neutron_port['id'])
 
@@ -2044,8 +2046,12 @@ class NvpPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             if super(NvpPluginV2, self)._get_port_security_group_bindings(
                 context, filters):
                 raise ext_sg.SecurityGroupInUse(id=security_group['id'])
-            nvplib.delete_security_profile(self.cluster,
-                                           security_group['id'])
+            try:
+                nvplib.delete_security_profile(
+                    self.cluster, security_group['id'])
+            except q_exc.NotFound:
+                LOG.info(_("Security group: %s was already deleted "
+                           "from backend"), security_group_id)
             return super(NvpPluginV2, self).delete_security_group(
                 context, security_group_id)
 

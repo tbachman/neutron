@@ -44,10 +44,52 @@ class VifPort:
                 self.switch.br_name)
 
 
-class OVSBridge:
-    def __init__(self, br_name, root_helper):
-        self.br_name = br_name
+class BaseOVS(object):
+
+    def __init__(self, root_helper):
         self.root_helper = root_helper
+
+    def run_vsctl(self, args, check_error=False):
+        full_args = ["ovs-vsctl", "--timeout=2"] + args
+        try:
+            return utils.execute(full_args, root_helper=self.root_helper)
+        except Exception as e:
+            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
+                      {'cmd': full_args, 'exception': e})
+            if check_error:
+                raise
+
+    def add_bridge(self, bridge_name):
+        self.run_vsctl(["--", "--may-exist", "add-br", bridge_name])
+        return OVSBridge(bridge_name, self.root_helper)
+
+    def delete_bridge(self, bridge_name):
+        self.run_vsctl(["--", "--if-exists", "del-br", bridge_name])
+
+    def bridge_exists(self, bridge_name):
+        try:
+            self.run_vsctl(['br-exists', bridge_name], check_error=True)
+        except RuntimeError as e:
+            if 'Exit code: 2\n' in str(e):
+                return False
+            raise
+        return True
+
+    def get_bridge_name_for_port_name(self, port_name):
+        try:
+            return self.run_vsctl(['port-to-br', port_name], check_error=True)
+        except RuntimeError as e:
+            if 'Exit code: 1\n' not in str(e):
+                raise
+
+    def port_exists(self, port_name):
+        return bool(self.get_bridge_name_for_port_name(port_name))
+
+
+class OVSBridge(BaseOVS):
+    def __init__(self, br_name, root_helper):
+        super(OVSBridge, self).__init__(root_helper)
+        self.br_name = br_name
         self.re_id = self.re_compile_id()
         self.defer_apply_flows = False
         self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
@@ -65,17 +107,15 @@ class OVSBridge:
                                                'port': port})
         return re.compile(_re, re.M | re.X)
 
-    def run_vsctl(self, args):
-        full_args = ["ovs-vsctl", "--timeout=2"] + args
-        try:
-            return utils.execute(full_args, root_helper=self.root_helper)
-        except Exception as e:
-            LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
-                      {'cmd': full_args, 'exception': e})
+    def create(self):
+        self.add_bridge(self.br_name)
+
+    def destroy(self):
+        self.delete_bridge(self.br_name)
 
     def reset_bridge(self):
-        self.run_vsctl(["--", "--if-exists", "del-br", self.br_name])
-        self.run_vsctl(["add-br", self.br_name])
+        self.destroy()
+        self.create()
 
     def add_port(self, port_name):
         self.run_vsctl(["--", "--may-exist", "add-port", self.br_name,
@@ -193,7 +233,14 @@ class OVSBridge:
 
     def defer_apply_off(self):
         LOG.debug(_('defer_apply_off'))
-        for action, flows in self.deferred_flows.items():
+        # Note(ethuleau): stash flows and disable deferred mode. Then apply
+        # flows from the stashed reference to be sure to not purge flows that
+        # were added between two ofctl commands.
+        stashed_deferred_flows, self.deferred_flows = (
+            self.deferred_flows, {'add': '', 'mod': '', 'del': ''}
+        )
+        self.defer_apply_flows = False
+        for action, flows in stashed_deferred_flows.items():
             if flows:
                 LOG.debug(_('Applying following deferred flows '
                             'to bridge %s'), self.br_name)
@@ -201,8 +248,6 @@ class OVSBridge:
                     LOG.debug(_('%(action)s: %(flow)s'),
                               {'action': action, 'flow': line})
                 self.run_ofctl('%s-flows' % action, ['-'], flows)
-        self.defer_apply_flows = False
-        self.deferred_flows = {'add': '', 'mod': '', 'del': ''}
 
     def add_tunnel_port(self, port_name, remote_ip, local_ip,
                         tunnel_type=constants.TYPE_GRE,
@@ -330,6 +375,13 @@ class OVSBridge:
             vif_id = match.group('vif_id')
             port_name = match.group('port_name')
             ofport = int(match.group('ofport'))
+            switch = get_bridge_for_iface(self.root_helper, port_name)
+            if switch != self.br_name:
+                LOG.info(_("Port: %(port_name)s is on %(switch)s,"
+                         " not on %(br_name)s"), {'port_name': port_name,
+                         'switch': switch,
+                         'br_name': self.br_name})
+                return
             return VifPort(port_name, ofport, vif_id, vif_mac, self)
         except Exception as e:
             LOG.info(_("Unable to parse regex results. Exception: %s"), e)

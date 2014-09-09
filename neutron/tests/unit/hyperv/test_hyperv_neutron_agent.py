@@ -27,8 +27,14 @@ from neutron.plugins.hyperv.agent import hyperv_neutron_agent
 from neutron.plugins.hyperv.agent import utilsfactory
 from neutron.tests import base
 
+cfg.CONF.import_opt('enable_metrics_collection',
+                    'neutron.plugins.hyperv.agent.hyperv_neutron_agent',
+                    'AGENT')
+
 
 class TestHyperVNeutronAgent(base.BaseTestCase):
+
+    _FAKE_PORT_ID = 'fake_port_id'
 
     def setUp(self):
         super(TestHyperVNeutronAgent, self).setUp()
@@ -65,14 +71,28 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
             'start_flag': True}
         self.agent_state = fake_agent_state
 
-    def test_port_bound(self):
-        port = mock.Mock()
+    def test_port_bound_enable_metrics(self):
+        cfg.CONF.set_override('enable_metrics_collection', True, 'AGENT')
+        self._test_port_bound(True)
+
+    def test_port_bound_no_metrics(self):
+        cfg.CONF.set_override('enable_metrics_collection', False, 'AGENT')
+        self._test_port_bound(False)
+
+    def _test_port_bound(self, enable_metrics):
+        port = mock.MagicMock()
+        mock_enable_metrics = mock.MagicMock()
         net_uuid = 'my-net-uuid'
-        with mock.patch.object(
-                self.agent._utils, 'connect_vnic_to_vswitch'):
-            with mock.patch.object(
-                    self.agent._utils, 'set_vswitch_port_vlan_id'):
-                    self.agent._port_bound(port, net_uuid, 'vlan', None, None)
+
+        with mock.patch.multiple(
+                self.agent._utils,
+                connect_vnic_to_vswitch=mock.MagicMock(),
+                set_vswitch_port_vlan_id=mock.MagicMock(),
+                enable_port_metrics_collection=mock_enable_metrics):
+
+            self.agent._port_bound(port, net_uuid, 'vlan', None, None)
+
+            self.assertEqual(enable_metrics, mock_enable_metrics.called)
 
     def test_port_unbound(self):
         map = {
@@ -89,6 +109,40 @@ class TestHyperVNeutronAgent(base.BaseTestCase):
                     self.agent._utils,
                     'disconnect_switch_port'):
                 self.agent._port_unbound(net_uuid)
+
+    def test_port_enable_control_metrics_ok(self):
+        cfg.CONF.set_override('enable_metrics_collection', True, 'AGENT')
+        self.agent._port_metric_retries[self._FAKE_PORT_ID] = (
+            cfg.CONF.AGENT.metrics_max_retries)
+
+        with mock.patch.multiple(self.agent._utils,
+                                 can_enable_control_metrics=mock.MagicMock(),
+                                 enable_control_metrics=mock.MagicMock()):
+
+            self.agent._utils.can_enable_control_metrics.return_value = True
+            self.agent._port_enable_control_metrics()
+            self.agent._utils.enable_control_metrics.assert_called_with(
+                self._FAKE_PORT_ID)
+
+        self.assertNotIn(self._FAKE_PORT_ID, self.agent._port_metric_retries)
+
+    def test_port_enable_control_metrics_maxed(self):
+        cfg.CONF.set_override('enable_metrics_collection', True, 'AGENT')
+        cfg.CONF.set_override('metrics_max_retries', 3, 'AGENT')
+        self.agent._port_metric_retries[self._FAKE_PORT_ID] = (
+            cfg.CONF.AGENT.metrics_max_retries)
+
+        with mock.patch.multiple(self.agent._utils,
+                                 can_enable_control_metrics=mock.MagicMock(),
+                                 enable_control_metrics=mock.MagicMock()):
+
+            self.agent._utils.can_enable_control_metrics.return_value = False
+            for i in range(cfg.CONF.AGENT.metrics_max_retries + 1):
+                self.assertIn(self._FAKE_PORT_ID,
+                              self.agent._port_metric_retries)
+                self.agent._port_enable_control_metrics()
+
+        self.assertNotIn(self._FAKE_PORT_ID, self.agent._port_metric_retries)
 
     def test_treat_devices_added_returns_true_for_missing_device(self):
         attrs = {'get_device_details.side_effect': Exception()}

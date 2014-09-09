@@ -26,6 +26,7 @@ from neutron.agent import l3_agent
 from neutron.agent.linux import interface
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
+from neutron.common import exceptions as n_exc
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
@@ -735,8 +736,13 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
 
+        pm = self.external_process.return_value
+        pm.reset_mock()
+
         agent._destroy_router_namespace = mock.MagicMock()
         agent._destroy_router_namespaces()
+
+        self.assertEqual(pm.disable.call_count, 2)
 
         self.assertEqual(agent._destroy_router_namespace.call_count, 2)
 
@@ -756,10 +762,26 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
 
+        pm = self.external_process.return_value
+        pm.reset_mock()
+
         agent._destroy_router_namespace = mock.MagicMock()
         agent._destroy_router_namespaces(self.conf.router_id)
 
+        self.assertEqual(pm.disable.call_count, 1)
+
         self.assertEqual(agent._destroy_router_namespace.call_count, 1)
+
+    def test_destroy_router_namespace_skips_ns_removal(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        agent._destroy_router_namespace("fakens")
+        self.assertEqual(self.mock_ip.netns.delete.call_count, 0)
+
+    def test_destroy_router_namespace_removes_ns(self):
+        self.conf.set_override('router_delete_namespaces', True)
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        agent._destroy_router_namespace("fakens")
+        self.mock_ip.netns.delete.assert_called_once_with("fakens")
 
     def _configure_metadata_proxy(self, enableflag=True):
         if not enableflag:
@@ -775,12 +797,12 @@ class TestBasicRouterOperations(base.BaseTestCase):
                 agent, '_spawn_metadata_proxy') as spawn_proxy:
                 agent._router_added(router_id, router)
                 if enableflag:
-                    spawn_proxy.assert_called_with(mock.ANY)
+                    spawn_proxy.assert_called_with(mock.ANY, mock.ANY)
                 else:
                     self.assertFalse(spawn_proxy.call_count)
                 agent._router_removed(router_id)
                 if enableflag:
-                    destroy_proxy.assert_called_with(mock.ANY)
+                    destroy_proxy.assert_called_with(mock.ANY, mock.ANY)
                 else:
                     self.assertFalse(destroy_proxy.call_count)
 
@@ -811,6 +833,76 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self.conf.set_override('router_id', '1234')
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.assertEqual(['1234'], agent._router_ids())
+
+    def test_process_routers_with_no_ext_net_in_conf(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        self.plugin_api.get_external_network_id.return_value = 'aaa'
+
+        routers = [
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'aaa'}}]
+
+        agent._process_routers(routers)
+        self.assertIn(routers[0]['id'], agent.router_info)
+
+    def test_process_routers_with_no_ext_net_in_conf_and_two_net_plugin(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+
+        routers = [
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'aaa'}}]
+
+        agent.router_info = {}
+        self.plugin_api.get_external_network_id.side_effect = (
+            n_exc.TooManyExternalNetworks())
+        self.assertRaises(n_exc.TooManyExternalNetworks,
+                          agent._process_routers,
+                          routers)
+        self.assertNotIn(routers[0]['id'], agent.router_info)
+
+    def test_process_routers_with_ext_net_in_conf(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        self.plugin_api.get_external_network_id.return_value = 'aaa'
+
+        routers = [
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'aaa'}},
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'bbb'}}]
+
+        agent.router_info = {}
+        self.conf.set_override('gateway_external_network_id', 'aaa')
+        agent._process_routers(routers)
+        self.assertIn(routers[0]['id'], agent.router_info)
+        self.assertNotIn(routers[1]['id'], agent.router_info)
+
+    def test_process_routers_with_no_bridge_no_ext_net_in_conf(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        self.plugin_api.get_external_network_id.return_value = 'aaa'
+
+        routers = [
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'aaa'}},
+            {'id': _uuid(),
+             'routes': [],
+             'admin_state_up': True,
+             'external_gateway_info': {'network_id': 'bbb'}}]
+
+        agent.router_info = {}
+        self.conf.set_override('external_network_bridge', '')
+        agent._process_routers(routers)
+        self.assertIn(routers[0]['id'], agent.router_info)
+        self.assertIn(routers[1]['id'], agent.router_info)
 
     def test_nonexistent_interface_driver(self):
         self.conf.set_override('interface_driver', None)
@@ -890,19 +982,13 @@ class TestL3AgentEventHandler(base.BaseTestCase):
         cfg.CONF.set_override('log_file', 'test.log')
         cfg.CONF.set_override('debug', True)
 
-        router_info = l3_agent.RouterInfo(
-            router_id, cfg.CONF.root_helper, cfg.CONF.use_namespaces, None
-        )
-
         self.external_process_p.stop()
+        ns = 'qrouter-' + router_id
         try:
             with mock.patch(ip_class_path) as ip_mock:
-                self.agent._spawn_metadata_proxy(router_info)
+                self.agent._spawn_metadata_proxy(router_id, ns)
                 ip_mock.assert_has_calls([
-                    mock.call(
-                        'sudo',
-                        'qrouter-' + router_id
-                    ),
+                    mock.call('sudo', ns),
                     mock.call().netns.execute([
                         'neutron-ns-metadata-proxy',
                         mock.ANY,
