@@ -681,7 +681,7 @@ class TestDnsmasq(TestBase):
             '--dhcp-hostsfile=/dhcp/%s/host' % network.id,
             '--addn-hosts=/dhcp/%s/addn_hosts' % network.id,
             '--dhcp-optsfile=/dhcp/%s/opts' % network.id,
-            '--leasefile-ro']
+            '--dhcp-leasefile=/dhcp/%s/lease' % network.id]
 
         expected.extend(
             '--dhcp-range=set:tag%d,%s,static,86400s' %

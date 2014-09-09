@@ -331,7 +331,7 @@ class Dnsmasq(DhcpLocalProcess):
             '--dhcp-hostsfile=%s' % self._output_hosts_file(),
             '--addn-hosts=%s' % self._output_addn_hosts_file(),
             '--dhcp-optsfile=%s' % self._output_opts_file(),
-            '--leasefile-ro',
+            '--dhcp-leasefile=%s' % self.get_conf_file_name('lease'),
         ]
 
         possible_leases = 0
