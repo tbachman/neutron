@@ -17,15 +17,18 @@
 
 """Base Test Case for all Unit Tests"""
 
+import contextlib
 import logging
 import os
 
+import eventlet.timeout
 import fixtures
 from oslo.config import cfg
 import stubout
 import testtools
 
 from neutron.common import exceptions
+from neutron import manager
 
 
 CONF = cfg.CONF
@@ -34,6 +37,16 @@ LOG_FORMAT = "%(asctime)s %(levelname)8s [%(name)s] %(message)s"
 
 
 class BaseTestCase(testtools.TestCase):
+
+    def _cleanup_coreplugin(self):
+        manager.NeutronManager._instance = self._saved_instance
+
+    def setup_coreplugin(self, core_plugin=None):
+        self._saved_instance = manager.NeutronManager._instance
+        self.addCleanup(self._cleanup_coreplugin)
+        manager.NeutronManager._instance = None
+        if core_plugin is not None:
+            cfg.CONF.set_override('core_plugin', core_plugin)
 
     def setUp(self):
         super(BaseTestCase, self).setUp()
@@ -49,6 +62,15 @@ class BaseTestCase(testtools.TestCase):
             fixtures.FakeLogger(
                 format=LOG_FORMAT,
                 level=_level,
+                nuke_handlers=capture_logs,
+            ))
+
+        # suppress all but errors here
+        self.useFixture(
+            fixtures.FakeLogger(
+                name='neutron.api.extensions',
+                format=LOG_FORMAT,
+                level=logging.ERROR,
                 nuke_handlers=capture_logs,
             ))
 
@@ -91,3 +113,10 @@ class BaseTestCase(testtools.TestCase):
         group = kw.pop('group', None)
         for k, v in kw.iteritems():
             CONF.set_override(k, v, group)
+
+    @contextlib.contextmanager
+    def assert_max_execution_time(self, max_execution_time=5):
+        with eventlet.timeout.Timeout(max_execution_time, False):
+            yield
+            return
+        self.fail('Execution of this test timed out')

@@ -214,6 +214,16 @@ class FakeV4SubnetNoGateway:
     dns_nameservers = []
 
 
+class FakeV4SubnetNoRouter:
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+    ip_version = 4
+    cidr = '192.168.1.0/24'
+    gateway_ip = '192.168.1.1'
+    enable_dhcp = True
+    host_routes = []
+    dns_nameservers = []
+
+
 class FakeV4Network:
     id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
     subnets = [FakeV4Subnet()]
@@ -252,6 +262,12 @@ class FakeDualNetworkSingleDHCP:
 class FakeV4NoGatewayNetwork:
     id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
     subnets = [FakeV4SubnetNoGateway()]
+    ports = [FakePort1()]
+
+
+class FakeV4NetworkNoRouter:
+    id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    subnets = [FakeV4SubnetNoRouter()]
     ports = [FakePort1()]
 
 
@@ -571,12 +587,28 @@ class TestDhcpLocalProcess(TestBase):
             mocks['pid'].__get__ = mock.Mock(return_value=5)
             mocks['interface_name'].__get__ = mock.Mock(return_value='tap0')
             lp = LocalChild(self.conf, network)
-            lp.disable()
+            with mock.patch('neutron.agent.linux.ip_lib.IPWrapper') as ip:
+                lp.disable()
 
         self.mock_mgr.assert_has_calls([mock.call(self.conf, 'sudo', None),
                                         mock.call().destroy(network, 'tap0')])
         exp_args = ['kill', '-9', 5]
         self.execute.assert_called_once_with(exp_args, 'sudo')
+
+        self.assertEqual(ip.return_value.netns.delete.call_count, 0)
+
+    def test_disable_delete_ns(self):
+        self.conf.set_override('dhcp_delete_namespaces', True)
+        attrs_to_mock = dict([(a, mock.DEFAULT) for a in ['active', 'pid']])
+
+        with mock.patch.multiple(LocalChild, **attrs_to_mock) as mocks:
+            mocks['active'].__get__ = mock.Mock(return_value=False)
+            mocks['pid'].__get__ = mock.Mock(return_value=False)
+            lp = LocalChild(self.conf, FakeDualNetwork())
+            with mock.patch('neutron.agent.linux.ip_lib.IPWrapper') as ip:
+                lp.disable()
+
+        ip.return_value.netns.delete.assert_called_with('qdhcp-ns')
 
     def test_pid(self):
         with mock.patch('__builtin__.open') as mock_open:
@@ -649,7 +681,7 @@ class TestDnsmasq(TestBase):
             '--dhcp-hostsfile=/dhcp/%s/host' % network.id,
             '--addn-hosts=/dhcp/%s/addn_hosts' % network.id,
             '--dhcp-optsfile=/dhcp/%s/opts' % network.id,
-            '--leasefile-ro']
+            '--dhcp-leasefile=/dhcp/%s/lease' % network.id]
 
         expected.extend(
             '--dhcp-range=set:tag%d,%s,static,86400s' %
@@ -816,6 +848,34 @@ tag:tag0,option:router""".lstrip()
                 self.assertTrue(ipm.called)
 
         self.safe.assert_called_once_with('/foo/opts', expected)
+
+    def test_output_opts_file_no_neutron_router_on_subnet(self):
+        expected = """
+tag:tag0,option:classless-static-route,169.254.169.254/32,192.168.1.2
+tag:tag0,249,169.254.169.254/32,192.168.1.2
+tag:tag0,option:router,192.168.1.1""".lstrip()
+
+        with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
+            conf_fn.return_value = '/foo/opts'
+            dm = dhcp.Dnsmasq(self.conf, FakeV4NetworkNoRouter(),
+                              version=float(2.59))
+            with mock.patch.object(dm, '_make_subnet_interface_ip_map') as ipm:
+                ipm.return_value = {FakeV4SubnetNoRouter.id: '192.168.1.2'}
+
+                dm._output_opts_file()
+                self.assertTrue(ipm.called)
+
+        self.safe.assert_called_once_with('/foo/opts', expected)
+
+    def test_release_lease(self):
+        dm = dhcp.Dnsmasq(self.conf, FakeDualNetwork(), version=float(2.59))
+        dm.release_lease(mac_address=FakePort2.mac_address,
+                         removed_ips=[FakePort2.fixed_ips[0].ip_address])
+        exp_args = ['ip', 'netns', 'exec', 'qdhcp-ns', 'dhcp_release',
+                    dm.interface_name, FakePort2.fixed_ips[0].ip_address,
+                    FakePort2.mac_address]
+        self.execute.assert_called_once_with(exp_args, root_helper='sudo',
+                                             check_exit_code=True)
 
     def test_output_opts_file_pxe_2port_1net(self):
         expected = """
