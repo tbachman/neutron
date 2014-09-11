@@ -109,18 +109,18 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
                           '_import_ncclient',
                           return_value=self.mock_ncclient).start()
 
-        # Mock port context values for bound_segments and 'status'.
-        self.mock_bound_segment = mock.patch.object(
+        # Mock port context values for binding_levelss and 'status'.
+        self.mock_top_bound_segment = mock.patch.object(
             driver_context.PortContext,
-            'bottom_bound_segment',
+            'top_bound_segment',
             new_callable=mock.PropertyMock).start()
-        self.mock_bound_segment.return_value = BOUND_SEGMENT1
+        self.mock_top_bound_segment.return_value = BOUND_SEGMENT1
 
-        self.mock_original_bound_segment = mock.patch.object(
+        self.mock_original_top_bound_segment = mock.patch.object(
             driver_context.PortContext,
-            'original_bottom_bound_segment',
+            'original_top_bound_segment',
             new_callable=mock.PropertyMock).start()
-        self.mock_original_bound_segment.return_value = None
+        self.mock_original_top_bound_segment.return_value = None
 
         # Use _is_status_active method to determine bind state.
         def _mock_check_bind_state(port_context):
@@ -366,7 +366,7 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
                 vlan_creation_expected=True,
                 add_keyword_expected=False))
             self.mock_ncclient.reset_mock()
-            self.mock_bound_segment.return_value = BOUND_SEGMENT2
+            self.mock_top_bound_segment.return_value = BOUND_SEGMENT2
 
             # Second vlan should be configured with 'add' keyword
             with self._create_resources(name=NETWORK_NAME_2,
@@ -377,7 +377,7 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
                     add_keyword_expected=True))
 
             # Return to first segment for delete port calls.
-            self.mock_bound_segment.return_value = BOUND_SEGMENT1
+            self.mock_top_bound_segment.return_value = BOUND_SEGMENT1
 
     def test_nexus_add_trunk(self):
         """Verify syntax to enable a vlan on an interface.
@@ -516,16 +516,16 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
         The first one should only change the current host_id and remove the
         binding resulting in the mechanism drivers receiving:
           PortContext.original['binding:host_id']: previous value
-          PortContext.original_bottom_bound_segment: previous value
+          PortContext.original_top_bound_segment: previous value
           PortContext.current['binding:host_id']: current (new) value
-          PortContext.bottom_bound_segment: None
+          PortContext.top_bound_segment: None
 
         The second one binds the new host resulting in the mechanism
         drivers receiving:
           PortContext.original['binding:host_id']: previous value
-          PortContext.original_bottom_bound_segment: None
+          PortContext.original_top_bound_segment: None
           PortContext.current['binding:host_id']: previous value
-          PortContext.bottom_bound_segment: new value
+          PortContext.top_bound_segment: new value
         """
 
         # Create network, subnet and port.
@@ -543,8 +543,8 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
             # Trigger update event to unbind segment.
             # Results in port being deleted from nexus DB and switch.
             data = {'port': {portbindings.HOST_ID: COMP_HOST_NAME_2}}
-            self.mock_bound_segment.return_value = None
-            self.mock_original_bound_segment.return_value = BOUND_SEGMENT1
+            self.mock_top_bound_segment.return_value = None
+            self.mock_original_top_bound_segment.return_value = BOUND_SEGMENT1
             self.new_update_request('ports', data,
                                     port_id).get_response(self.api)
 
@@ -554,8 +554,8 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
                               VLAN_START, DEVICE_ID_1)
 
             # Trigger update event to bind segment with new host.
-            self.mock_bound_segment.return_value = BOUND_SEGMENT1
-            self.mock_original_bound_segment.return_value = None
+            self.mock_top_bound_segment.return_value = BOUND_SEGMENT1
+            self.mock_original_top_bound_segment.return_value = None
             self.new_update_request('ports', data,
                                     port_id).get_response(self.api)
 

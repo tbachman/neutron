@@ -116,10 +116,19 @@ class CiscoNexusDriver(object):
         conf_xml_snippet = snipp.EXEC_CONF_SNIPPET % (customized_config)
         return conf_xml_snippet
 
-    def create_vlan(self, nexus_host, vlanid, vlanname):
-        """Create a VLAN on Nexus Switch given the VLAN ID and Name."""
-        confstr = self.create_xml_snippet(
-            snipp.CMD_VLAN_CONF_SNIPPET % (vlanid, vlanname))
+    def create_vlan(self, nexus_host, vlanid, vlanname, vni):
+        """Create a VLAN on a Nexus Switch.
+
+        Creates a VLAN given the VLAN ID, name and possible VxLAN ID.
+        """
+        if vni != 0:
+            snippet = (snipp.CMD_VLAN_CONF_VNSEGMENT_SNIPPET %
+                       (vlanid, vlanname, vni))
+        else:
+            snippet = snipp.CMD_VLAN_CONF_SNIPPET % (vlanid, vlanname)
+
+        confstr = self.create_xml_snippet(snippet)
+
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, target='running', config=confstr)
 
@@ -172,10 +181,42 @@ class CiscoNexusDriver(object):
         self._edit_config(nexus_host, target='running', config=confstr)
 
     def create_and_trunk_vlan(self, nexus_host, vlan_id, vlan_name,
-                              intf_type, nexus_port):
+                              intf_type, nexus_port, vni):
         """Create VLAN and trunk it on the specified ports."""
-        self.create_vlan(nexus_host, vlan_id, vlan_name)
+        self.create_vlan(nexus_host, vlan_id, vlan_name, vni)
         LOG.debug(_("NexusDriver created VLAN: %s"), vlan_id)
         if nexus_port:
             self.enable_vlan_on_trunk_int(nexus_host, vlan_id, intf_type,
                                           nexus_port)
+
+    def enable_vxlan_feature(self, nexus_host, nve_int_num, src_intf):
+        """Enable VXLAN on the switch."""
+
+        # Configure the "feature" commands and NVE interface
+        # (without "member" subcommand configuration).
+        confstr = self.create_xml_snippet((snipp.CMD_FEATURE_VXLAN_SNIPPET +
+                   (snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf))))
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)
+
+    def disable_vxlan_feature(self, nexus_host, nve_int_num, src_intf):
+        """Disable VXLAN on the switch."""
+
+        # Removing the "feature" commands also removes the  NVE interface.
+        confstr = self.create_xml_snippet(snipp.CMD_NO_FEATURE_VXLAN_SNIPPET)
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)
+
+    def create_nve_member(self, nexus_host, nve_int_num, vni, mcast_group):
+        """Add a member configuration to the NVE interface."""
+        confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_MEMBER_SNIPPET %
+                                           (nve_int_num, vni, mcast_group)))
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)
+
+    def delete_nve_member(self, nexus_host, nve_int_num, vni):
+        """Delete a member configuration on the NVE interface."""
+        confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_NO_MEMBER_SNIPPET
+                                           % (nve_int_num, vni)))
+        LOG.debug(_("NexusDriver: %s"), confstr)
+        self._edit_config(nexus_host, config=confstr)

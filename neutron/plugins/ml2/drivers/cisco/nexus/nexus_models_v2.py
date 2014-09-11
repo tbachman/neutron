@@ -27,19 +27,36 @@ class NexusPortBinding(model_base.BASEV2):
     binding_id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
     port_id = sa.Column(sa.String(255))
     vlan_id = sa.Column(sa.Integer, nullable=False)
+    vni = sa.Column(sa.Integer)
     switch_ip = sa.Column(sa.String(255))
     instance_id = sa.Column(sa.String(255))
 
     def __repr__(self):
         """Just the binding, without the id key."""
-        return ("<NexusPortBinding(%s,%s,%s,%s)>" %
-                (self.port_id, self.vlan_id, self.switch_ip, self.instance_id))
+        return ("<NexusPortBinding(%s,%s,%s,%s, %s)>" %
+                (self.port_id, self.vlan_id, self.vni, self.switch_ip,
+                 self.instance_id))
 
     def __eq__(self, other):
         """Compare only the binding, without the id key."""
         return (
             self.port_id == other.port_id and
             self.vlan_id == other.vlan_id and
+            self.vni == other.vni and
             self.switch_ip == other.switch_ip and
             self.instance_id == other.instance_id
         )
+
+
+class NexusNVEBinding(model_base.BASEV2):
+    """Represents Network Virtualization Endpoint configuration."""
+
+    __tablename__ = "cisco_ml2_nexus_nve"
+
+    vni = sa.Column(sa.Integer, primary_key=True, nullable=False)
+    switch_ip = sa.Column(sa.String(255))
+    mcast_group = sa.Column(sa.String(255))
+
+    def __repr__(self):
+        return ("<NexusNVEBinding(%s,%s,%s)>" %
+                (self.vni, self.switch_ip, self.mcast_group))
