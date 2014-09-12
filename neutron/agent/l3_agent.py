@@ -577,8 +577,10 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
         ex_gw_port = self._get_ex_gw_port(ri)
         ex_gw_port_id = (ex_gw_port and ex_gw_port['id'] or
                          ri.ex_gw_port and ri.ex_gw_port['id'])
-        interface_name = self.get_external_device_name(ex_gw_port_id)
-        if self.conf.enable_metadata_proxy:
+        interface_name = None
+        if ex_gw_port:
+            interface_name = self.get_external_device_name(ex_gw_port_id)
+        if self.conf.enable_metadata_proxy and interface_name:
             rules.append(('INPUT', '-s 0.0.0.0/0 -d 127.0.0.1 '
                           '-p tcp -m tcp --dport %s '
                           '-j ACCEPT' % self.conf.metadata_port))
