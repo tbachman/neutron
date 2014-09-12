@@ -208,6 +208,44 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                                       updated_ports)
         self.assertEqual(expected, actual)
 
+    def _mock_scan_ports_with_untagged_ports(self,
+                                             vif_port_set=None,
+                                             untagged_ports=None,
+                                             db_map=None,
+                                             registered_ports=None,
+                                             updated_ports=None,
+                                             network_type=None):
+
+        cfg.CONF.set_override('tenant_network_type', network_type,
+                              group='OVS')
+
+        with mock.patch.object(self.agent.int_br, 'get_vif_port_set',
+                               return_value=vif_port_set):
+            with mock.patch.object(self.agent.int_br, 'get_port_tag_dict',
+                            return_value=untagged_ports):
+                with mock.patch.object(self.agent.int_br, 'db_get_map',
+                                       return_value=db_map):
+                        return self.agent.scan_ports(registered_ports,
+                                                     updated_ports)
+
+    def test_scan_ports_returns_all_if_untagged(self):
+        vif_port_set = set(['1', '2', '3'])
+        untagged_ports = {u'qr-1': [], u'qr-2': 1, u'qr-3': 1}
+        db_map = {'iface-id': '1', 'iface-status': 'active',
+                  'attached-mac': 'fa:16:3e:9e:f1:19'}
+        registered_ports = set(['1', '2', '3'])
+        expected = dict(current=vif_port_set, added={'1'})
+
+        actual = self._mock_scan_ports_with_untagged_ports(
+            vif_port_set,
+            untagged_ports,
+            db_map,
+            registered_ports,
+            None,
+            constants.TYPE_VLAN)
+
+        self.assertEqual(expected, actual)
+
     def test_treat_devices_added_returns_true_for_missing_device(self):
         with mock.patch.object(self.agent.plugin_rpc, 'get_device_details',
                                side_effect=Exception()):
