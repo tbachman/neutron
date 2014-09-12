@@ -358,7 +358,7 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         LOG.debug(_("Attempting to bind port %(port)s on network %(network)s"),
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
-        for segment in context.network.network_segments:
+        for segment in context.segments_to_bind:
             if self._is_segment_nexus_vxlan(segment):
                 # Bind the VXLAN static segment to this driver.
                 # TODO(rcurran) - need correct vif_type, vif_details
