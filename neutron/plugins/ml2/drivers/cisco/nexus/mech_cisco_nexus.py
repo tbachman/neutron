@@ -19,6 +19,7 @@ ML2 Mechanism Driver for Cisco Nexus platforms.
 
 from oslo.config import cfg
 
+from neutron.db import api as db_api
 from neutron.common import constants as n_const
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
@@ -355,10 +356,11 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
     def bind_port(self, context):
         # TODO(rcurran): update this method
-        LOG.debug(_("Attempting to bind port %(port)s on network %(network)s"),
+        LOG.debug(_("RACC Attempting to bind port %(port)s on network %(network)s"),
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
-        for segment in context.network.network_segments:
+        for segment in context.segments_to_bind:
+	    LOG.debug("RACC3 segment = %s" % segment)
             if self._is_segment_nexus_vxlan(segment):
                 # Bind the VXLAN static segment to this driver.
                 # TODO(rcurran) - need correct vif_type, vif_details
@@ -380,21 +382,27 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 host_connections = self._get_switch_info(host_id)
                 physnets = []
                 for switch_ip, attr2, attr3 in host_connections:
-                    physnet = self._nexus_switches.get(switch_ip, 'physnet')
+                    physnet = self._nexus_switches.get((switch_ip, 'physnet'))
+		    LOG.debug("RACC2 physnet = %s" % physnet)
                     if (switch_ip, physnet) not in physnets:
                         physnets.append((switch_ip, physnet))
 
                 # Nexus overlay configured. Allocate vlan and configure switch
                 # with VXLAN information.
-                network_id = network['network']['id']
+#                network_id = network['network']['id']
+		network_id = context.current['network_id']
+		LOG.debug("RACC2 network_id = %s" % network_id)
                 vlan_segment = {api.NETWORK_TYPE: 'vlan'}
-                session = ml2_db.get_session()
+                session = db_api.get_session()
+		LOG.debug("RACC2 session = %s" % session)
+		LOG.debug("RACC2 physnets = %s" % physnets)
 
                 # TODO(rcurran) - do we support multiple physnets per hostname?
                 for switch_ip, physnet in physnets:
+		    LOG.debug("RACC2 physnet = %s" % physnet)
                     vlan_segment[api.PHYSICAL_NETWORK] = physnet
-                    managers.allocate_dynamic_segment(session, network_id,
-                                                      vlan_segment)
+		    LOG.debug("RACC2 vlan segment = %s" % vlan_segment)
+                    context.allocate_dynamic_segment(vlan_segment)
 
                     # Retrieve the dynamically allocated segment.
                     dynamic_segment = ml2_db.get_dynamic_segment(session,
@@ -408,7 +416,7 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                                              dynamic_segment)
                 return
             else:
-                LOG.debug(_("Refusing to bind port for segment ID %(id)s, "
+                LOG.debug(_("RACC Refusing to bind port for segment ID %(id)s, "
                             "segment %(seg)s, phys net %(physnet)s, and "
                             "network type %(nettype)s"),
                           {'id': segment[api.ID],
