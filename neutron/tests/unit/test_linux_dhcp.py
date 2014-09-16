@@ -858,7 +858,7 @@ tag:tag0,option:router,192.168.1.1""".lstrip()
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:
             conf_fn.return_value = '/foo/opts'
             dm = dhcp.Dnsmasq(self.conf, FakeV4NetworkNoRouter(),
-                              version=float(2.59))
+                              version=dhcp.Dnsmasq.MINIMUM_VERSION)
             with mock.patch.object(dm, '_make_subnet_interface_ip_map') as ipm:
                 ipm.return_value = {FakeV4SubnetNoRouter.id: '192.168.1.2'}
 
@@ -866,16 +866,6 @@ tag:tag0,option:router,192.168.1.1""".lstrip()
                 self.assertTrue(ipm.called)
 
         self.safe.assert_called_once_with('/foo/opts', expected)
-
-    def test_release_lease(self):
-        dm = dhcp.Dnsmasq(self.conf, FakeDualNetwork(), version=float(2.59))
-        dm.release_lease(mac_address=FakePort2.mac_address,
-                         removed_ips=[FakePort2.fixed_ips[0].ip_address])
-        exp_args = ['ip', 'netns', 'exec', 'qdhcp-ns', 'dhcp_release',
-                    dm.interface_name, FakePort2.fixed_ips[0].ip_address,
-                    FakePort2.mac_address]
-        self.execute.assert_called_once_with(exp_args, root_helper='sudo',
-                                             check_exit_code=True)
 
     def test_output_opts_file_pxe_2port_1net(self):
         expected = """
