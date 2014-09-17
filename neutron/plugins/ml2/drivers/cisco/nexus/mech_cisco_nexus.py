@@ -356,25 +356,27 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
     def bind_port(self, context):
         # TODO(rcurran): update this method
-        LOG.debug(_("RACC Attempting to bind port %(port)s on network %(network)s"),
+        LOG.debug(_("Attempting to bind port %(port)s on network %(network)s"),
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
         for segment in context.segments_to_bind:
-	    LOG.debug("RACC3 segment = %s" % segment)
             if self._is_segment_nexus_vxlan(segment):
                 # Bind the VXLAN static segment to this driver.
                 # TODO(rcurran) - need correct vif_type, vif_details
+		# since we're not using set_binding, how does vif type,
+		# details and status get set for segment?
+		"""
                 context.set_binding(segment[api.ID],
                                     self.vif_type,
                                     self.vif_details,
                                     status=n_const.PORT_STATUS_ACTIVE)
+		"""
 
                 # Continue to create VLAN dynamic segment.
                 # TODO(rcurran) - remove vni, mcast_group access - debug only
                 network = context.network
                 vni = segment[api.SEGMENTATION_ID]
                 mcast_group = segment[api.PHYSICAL_NETWORK]
-                LOG.debug("RACC - vni = %s mcast = %s" % (vni, mcast_group))
 
                 # TODO(rcurran) - do we need to support multiple physnets
                 # on different switches per hostname?
@@ -383,7 +385,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 physnets = []
                 for switch_ip, attr2, attr3 in host_connections:
                     physnet = self._nexus_switches.get((switch_ip, 'physnet'))
-		    LOG.debug("RACC2 physnet = %s" % physnet)
                     if (switch_ip, physnet) not in physnets:
                         physnets.append((switch_ip, physnet))
 
@@ -391,32 +392,25 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 # with VXLAN information.
 #                network_id = network['network']['id']
 		network_id = context.current['network_id']
-		LOG.debug("RACC2 network_id = %s" % network_id)
                 vlan_segment = {api.NETWORK_TYPE: 'vlan'}
                 session = db_api.get_session()
-		LOG.debug("RACC2 session = %s" % session)
-		LOG.debug("RACC2 physnets = %s" % physnets)
 
                 # TODO(rcurran) - do we support multiple physnets per hostname?
                 for switch_ip, physnet in physnets:
-		    LOG.debug("RACC2 physnet = %s" % physnet)
                     vlan_segment[api.PHYSICAL_NETWORK] = physnet
-		    LOG.debug("RACC2 vlan segment = %s" % vlan_segment)
                     context.allocate_dynamic_segment(vlan_segment)
 
                     # Retrieve the dynamically allocated segment.
                     dynamic_segment = ml2_db.get_dynamic_segment(session,
                                                     network_id, physnet)
                     vlan_id = dynamic_segment[api.SEGMENTATION_ID]
-                    LOG.debug("RACC dynamic segment = %s" % dynamic_segment)
-                    LOG.debug("RACC dynamic vlan = %s" % vlan_id)
 
                     # Have other drivers bind the VLAN dynamic segment.
-                    context.continue_binding(dynamic_segment[api.ID],
-                                             dynamic_segment)
+                    context.continue_binding(segment[api.ID],
+                                             [dynamic_segment])
                 return
             else:
-                LOG.debug(_("RACC Refusing to bind port for segment ID %(id)s, "
+                LOG.debug(_("Refusing to bind port for segment ID %(id)s, "
                             "segment %(seg)s, phys net %(physnet)s, and "
                             "network type %(nettype)s"),
                           {'id': segment[api.ID],

@@ -194,10 +194,16 @@ class CiscoNexusDriver(object):
 
         # Configure the "feature" commands and NVE interface
         # (without "member" subcommand configuration).
-        confstr = self.create_xml_snippet((snipp.CMD_FEATURE_VXLAN_SNIPPET +
-                   (snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf))))
+	# TODO(rcurran) - find out from N9K team if I can send down
+	# both snippets at same time. Currently fails. See emails.
+#        confstr = self.create_xml_snippet((snipp.CMD_FEATURE_VXLAN_SNIPPET +
+#                   (snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf))))
+	confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, config=confstr)
+        confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf)))
+        self._edit_config(nexus_host, config=confstr)
+
 
     def disable_vxlan_feature(self, nexus_host, nve_int_num, src_intf):
         """Disable VXLAN on the switch."""
