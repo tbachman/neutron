@@ -97,6 +97,7 @@ class NexusVxlanTypeDriver(type_tunnel.TunnelTypeDriver):
         )
         self.conf_mcast_ranges = cfg.CONF.ml2_type_nexus_vxlan.mcast_ranges
         self.conf_vxlan_ranges = cfg.CONF.ml2_type_nexus_vxlan.vni_ranges
+        self._initialize(cfg.CONF.ml2_type_nexus_vxlan.vni_ranges)
 
     def _parse_mcast_ranges(self):
         ranges = (range.split(':') for range in self.conf_mcast_ranges)
