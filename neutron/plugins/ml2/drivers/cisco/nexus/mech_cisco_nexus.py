@@ -19,8 +19,8 @@ ML2 Mechanism Driver for Cisco Nexus platforms.
 
 from oslo.config import cfg
 
-from neutron.db import api as db_api
 from neutron.common import constants as n_const
+from neutron.db import api as db_api
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
@@ -31,7 +31,6 @@ from neutron.plugins.ml2.drivers.cisco.nexus import constants as const
 from neutron.plugins.ml2.drivers.cisco.nexus import exceptions as excep
 from neutron.plugins.ml2.drivers.cisco.nexus import nexus_db_v2 as nxos_db
 from neutron.plugins.ml2.drivers.cisco.nexus import nexus_network_driver
-from neutron.plugins.ml2 import managers
 
 LOG = logging.getLogger(__name__)
 
@@ -139,7 +138,8 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         for switch_ip, intf_type, nexus_port in host_connections:
             self.driver.delete_nve_member(switch_ip, const.NVE_INT_NUM, vni)
 
-            # TODO(rcurran): Do we want to remove the NVE interface?
+            if not nxos_db.get_nve_switch_bindings(switch_ip):
+                self.driver.disable_vxlan_feature(switch_ip)
 
     def _configure_nxos_db(self, vlan_id, device_id, host_id, vni):
         """Create the nexus database entry.
@@ -363,20 +363,16 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
             if self._is_segment_nexus_vxlan(segment):
                 # Bind the VXLAN static segment to this driver.
                 # TODO(rcurran) - need correct vif_type, vif_details
-		# since we're not using set_binding, how does vif type,
-		# details and status get set for segment?
+                # since we're not using set_binding, how does vif type,
+                # details and status get set for segment?
 		"""
                 context.set_binding(segment[api.ID],
                                     self.vif_type,
                                     self.vif_details,
                                     status=n_const.PORT_STATUS_ACTIVE)
-		"""
+                """
 
                 # Continue to create VLAN dynamic segment.
-                # TODO(rcurran) - remove vni, mcast_group access - debug only
-                network = context.network
-                vni = segment[api.SEGMENTATION_ID]
-                mcast_group = segment[api.PHYSICAL_NETWORK]
 
                 # TODO(rcurran) - do we need to support multiple physnets
                 # on different switches per hostname?
@@ -390,8 +386,7 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
                 # Nexus overlay configured. Allocate vlan and configure switch
                 # with VXLAN information.
-#                network_id = network['network']['id']
-		network_id = context.current['network_id']
+                network_id = context.current['network_id']
                 vlan_segment = {api.NETWORK_TYPE: 'vlan'}
                 session = db_api.get_session()
 
@@ -403,7 +398,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                     # Retrieve the dynamically allocated segment.
                     dynamic_segment = ml2_db.get_dynamic_segment(session,
                                                     network_id, physnet)
-                    vlan_id = dynamic_segment[api.SEGMENTATION_ID]
 
                     # Have other drivers bind the VLAN dynamic segment.
                     context.continue_binding(segment[api.ID],

@@ -194,18 +194,20 @@ class CiscoNexusDriver(object):
 
         # Configure the "feature" commands and NVE interface
         # (without "member" subcommand configuration).
-	# TODO(rcurran) - find out from N9K team if I can send down
-	# both snippets at same time. Currently fails. See emails.
-#        confstr = self.create_xml_snippet((snipp.CMD_FEATURE_VXLAN_SNIPPET +
-#                   (snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf))))
+        # The Nexus 9K will not allow the "interface nve" configuration
+        # until the "feature nv overlay" command is issued and installed.
+        # To get around the N9K failing on the "interface nve" command
+        # send the two XML snippets down separately.
 	confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, config=confstr)
-        confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_SNIPPET % (nve_int_num, src_intf)))
+
+        confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_SNIPPET %
+                                           (nve_int_num, src_intf)))
+        LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, config=confstr)
 
-
-    def disable_vxlan_feature(self, nexus_host, nve_int_num, src_intf):
+    def disable_vxlan_feature(self, nexus_host):
         """Disable VXLAN on the switch."""
 
         # Removing the "feature" commands also removes the  NVE interface.

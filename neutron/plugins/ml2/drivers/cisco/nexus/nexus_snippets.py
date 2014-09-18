@@ -221,9 +221,6 @@ CMD_NO_VLAN_SVI_SNIPPET = """
 </no>
 """
 
-#
-# TODO(rcurran) 06-Aug - This works.
-#
 CMD_INT_NVE_SNIPPET = """
 <interface>
     <nve>nve%s</nve>
@@ -256,15 +253,13 @@ CMD_INT_NVE_NO_MEMBER_SNIPPET = """
 </interface>
 """
 
-#
-# TODO(rcurran) - vxlan - need to confirm/update XML - confirmed 7-Jul
-# still needs testing
-#
 CMD_FEATURE_VXLAN_SNIPPET = """
 <feature>feature nv overlay</feature>
 <feature>feature vn-segment-vlan-based</feature>
 """
 
+# Removing the "feature nv overlay" configuration also removes the
+# "interface nve" configuration.
 CMD_NO_FEATURE_VXLAN_SNIPPET = """
 <feature>no feature vn-segment-vlan-based</feature>
 <feature>no feature nv overlay</feature>
