@@ -60,9 +60,9 @@ class FakeNetworkContext(object):
 
     """Network context for testing purposes only."""
 
-    def __init__(self, segment_id):
+    def __init__(self, segment_id, network_type):
         self._network_segments = {api.SEGMENTATION_ID: segment_id,
-                                  api.NETWORK_TYPE: NETWORK_TYPE}
+                                  api.NETWORK_TYPE: network_type}
 
     @property
     def network_segments(self):
@@ -93,6 +93,10 @@ class FakePortContext(object):
         return self._network
 
     @property
+    def segments_to_bind(self):
+        return None
+
+    @property
     def top_bound_segment(self):
         return self._segment
 
@@ -106,6 +110,12 @@ class FakePortContext(object):
 
     @property
     def original_bottom_bound_segment(self):
+        return None
+
+    def continue_binding(self, segment_id, next_segments_to_bind):
+        return None
+
+    def allocate_dynamic_segment(self, segment):
         return None
 
 class TestCiscoNexusDevice(testlib_api.SqlTestCase):
@@ -185,7 +195,7 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
         instance_id = port_config.instance_id
         vlan_id = port_config.vlan_id
 
-        network_context = FakeNetworkContext(vlan_id)
+        network_context = FakeNetworkContext(vlan_id, NETWORK_TYPE)
         port_context = FakePortContext(instance_id, host_name,
                                        network_context)
 
@@ -225,3 +235,7 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
         """Tests creation and deletion of dual ports for single server"""
         self._create_delete_port(
             TestCiscoNexusDevice.test_configs['test_config_dual'])
+
+    def test_bind_port_no_segments(self):
+        """Test verifies """
+        

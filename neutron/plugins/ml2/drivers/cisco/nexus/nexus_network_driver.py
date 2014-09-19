@@ -198,7 +198,7 @@ class CiscoNexusDriver(object):
         # until the "feature nv overlay" command is issued and installed.
         # To get around the N9K failing on the "interface nve" command
         # send the two XML snippets down separately.
-	confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
+        confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, config=confstr)
 
