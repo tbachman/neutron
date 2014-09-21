@@ -441,9 +441,10 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
 
                 # If port's sec gp isn't config in neutron.conf, add rule.
                 if (not sg_match):
-                    self._spoofing_rule(port,
-                                        ipv4_iptables_rule,
-                                        ipv6_iptables_rule)
+                    self.nwfilter.setup_basic_filtering( \
+                                            port['id'],
+                                            self._get_device_name(port),
+                                            self._get_mac_ip_pair(port))
                     ipv4_iptables_rule += self._drop_dhcp_rule()
 
             # For egress direction, anti spoofing is disabled. Add rule.
@@ -452,7 +453,7 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                         port['id'],
                                         self._get_device_name(port),
                                         self._get_mac_ip_pair(port))
-            ipv4_iptables_rule += self._drop_dhcp_rule()
+                ipv4_iptables_rule += self._drop_dhcp_rule()
         if direction == INGRESS_DIRECTION:
             ipv6_iptables_rule += self._accept_inbound_icmpv6()
         ipv4_iptables_rule += self._convert_sgr_to_iptables_rules(
