@@ -384,6 +384,9 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                     if (switch_ip, physnet) not in physnets:
                         physnets.append((switch_ip, physnet))
 
+                if not physnets:
+                    LOG.debug(_("No physical networks found to "))
+
                 # Nexus overlay configured. Allocate vlan and configure switch
                 # with VXLAN information.
                 network_id = context.current['network_id']
@@ -393,15 +396,18 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 # TODO(rcurran) - do we support multiple physnets per hostname?
                 for switch_ip, physnet in physnets:
                     vlan_segment[api.PHYSICAL_NETWORK] = physnet
-                    context.allocate_dynamic_segment(vlan_segment)
+                    dynamic_segment = context.allocate_dynamic_segment(
+                                                          vlan_segment)
+                    LOG.debug("RACC - dynamic_segment = %s" % dynamic_segment)
 
                     # Retrieve the dynamically allocated segment.
                     dynamic_segment = ml2_db.get_dynamic_segment(session,
                                                     network_id, physnet)
-
+                    LOG.debug("RACC - dynamic_segment2 = %s" % dynamic_segment)
                     # Have other drivers bind the VLAN dynamic segment.
-                    context.continue_binding(segment[api.ID],
-                                             [dynamic_segment])
+                    if dynamic_segment:
+                        context.continue_binding(segment[api.ID],
+                                                 [dynamic_segment])
                 return
             else:
                 LOG.debug(_("Refusing to bind port for segment ID %(id)s, "
