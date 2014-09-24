@@ -558,6 +558,7 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
             self._pre_defer_filtered_ports = None
             self._setup_chains_apply(self.filtered_ports)
             self.iptables.defer_apply_off()
+            self.nwfilter.defer_apply_off()
 
 
 class OVSHybridIptablesFirewallDriver(IptablesFirewallDriver):
