@@ -147,3 +147,8 @@ IPV6_LLA_PREFIX = 'fe80::/64'
 
 # Linux interface max length
 DEVICE_NAME_MAX_LEN = 15
+
+# Device names start with "tap"
+TAP_DEVICE_PREFIX = 'tap'
+
+ATTRIBUTES_TO_UPDATE = 'attributes_to_update'
