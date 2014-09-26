@@ -708,6 +708,7 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
             self.assertEqual(1, len(binding))
             self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
                                                    str(VNI)]))
+            self.assertTrue(self._is_in_nexus_cfg(['vn-segment', str(VNI)]))
 
         # Verify that VXLAN entries have been removed.
         binding = nexus_db_v2.get_nve_switch_bindings(NEXUS_IP_ADDR)
@@ -730,7 +731,11 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
                 self.assertEqual(2, len(binding))
                 self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
                                                        str(VNI)]))
+                self.assertTrue(self._is_in_nexus_cfg(['vn-segment',
+                                                       str(VNI)]))
                 self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
+                                                       str(VNI + 1)]))
+                self.assertTrue(self._is_in_nexus_cfg(['vn-segment',
                                                        str(VNI + 1)]))
 
             # Switch back to first segment for delete calls.
