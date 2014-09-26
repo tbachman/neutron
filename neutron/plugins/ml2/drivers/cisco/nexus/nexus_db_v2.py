@@ -169,9 +169,9 @@ def remove_nexusnve_binding(vni, switch_ip):
         return binding
 
 
-def get_nexusnve_binding(vni, switch_ip):
-    """Return the nexus nve binding."""
-    LOG.debug(_("get_nexusnve_binding() called"))
+def get_nve_vni_switch_bindings(vni, switch_ip):
+    """Return the nexus nve binding(s) per switch."""
+    LOG.debug(_("get_nve_vni_switch_bindings() called"))
     session = db.get_session()
     try:
         return (session.query(nexus_models_v2.NexusNVEBinding).

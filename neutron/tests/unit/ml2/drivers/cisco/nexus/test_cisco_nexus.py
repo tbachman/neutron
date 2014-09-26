@@ -20,9 +20,10 @@ import testtools
 from neutron.common import constants as n_const
 from neutron.extensions import portbindings
 from neutron.openstack.common import importutils
-from neutron.plugins.ml2 import db as ml2_db
+#from neutron.plugins.common import constants as p_const
+#from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import driver_api as api
-from neutron.plugins.ml2 import driver_context
+#from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2.drivers.cisco.nexus import constants
 from neutron.plugins.ml2.drivers.cisco.nexus import exceptions
 from neutron.plugins.ml2.drivers.cisco.nexus import mech_cisco_nexus
@@ -53,6 +54,7 @@ VLAN_ID_DUAL = 269
 DEVICE_OWNER = 'compute:test'
 NEXUS_SSH_PORT = '22'
 PORT_ID = "fakeportID"
+NETWORK_ID = "fakeNetworkID"
 PORT_STATE = n_const.PORT_STATUS_ACTIVE
 NETWORK_TYPE = 'vlan'
 NEXUS_DRIVER = ('neutron.plugins.ml2.drivers.cisco.nexus.'
@@ -64,7 +66,7 @@ class FakeNetworkContext(object):
     """Network context for testing purposes only."""
 
     def __init__(self, segment_id, network_type):
-        self._network = {'id': 'fakeNetworkID', 'tenant_id': 'fakeTenantID'}
+        self._network = {'id': 'fakeID', 'tenant_id': 'fakeTenantID'}
         self._network_segments = {api.SEGMENTATION_ID: segment_id,
                                   api.NETWORK_TYPE: network_type}
 
@@ -81,17 +83,20 @@ class FakePortContext(object):
 
     """Port context for testing purposes only."""
 
-    def __init__(self, device_id, host_name, network_context):
+    def __init__(self, device_id, host_name, network_context,
+                 segments_to_bind=[]):
         self._port = {
             'status': PORT_STATE,
             'device_id': device_id,
             'device_owner': DEVICE_OWNER,
             'id': PORT_ID,
+            'network_id': NETWORK_ID,
             portbindings.HOST_ID: host_name,
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
         }
         self._network = network_context
         self._segment = network_context.network_segments
+        self._segments_to_bind = segments_to_bind
 
     @property
     def current(self):
@@ -103,7 +108,7 @@ class FakePortContext(object):
 
     @property
     def segments_to_bind(self):
-        return []
+        return self._segments_to_bind
 
     @property
     def top_bound_segment(self):
@@ -173,19 +178,6 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
                           '_import_ncclient',
                           return_value=mock_ncclient).start()
 
-        # Mock some port context values.
-        self.mock_continue_binding = mock.patch.object(
-            driver_context.PortContext,
-            'continue_binding',
-            new_callable=mock.PropertyMock).start()
-        self.mock_continue_binding.return_value = []
-
-        self.mock_allocate_dynamic_segment = mock.patch.object(
-            driver_context.PortContext,
-            'allocate_dynamic_segment',
-            new_callable=mock.PropertyMock).start()
-        self.mock_allocate_dynamic_segment.return_value = None
-
         def new_nexus_init(mech_instance):
             mech_instance.driver = importutils.import_object(NEXUS_DRIVER)
 
@@ -202,6 +194,8 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
                                                constants.USERNAME)] = 'admin'
                 mech_instance._nexus_switches[(ip_addr,
                                               constants.PASSWORD)] = 'password'
+                mech_instance._nexus_switches[(ip_addr,
+                                               'physnet')] = 'physnet1'
             mech_instance.driver.nexus_switches = (
                 mech_instance._nexus_switches)
 
@@ -259,10 +253,19 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
         self._create_delete_port(
             TestCiscoNexusDevice.test_configs['test_config_dual'])
 
-    def test_bind_port_no_vxlan_segments(self):
-        """Test verifies that non VXLAN segments are not processed."""
-        network_context = FakeNetworkContext(VLAN_ID_1, NETWORK_TYPE)
-        port_context = FakePortContext(INSTANCE_1, HOST_NAME_1,
-                                       network_context)
-        self._cisco_mech_driver.bind_port(port_context)
-        assert not self.mock_allocate_dynamic_segment.called
+# TODO(rcurran) - remove these methods
+#    def test_bind_port_no_vxlan_segments(self):
+#        network_context = FakeNetworkContext(VLAN_ID_1, NETWORK_TYPE)
+#        port_context = FakePortContext(INSTANCE_1, HOST_NAME_1,
+#                                       network_context)
+#        self._cisco_mech_driver.bind_port(port_context)
+#        assert not self.mock_allocate_dynamic_segment.called
+
+#    def test_bind_port_segment_no_physnet(self):
+#        network_context = FakeNetworkContext(VLAN_ID_1, NETWORK_TYPE)
+#        port_context = FakePortContext(INSTANCE_1, HOST_NAME_1,
+#                                       network_context,
+#                                       [{api.NETWORK_TYPE:
+#                                         p_const.TYPE_NEXUS_VXLAN}])
+#        self._cisco_mech_driver.bind_port(port_context)
+#        assert not self.mock_allocate_dynamic_segment.called

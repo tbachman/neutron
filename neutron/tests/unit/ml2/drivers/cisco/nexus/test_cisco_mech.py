@@ -43,6 +43,8 @@ COMP_HOST_NAME = 'testhost'
 COMP_HOST_NAME_2 = 'testhost_2'
 VLAN_START = 1000
 VLAN_END = 1100
+VNI = 50000
+MCAST_ADDR = '225.1.1.1'
 NEXUS_IP_ADDR = '1.1.1.1'
 NETWORK_NAME = 'test_network'
 NETWORK_NAME_2 = 'test_network_2'
@@ -59,6 +61,15 @@ BOUND_SEGMENT1 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
 BOUND_SEGMENT2 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                   api.PHYSICAL_NETWORK: PHYS_NET,
                   api.SEGMENTATION_ID: VLAN_START + 1}
+BOUND_SEGMENT_VXLAN = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
+                       api.PHYSICAL_NETWORK: MCAST_ADDR,
+                       api.SEGMENTATION_ID: VNI}
+BOUND_SEGMENT_VXLAN2 = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
+                        api.PHYSICAL_NETWORK: MCAST_ADDR,
+                        api.SEGMENTATION_ID: VNI + 1}
+BOUND_SEGMENT_VXLAN_INVALID = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
+                               api.PHYSICAL_NETWORK: None,
+                               api.SEGMENTATION_ID: None}
 
 
 class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
@@ -94,6 +105,7 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
             (NEXUS_IP_ADDR, 'username'): 'admin',
             (NEXUS_IP_ADDR, 'password'): 'mySecretPassword',
             (NEXUS_IP_ADDR, 'ssh_port'): 22,
+            (NEXUS_IP_ADDR, 'physnet'): 'physnet1',
             (NEXUS_IP_ADDR, COMP_HOST_NAME): NEXUS_INTERFACE,
             (NEXUS_IP_ADDR, COMP_HOST_NAME_2): NEXUS_INTERFACE_2}
         nexus_patch = mock.patch.dict(
@@ -109,7 +121,7 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
                           '_import_ncclient',
                           return_value=self.mock_ncclient).start()
 
-        # Mock port context values for binding_levelss and 'status'.
+        # Mock port context values.
         self.mock_top_bound_segment = mock.patch.object(
             driver_context.PortContext,
             'top_bound_segment',
@@ -121,6 +133,31 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
             'original_top_bound_segment',
             new_callable=mock.PropertyMock).start()
         self.mock_original_top_bound_segment.return_value = None
+
+        self.mock_bottom_bound_segment = mock.patch.object(
+            driver_context.PortContext,
+            'bottom_bound_segment',
+            new_callable=mock.PropertyMock).start()
+        self.mock_bottom_bound_segment.return_value = None
+
+        #TODO(rcurran) - for testing bind_port
+        '''
+        self.mock_segments_to_bind = mock.patch.object(
+            driver_context.PortContext,
+            'segments_to_bind',
+            new_callable=mock.PropertyMock).start()
+        self.mock_segments_to_bind.return_value = []
+
+        self.mock_allocate_dynamic_segment = mock.patch.object(
+            driver_context.PortContext,
+            'allocate_dynamic_segment').start()
+        self.mock_allocate_dynamic_segment.return_value = None
+
+        self.mock_continue_binding = mock.patch.object(
+            driver_context.PortContext,
+            'continue_binding').start()
+        self.mock_continue_binding.return_value = []
+        '''
 
         # Use _is_status_active method to determine bind state.
         def _mock_check_bind_state(port_context):
@@ -654,6 +691,69 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
         """
         with self._create_resources(device_id='',
                                     expected_failure=True) as result:
+            self._assertExpectedHTTP(result.status_int,
+                                     c_exc.NexusMissingRequiredFields)
+
+    def test_nexus_vxlan_one_network(self):
+        """Verify VXLAN processing."""
+
+        # Configure bound segments to indicate VXLAN+VLAN.
+        self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
+        self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT1
+
+        # Create network, subnet and port.
+        with self._create_resources():
+            # Verify vxlan database and switch entries were created.
+            binding = nexus_db_v2.get_nve_switch_bindings(NEXUS_IP_ADDR)
+            self.assertEqual(1, len(binding))
+            self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
+                                                   str(VNI)]))
+
+        # Verify that VXLAN entries have been removed.
+        binding = nexus_db_v2.get_nve_switch_bindings(NEXUS_IP_ADDR)
+        self.assertEqual(0, len(binding))
+        self.assertTrue(self._is_in_nexus_cfg(['no', 'nve', 'member', 'vni',
+                                               str(VNI)]))
+
+    def test_nexus_vxlan_two_networks(self):
+        # Configure bound segments to indicate VXLAN+VLAN.
+        self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
+        self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT1
+
+        with self._create_resources(name='net1', cidr=CIDR_1):
+            self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN2
+            self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT2
+            with self._create_resources(name='net2', cidr=CIDR_2,
+                                        host_id=COMP_HOST_NAME_2):
+                # Verify vxlan database and switch entries were created.
+                binding = nexus_db_v2.get_nve_switch_bindings(NEXUS_IP_ADDR)
+                self.assertEqual(2, len(binding))
+                self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
+                                                       str(VNI)]))
+                self.assertTrue(self._is_in_nexus_cfg(['nve', 'member', 'vni',
+                                                       str(VNI + 1)]))
+
+            # Switch back to first segment for delete calls.
+            self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
+            self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT1
+
+        # Verify that VXLAN entries have been removed.
+        binding = nexus_db_v2.get_nve_switch_bindings(NEXUS_IP_ADDR)
+        self.assertEqual(0, len(binding))
+        self.assertTrue(self._is_in_nexus_cfg(['no', 'nve', 'member',
+                                               'vni', str(VNI)]))
+        self.assertTrue(self._is_in_nexus_cfg(['no', 'nve', 'member',
+                                               'vni', str(VNI + 1)]))
+
+    def test_nexus_missing_vxlan_fields(self):
+        """Test handling of a VXLAN NexusMissingRequiredFields exception.
+
+        Test the Cisco NexusMissingRequiredFields exception by using
+        empty VNI and mcast address values during port creation.
+
+        """
+        self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN_INVALID
+        with self._create_resources(expected_failure=True) as result:
             self._assertExpectedHTTP(result.status_int,
                                      c_exc.NexusMissingRequiredFields)
 

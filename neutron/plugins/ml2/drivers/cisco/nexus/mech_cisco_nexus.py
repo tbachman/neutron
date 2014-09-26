@@ -50,6 +50,7 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         self.driver = nexus_network_driver.CiscoNexusDriver()
 
         # Required for VXLAN configured segments.
+        # TODO(rcurran) - remove?
         self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True}
 
@@ -61,10 +62,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
     def _get_vlanid(self, segment):
         if (segment and segment[api.NETWORK_TYPE] == p_const.TYPE_VLAN and
             self._valid_network_segment(segment)):
-            return segment.get(api.SEGMENTATION_ID)
-
-    def _get_vni(self, segment):
-        if (segment and segment[api.NETWORK_TYPE] == p_const.TYPE_NEXUS_VXLAN):
             return segment.get(api.SEGMENTATION_ID)
 
     def _is_deviceowner_compute(self, port):
@@ -271,9 +268,9 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
     def _port_action_vxlan(self, port, segment, func):
         """Verify configuration and then process event."""
-        mcast_group = segment[api.PHYSICAL_NETWORK]
+        mcast_group = segment.get(api.PHYSICAL_NETWORK)
         host_id = port.get(portbindings.HOST_ID)
-        vni = self._get_vni(segment)
+        vni = segment.get(api.SEGMENTATION_ID)
 
         if vni and mcast_group and host_id:
             func(vni, mcast_group, host_id)
@@ -365,13 +362,12 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 # TODO(rcurran) - need correct vif_type, vif_details
                 # since we're not using set_binding, how does vif type,
                 # details and status get set for segment?
-		"""
+                """
                 context.set_binding(segment[api.ID],
                                     self.vif_type,
                                     self.vif_details,
                                     status=n_const.PORT_STATUS_ACTIVE)
                 """
-
                 # Continue to create VLAN dynamic segment.
 
                 # TODO(rcurran) - do we need to support multiple physnets
@@ -381,11 +377,13 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 physnets = []
                 for switch_ip, attr2, attr3 in host_connections:
                     physnet = self._nexus_switches.get((switch_ip, 'physnet'))
-                    if (switch_ip, physnet) not in physnets:
-                        physnets.append((switch_ip, physnet))
+                    if physnet:
+                        physnets.append(physnet)
 
                 if not physnets:
-                    LOG.debug(_("No physical networks found to "))
+                    LOG.debug(_("No physical network(s) found for vlan "
+                                "segment allocation(s)."))
+                    return
 
                 # Nexus overlay configured. Allocate vlan and configure switch
                 # with VXLAN information.
@@ -394,21 +392,19 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 session = db_api.get_session()
 
                 # TODO(rcurran) - do we support multiple physnets per hostname?
-                for switch_ip, physnet in physnets:
+                for physnet in physnets:
                     vlan_segment[api.PHYSICAL_NETWORK] = physnet
-                    dynamic_segment = context.allocate_dynamic_segment(
-                                                          vlan_segment)
-                    LOG.debug("RACC - dynamic_segment = %s" % dynamic_segment)
+                    context.allocate_dynamic_segment(vlan_segment)
 
                     # Retrieve the dynamically allocated segment.
+                    # Database has provider_segment dictionary key.
                     dynamic_segment = ml2_db.get_dynamic_segment(session,
                                                     network_id, physnet)
-                    LOG.debug("RACC - dynamic_segment2 = %s" % dynamic_segment)
+
                     # Have other drivers bind the VLAN dynamic segment.
                     if dynamic_segment:
                         context.continue_binding(segment[api.ID],
                                                  [dynamic_segment])
-                return
             else:
                 LOG.debug(_("Refusing to bind port for segment ID %(id)s, "
                             "segment %(seg)s, phys net %(physnet)s, and "
