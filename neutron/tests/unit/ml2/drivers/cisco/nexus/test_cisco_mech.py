@@ -54,7 +54,10 @@ CIDR_1 = '10.0.0.0/24'
 CIDR_2 = '10.0.1.0/24'
 DEVICE_ID_1 = '11111111-1111-1111-1111-111111111111'
 DEVICE_ID_2 = '22222222-2222-2222-2222-222222222222'
+PORT_ID = 'fakePortID'
 DEVICE_OWNER = 'compute:None'
+VXLAN_SEGMENT = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
+                 api.ID: PORT_ID}
 BOUND_SEGMENT1 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                   api.PHYSICAL_NETWORK: PHYS_NET,
                   api.SEGMENTATION_ID: VLAN_START}
@@ -140,24 +143,15 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
             new_callable=mock.PropertyMock).start()
         self.mock_bottom_bound_segment.return_value = None
 
-        #TODO(rcurran) - for testing bind_port
-        '''
         self.mock_segments_to_bind = mock.patch.object(
             driver_context.PortContext,
             'segments_to_bind',
             new_callable=mock.PropertyMock).start()
-        self.mock_segments_to_bind.return_value = []
-
-        self.mock_allocate_dynamic_segment = mock.patch.object(
-            driver_context.PortContext,
-            'allocate_dynamic_segment').start()
-        self.mock_allocate_dynamic_segment.return_value = None
+        self.mock_segments_to_bind.return_value = None
 
         self.mock_continue_binding = mock.patch.object(
             driver_context.PortContext,
             'continue_binding').start()
-        self.mock_continue_binding.return_value = []
-        '''
 
         # Use _is_status_active method to determine bind state.
         def _mock_check_bind_state(port_context):
@@ -694,8 +688,26 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
             self._assertExpectedHTTP(result.status_int,
                                      c_exc.NexusMissingRequiredFields)
 
+    def test_nexus_vxlan_bind_port(self):
+        """Test VXLAN bind_port processing.
+
+        Test the bind_port method when configured for VXLAN.
+
+        """
+        self.mock_segments_to_bind.return_value = [VXLAN_SEGMENT]
+
+        expected_dynamic_segment = {api.SEGMENTATION_ID: VLAN_START + 1,
+                                    api.PROVIDER_SEGMENT: False,
+                                    api.PHYSICAL_NETWORK: PHYS_NET,
+                                    api.ID: mock.ANY,
+                                    api.NETWORK_TYPE: p_const.TYPE_VLAN}
+
+        with self._create_resources(expected_failure=True):
+            self.mock_continue_binding.assert_called_once_with(PORT_ID,
+                                                    [expected_dynamic_segment])
+
     def test_nexus_vxlan_one_network(self):
-        """Verify VXLAN processing."""
+        """Test processing for one VXLAN segment."""
 
         # Configure bound segments to indicate VXLAN+VLAN.
         self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
@@ -717,6 +729,8 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
                                                str(VNI)]))
 
     def test_nexus_vxlan_two_networks(self):
+        """Test processing for two VXLAN segment."""
+
         # Configure bound segments to indicate VXLAN+VLAN.
         self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
         self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT1
