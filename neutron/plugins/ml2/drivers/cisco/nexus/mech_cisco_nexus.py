@@ -49,11 +49,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
         self.driver = nexus_network_driver.CiscoNexusDriver()
 
-        # Required for VXLAN configured segments.
-        # TODO(rcurran) - remove?
-        self.vif_type = portbindings.VIF_TYPE_OVS
-        self.vif_details = {portbindings.CAP_PORT_FILTER: True}
-
     def _valid_network_segment(self, segment):
         return (cfg.CONF.ml2_cisco.managed_physical_network is None or
                 cfg.CONF.ml2_cisco.managed_physical_network ==
@@ -352,7 +347,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                                    self._delete_switch_entry, vni)
 
     def bind_port(self, context):
-        # TODO(rcurran): update this method
         LOG.debug(_("Attempting to bind port %(port)s on network %(network)s"),
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
@@ -360,14 +354,11 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
             if self._is_segment_nexus_vxlan(segment):
                 # Bind the VXLAN static segment to this driver.
                 # TODO(rcurran) - need correct vif_type, vif_details
-                # since we're not using set_binding, how does vif type,
-                # details and status get set for segment?
-                """
                 context.set_binding(segment[api.ID],
-                                    self.vif_type,
-                                    self.vif_details,
+                                    portbindings.VIF_TYPE_OVS,
+                                    {portbindings.CAP_PORT_FILTER: True},
                                     status=n_const.PORT_STATUS_ACTIVE)
-                """
+
                 # Continue to create VLAN dynamic segment.
 
                 # TODO(rcurran) - do we need to support multiple physnets
