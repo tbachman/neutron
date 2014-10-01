@@ -42,7 +42,6 @@ from neutron.common import legacy
 from neutron.common import topics
 from neutron.common import utils as q_utils
 from neutron import context
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common.rpc import dispatcher
@@ -811,23 +810,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         cur_ports = self.int_br.get_vif_port_set()
         self.int_br_device_count = len(cur_ports)
         port_info = {'current': cur_ports}
-        # Look for ports that are missing a VLAN tag that should have one
-        if cfg.CONF.OVS.tenant_network_type in [constants.TYPE_VLAN,
-                                                constants.TYPE_VXLAN,
-                                                constants.TYPE_GRE]:
-            tags = self.int_br.get_port_tag_dict()
-            for port in tags.keys():
-                if isinstance(tags[port], list) and (
-                        port.startswith('qg-') or
-                        port.startswith('qr-') or
-                        port.startswith('tap')):
-                    port_info['added'] = {self.int_br.db_get_map(
-                        "Interface", port, "external_ids")['iface-id']}
-
-                    LOG.info(_("Forcing resync for port %s"), port)
-
-                    return port_info
-
         if updated_ports:
             # Some updated ports might have been removed in the
             # meanwhile, and therefore should not be processed.

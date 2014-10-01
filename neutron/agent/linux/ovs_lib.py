@@ -308,37 +308,6 @@ class OVSBridge(BaseOVS):
     def get_port_stats(self, port_name):
         return self.db_get_map("Interface", port_name, "statistics")
 
-    def get_port_tag_dict(self):
-        """
-        Get a dict of port names and associated vlan tags.
-
-        e.g. the returned dict is of the following form::
-
-            {u'int-br-eth2': [],
-             u'patch-tun': [],
-             u'qr-76d9e6b6-21': 1,
-             u'tapce5318ff-78': 1,
-             u'tape1400310-e6': 1}
-
-        The TAG ID is only available in the "Port" table and is not available
-        in the "Interface" table queried by the get_vif_port_set() method.
-
-        """
-        port_names = self.get_port_name_list()
-        args = ['--format=json', '--', '--columns=name,tag', 'list', 'Port']
-        result = self.run_vsctl(args)
-        port_tag_dict = {}
-        if not result:
-            return port_tag_dict
-        for name, tag in jsonutils.loads(result)['data']:
-            if name not in port_names:
-                continue
-            # 'tag' can be [u'set', []] or an integer
-            if isinstance(tag, list):
-                tag = tag[1]
-            port_tag_dict[name] = tag
-        return port_tag_dict
-
     def get_xapi_iface_id(self, xs_vif_uuid):
         args = ["xe", "vif-param-get", "param-name=other-config",
                 "param-key=nicira-iface-id", "uuid=%s" % xs_vif_uuid]
