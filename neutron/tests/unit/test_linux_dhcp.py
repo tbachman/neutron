@@ -1040,6 +1040,32 @@ tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
         (exp_host_name, exp_host_data,
          exp_addn_name, exp_addn_data,
          exp_opt_name, exp_opt_data,) = self._test_reload_allocation_data
+        exp_host_name = '/dhcp/cccccccc-cccc-cccc-cccc-cccccccccccc/host'
+        exp_host_data = ('00:00:80:aa:bb:cc,host-192-168-0-2.openstacklocal,'
+                         '192.168.0.2\n'
+                         '00:00:f3:aa:bb:cc,host-fdca-3ba5-a17a-4ba3--2.'
+                         'openstacklocal,fdca:3ba5:a17a:4ba3::2\n'
+                         '00:00:0f:aa:bb:cc,host-192-168-0-3.openstacklocal,'
+                         '192.168.0.3\n'
+                         '00:00:0f:aa:bb:cc,host-fdca-3ba5-a17a-4ba3--3.'
+                         'openstacklocal,fdca:3ba5:a17a:4ba3::3\n'
+                         '00:00:0f:rr:rr:rr,host-192-168-0-1.openstacklocal,'
+                         '192.168.0.1\n').lstrip()
+        exp_host_data.replace('\n', '')
+        exp_opt_name = '/dhcp/cccccccc-cccc-cccc-cccc-cccccccccccc/opts'
+        exp_opt_data = "tag:tag0,option:router,192.168.0.1"
+        fake_v6 = 'gdca:3ba5:a17a:4ba3::1'
+        fake_v6_cidr = 'gdca:3ba5:a17a:4ba3::/64'
+        exp_opt_data = """
+tag:tag0,option:dns-server,8.8.8.8
+tag:tag0,option:classless-static-route,20.0.0.1/24,20.0.0.1
+tag:tag0,249,20.0.0.1/24,20.0.0.1
+tag:tag0,option:router,192.168.0.1
+tag:tag1,option:dns-server,%s
+tag:tag1,option:classless-static-route,%s,%s
+tag:tag1,249,%s,%s""".lstrip() % (fake_v6,
+                                  fake_v6_cidr, fake_v6,
+                                  fake_v6_cidr, fake_v6)
 
         with mock.patch('__builtin__.open') as mock_open:
             mock_open.return_value.__enter__ = lambda s: s
