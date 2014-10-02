@@ -193,3 +193,39 @@ CMD_NO_VLAN_SVI_SNIPPET = """
     </interface>
 </no>
 """
+
+OLD_CMD_CREATE_VRF_SNIPPET = """
+<vrf>
+    <context>%s</context>
+    <__XML__MODE_vrf>
+        <no>
+            <shutdown/>
+        </no>
+    </__XML__MODE_vrf>
+</vrf>
+"""
+
+CMD_CREATE_VRF_SNIPPET = """
+<configure>
+    <__XML__MODE__exec_configure>
+        <vrf>
+            <vrf-name-known-name>
+                <__XML__PARAM_value>%s</__XML__PARAM_value>
+            </vrf-name-known-name>
+            <__XML__MODE_vrf>
+                <no>
+                    <shutdown/>
+                </no>
+            </__XML__MODE_vrf>
+        </vrf>
+    </__XML__MODE__exec_configure>
+</configure>
+"""
+
+CMD_NO_VRF_SNIPPET = """
+<no>
+    <vrf>
+        <context>%s</context>
+    </vrf>
+</no>
+"""

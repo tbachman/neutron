@@ -179,3 +179,17 @@ class CiscoNexusDriver(object):
         if nexus_port:
             self.enable_vlan_on_trunk_int(nexus_host, vlan_id, intf_type,
                                           nexus_port)
+
+    def create_vrf(self, nexus_host, vrf_name):
+        confstr = snipp.CMD_CREATE_VRF_SNIPPET % (vrf_name)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
+    def delete_vrf(self, nexus_host, vrf_name):
+        confstr = snipp.CMD_NO_VRF_SNIPPET % (vrf_name)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
+    def create_floatingip_nat_rule(self, nexus_host, floatingip, internal_ip):
+        print "\n\n\n\n%s %s\n\n\n\n" % (floatingip, internal_ip)
+
+    def delete_floatingip_nat_rule(self, nexus_host, floatingip, internal_ip):
+        print "\n\n\n\n%s %s\n\n\n\n" % (floatingip, internal_ip)

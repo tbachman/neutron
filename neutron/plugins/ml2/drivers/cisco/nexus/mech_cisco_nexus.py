@@ -192,11 +192,14 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
             fields = "vlan_id " if not vlan_id else ""
             fields += "device_id " if not device_id else ""
             fields += "host_id" if not host_id else ""
-            raise excep.NexusMissingRequiredFields(fields=fields)
+            #raise excep.NexusMissingRequiredFields(fields=fields)
+
+    def _process_l3_for_port(self, context):
+        pass
 
     def update_port_precommit(self, context):
         """Update port pre-database transaction commit event."""
-
+        self._process_l3_for_port(context)
         # if VM migration is occurring then remove previous database entry
         # else process update event.
         if self._is_vm_migration(context):
