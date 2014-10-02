@@ -19,10 +19,14 @@ ML2 Mechanism Driver for Cisco Nexus platforms.
 
 from oslo_config import cfg
 
+from neutron import context as ctx
+from neutron import manager
 from neutron.common import constants as n_const
+from neutron.extensions import l3
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.cisco.nexus import config as conf
 from neutron.plugins.ml2.drivers.cisco.nexus import exceptions as excep
@@ -193,11 +197,30 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
             fields = "vlan_id " if not vlan_id else ""
             fields += "device_id " if not device_id else ""
             fields += "host_id" if not host_id else ""
-            raise excep.NexusMissingRequiredFields(fields=fields)
+            #raise excep.NexusMissingRequiredFields(fields=fields)
+
+    def _process_l3_for_port(self, context):
+        port = context.original
+        tenant_id = port['tenant_id']
+        network_id = port['network_id']
+        dbcontext = context._plugin_context
+        port_filter = {'device_owner': ['network:router_interface'],
+                       'tenant_id': [tenant_id],
+                       'network_id': [network_id]}
+        router_ports = context._plugin.get_ports(dbcontext, port_filter)
+        l3plugin = (manager.NeutronManager.get_service_plugins().get(
+                        service_constants.L3_ROUTER_NAT))
+        if l3plugin:
+            ctx_admin = ctx.get_admin_context()
+            for router_port in router_ports:
+                router = l3plugin.get_router(ctx_admin,
+                                             router_port['device_id'])
+                l3plugin._create_vrf(ctx_admin,
+                                     router.get('id'), port)
 
     def update_port_precommit(self, context):
         """Update port pre-database transaction commit event."""
-
+        self._process_l3_for_port(context)
         # if VM migration is occurring then remove previous database entry
         # else process update event.
         if self._is_vm_migration(context):

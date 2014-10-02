@@ -201,3 +201,13 @@ class CiscoNexusDriver(object):
         if nexus_port:
             self.enable_vlan_on_trunk_int(nexus_host, vlan_id, intf_type,
                                           nexus_port)
+
+    def create_vrf(self, nexus_host, vrf_name):
+        confstr = snipp.CMD_CREATE_VRF_SNIPPET % (vrf_name)
+        confstr = self.create_xml_snippet(confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
+    def delete_vrf(self, nexus_host, vrf_name):
+        confstr = snipp.CMD_NO_VRF_SNIPPET % (vrf_name)
+        confstr = self.create_xml_snippet(confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)
