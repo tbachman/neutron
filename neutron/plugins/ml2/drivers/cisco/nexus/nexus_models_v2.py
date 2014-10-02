@@ -43,3 +43,24 @@ class NexusPortBinding(model_base.BASEV2):
             self.switch_ip == other.switch_ip and
             self.instance_id == other.instance_id
         )
+
+
+class NexusVRF(model_base.BASEV2):
+    """Represents a Virtual forwargind context for a Neutron router."""
+
+    __tablename__ = "cisco_nexus_vrf"
+
+    vrf_id = sa.Column(sa.String(36), primary_key=True, autoincrement=False)
+    router_id = sa.Column(sa.String(36))
+
+
+class NexusVRFBinding(model_base.BASEV2):
+    """Represents a VRF binding to a Nexus switch."""
+
+    __tablename__ = "cisco_nexus_vrf_binding"
+
+    vrf_id = sa.Column(sa.String(36),
+                       sa.ForeignKey("cisco_nexus_vrf.vrf_id",
+                                     ondelete='CASCADE'),
+                        nullable=False, primary_key=True)
+    switch_ip = sa.Column(sa.String(255), nullable=False, primary_key=True)
