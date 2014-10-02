@@ -411,7 +411,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 orm.noload('available_ranges')).with_lockmode('update')
         for subnet in sorted(subnets):
             LOG.debug(_("Rebuilding availability ranges for subnet %s")
-                      % subnet)
+                      % subnet['id'])
 
             # Create a set of all currently allocated addresses
             ip_qry_results = ip_qry.filter_by(subnet_id=subnet['id'])
