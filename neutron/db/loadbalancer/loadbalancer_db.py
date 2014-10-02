@@ -311,7 +311,8 @@ class LoadBalancerPluginDb(LoadBalancerPluginBase,
             fixed_ip = {'subnet_id': subnet['id']}
             if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
                 fixed_ip['ip_address'] = ip_address
-
+                if subnet['gateway_ip'] is not None and subnet['gateway_ip'] == ip_address:
+                    raise q_exc.IpAddressInUse(net_id=subnet['network_id'], ip_address=ip_address)
             port_data = {
                 'tenant_id': vip_db.tenant_id,
                 'name': 'vip-' + vip_db.id,
