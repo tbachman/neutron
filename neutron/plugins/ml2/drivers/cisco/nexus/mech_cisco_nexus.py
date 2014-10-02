@@ -359,43 +359,37 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                                     {portbindings.CAP_PORT_FILTER: True},
                                     status=n_const.PORT_STATUS_ACTIVE)
 
-                # Continue to create VLAN dynamic segment.
-
-                # TODO(rcurran) - do we need to support multiple physnets
-                # on different switches per hostname?
+                # Find physical network setting for this host.
                 host_id = context.current.get(portbindings.HOST_ID)
                 host_connections = self._get_switch_info(host_id)
-                physnets = []
                 for switch_ip, attr2, attr3 in host_connections:
                     physnet = self._nexus_switches.get((switch_ip, 'physnet'))
                     if physnet:
-                        physnets.append(physnet)
-
-                if not physnets:
-                    LOG.debug(_("No physical network(s) found for vlan "
-                                "segment allocation(s)."))
+                        break
+                else:
+                    LOG.error(_("No physical network found for vlan segment "
+                                "allocation."))
                     return
 
-                # Nexus overlay configured. Allocate vlan and configure switch
-                # with VXLAN information.
-                network_id = context.current['network_id']
-                vlan_segment = {api.NETWORK_TYPE: 'vlan'}
-                session = db_api.get_session()
+                # Allocate dynamic vlan segment.
+                vlan_segment = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                                api.PHYSICAL_NETWORK: physnet}
+                context.allocate_dynamic_segment(vlan_segment)
 
-                # TODO(rcurran) - do we support multiple physnets per hostname?
-                for physnet in physnets:
-                    vlan_segment[api.PHYSICAL_NETWORK] = physnet
-                    context.allocate_dynamic_segment(vlan_segment)
+                # Retrieve the dynamically allocated segment.
+                # Database has provider_segment dictionary key.
+                dynamic_segment = ml2_db.get_dynamic_segment(
+                    db_api.get_session(), context.current['network_id'],
+                    physnet)
 
-                    # Retrieve the dynamically allocated segment.
-                    # Database has provider_segment dictionary key.
-                    dynamic_segment = ml2_db.get_dynamic_segment(session,
-                                                    network_id, physnet)
-
-                    # Have other drivers bind the VLAN dynamic segment.
-                    if dynamic_segment:
-                        context.continue_binding(segment[api.ID],
-                                                 [dynamic_segment])
+                # Have other drivers bind the VLAN dynamic segment.
+                if dynamic_segment:
+                    context.continue_binding(segment[api.ID],
+                                             [dynamic_segment])
+                else:
+                    LOG.error(_("VLAN dynamic segment not created for Nexus "
+                                "VXLAN overlay static segment."))
+                    return
             else:
                 LOG.debug(_("Refusing to bind port for segment ID %(id)s, "
                             "segment %(seg)s, phys net %(physnet)s, and "
