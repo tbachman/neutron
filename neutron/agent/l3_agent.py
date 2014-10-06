@@ -254,7 +254,6 @@ class RouterInfo(l3_ha_agent.RouterMixin):
         self.use_namespaces = use_namespaces
         # Invoke the setter for establishing initial SNAT action
         self.router = router
-        self.ns_name = NS_PREFIX + router_id if use_namespaces else None
         self.iptables_manager = iptables_manager.IptablesManager(
             root_helper=root_helper,
             use_ipv6=use_ipv6,
@@ -286,6 +285,10 @@ class RouterInfo(l3_ha_agent.RouterMixin):
         elif self.ex_gw_port:
             # Gateway port was removed, remove rules
             self._snat_action = 'remove_rules'
+
+    @property
+    def ns_name(self):
+        return NS_PREFIX + self.router_id if self.use_namespaces else None
 
     def perform_snat_action(self, snat_callback, *args):
         # Process SNAT rules for attached subnets
@@ -554,6 +557,14 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         self.target_ex_net_id = None
         self.use_ipv6 = ipv6_utils.is_enabled()
 
+    def _get_router_info(self, router_id, router):
+        return RouterInfo(
+            router_id=router_id,
+            root_helper=self.root_helper,
+            use_namespaces=self.conf.use_namespaces,
+            router=router,
+            use_ipv6=self.use_ipv6)
+
     def _check_config_params(self):
         """Check items in configuration files.
 
@@ -588,16 +599,23 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                             'for namespace cleanup.'))
             return set()
 
+    def _get_routers_namespaces(self, router_ids):
+        namespaces = set(self._get_router_info(id, router=None).ns_name
+                         for id in router_ids)
+        namespaces.update(self.get_snat_ns_name(id) for id in router_ids)
+        return namespaces
+
     def _cleanup_namespaces(self, router_namespaces, router_ids):
         """Destroy stale router namespaces on host when L3 agent restarts
 
-            This routine is called when self._clean_stale_namespaces is True.
+        This routine is called when self._clean_stale_namespaces is True.
 
         The argument router_namespaces is the list of all routers namespaces
         The argument router_ids is the list of ids for known routers.
         """
-        ns_to_ignore = set(NS_PREFIX + id for id in router_ids)
-        ns_to_ignore.update(SNAT_NS_PREFIX + id for id in router_ids)
+        # Don't destroy namespaces of routers this agent handles.
+        ns_to_ignore = self._get_routers_namespaces(router_ids)
+
         ns_to_destroy = router_namespaces - ns_to_ignore
         self._destroy_stale_router_namespaces(ns_to_destroy)
 
@@ -727,9 +745,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                     raise Exception(msg)
 
     def _router_added(self, router_id, router):
-        ri = RouterInfo(router_id, self.root_helper,
-                        self.conf.use_namespaces, router,
-                        use_ipv6=self.use_ipv6)
+        ri = self._get_router_info(router_id, router)
         self.router_info[router_id] = ri
         if self.conf.use_namespaces:
             self._create_router_namespace(ri)
@@ -776,7 +792,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
     def _get_metadata_proxy_callback(self, router_id):
 
         def callback(pid_file):
-            metadata_proxy_socket = cfg.CONF.metadata_proxy_socket
+            metadata_proxy_socket = self.conf.metadata_proxy_socket
             proxy_cmd = ['neutron-ns-metadata-proxy',
                          '--pid_file=%s' % pid_file,
                          '--metadata_proxy_socket=%s' % metadata_proxy_socket,
@@ -784,7 +800,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                          '--state_path=%s' % self.conf.state_path,
                          '--metadata_port=%s' % self.conf.metadata_port]
             proxy_cmd.extend(config.get_log_args(
-                cfg.CONF, 'neutron-ns-metadata-proxy-%s.log' %
+                self.conf, 'neutron-ns-metadata-proxy-%s.log' %
                 router_id))
             return proxy_cmd
 
@@ -1387,7 +1403,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 self._snat_redirect_remove(ri, p, internal_interface)
 
             if self.conf.agent_mode == 'dvr_snat' and (
-                ex_gw_port['binding:host_id'] == self.host):
+                ri.router['gw_port_host'] == self.host):
                 ns_name = self.get_snat_ns_name(ri.router['id'])
             else:
                 # not hosting agent - no work to do
@@ -1949,7 +1965,7 @@ class L3NATAgentWithStateReport(L3NATAgent):
                 'interface_driver': self.conf.interface_driver},
             'start_flag': True,
             'agent_type': l3_constants.AGENT_TYPE_L3}
-        report_interval = cfg.CONF.AGENT.report_interval
+        report_interval = self.conf.AGENT.report_interval
         self.use_call = True
         if report_interval:
             self.heartbeat = loopingcall.FixedIntervalLoopingCall(
