@@ -633,7 +633,7 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
                                              net_p['network_profile']['id'])
         update_req.environ['neutron.context'] = context.Context('',
                                                                self.tenant_id,
-                                                               is_admin = True)
+                                                               is_admin=True)
         update_res = update_req.get_response(self.ext_api)
         self.assertEqual(200, update_res.status_int)
         db_session = db.get_session()
@@ -644,7 +644,7 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
                                                 net_p['network_profile']['id'])
         self.assertRaises(c_exc.ProfileTenantBindingNotFound,
                           n1kv_db_v2.get_profile_binding,
-                          db_session, 'tenant2',
+                          db_session, 'tenant4',
                           net_p['network_profile']['id'])
         tenant3 = n1kv_db_v2.get_profile_binding(db_session, 'tenant3',
                                                 net_p['network_profile']['id'])
@@ -658,7 +658,7 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
                                              net_p['network_profile']['id'])
         update_req.environ['neutron.context'] = context.Context('',
                                                                self.tenant_id,
-                                                               is_admin = True)
+                                                               is_admin=True)
         update_res = update_req.get_response(self.ext_api)
         self.assertEqual(200, update_res.status_int)
         # current tenant_id should always present
@@ -670,12 +670,27 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
                           net_p['network_profile']['id'])
         self.assertRaises(c_exc.ProfileTenantBindingNotFound,
                           n1kv_db_v2.get_profile_binding,
-                          db_session, 'tenant2',
+                          db_session, 'tenant4',
                           net_p['network_profile']['id'])
         tenant3 = n1kv_db_v2.get_profile_binding(db_session, 'tenant3',
                                                 net_p['network_profile']['id'])
+        # Add new tenant4 to network profile and make sure existing tenants
+        # are not deleted.
+        data = {'network_profile': {c_const.ADD_TENANTS:
+                                    ['tenant4']}}
+        update_req = self.new_update_request('network_profiles',
+                                             data,
+                                             net_p['network_profile']['id'])
+        update_req.environ['neutron.context'] = context.Context('',
+                                                               self.tenant_id,
+                                                               is_admin=True)
+        update_res = update_req.get_response(self.ext_api)
+        self.assertEqual(200, update_res.status_int)
+        tenant4 = n1kv_db_v2.get_profile_binding(db_session, 'tenant4',
+                                                net_p['network_profile']['id'])
         self.assertIsNotNone(tenant_id)
         self.assertIsNotNone(tenant3)
+        self.assertIsNotNone(tenant4)
 
 
 class TestN1kvBasicGet(test_plugin.TestBasicGet,
