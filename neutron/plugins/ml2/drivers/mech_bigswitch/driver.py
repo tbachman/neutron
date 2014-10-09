@@ -128,7 +128,7 @@ class BigSwitchMechanismDriver(plugin.NeutronRestProxyV2Base,
         port = copy.deepcopy(context.current)
         net = context.network.current
         port['network'] = net
-        port['bound_segment'] = context.top_bound_segment
+        port['bound_segment'] = context.bound_segment
         actx = ctx.get_admin_context()
         prepped_port = self._extend_port_dict_binding(actx, port)
         prepped_port = self._map_state_and_status(prepped_port)
