@@ -312,7 +312,7 @@ class OpenDaylightMechanismDriver(api.MechanismDriver):
                   "network %(network)s",
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
-        for segment in context.segments_to_bind:
+        for segment in context.network.network_segments:
             if self.check_segment(segment):
                 context.set_binding(segment[api.ID],
                                     self.vif_type,
