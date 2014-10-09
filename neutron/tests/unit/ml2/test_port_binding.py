@@ -36,9 +36,6 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
         config.cfg.CONF.set_override('mechanism_drivers',
                                      ['logger', 'test'],
                                      'ml2')
-        config.cfg.CONF.set_override('network_vlan_ranges',
-                                     ['physnet1:1000:1099'],
-                                     group='ml2_type_vlan')
         super(PortBindingTestCase, self).setUp(PLUGIN_NAME)
         self.port_create_status = 'DOWN'
         self.plugin = manager.NeutronManager.get_plugin()
@@ -57,7 +54,7 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
             self.assertEqual(port_status, 'DOWN')
 
     def _test_port_binding(self, host, vif_type, has_port_filter, bound,
-                           status=None, network_type='local'):
+                           status=None):
         mac_address = 'aa:aa:aa:aa:aa:aa'
         host_arg = {portbindings.HOST_ID: host,
                     'mac_address': mac_address}
@@ -70,7 +67,7 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
             details = self.plugin.endpoints[0].get_device_details(
                 neutron_context, agent_id="theAgentId", device=port_id)
             if bound:
-                self.assertEqual(details['network_type'], network_type)
+                self.assertEqual(details['network_type'], 'local')
                 self.assertEqual(mac_address, details['mac_address'])
             else:
                 self.assertNotIn('network_type', details)
@@ -100,11 +97,6 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
         self._test_port_binding("host-ovs-filter-active",
                                 portbindings.VIF_TYPE_OVS,
                                 True, True, 'ACTIVE')
-
-    def test_hierarchical_binding(self):
-        self._test_port_binding("host-hierarchical",
-                                portbindings.VIF_TYPE_OVS,
-                                False, True, network_type='vlan')
 
     def _test_update_port_binding(self, host, new_host=None):
         with mock.patch.object(self.plugin,

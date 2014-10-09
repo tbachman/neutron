@@ -21,7 +21,6 @@ from neutron.common import exceptions as exc
 from neutron.extensions import multiprovidernet as mpnet
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
-from neutron.openstack.common.gettextutils import _LE, _LW
 from neutron.openstack.common import log
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import db
@@ -29,8 +28,6 @@ from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
 
 LOG = log.getLogger(__name__)
-
-MAX_BINDING_LEVELS = 10
 
 
 class TypeManager(stevedore.named.NamedExtensionManager):
@@ -570,85 +567,48 @@ class MechanismManager(stevedore.named.NamedExtensionManager):
         binding.
         """
         binding = context._binding
-        LOG.debug("Attempting to bind port %(port)s on host %(host)s "
-                  "for vnic_type %(vnic_type)s with profile %(profile)s",
-                  {'port': context.current['id'],
-                   'host': context.host,
-                   'vnic_type': binding.vnic_type,
-                   'profile': binding.profile})
-        context.clear_binding_levels()
-        if not self._bind_port_level(context, 0,
-                                     context.network.network_segments):
-            binding.vif_type = portbindings.VIF_TYPE_BINDING_FAILED
-            LOG.warning(_LW("Failed to bind port %(port)s on host %(host)s"),
-                        {'port': context.current['id'],
-                         'host': context.host})
-
-    def _bind_port_level(self, context, level, segments_to_bind):
-        binding = context._binding
         port_id = context._port['id']
         LOG.debug("Attempting to bind port %(port)s on host %(host)s "
-                  "at level %(level)s using segments %(segments)s",
+                  "for vnic_type %(vnic_type)s with profile %(profile)s",
                   {'port': port_id,
-                   'host': context.host,
-                   'level': level,
-                   'segments': segments_to_bind})
-
-        if level == MAX_BINDING_LEVELS:
-            LOG.error(_LE("Exceeded maximum binding levels attempting to bind "
-                        "port %(port)s on host %(host)s"),
-                      {'port': context.current['id'],
-                       'host': context.host})
-            return False
-
+                   'host': binding.host,
+                   'vnic_type': binding.vnic_type,
+                   'profile': binding.profile})
         for driver in self.ordered_mech_drivers:
-            if not self._check_driver_to_bind(driver, segments_to_bind,
-                                              context._binding_levels):
-                continue
             try:
-                context.prepare_to_bind(segments_to_bind)
                 driver.obj.bind_port(context)
                 segment = context._new_bound_segment
                 if segment:
-                    context.push_binding_level(
+                    context._binding_levels = [
                         models.PortBindingLevel(port_id=port_id,
-                                                host=context.host,
-                                                level=level,
+                                                host=binding.host,
+                                                level=0,
                                                 driver=driver.name,
-                                                segment_id=segment))
-                    next_segments = context._next_segments_to_bind
-                    if next_segments:
-                        # Continue binding another level.
-                        if self._bind_port_level(context, level + 1,
-                                                 next_segments):
-                            return True
-                        else:
-                            context.pop_binding_level()
-                    else:
-                        # Binding complete.
-                        LOG.debug("Bound port: %(port)s, "
-                                  "host: %(host)s, "
-                                  "vif_type: %(vif_type)s, "
-                                  "vif_details: %(vif_details)s, "
-                                  "binding_levels: %(binding_levels)s",
-                                  {'port': port_id,
-                                   'host': context.host,
-                                   'vif_type': binding.vif_type,
-                                   'vif_details': binding.vif_details,
-                                   'binding_levels': context.binding_levels})
-                        return True
+                                                segment_id=segment)
+                    ]
+                    LOG.debug("Bound port: %(port)s, "
+                              "host: %(host)s, "
+                              "vnic_type: %(vnic_type)s, "
+                              "profile: %(profile)s, "
+                              "vif_type: %(vif_type)s, "
+                              "vif_details: %(vif_details)s, "
+                              "binding_levels: %(binding_levels)s",
+                              {'port': port_id,
+                               'host': context.host,
+                               'vnic_type': binding.vnic_type,
+                               'profile': binding.profile,
+                               'vif_type': binding.vif_type,
+                               'vif_details': binding.vif_details,
+                               'binding_levels': context.binding_levels})
+                    return
             except Exception:
                 LOG.exception(_("Mechanism driver %s failed in "
-                                "_bind_port_level"),
+                                "bind_port"),
                               driver.name)
-        return False
-
-    def _check_driver_to_bind(self, driver, segments_to_bind, binding_levels):
-        for level in binding_levels:
-            if (level.driver == driver and
-                level.segment_id in segments_to_bind):
-                return False
-        return True
+        binding.vif_type = portbindings.VIF_TYPE_BINDING_FAILED
+        LOG.warning(_("Failed to bind port %(port)s on host %(host)s"),
+                    {'port': context._port['id'],
+                     'host': binding.host})
 
 
 class ExtensionManager(stevedore.named.NamedExtensionManager):
