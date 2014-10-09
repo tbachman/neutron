@@ -36,12 +36,10 @@ def _make_segment_dict(record):
     return {api.ID: record.id,
             api.NETWORK_TYPE: record.network_type,
             api.PHYSICAL_NETWORK: record.physical_network,
-            api.SEGMENTATION_ID: record.segmentation_id,
-            api.PROVIDER_SEGMENT: record.provider_segment}
+            api.SEGMENTATION_ID: record.segmentation_id}
 
 
-def add_network_segment(session, network_id, segment, is_dynamic=False,
-                        provider_segment=False):
+def add_network_segment(session, network_id, segment, is_dynamic=False):
     with session.begin(subtransactions=True):
         record = models.NetworkSegment(
             id=uuidutils.generate_uuid(),
@@ -49,8 +47,7 @@ def add_network_segment(session, network_id, segment, is_dynamic=False,
             network_type=segment.get(api.NETWORK_TYPE),
             physical_network=segment.get(api.PHYSICAL_NETWORK),
             segmentation_id=segment.get(api.SEGMENTATION_ID),
-            is_dynamic=is_dynamic,
-            provider_segment=provider_segment
+            is_dynamic=is_dynamic
         )
         session.add(record)
         segment[api.ID] = record.id
@@ -98,7 +95,7 @@ def get_dynamic_segment(session, network_id, physical_network=None,
         if record:
             return _make_segment_dict(record)
         else:
-            LOG.debug("No dynamic segment found for "
+            LOG.debug("No dynamic segment %s found for "
                       "Network:%(network_id)s, "
                       "Physical network:%(physnet)s, "
                       "segmentation_id:%(segmentation_id)s",

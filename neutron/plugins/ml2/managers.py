@@ -136,15 +136,13 @@ class TypeManager(stevedore.named.NamedExtensionManager):
             network[mpnet.SEGMENTS] = [
                 {provider.NETWORK_TYPE: segment[api.NETWORK_TYPE],
                  provider.PHYSICAL_NETWORK: segment[api.PHYSICAL_NETWORK],
-                 provider.SEGMENTATION_ID: segment[api.SEGMENTATION_ID],
-                 api.PROVIDER_SEGMENT: segment[api.PROVIDER_SEGMENT]}
+                 provider.SEGMENTATION_ID: segment[api.SEGMENTATION_ID]}
                 for segment in segments]
         else:
             segment = segments[0]
             network[provider.NETWORK_TYPE] = segment[api.NETWORK_TYPE]
             network[provider.PHYSICAL_NETWORK] = segment[api.PHYSICAL_NETWORK]
             network[provider.SEGMENTATION_ID] = segment[api.SEGMENTATION_ID]
-            network[api.PROVIDER_SEGMENT] = segment[api.PROVIDER_SEGMENT]
 
     def initialize(self):
         for network_type, driver in self.drivers.iteritems():
@@ -161,8 +159,7 @@ class TypeManager(stevedore.named.NamedExtensionManager):
                 for segment in segments:
                     segment = self.reserve_provider_segment(
                         session, segment)
-                    db.add_network_segment(session, network_id, segment,
-                                           provider_segment=True)
+                    db.add_network_segment(session, network_id, segment)
             else:
                 segment = self.allocate_tenant_segment(session)
                 db.add_network_segment(session, network_id, segment)
