@@ -14,6 +14,7 @@
 #    under the License.
 
 from neutron.common import constants
+from neutron.common import exceptions as exc
 from neutron.extensions import portbindings
 from neutron.openstack.common import jsonutils
 from neutron.plugins.ml2 import db
@@ -80,31 +81,12 @@ class PortContext(MechanismDriverContext, api.PortContext):
                                                network)
         self._binding = binding
         self._binding_levels = binding_levels
-        self._segments_to_bind = None
         self._new_bound_segment = None
-        self._next_segments_to_bind = None
         if original_port:
             self._original_binding_levels = self._binding_levels
         else:
             self._original_binding_levels = None
         self._new_port_status = None
-
-    def prepare_to_bind(self, segments_to_bind):
-        self._segments_to_bind = segments_to_bind
-        self._new_bound_segment = None
-        self._next_segments_to_bind = None
-
-    def clear_binding_levels(self):
-        self._binding_levels = []
-
-    def push_binding_level(self, binding_level):
-        self._binding_levels.append(binding_level)
-
-    def pop_binding_level(self):
-        return self._binding_levels.pop()
-
-    # The following implement the abstract methods and properties of
-    # the driver API.
 
     @property
     def current(self):
@@ -177,7 +159,8 @@ class PortContext(MechanismDriverContext, api.PortContext):
 
     @property
     def segments_to_bind(self):
-        return self._segments_to_bind
+        # TODO(rkukura): Implement for hierarchical port binding.
+        return self._network_context.network_segments
 
     def host_agents(self, agent_type):
         return self._plugin.get_agents(self._plugin_context,
@@ -193,9 +176,9 @@ class PortContext(MechanismDriverContext, api.PortContext):
         self._new_port_status = status
 
     def continue_binding(self, segment_id, next_segments_to_bind):
-        # TODO(rkukura) Verify binding allowed, segment in network
-        self._new_bound_segment = segment_id
-        self._next_segments_to_bind = next_segments_to_bind
+        # TODO(rkukura): Implement for hierarchical port binding.
+        msg = _("Hierarchical port binding not yet implemented")
+        raise exc.Invalid(message=msg)
 
     def allocate_dynamic_segment(self, segment):
         network_id = self._network_context.current['id']
