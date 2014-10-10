@@ -22,6 +22,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 
 from neutron.common import constants
+from neutron.common import utils
 from neutron.db import agents_db
 from neutron.db import model_base
 from neutron.extensions import dhcpagentscheduler
@@ -158,6 +159,15 @@ class DhcpAgentSchedulerDbMixin(dhcpagentscheduler
                 raise dhcpagentscheduler.NetworkNotHostedByDhcpAgent(
                     network_id=network_id, agent_id=id)
             context.session.delete(binding)
+
+        # reserve the port, so the ip is reused on a subsequent add
+        device_id = utils.get_dhcp_agent_device_id(network_id, agent['host'])
+        filters = dict(device_id=[device_id])
+        ports = self.get_ports(context, filters=filters)
+        for port in ports:
+            port['device_id'] = constants.DEVICE_ID_RESERVED_DHCP_PORT
+            self.update_port(context, port['id'], dict(port=port))
+
         dhcp_notifier = self.agent_notifiers.get(constants.AGENT_TYPE_DHCP)
         if dhcp_notifier:
             dhcp_notifier.network_removed_from_agent(
