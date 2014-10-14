@@ -1765,25 +1765,6 @@ vrrp_instance VR_1 {
         agent.router_added_to_agent(None, [FAKE_ID])
         agent._queue.add.assert_called_once()
 
-    def test_process_router_delete(self):
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        ex_gw_port = {'id': _uuid(),
-                      'network_id': _uuid(),
-                      'fixed_ips': [{'ip_address': '19.4.4.4',
-                                     'subnet_id': _uuid()}],
-                      'subnet': {'cidr': '19.4.4.0/24',
-                                 'gateway_ip': '19.4.4.1'}}
-        router = {
-            'id': _uuid(),
-            'enable_snat': True,
-            'routes': [],
-            'gw_port': ex_gw_port}
-        router['distributed'] = False
-        agent._router_added(router['id'], router)
-        agent.router_deleted(None, router['id'])
-        agent._process_router_delete()
-        self.assertFalse(list(agent.removed_routers))
-
     def test_destroy_fip_namespace(self):
         class FakeDev(object):
             def __init__(self, name):
@@ -1889,108 +1870,94 @@ vrrp_instance VR_1 {
         self.assertEqual(['1234'], agent._router_ids())
         self.assertFalse(agent._clean_stale_namespaces)
 
-    def test_process_routers_with_no_ext_net_in_conf(self):
+    def test_process_router_if_compatible_with_no_ext_net_in_conf(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = 'aaa'
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'aaa'}}
 
-        agent._process_routers(routers)
-        self.assertIn(routers[0]['id'], agent.router_info)
+        agent._process_router_if_compatible(router)
+        self.assertIn(router['id'], agent.router_info)
         self.plugin_api.get_external_network_id.assert_called_with(
             agent.context)
 
-    def test_process_routers_with_cached_ext_net(self):
+    def test_process_router_if_compatible_with_cached_ext_net(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = 'aaa'
         agent.target_ex_net_id = 'aaa'
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'aaa'}}
 
-        agent._process_routers(routers)
-        self.assertIn(routers[0]['id'], agent.router_info)
+        agent._process_router_if_compatible(router)
+        self.assertIn(router['id'], agent.router_info)
         self.assertFalse(self.plugin_api.get_external_network_id.called)
 
-    def test_process_routers_with_stale_cached_ext_net(self):
+    def test_process_router_if_compatible_with_stale_cached_ext_net(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = 'aaa'
         agent.target_ex_net_id = 'bbb'
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'aaa'}}
 
-        agent._process_routers(routers)
-        self.assertIn(routers[0]['id'], agent.router_info)
+        agent._process_router_if_compatible(router)
+        self.assertIn(router['id'], agent.router_info)
         self.plugin_api.get_external_network_id.assert_called_with(
             agent.context)
 
-    def test_process_routers_with_no_ext_net_in_conf_and_two_net_plugin(self):
+    def test_process_router_if_compatible_w_no_ext_net_and_2_net_plugin(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'aaa'}}
 
         agent.router_info = {}
         self.plugin_api.get_external_network_id.side_effect = (
             n_exc.TooManyExternalNetworks())
         self.assertRaises(n_exc.TooManyExternalNetworks,
-                          agent._process_routers,
-                          routers)
-        self.assertNotIn(routers[0]['id'], agent.router_info)
+                          agent._process_router_if_compatible,
+                          router)
+        self.assertNotIn(router['id'], agent.router_info)
 
-    def test_process_routers_with_ext_net_in_conf(self):
+    def test_process_router_if_compatible_with_ext_net_in_conf(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = 'aaa'
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}},
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'bbb'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'bbb'}}
 
         agent.router_info = {}
         self.conf.set_override('gateway_external_network_id', 'aaa')
-        agent._process_routers(routers)
-        self.assertIn(routers[0]['id'], agent.router_info)
-        self.assertNotIn(routers[1]['id'], agent.router_info)
+        self.assertRaises(n_exc.RouterNotCompatibleWithAgent,
+                          agent._process_router_if_compatible,
+                          router)
+        self.assertNotIn(router['id'], agent.router_info)
 
-    def test_process_routers_with_no_bridge_no_ext_net_in_conf(self):
+    def test_process_router_if_compatible_with_no_bridge_no_ext_net(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_external_network_id.return_value = 'aaa'
 
-        routers = [
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'aaa'}},
-            {'id': _uuid(),
-             'routes': [],
-             'admin_state_up': True,
-             'external_gateway_info': {'network_id': 'bbb'}}]
+        router = {'id': _uuid(),
+                  'routes': [],
+                  'admin_state_up': True,
+                  'external_gateway_info': {'network_id': 'aaa'}}
 
         agent.router_info = {}
         self.conf.set_override('external_network_bridge', '')
-        agent._process_routers(routers)
-        self.assertIn(routers[0]['id'], agent.router_info)
-        self.assertIn(routers[1]['id'], agent.router_info)
+        agent._process_router_if_compatible(router)
+        self.assertIn(router['id'], agent.router_info)
 
     def test_nonexistent_interface_driver(self):
         self.conf.set_override('interface_driver', None)
