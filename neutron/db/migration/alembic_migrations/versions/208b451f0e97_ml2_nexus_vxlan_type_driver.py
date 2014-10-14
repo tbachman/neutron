@@ -32,9 +32,10 @@ import sqlalchemy as sa
 def upgrade(active_plugins=None, options=None):
     op.create_table(
         'ml2_nexus_vxlan_allocations',
-        sa.Column('vxlan_vni', sa.Integer(), autoincrement=False),
-        sa.Column('allocated', sa.Boolean(), autoincrement=False,
-                  nullable=False),
+        sa.Column('vxlan_vni', sa.Integer(), nullable=False,
+                  autoincrement=False),
+        sa.Column('allocated', sa.Boolean(), nullable=False,
+                  server_default=sa.sql.false()),
         sa.PrimaryKeyConstraint('vxlan_vni')
     )
 
