@@ -82,3 +82,17 @@ class SubnetInterfacePresent(exceptions.NeutronException):
 class PortIdForNexusSvi(exceptions.NeutronException):
         """Port Id specified for Nexus SVI."""
         message = _('Nexus hardware router gateway only uses Subnet Ids.')
+
+
+class PhysnetNotConfigured(exceptions.NeutronException):
+    """Variable 'physnet' is not configured."""
+    message = _("Configuration variable 'physnet' is not configured "
+                "for host_id %(host_id)s. Switch information found = "
+                "%(host_connections)s")
+
+
+class NoDynamicSegmentAllocated(exceptions.NeutronException):
+    """VLAN dynamic segment not allocated."""
+    message = _("VLAN dynamic segment not created for Nexus VXLAN overlay "
+                "static segment. Network segment = %(network_segment)s "
+                "physnet = %(physnet)s")

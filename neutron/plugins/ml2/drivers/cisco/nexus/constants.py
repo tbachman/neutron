@@ -22,3 +22,5 @@ USERNAME = 'username'
 PASSWORD = 'password'
 
 NETWORK_ADMIN = 'network_admin'
+
+NVE_INT_NUM = '1'

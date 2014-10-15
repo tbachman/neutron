@@ -93,8 +93,20 @@ class FakePortContext(object):
         return self._network
 
     @property
-    def bottom_bound_segment(self):
+    def top_bound_segment(self):
         return self._segment
+
+    @property
+    def bottom_bound_segment(self):
+        return None
+
+    @property
+    def original_top_bound_segment(self):
+        return None
+
+    @property
+    def original_bottom_bound_segment(self):
+        return None
 
 
 class TestCiscoNexusDevice(testlib_api.SqlTestCase):
