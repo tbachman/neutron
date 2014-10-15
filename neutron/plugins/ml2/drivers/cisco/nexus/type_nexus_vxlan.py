@@ -23,11 +23,12 @@ from neutron.common import exceptions as exc
 from neutron.db import api as db_api
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.openstack.common import excutils
+from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_tunnel
-from neutron.openstack.common import excutils
 
 LOG = log.getLogger(__name__)
 
@@ -111,8 +112,8 @@ class NexusVxlanTypeDriver(type_tunnel.TunnelTypeDriver):
                 mcast_for_vni = min(allocs, key=allocs.get)
         except ValueError:
             with excutils.save_and_reraise_exception():
-                LOG.exception("Unable to allocate a multicast group for "
-                              "VNID:%s", vni)
+                LOG.exception(_LE("Unable to allocate a multicast group for "
+                                  "VNID:%s"), vni)
 
         alloc = NexusMcastGroup(mcast_group=mcast_for_vni,
                                 associated_vni=vni)
