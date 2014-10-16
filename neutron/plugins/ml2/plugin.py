@@ -1016,7 +1016,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             port = self._make_port_dict(port_db)
 
             network = self.get_network(context, port['network_id'])
-            mech_context = None
+            bound_mech_contexts = []
             device_owner = port['device_owner']
             if device_owner == const.DEVICE_OWNER_DVR_INTERFACE:
                 bindings = db.get_dvr_port_bindings(context.session, id)
@@ -1029,6 +1029,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                     # REVISIT(rkukura): This is calling precommit for
                     # each host, but there are no corresponding
                     # postcommit calls for each host!
+                    bound_mech_contexts.append(mech_context)
             else:
                 levels = db.get_binding_levels(context.session, id,
                                                binding.host)
@@ -1038,12 +1039,11 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                     router_info = l3plugin.dvr_deletens_if_no_port(context, id)
                     removed_routers += router_info
                 self.mechanism_manager.delete_port_precommit(mech_context)
+                bound_mech_contexts.append(mech_context)
                 self._delete_port_security_group_bindings(context, id)
             if l3plugin:
                 router_ids = l3plugin.disassociate_floatingips(
                     context, id, do_notify=False)
-                if is_dvr_enabled:
-                    l3plugin.dvr_vmarp_table_update(context, id, "del")
 
             LOG.debug("Calling delete_port for %(port_id)s owned by %(owner)s"
                       % {"port_id": id, "owner": device_owner})
@@ -1051,6 +1051,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         # now that we've left db transaction, we are safe to notify
         if l3plugin:
+            if is_dvr_enabled:
+                l3plugin.dvr_vmarp_table_update(context, port, "del")
             l3plugin.notify_routers_updated(context, router_ids)
             for router in removed_routers:
                 try:
@@ -1062,12 +1064,10 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                         {'id': router['router_id'],
                          'agent': router['agent_id']})
         try:
-            # for both normal and DVR Interface ports, only one invocation of
-            # delete_port_postcommit.  We use gather/scatter technique for DVR
-            # interface ports, where the bindings are gathered in
-            # delete_port_precommit() call earlier and scattered as l2pop
-            # rules to cloud nodes in delete_port_postcommit() here
-            if mech_context:
+            # Note that DVR Interface ports will have bindings on
+            # multiple hosts, and so will have multiple mech_contexts,
+            # while other ports typically have just one.
+            for mech_context in bound_mech_contexts:
                 self.mechanism_manager.delete_port_postcommit(mech_context)
         except ml2_exc.MechanismDriverError:
             # TODO(apech) - One or more mechanism driver failed to
