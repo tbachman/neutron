@@ -153,8 +153,7 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
                    'sg_member_ips': {}}
         rules_in_db = self._select_rules_for_ports(context, ports)
         remote_security_group_info = {}
-        for (binding, rule_in_db) in rules_in_db:
-            port_id = binding['port_id']
+        for (port_id, rule_in_db) in rules_in_db:
             remote_gid = rule_in_db.get('remote_group_id')
             security_group_id = rule_in_db.get('security_group_id')
             ethertype = rule_in_db['ethertype']
@@ -219,7 +218,7 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
 
         sgr_sgid = sg_db.SecurityGroupRule.security_group_id
 
-        query = context.session.query(sg_db.SecurityGroupPortBinding,
+        query = context.session.query(sg_binding_port,
                                       sg_db.SecurityGroupRule)
         query = query.join(sg_db.SecurityGroupRule,
                            sgr_sgid == sg_binding_sgid)
@@ -269,7 +268,8 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
     def _select_dhcp_ips_for_network_ids(self, context, network_ids):
         if not network_ids:
             return {}
-        query = context.session.query(models_v2.Port,
+        query = context.session.query(models_v2.Port.mac_address,
+                                      models_v2.Port.network_id,
                                       models_v2.IPAllocation.ip_address)
         query = query.join(models_v2.IPAllocation)
         query = query.filter(models_v2.Port.network_id.in_(network_ids))
@@ -280,14 +280,13 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
         for network_id in network_ids:
             ips[network_id] = []
 
-        for port, ip in query:
+        for mac_address, network_id, ip in query:
             if (netaddr.IPAddress(ip).version == 6
                 and not netaddr.IPAddress(ip).is_link_local()):
-                mac_address = port['mac_address']
                 ip = str(ipv6.get_ipv6_addr_by_EUI64(q_const.IPV6_LLA_PREFIX,
                     mac_address))
-            if ip not in ips[port['network_id']]:
-                ips[port['network_id']].append(ip)
+            if ip not in ips[network_id]:
+                ips[network_id].append(ip)
 
         return ips
 
@@ -330,7 +329,7 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
         return ips
 
     def _get_lla_gateway_ip_for_subnet(self, context, subnet):
-        query = context.session.query(models_v2.Port)
+        query = context.session.query(models_v2.Port.mac_address)
         query = query.join(models_v2.IPAllocation)
         query = query.filter(
             models_v2.IPAllocation.subnet_id == subnet['id'])
@@ -339,12 +338,11 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
         query = query.filter(models_v2.Port.device_owner ==
                              q_const.DEVICE_OWNER_ROUTER_INTF)
         try:
-            gateway_port = query.one()
+            mac_address = query.one()[0]
         except (exc.NoResultFound, exc.MultipleResultsFound):
             LOG.warn(_('No valid gateway port on subnet %s is '
                        'found for IPv6 RA'), subnet['id'])
             return
-        mac_address = gateway_port['mac_address']
         lla_ip = str(ipv6.get_ipv6_addr_by_EUI64(
             q_const.IPV6_LLA_PREFIX,
             mac_address))
@@ -417,8 +415,7 @@ class SecurityGroupServerRpcMixin(sg_db.SecurityGroupDbMixin):
 
     def security_group_rules_for_ports(self, context, ports):
         rules_in_db = self._select_rules_for_ports(context, ports)
-        for (binding, rule_in_db) in rules_in_db:
-            port_id = binding['port_id']
+        for (port_id, rule_in_db) in rules_in_db:
             port = ports[port_id]
             direction = rule_in_db['direction']
             rule_dict = {

@@ -16,14 +16,14 @@
 """ML2 hierarchical binding
 
 Revision ID: 2d2a8a565438
-Revises: 44621190bc02
+Revises: 1f71e54a85e7
 Create Date: 2014-08-24 21:56:36.422885
 
 """
 
 # revision identifiers, used by Alembic.
 revision = '2d2a8a565438'
-down_revision = '44621190bc02'
+down_revision = '1f71e54a85e7'
 
 from alembic import op
 import sqlalchemy as sa

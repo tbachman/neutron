@@ -41,7 +41,7 @@ def _make_segment_dict(record):
 
 
 def add_network_segment(session, network_id, segment, is_dynamic=False,
-                        provider_segment=False):
+                        provider_segment=False, is_dynamic=False):
     with session.begin(subtransactions=True):
         record = models.NetworkSegment(
             id=uuidutils.generate_uuid(),
@@ -49,6 +49,7 @@ def add_network_segment(session, network_id, segment, is_dynamic=False,
             network_type=segment.get(api.NETWORK_TYPE),
             physical_network=segment.get(api.PHYSICAL_NETWORK),
             segmentation_id=segment.get(api.SEGMENTATION_ID),
+            segment_index=segment_index,
             is_dynamic=is_dynamic,
             provider_segment=provider_segment
         )
@@ -64,7 +65,8 @@ def add_network_segment(session, network_id, segment, is_dynamic=False,
 def get_network_segments(session, network_id, filter_dynamic=False):
     with session.begin(subtransactions=True):
         query = (session.query(models.NetworkSegment).
-                 filter_by(network_id=network_id))
+                 filter_by(network_id=network_id).
+                 order_by(models.NetworkSegment.segment_index))
         if filter_dynamic is not None:
             query = query.filter_by(is_dynamic=filter_dynamic)
         records = query.all()
