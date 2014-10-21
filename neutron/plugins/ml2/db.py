@@ -40,8 +40,8 @@ def _make_segment_dict(record):
             api.PROVIDER_SEGMENT: record.provider_segment}
 
 
-def add_network_segment(session, network_id, segment, is_dynamic=False,
-                        provider_segment=False, is_dynamic=False):
+def add_network_segment(session, network_id, segment, segment_index=0,
+                        is_dynamic=False, provider_segment=False):
     with session.begin(subtransactions=True):
         record = models.NetworkSegment(
             id=uuidutils.generate_uuid(),
