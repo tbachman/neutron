@@ -30,16 +30,16 @@ import sqlalchemy as sa
 
 
 def upgrade():
-    op.create_table('cisco_ml2_nexus_nve',
-                    sa.Column('vni', sa.Integer(), nullable=False),
-                    sa.Column('switch_ip', sa.String(length=255),
-                              nullable=True),
-                    sa.Column('mcast_group', sa.String(length=255),
-                              nullable=True),
-                    sa.PrimaryKeyConstraint('vni'),
-                    mysql_engine='InnoDB')
-    op.add_column('cisco_ml2_nexusport_bindings',
-                  sa.Column('vni', sa.Integer(), nullable=True))
+    op.create_table(
+        'cisco_ml2_nexus_nve',
+        sa.Column('vni', sa.Integer(), nullable=False),
+        sa.Column('switch_ip', sa.String(length=255), nullable=True),
+        sa.Column('mcast_group', sa.String(length=255), nullable=True),
+        sa.PrimaryKeyConstraint('vni', 'switch_ip'))
+
+    op.add_column(
+        'cisco_ml2_nexusport_bindings',
+        sa.Column('vni', sa.Integer(), nullable=True))
 
 
 def downgrade():
