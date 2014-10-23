@@ -29,6 +29,7 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron import context as n_context
 from neutron import manager
+from neutron.openstack.common.gettextutils import _LW
 from neutron.openstack.common import importutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
@@ -111,6 +112,10 @@ class CiscoCfgAgent(manager.Manager):
                    default='neutron.plugins.cisco.cfg_agent.service_helpers'
                            '.routing_svc_helper.RoutingServiceHelper',
                    help=_("Path of the routing service helper class.")),
+        cfg.StrOpt('fw_svc_helper_class',
+                   default='neutron.services.firewall.drivers.cisco'
+                           '.csr_firewall_svc_helper.CsrFirewallServiceHelper',
+                   help=_("Path of the firewall service helper class.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -137,6 +142,17 @@ class CiscoCfgAgent(manager.Manager):
                      {'class': self.conf.cfg_agent.routing_svc_helper_class,
                       'reason': e})
             self.routing_service_helper = None
+
+        fw_svc_helper_class = self.conf.cfg_agent.fw_svc_helper_class
+        try:
+            self.fw_service_helper = importutils.import_object(
+                fw_svc_helper_class, host, self.conf, self)
+        except ImportError as e:
+            LOG.warn(_LW("Error in loading firewall service helper. Class "
+                       "specified is %(class)s. Reason:%(reason)s"),
+                     {'class': self.conf.cfg_agent.fw_svc_helper_class,
+                      'reason': e})
+            self.fw_service_helper = None
 
     def _start_periodic_tasks(self):
         self.loop = loopingcall.FixedIntervalLoopingCall(self.process_services)
@@ -204,6 +220,11 @@ class CiscoCfgAgent(manager.Manager):
                                                         removed_devices_info)
         else:
             LOG.warn(_("No routing service helper loaded"))
+
+        if self.fw_service_helper:
+            self.fw_service_helper.process_service(device_ids,
+                                                   removed_devices_info)
+
         LOG.debug("Processing services completed")
 
     def _process_backlogged_hosting_devices(self, context):
