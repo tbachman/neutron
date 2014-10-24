@@ -58,6 +58,7 @@ DEVICE_ID_1 = '11111111-1111-1111-1111-111111111111'
 DEVICE_ID_2 = '22222222-2222-2222-2222-222222222222'
 DEVICE_OWNER = 'compute:None'
 PORT_ID = 'fakePortID'
+P_VLAN_NAME = 'abc-'
 VXLAN_SEGMENT = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
                  api.ID: PORT_ID}
 BOUND_SEGMENT1 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
@@ -431,6 +432,46 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
 
                 # Return to first segment for delete port calls.
                 self.mock_top_bound_segment.return_value = BOUND_SEGMENT1
+
+    def _test_nexus_providernet(self, auto_create, auto_trunk):
+
+        cisco_config.cfg.CONF.set_override('provider_vlan_auto_create',
+            auto_create, 'ml2_cisco')
+        cisco_config.cfg.CONF.set_override('provider_vlan_auto_trunk',
+            auto_trunk, 'ml2_cisco')
+        cisco_config.cfg.CONF.set_override('provider_vlan_name_prefix',
+            P_VLAN_NAME, 'ml2_cisco')
+
+        with self._create_resources(name='net1', cidr=CIDR_1):
+            self.assertEqual(auto_create,
+                             self._is_in_nexus_cfg(['vlan-id-create-delete',
+                                 'vlan-name', P_VLAN_NAME + str(VLAN_START)]))
+            self.assertEqual(auto_trunk, self._is_in_nexus_cfg(['trunk']))
+            self.mock_ncclient.reset_mock()
+        self.assertEqual(auto_create,
+                         self._is_in_nexus_cfg(['no',
+                                                'vlan-id-create-delete']))
+        self.assertEqual(auto_trunk,
+                         self._is_in_nexus_cfg(['trunk', 'remove']))
+
+    def test_nexus_providernet(self):
+        #configure a provider net segment
+        PROV_SEGMENT = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
+                        api.PHYSICAL_NETWORK: PHYS_NET,
+                        api.SEGMENTATION_ID: VLAN_START,
+                        api.ID: DEVICE_ID_1,
+                        api.PROVIDER_SEGMENT: True}
+
+        # Mock port context values for provider_segments.
+        self.mock_top_bound_segment.return_value = PROV_SEGMENT
+
+        self._test_nexus_providernet(auto_create=False, auto_trunk=False)
+        self.mock_ncclient.reset_mock()
+        self._test_nexus_providernet(auto_create=False, auto_trunk=True)
+        self.mock_ncclient.reset_mock()
+        self._test_nexus_providernet(auto_create=True, auto_trunk=False)
+        self.mock_ncclient.reset_mock()
+        self._test_nexus_providernet(auto_create=True, auto_trunk=True)
 
     def test_ncclient_version_detect(self):
         """Test ability to handle connection to old and new-style ncclient.
