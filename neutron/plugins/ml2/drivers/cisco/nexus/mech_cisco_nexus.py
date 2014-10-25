@@ -82,16 +82,17 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         else:
             raise excep.NexusComputeHostNotConfigured(host=host_id)
 
-    def _configure_nve_db(self, vni, mcast_group, host_id):
+    def _configure_nve_db(self, vni, device_id, mcast_group, host_id):
         """Create the nexus NVE database entry.
 
         Called during update precommit port event.
         """
         host_connections = self._get_switch_info(host_id)
         for switch_ip, intf_type, nexus_port in host_connections:
-            nxos_db.add_nexusnve_binding(vni, switch_ip, mcast_group)
+            nxos_db.add_nexusnve_binding(vni, switch_ip, device_id,
+                                         mcast_group)
 
-    def _configure_nve_member(self, vni, mcast_group, host_id):
+    def _configure_nve_member(self, vni, device_id, mcast_group, host_id):
         """Add "member vni" configuration to the NVE interface.
 
         Called during update postcommit port event.
@@ -99,37 +100,44 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         host_connections = self._get_switch_info(host_id)
 
         for switch_ip, intf_type, nexus_port in host_connections:
-            # Check to see if this is the first binding to use this vni on this
-            # switch. Configure switch accordingly.
-            bindings = nxos_db.get_nve_switch_bindings(switch_ip)
-            if len(bindings) == 1:
+            # If this is the first database entry for this switch_ip
+            # then configure the "interface nve" entry on the switch.
+            nve_bindings = nxos_db.get_nve_switch_bindings(switch_ip)
+            if len(nve_bindings) == 1:
                 LOG.debug("Nexus: create NVE interface")
                 loopback = self._nexus_switches.get(
                     (switch_ip, 'nve_src_intf'), '0')
                 self.driver.enable_vxlan_feature(switch_ip, const.NVE_INT_NUM,
                                                  loopback)
-            LOG.debug("Nexus: add member")
-            self.driver.create_nve_member(switch_ip, const.NVE_INT_NUM, vni,
-                                          mcast_group)
 
-    def _delete_nve_db(self, vni, mcast_group, host_id):
+            # If this is the first database entry for this (VNI, switch_ip)
+            # then configure the "member vni #" entry on the switch.
+            member_bindings = nxos_db.get_nve_vni_switch_bindings(vni,
+                                                                  switch_ip)
+            if len(member_bindings) == 1:
+                LOG.debug("Nexus: add member")
+                self.driver.create_nve_member(switch_ip, const.NVE_INT_NUM,
+                                              vni, mcast_group)
+
+    def _delete_nve_db(self, vni, device_id, mcast_group, host_id):
         """Delete the nexus NVE database entry.
 
         Called during delete precommit port event.
         """
-        rows = nxos_db.get_nve_vni_bindings(vni)
+        rows = nxos_db.get_nve_vni_deviceid_bindings(vni, device_id)
         for row in rows:
-            nxos_db.remove_nexusnve_binding(row.vni, row.switch_ip)
+            nxos_db.remove_nexusnve_binding(vni, row.switch_ip, device_id)
 
-    def _delete_nve_member(self, vni, mcast_group, host_id):
+    def _delete_nve_member(self, vni, device_id, mcast_group, host_id):
         """Remove "member vni" configuration from the NVE interface.
 
         Called during delete postcommit port event.
         """
         host_connections = self._get_switch_info(host_id)
         for switch_ip, intf_type, nexus_port in host_connections:
-            self.driver.delete_nve_member(switch_ip, const.NVE_INT_NUM, vni)
-
+            if not nxos_db.get_nve_vni_switch_bindings(vni, switch_ip):
+                self.driver.delete_nve_member(switch_ip, const.NVE_INT_NUM,
+                                              vni)
             if not nxos_db.get_nve_switch_bindings(switch_ip):
                 self.driver.disable_vxlan_feature(switch_ip)
 
@@ -263,15 +271,17 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
     def _port_action_vxlan(self, port, segment, func):
         """Verify configuration and then process event."""
+        device_id = port.get('device_id')
         mcast_group = segment.get(api.PHYSICAL_NETWORK)
         host_id = port.get(portbindings.HOST_ID)
         vni = segment.get(api.SEGMENTATION_ID)
 
-        if vni and mcast_group and host_id:
-            func(vni, mcast_group, host_id)
+        if vni and device_id and mcast_group and host_id:
+            func(vni, device_id, mcast_group, host_id)
             return vni
         else:
             fields = "vni " if not vni else ""
+            fields += "device_id " if not device_id else ""
             fields += "mcast_group " if not mcast_group else ""
             fields += "host_id" if not host_id else ""
             raise excep.NexusMissingRequiredFields(fields=fields)
@@ -352,12 +362,6 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                    'network': context.network.current['id']})
         for segment in context.segments_to_bind:
             if self._is_segment_nexus_vxlan(segment):
-                # Bind the VXLAN static segment to this driver.
-                # TODO(rcurran) - need correct vif_type, vif_details
-                context.set_binding(segment[api.ID],
-                                    portbindings.VIF_TYPE_OVS,
-                                    {portbindings.CAP_PORT_FILTER: True},
-                                    status=n_const.PORT_STATUS_ACTIVE)
 
                 # Find physical network setting for this host.
                 host_id = context.current.get(portbindings.HOST_ID)

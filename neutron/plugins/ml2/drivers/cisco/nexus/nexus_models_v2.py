@@ -54,9 +54,10 @@ class NexusNVEBinding(model_base.BASEV2):
     __tablename__ = "cisco_ml2_nexus_nve"
 
     vni = sa.Column(sa.Integer, primary_key=True, nullable=False)
+    device_id = sa.Column(sa.String(255), primary_key=True)
     switch_ip = sa.Column(sa.String(255), primary_key=True)
     mcast_group = sa.Column(sa.String(255))
 
     def __repr__(self):
-        return ("<NexusNVEBinding(%s,%s,%s)>" %
-                (self.vni, self.switch_ip, self.mcast_group))
+        return ("<NexusNVEBinding(%s,%s,%s,%s)>" %
+                (self.vni, self.switch_ip, self.device_id, self.mcast_group))

@@ -145,24 +145,26 @@ def _lookup_first_nexus_binding(session=None, **bfilter):
     return _lookup_nexus_bindings('first', session, **bfilter)
 
 
-def add_nexusnve_binding(vni, switch_ip, mcast_group):
+def add_nexusnve_binding(vni, switch_ip, device_id, mcast_group):
     """Adds a nexus nve binding."""
     LOG.debug("add_nexusnve_binding() called")
     session = db.get_session()
     binding = nexus_models_v2.NexusNVEBinding(vni=vni,
                                               switch_ip=switch_ip,
+                                              device_id=device_id,
                                               mcast_group=mcast_group)
     session.add(binding)
     session.flush()
     return binding
 
 
-def remove_nexusnve_binding(vni, switch_ip):
+def remove_nexusnve_binding(vni, switch_ip, device_id):
     """Remove the nexus nve binding."""
     LOG.debug("remove_nexusnve_binding() called")
     session = db.get_session()
     binding = (session.query(nexus_models_v2.NexusNVEBinding).
-               filter_by(vni=vni, switch_ip=switch_ip).one())
+               filter_by(vni=vni, switch_ip=switch_ip,
+                         device_id=device_id).one())
     if binding:
         session.delete(binding)
         session.flush()
@@ -175,14 +177,26 @@ def get_nve_vni_switch_bindings(vni, switch_ip):
     session = db.get_session()
     try:
         return (session.query(nexus_models_v2.NexusNVEBinding).
-                filter_by(vni=vni, switch_ip=switch_ip).one())
+                filter_by(vni=vni, switch_ip=switch_ip).all())
+    except sa_exc.NoResultFound:
+        return None
+
+
+def get_nve_vni_member_bindings(vni, switch_ip, device_id):
+    """Return the nexus nve binding per switch and device_id."""
+    LOG.debug("get_nve_vni_member_bindings() called")
+    session = db.get_session()
+    try:
+        return (session.query(nexus_models_v2.NexusNVEBinding).
+                filter_by(vni=vni, switch_ip=switch_ip,
+                          device_id=device_id).all())
     except sa_exc.NoResultFound:
         return None
 
 
 def get_nve_switch_bindings(switch_ip):
     """Return all the nexus nve bindings for one switch."""
-    LOG.debug("get_all_nexusnve_bindings() called")
+    LOG.debug("get_nve_switch_bindings() called")
     session = db.get_session()
     try:
         return (session.query(nexus_models_v2.NexusNVEBinding).
@@ -191,12 +205,12 @@ def get_nve_switch_bindings(switch_ip):
         return None
 
 
-def get_nve_vni_bindings(vni):
-    """Return all the nexus nve bindings for one vni."""
-    LOG.debug("get_all_nexusnve_bindings() called")
+def get_nve_vni_deviceid_bindings(vni, device_id):
+    """Return all the nexus nve bindings for one vni/one device_id."""
+    LOG.debug("get_nve_vni_deviceid_bindings() called")
     session = db.get_session()
     try:
         return (session.query(nexus_models_v2.NexusNVEBinding).
-                filter_by(vni=vni).all())
+                filter_by(vni=vni, device_id=device_id).all())
     except sa_exc.NoResultFound:
         return None
