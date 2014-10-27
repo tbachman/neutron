@@ -16,5 +16,5 @@ install: pip install tox
 # Running neutron unit tests for python
 script: 
     - tox -v -e pep8
-    - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then tox -v -e py27 -- neutron.tests.unit; fi
-    - if [[ $TRAVIS_PYTHON_VERSION == '3.4' ]]; then tox -v -e py34 -- neutron.tests.unit; fi
+    - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then tox -v -e py27 -- --parallel --concurrency=1 neutron.tests.unit; fi
+    - if [[ $TRAVIS_PYTHON_VERSION == '3.4' ]]; then tox -v -e py34 -- --parallel --concurrency=1 neutron.tests.unit; fi
