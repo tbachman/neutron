@@ -71,7 +71,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
                 pl.servers._get_combined_cert_for_server,
                 *('example.org', 443)
             )
-            sslgetmock.assert_has_calls([mock.call(('example.org', 443))])
+            sslgetmock.assert_has_calls([mock.call(
+                  ('example.org', 443), ssl_version=ssl.PROTOCOL_TLSv1)])
 
     def test_consistency_watchdog_stops_with_0_polling_interval(self):
         pl = manager.NeutronManager.get_plugin()
@@ -465,7 +466,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             ('www.example.org', 443), 90, '127.0.0.1'
         )])
         self.wrap_mock.assert_has_calls([mock.call(
-            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE
+            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         self.assertEqual(con.sock, self.wrap_mock())
 
@@ -480,7 +482,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         )])
         self.wrap_mock.assert_has_calls([mock.call(
             self.socket_mock(), None, None, ca_certs='SOMECERTS.pem',
-            cert_reqs=ssl.CERT_REQUIRED
+            cert_reqs=ssl.CERT_REQUIRED,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         self.assertEqual(con.sock, self.wrap_mock())
 
@@ -500,7 +503,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             ('www.example.org', 443), 90, '127.0.0.1'
         )])
         self.wrap_mock.assert_has_calls([mock.call(
-            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE
+            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         # _tunnel() doesn't take any args
         tunnel_mock.assert_has_calls([mock.call()])

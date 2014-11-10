@@ -243,7 +243,7 @@ class LinkLocalAllocator(object):
 
 class RouterInfo(l3_ha_agent.RouterMixin):
 
-    def __init__(self, router_id, root_helper, use_namespaces, router,
+    def __init__(self, router_id, root_helper, router,
                  use_ipv6=False, ns_name=None):
         self.router_id = router_id
         self.ex_gw_port = None
@@ -254,7 +254,6 @@ class RouterInfo(l3_ha_agent.RouterMixin):
         self.floating_ips = set()
         self.floating_ips_dict = {}
         self.root_helper = root_helper
-        self.use_namespaces = use_namespaces
         # Invoke the setter for establishing initial SNAT action
         self.router = router
         self.ns_name = ns_name
@@ -561,7 +560,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         # dvr data
         self.agent_gateway_port = None
-        self.agent_fip_count = 0
+        self.fip_ns_subscribers = set()
         self.local_subnets = LinkLocalAllocator(
             os.path.join(self.conf.state_path, 'fip-linklocal-networks'),
             FIP_LL_SUBNET)
@@ -572,6 +571,15 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         self.target_ex_net_id = None
         self.use_ipv6 = ipv6_utils.is_enabled()
+
+    def _fip_ns_subscribe(self, router_id):
+        is_first = (len(self.fip_ns_subscribers) == 0)
+        self.fip_ns_subscribers.add(router_id)
+        return is_first
+
+    def _fip_ns_unsubscribe(self, router_id):
+        self.fip_ns_subscribers.discard(router_id)
+        return len(self.fip_ns_subscribers) == 0
 
     def _check_config_params(self):
         """Check items in configuration files.
@@ -635,7 +643,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         one attempt will be made to delete them.
         """
         for ns in router_namespaces:
-            ra.disable_ipv6_ra(ns[len(NS_PREFIX):], ns, self.root_helper)
             try:
                 self._destroy_namespace(ns)
             except RuntimeError:
@@ -645,8 +652,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
     def _destroy_namespace(self, ns):
         if ns.startswith(NS_PREFIX):
-            if self.conf.enable_metadata_proxy:
-                self._destroy_metadata_proxy(ns[len(NS_PREFIX):], ns)
             self._destroy_router_namespace(ns)
         elif ns.startswith(FIP_NS_PREFIX):
             self._destroy_fip_namespace(ns)
@@ -695,6 +700,10 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         self.agent_gateway_port = None
 
     def _destroy_router_namespace(self, ns):
+        router_id = ns[len(NS_PREFIX):]
+        ra.disable_ipv6_ra(router_id, ns, self.root_helper)
+        if self.conf.enable_metadata_proxy:
+            self._destroy_metadata_proxy(router_id, ns)
         ns_ip = ip_lib.IPWrapper(self.root_helper, namespace=ns)
         for d in ns_ip.get_devices(exclude_loopback=True):
             if d.name.startswith(INTERNAL_DEV_PREFIX):
@@ -756,7 +765,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                    if self.conf.use_namespaces else None)
         ri = RouterInfo(router_id=router_id,
                         root_helper=self.root_helper,
-                        use_namespaces=self.conf.use_namespaces,
                         router=router,
                         use_ipv6=self.use_ipv6,
                         ns_name=ns_name)
@@ -798,8 +806,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         for c, r in self.metadata_nat_rules():
             ri.iptables_manager.ipv4['nat'].remove_rule(c, r)
         ri.iptables_manager.apply()
-        if self.conf.enable_metadata_proxy:
-            self._destroy_metadata_proxy(ri.router_id, ri.ns_name)
         del self.router_info[router_id]
         self._destroy_router_namespace(ri.ns_name)
 
@@ -1096,9 +1102,11 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         if ri.router['distributed']:
             # filter out only FIPs for this host/agent
             floating_ips = [i for i in floating_ips if i['host'] == self.host]
-            if floating_ips and self.agent_gateway_port is None:
-                self._create_agent_gateway_port(ri, floating_ips[0]
-                                                ['floating_network_id'])
+            if floating_ips:
+                is_first = self._fip_ns_subscribe(ri.router_id)
+                if is_first:
+                    self._create_agent_gateway_port(ri, floating_ips[0]
+                                                    ['floating_network_id'])
 
             if self.agent_gateway_port:
                 if floating_ips and ri.dist_fip_count == 0:
@@ -1662,7 +1670,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                                          interface_name, floating_ip,
                                          distributed=True)
         # update internal structures
-        self.agent_fip_count = self.agent_fip_count + 1
         ri.dist_fip_count = ri.dist_fip_count + 1
 
     def floating_ip_removed_dist(self, ri, fip_cidr):
@@ -1696,10 +1703,10 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             self.local_subnets.release(ri.router_id)
             ri.rtr_fip_subnet = None
             ns_ip.del_veth(fip_2_rtr_name)
-        # clean up fip-namespace if this is the last FIP
-        self.agent_fip_count = self.agent_fip_count - 1
-        if self.agent_fip_count == 0:
-            self._destroy_fip_namespace(fip_ns_name)
+            is_last = self._fip_ns_unsubscribe(ri.router_id)
+            # clean up fip-namespace if this is the last FIP
+            if is_last:
+                self._destroy_fip_namespace(fip_ns_name)
 
     def floating_forward_rules(self, floating_ip, fixed_ip):
         return [('PREROUTING', '-d %s -j DNAT --to %s' %

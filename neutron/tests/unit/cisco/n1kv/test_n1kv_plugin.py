@@ -237,20 +237,6 @@ class N1kvPluginTestCase(test_plugin.NeutronDbPluginV2TestCase):
         # Restore the original RESOURCE_ATTRIBUTE_MAP
         attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
-    def test_plugin(self):
-        self._make_network('json',
-                           'some_net',
-                           True,
-                           tenant_id=self.tenant_id,
-                           set_context=True)
-
-        req = self.new_list_request('networks', params="fields=tenant_id")
-        req.environ['neutron.context'] = context.Context('', self.tenant_id)
-        res = req.get_response(self.api)
-        self.assertEqual(res.status_int, 200)
-        body = self.deserialize('json', res)
-        self.assertIn('tenant_id', body['networks'][0])
-
 
 class TestN1kvNetworkProfiles(N1kvPluginTestCase):
     def _prepare_net_profile_data(self,
@@ -623,7 +609,7 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
                                                 net_p['network_profile']['id'])
         self.assertRaises(c_exc.ProfileTenantBindingNotFound,
                           n1kv_db_v2.get_profile_binding,
-                          db_session, 'tenant2',
+                          db_session, 'tenant4',
                           net_p['network_profile']['id'])
         tenant3 = n1kv_db_v2.get_profile_binding(db_session, 'tenant3',
                                                 net_p['network_profile']['id'])
@@ -643,18 +629,33 @@ class TestN1kvNetworkProfiles(N1kvPluginTestCase):
         # current tenant_id should always present
         tenant_id = n1kv_db_v2.get_profile_binding(db_session, self.tenant_id,
                                                 net_p['network_profile']['id'])
+        self.assertIsNotNone(tenant_id)
         self.assertRaises(c_exc.ProfileTenantBindingNotFound,
                           n1kv_db_v2.get_profile_binding,
                           db_session, 'tenant1',
                           net_p['network_profile']['id'])
         self.assertRaises(c_exc.ProfileTenantBindingNotFound,
                           n1kv_db_v2.get_profile_binding,
-                          db_session, 'tenant2',
+                          db_session, 'tenant4',
                           net_p['network_profile']['id'])
         tenant3 = n1kv_db_v2.get_profile_binding(db_session, 'tenant3',
                                                 net_p['network_profile']['id'])
-        self.assertIsNotNone(tenant_id)
         self.assertIsNotNone(tenant3)
+        # Add new tenant4 to network profile and make sure existing tenants
+        # are not deleted.
+        data = {'network_profile': {c_const.ADD_TENANTS:
+                                    ['tenant4']}}
+        update_req = self.new_update_request('network_profiles',
+                                             data,
+                                             net_p['network_profile']['id'])
+        update_req.environ['neutron.context'] = context.Context('',
+                                                               self.tenant_id,
+                                                               is_admin=True)
+        update_res = update_req.get_response(self.ext_api)
+        self.assertEqual(200, update_res.status_int)
+        tenant4 = n1kv_db_v2.get_profile_binding(db_session, 'tenant4',
+                                                net_p['network_profile']['id'])
+        self.assertIsNotNone(tenant4)
 
 
 class TestN1kvBasicGet(test_plugin.TestBasicGet,
@@ -943,6 +944,20 @@ class TestN1kvPolicyProfiles(N1kvPluginTestCase):
 
 class TestN1kvNetworks(test_plugin.TestNetworksV2,
                        N1kvPluginTestCase):
+
+    def test_plugin(self):
+        self._make_network('json',
+                           'some_net',
+                           True,
+                           tenant_id=self.tenant_id,
+                           set_context=True)
+
+        req = self.new_list_request('networks', params="fields=tenant_id")
+        req.environ['neutron.context'] = context.Context('', self.tenant_id)
+        res = req.get_response(self.api)
+        self.assertEqual(res.status_int, 200)
+        body = self.deserialize('json', res)
+        self.assertIn('tenant_id', body['networks'][0])
 
     def _prepare_net_data(self, net_profile_id):
         return {'network': {'name': 'net1',

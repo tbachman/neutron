@@ -383,7 +383,8 @@ class ServerPool(object):
         a given path.
         '''
         try:
-            cert = ssl.get_server_certificate((server, port))
+            cert = ssl.get_server_certificate((server, port),
+                                              ssl_version=ssl.PROTOCOL_TLSv1)
         except Exception as e:
             raise cfg.Error(_('Could not retrieve initial '
                               'certificate from controller %(server)s. '
@@ -637,8 +638,9 @@ class HTTPSConnectionWithValidation(httplib.HTTPSConnection):
         if self.combined_cert:
             self.sock = ssl.wrap_socket(sock, self.key_file, self.cert_file,
                                         cert_reqs=ssl.CERT_REQUIRED,
-                                        ca_certs=self.combined_cert)
+                                        ca_certs=self.combined_cert,
+                                        ssl_version=ssl.PROTOCOL_TLSv1)
         else:
-            self.sock = ssl.wrap_socket(sock, self.key_file,
-                                        self.cert_file,
-                                        cert_reqs=ssl.CERT_NONE)
+            self.sock = ssl.wrap_socket(sock, self.key_file, self.cert_file,
+                                        cert_reqs=ssl.CERT_NONE,
+                                        ssl_version=ssl.PROTOCOL_TLSv1)

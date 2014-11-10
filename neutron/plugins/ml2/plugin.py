@@ -25,6 +25,7 @@ from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.handlers import dhcp_rpc
 from neutron.api.rpc.handlers import dvr_rpc
+from neutron.api.rpc.handlers import metadata_rpc
 from neutron.api.rpc.handlers import securitygroups_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as const
@@ -50,6 +51,7 @@ from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
 from neutron import manager
 from neutron.openstack.common import excutils
+from neutron.openstack.common.gettextutils import _LI
 from neutron.openstack.common import importutils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import lockutils
@@ -146,7 +148,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                           securitygroups_rpc.SecurityGroupServerRpcCallback(),
                           dvr_rpc.DVRServerRpcCallback(),
                           dhcp_rpc.DhcpRpcCallback(),
-                          agents_db.AgentExtRpcCallback()]
+                          agents_db.AgentExtRpcCallback(),
+                          metadata_rpc.MetadataRpcCallback()]
         self.topic = topics.PLUGIN
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(self.topic, self.endpoints,
@@ -956,6 +959,11 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             cur_binding = db.get_dvr_port_binding_by_host(session,
                                                           port_id,
                                                           host)
+            if not cur_binding:
+                LOG.info(_LI("Binding info for port %s was not found, "
+                             "it might have been deleted already."),
+                         port_id)
+                return
             # Commit our binding results only if port has not been
             # successfully bound concurrently by another thread or
             # process and no binding inputs have been changed.
@@ -1086,6 +1094,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                            filter(models_v2.Port.id.startswith(port_id)).
                            one())
             except sa_exc.NoResultFound:
+                LOG.debug("No ports have port_id starting with %s",
+                          port_id)
                 return
             except exc.MultipleResultsFound:
                 LOG.error(_("Multiple ports have port_id starting with %s"),
@@ -1104,11 +1114,21 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 port_context = driver_context.DvrPortContext(
                     self, plugin_context, port, network, binding, levels)
             else:
+                # since eager loads are disabled in port_db query
+                # related attribute port_binding could disappear in
+                # concurrent port deletion.
+                # It's not an error condition.
+                binding = port_db.port_binding
+                if not binding:
+                    LOG.info(_LI("Binding info for port %s was not found, "
+                                 "it might have been deleted already."),
+                             port_id)
+                    return
+
                 levels = db.get_binding_levels(session, port_db.id,
-                                               port_db.port_binding.host)
+                                               binding.host)
                 port_context = driver_context.PortContext(
-                    self, plugin_context, port, network, port_db.port_binding,
-                    levels)
+                    self, plugin_context, port, network, binding, levels)
 
         return self._bind_port_if_needed(port_context)
 
@@ -1196,12 +1216,18 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             port_host = db.get_port_binding_host(port_id)
             return (port_host == host)
 
-    def get_port_from_device(self, device):
-        port_id = self._device_to_port_id(device)
-        port = db.get_port_and_sgs(port_id)
-        if port:
-            port['device'] = device
-        return port
+    def get_ports_from_devices(self, devices):
+        port_ids_to_devices = dict((self._device_to_port_id(device), device)
+                                   for device in devices)
+        port_ids = port_ids_to_devices.keys()
+        ports = db.get_ports_and_sgs(port_ids)
+        for port in ports:
+            # map back to original requested id
+            port_id = next((port_id for port_id in port_ids
+                           if port['id'].startswith(port_id)), None)
+            port['device'] = port_ids_to_devices.get(port_id)
+
+        return ports
 
     def _device_to_port_id(self, device):
         # REVISIT(rkukura): Consider calling into MechanismDrivers to

@@ -235,9 +235,10 @@ class OvsAgentSchedulerTestCaseBase(test_l3_plugin.L3NatTestCaseMixin,
         self.l3_notify_p = mock.patch(
             'neutron.extensions.l3agentscheduler.notify')
         self.patched_l3_notify = self.l3_notify_p.start()
-        self.l3_periodic_p = mock.patch('neutron.db.L3AgentSchedulerDbMixin.'
+        self.l3_periodic_p = mock.patch('neutron.db.l3_agentschedulers_db.'
+                                        'L3AgentSchedulerDbMixin.'
                                         'start_periodic_agent_status_check')
-        self.patched_l3_periodic = self.l3_notify_p.start()
+        self.patched_l3_periodic = self.l3_periodic_p.start()
         self.dhcp_notify_p = mock.patch(
             'neutron.extensions.dhcpagentscheduler.notify')
         self.patched_dhcp_notify = self.dhcp_notify_p.start()
@@ -1413,7 +1414,3 @@ class OvsL3AgentNotifierTestCase(test_l3_plugin.L3NatTestCaseMixin,
                 mock.ANY, l3_notifier.make_msg(
                     'agent_updated', payload={'admin_state_up': False}),
                 topic='l3_agent.hosta')
-
-
-class OvsAgentSchedulerTestCaseXML(OvsAgentSchedulerTestCase):
-    fmt = 'xml'
