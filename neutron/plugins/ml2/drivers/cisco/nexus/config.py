@@ -23,6 +23,14 @@ ml2_cisco_opts = [
                 help=_("Distribute SVI interfaces over all switches")),
     cfg.StrOpt('managed_physical_network',
                help=_("The physical network managed by the switches.")),
+    cfg.StrOpt('provider_vlan_name_prefix', default='p-',
+        help=_("VLAN Name prefix for provider vlans")),
+    cfg.BoolOpt('provider_vlan_auto_create', default=True,
+        help=_('Provider VLANs are automatically created as needed '
+               'on the Nexus switch')),
+    cfg.BoolOpt('provider_vlan_auto_trunk', default=True,
+        help=_('Provider VLANs are automatically trunked as needed '
+               'on the ports of the Nexus switch')),
 ]
 
 
