@@ -64,6 +64,12 @@ fake_subnet3 = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
                               network_id='12345678-1234-5678-1234567890ab',
                               cidr='192.168.1.1/24', enable_dhcp=True))
 
+fake_ipv6_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
+                              network_id='12345678-1234-5678-1234567890ab',
+                              cidr='2001:0db8::1:0:0:1/128', enable_dhcp=True,
+                              tenant_id=fake_tenant_id,
+                              gateway_ip='2001:0db8::1:0:0:1', ip_version=6))
+
 fake_meta_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
                                   network_id='12345678-1234-5678-1234567890ab',
                                   cidr='169.254.169.252/30',
@@ -112,6 +118,12 @@ fake_network = dhcp.NetModel(True, dict(id='12345678-1234-5678-1234567890ab',
                              admin_state_up=True,
                              subnets=[fake_subnet1, fake_subnet2],
                              ports=[fake_port1]))
+
+fake_network_ipv6 = dhcp.NetModel(True, dict(
+                             id='12345678-1234-5678-1234567890ab',
+                             tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                             admin_state_up=True,
+                             subnets=[fake_ipv6_subnet]))
 
 isolated_network = dhcp.NetModel(
     True, dict(
@@ -357,12 +369,12 @@ class TestDhcpAgent(base.BaseTestCase):
     def test_periodoc_resync_helper(self):
         with mock.patch.object(dhcp_agent.eventlet, 'sleep') as sleep:
             dhcp = dhcp_agent.DhcpAgent(HOSTNAME)
-            dhcp.needs_resync_reasons = ['reason1', 'reason2']
+            dhcp.needs_resync_reasons = {'a': 'reason1', 'b': 'reason2'}
             with mock.patch.object(dhcp, 'sync_state') as sync_state:
                 sync_state.side_effect = RuntimeError
                 with testtools.ExpectedException(RuntimeError):
                     dhcp._periodic_resync_helper()
-                sync_state.assert_called_once_with()
+                sync_state.assert_called_once_with(['a', 'b'])
                 sleep.assert_called_once_with(dhcp.conf.resync_interval)
                 self.assertEqual(len(dhcp.needs_resync_reasons), 0)
 
@@ -591,6 +603,9 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
 
     def test_enable_dhcp_helper(self):
         self._enable_dhcp_helper(fake_network)
+
+    def test_enable_dhcp_helper_ipv6_network(self):
+        self._enable_dhcp_helper(fake_network_ipv6)
 
     def test_enable_dhcp_helper_down_network(self):
         self.plugin.get_network_info.return_value = fake_down_network

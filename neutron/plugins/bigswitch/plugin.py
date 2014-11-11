@@ -53,6 +53,7 @@ from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api import extensions as neutron_extensions
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.handlers import dhcp_rpc
+from neutron.api.rpc.handlers import metadata_rpc
 from neutron.api.rpc.handlers import securitygroups_rpc
 from neutron.common import constants as const
 from neutron.common import exceptions
@@ -345,7 +346,7 @@ class NeutronRestProxyV2Base(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _extend_port_dict_binding(self, context, port):
         cfg_vif_type = cfg.CONF.NOVA.vif_type.lower()
-        if not cfg_vif_type in (portbindings.VIF_TYPE_OVS,
+        if cfg_vif_type not in (portbindings.VIF_TYPE_OVS,
                                 portbindings.VIF_TYPE_IVS):
             LOG.warning(_("Unrecognized vif_type in configuration "
                           "[%s]. Defaulting to ovs."),
@@ -365,11 +366,12 @@ class NeutronRestProxyV2Base(db_base_plugin_v2.NeutronDbPluginV2,
                 cfg_vif_type = override
         port[portbindings.VIF_TYPE] = cfg_vif_type
 
+        sg_enabled = sg_rpc.is_firewall_enabled()
         port[portbindings.VIF_DETAILS] = {
             # TODO(rkukura): Replace with new VIF security details
             portbindings.CAP_PORT_FILTER:
             'security-group' in self.supported_extension_aliases,
-            portbindings.OVS_HYBRID_PLUG: True
+            portbindings.OVS_HYBRID_PLUG: sg_enabled
         }
         return port
 
@@ -513,7 +515,8 @@ class NeutronRestProxyV2(NeutronRestProxyV2Base,
         )
         self.endpoints = [securitygroups_rpc.SecurityGroupServerRpcCallback(),
                           dhcp_rpc.DhcpRpcCallback(),
-                          agents_db.AgentExtRpcCallback()]
+                          agents_db.AgentExtRpcCallback(),
+                          metadata_rpc.MetadataRpcCallback()]
         self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
         # Consume from all consumers in threads

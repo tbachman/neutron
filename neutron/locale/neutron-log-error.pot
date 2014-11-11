@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: neutron 2015.1.dev60.gc38f68c\n"
+"Project-Id-Version: neutron 2015.1.dev257.gb61fdf7\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2014-10-10 06:42+0000\n"
+"POT-Creation-Date: 2014-11-09 06:07+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,19 +17,19 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 1.3\n"
 
-#: neutron/policy.py:119
+#: neutron/policy.py:120
 #, python-format
 msgid ""
 "Backward compatibility unavailable for deprecated policy %s. The policy "
 "will not be enforced"
 msgstr ""
 
-#: neutron/policy.py:311
+#: neutron/policy.py:312
 #, python-format
 msgid "Policy check error while calling %s!"
 msgstr ""
 
-#: neutron/agent/l3_agent.py:1844
+#: neutron/agent/l3_agent.py:1849
 #, python-format
 msgid "Removing incompatible router '%s'"
 msgstr ""
@@ -65,10 +65,29 @@ msgstr ""
 msgid "Failed deleting egress connection state of floatingip %s"
 msgstr ""
 
-#: neutron/cmd/sanity_check.py:58
+#: neutron/agent/linux/ip_link_support.py:107
+msgid "Failed executing ip command"
+msgstr ""
+
+#: neutron/cmd/sanity_check.py:60
 msgid ""
 "Nova notifications are enabled, but novaclient is not installed. Either "
 "disable nova notifications or install python-novaclient."
+msgstr ""
+
+#: neutron/cmd/sanity_check.py:80
+msgid ""
+"Check for VF management support failed. Please ensure that the version of"
+" ip link being used has VF support."
+msgstr ""
+
+#: neutron/db/l3_agentschedulers_db.py:141
+#, python-format
+msgid "Failed to reschedule router %s"
+msgstr ""
+
+#: neutron/db/l3_agentschedulers_db.py:146
+msgid "Exception encountered during router rescheduling."
 msgstr ""
 
 #: neutron/openstack/common/excutils.py:76
@@ -81,16 +100,25 @@ msgstr ""
 msgid "Unexpected exception occurred %d time(s)... retrying."
 msgstr ""
 
+#: neutron/openstack/common/lockutils.py:117
+#, python-format
+msgid "Could not release the acquired lock `%s`"
+msgstr ""
+
+#: neutron/openstack/common/loopingcall.py:95
+msgid "in fixed duration looping call"
+msgstr ""
+
+#: neutron/openstack/common/loopingcall.py:138
+msgid "in dynamic looping call"
+msgstr ""
+
 #: neutron/openstack/common/periodic_task.py:202
 #, python-format
 msgid "Error during %(full_task_name)s: %(e)s"
 msgstr ""
 
-#: neutron/openstack/common/service.py:188
-msgid "Exception during rpc cleanup."
-msgstr ""
-
-#: neutron/openstack/common/service.py:277
+#: neutron/openstack/common/service.py:269
 msgid "Unhandled exception"
 msgstr ""
 
@@ -213,7 +241,13 @@ msgstr ""
 msgid "Error while processing VIF ports"
 msgstr ""
 
-#: neutron/plugins/vmware/plugins/base.py:2099
+#: neutron/plugins/openvswitch/agent/ovs_dvr_neutron_agent.py:160
+msgid ""
+"DVR: Failed to obtain a valid local DVR MAC address - L2 Agent operating "
+"in Non-DVR Mode"
+msgstr ""
+
+#: neutron/plugins/vmware/plugins/base.py:2106
 #, python-format
 msgid ""
 "Rolling back database changes for gateway device %s because of an error "
@@ -225,52 +259,103 @@ msgstr ""
 msgid "Not enough candidates, a HA router needs at least %s agents"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:62
+#: neutron/services/vpn/device_drivers/cisco_csr_rest_client.py:123
+#, python-format
+msgid "%(method)s: Unable to connect to CSR(%(host)s)"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_csr_rest_client.py:128
+#, python-format
+msgid "%(method)s: Unexpected error for CSR (%(host)s): %(error)s"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_csr_rest_client.py:158
+#, python-format
+msgid "Failed authentication with CSR %(host)s [%(status)s]"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_csr_rest_client.py:193
+#, python-format
+msgid "%(method)s: Request timeout for CSR(%(host)s)"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_ipsec.py:621
+#, python-format
+msgid "Unable to create %(resource)s %(which)s: %(status)d"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_ipsec.py:634
+#: neutron/services/vpn/device_drivers/cisco_ipsec.py:662
+#, python-format
+msgid "Internal error - '%s' is not defined"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/cisco_ipsec.py:741
+#, python-format
+msgid "Unable to change %(tunnel)s admin state to %(state)s"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/ipsec.py:248
+#, python-format
+msgid "Failed to enable vpn process on router %s"
+msgstr ""
+
+#: neutron/services/vpn/device_drivers/ipsec.py:259
+#, python-format
+msgid "Failed to disable vpn process on router %s"
+msgstr ""
+
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:61
 #, python-format
 msgid "Config file parse error: %s"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:76
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:75
 #, python-format
 msgid "Ignoring Cisco CSR configuration entry - router IP %s is not valid"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:89
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:88
 #, python-format
 msgid "Ignoring Cisco CSR for router %(router)s - missing %(field)s setting"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:97
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:96
 #, python-format
 msgid "Ignoring Cisco CSR for router %s - timeout is not a floating point number"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:113
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:105
+#, python-format
+msgid "Ignoring Cisco CSR for subnet %s - REST management is not an IP address"
+msgstr ""
+
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:112
 #, python-format
 msgid "Ignoring Cisco CSR for router %s - local tunnel is not an IP address"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:119
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:118
 #, python-format
 msgid "Malformed interface name for Cisco CSR router entry - %s"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:155
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:202
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:154
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:201
 msgid "No routers found in INI file!"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:174
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:173
 #, python-format
 msgid "Unable to lookup router ID based on router's public IP (%s) in INI file"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:177
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:176
 #, python-format
 msgid "No matching routers on host %s"
 msgstr ""
 
-#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:211
+#: neutron/services/vpn/service_drivers/cisco_cfg_loader.py:210
 #, python-format
 msgid "Unable to find host for router %s"
 msgstr ""
