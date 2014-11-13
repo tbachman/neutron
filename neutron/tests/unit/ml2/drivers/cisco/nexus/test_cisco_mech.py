@@ -843,6 +843,42 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
         with self._create_resources(expected_failure=True):
             assert not self.mock_continue_binding.called
 
+    def test_nexus_vxlan_one_network_two_hosts(self):
+        """Test creating two hosts on one VXLAN segment."""
+
+        # Configure bound segments to indicate VXLAN+VLAN.
+        self.mock_top_bound_segment.return_value = BOUND_SEGMENT_VXLAN
+        self.mock_bottom_bound_segment.return_value = BOUND_SEGMENT1
+
+        # Create port and verify database entry.
+        @contextlib.contextmanager
+        def _create_port(host_id, device_id):
+            with self.port(subnet=subnet, fmt=self.fmt) as port:
+                data = {'port': {portbindings.HOST_ID: host_id,
+                                 'device_id': device_id,
+                                 'device_owner': DEVICE_OWNER,
+                                 'admin_state_up': True}}
+                result = self.new_update_request('ports', data,
+                                    port['port']['id']).get_response(self.api)
+                self.assertEqual(result.status_int, wexc.HTTPOk.code)
+                binding = nexus_db_v2.get_nve_vni_member_bindings(
+                                    VNI, NEXUS_IP_ADDR, device_id)
+                self.assertEqual(1, len(binding))
+                yield
+            self._delete('ports', port['port']['id'])
+
+        # Create network, subnet and two ports (two hosts).
+        # Verify that each _create_port call creates database entries.
+        # Verify that the second _create_port call does not configure
+        # the switch. Only the first port create call per vni/switch
+        # configures the switch.
+        with self.network(name=NETWORK_NAME) as network:
+            with self.subnet(network=network, cidr=CIDR_1) as subnet:
+                with _create_port(COMP_HOST_NAME, DEVICE_ID_1):
+                    self.mock_ncclient.reset_mock()
+                    with _create_port(COMP_HOST_NAME_2, DEVICE_ID_2):
+                        assert not self.mock_ncclient.connect.called
+
     def test_nexus_vxlan_one_network(self):
         """Test processing for creating one VXLAN segment."""
 
