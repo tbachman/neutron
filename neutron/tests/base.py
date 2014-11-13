@@ -85,7 +85,7 @@ class BaseTestCase(testtools.TestCase):
         self.useFixture(fixtures.TempHomeDir())
 
         self.temp_dir = self.useFixture(fixtures.TempDir()).path
-        cfg.CONF.set_override('state_path', self.temp_dir)
+        # cfg.CONF.set_override('state_path', self.temp_dir)
 
         self.addCleanup(CONF.reset)
 
