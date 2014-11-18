@@ -30,7 +30,7 @@ from neutron.agent.linux import interface
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
-from neutron.common import rpc as n_rpc
+from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import processutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as p_const
@@ -1150,6 +1150,12 @@ vrrp_instance VR_1 {
              'floating_ip_address': '15.1.2.3',
              'fixed_ip_address': '192.168.0.1',
              'floating_network_id': _uuid(),
+             'port_id': _uuid()},
+            {'id': _uuid(),
+             'host': 'some-other-host',
+             'floating_ip_address': '15.1.2.4',
+             'fixed_ip_address': '192.168.0.10',
+             'floating_network_id': _uuid(),
              'port_id': _uuid()}]}
 
         router = prepare_router_data(enable_snat=True)
@@ -1965,8 +1971,8 @@ vrrp_instance VR_1 {
         with mock.patch.object(l3_agent, 'LOG') as log:
             self.assertRaises(SystemExit, l3_agent.L3NATAgent,
                               HOSTNAME, self.conf)
-            msg = "Error importing interface driver 'wrong_driver'"
-            log.error.assert_called_once_with(msg)
+            msg = _LE("Error importing interface driver '%s'")
+            log.error.assert_called_once_with(msg, 'wrong_driver')
 
     def test_metadata_filter_rules(self):
         self.conf.set_override('enable_metadata_proxy', False)
@@ -2215,7 +2221,7 @@ vrrp_instance VR_1 {
         self.assertTrue(self.plugin_api.get_service_plugin_list.called)
 
     def test_get_service_plugin_list_failed(self):
-        raise_rpc = n_rpc.RemoteError()
+        raise_rpc = messaging.RemoteError()
         self.plugin_api.get_service_plugin_list.side_effect = raise_rpc
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.assertIsNone(agent.neutron_service_plugins)

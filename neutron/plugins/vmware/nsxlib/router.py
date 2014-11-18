@@ -14,10 +14,10 @@
 #    under the License.
 
 from oslo.config import cfg
+from oslo.serialization import jsonutils
 
 from neutron.common import exceptions as exception
 from neutron.openstack.common import excutils
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
 from neutron.plugins.vmware.api_client import exception as api_exc
 from neutron.plugins.vmware.common import exceptions as nsx_exc
@@ -25,6 +25,10 @@ from neutron.plugins.vmware.common import utils
 from neutron.plugins.vmware import nsxlib
 from neutron.plugins.vmware.nsxlib import switch
 from neutron.plugins.vmware.nsxlib import versioning
+
+# @versioning.versioned decorator makes the apparent function body
+# totally unrelated to the real function.  This confuses pylint :(
+# pylint: disable=assignment-from-no-return
 
 HTTP_GET = "GET"
 HTTP_POST = "POST"

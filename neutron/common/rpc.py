@@ -272,9 +272,3 @@ class Connection(object):
 # functions
 def create_connection(new=True):
     return Connection()
-
-
-# exceptions
-RPCException = messaging.MessagingException
-RemoteError = messaging.RemoteError
-MessagingTimeout = messaging.MessagingTimeout

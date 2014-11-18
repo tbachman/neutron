@@ -227,9 +227,9 @@ class IptablesFwaasDriver(fwaas_base.FwaasDriverBase):
 
     def _remove_chain_by_name(self, ver, chain_name, ipt_mgr):
         if ver == IPV4:
-            ipt_mgr.ipv4['filter'].ensure_remove_chain(chain_name)
+            ipt_mgr.ipv4['filter'].remove_chain(chain_name)
         else:
-            ipt_mgr.ipv6['filter'].ensure_remove_chain(chain_name)
+            ipt_mgr.ipv6['filter'].remove_chain(chain_name)
 
     def _add_rules_to_chain(self, ipt_mgr, ver, chain_name, rules):
         if ver == IPV4:
@@ -268,7 +268,7 @@ class IptablesFwaasDriver(fwaas_base.FwaasDriverBase):
         self._add_rules_to_chain(ipt_mgr, IPV6, 'FORWARD', jump_rule)
 
     def _convert_fwaas_to_iptables_rule(self, rule):
-        action = rule.get('action') == 'allow' and 'ACCEPT' or 'DROP'
+        action = 'ACCEPT' if rule.get('action') == 'allow' else 'DROP'
         args = [self._protocol_arg(rule.get('protocol')),
                 self._port_arg('dport',
                                rule.get('protocol'),

@@ -24,6 +24,7 @@ eventlet.monkey_patch()
 import httplib2
 from neutronclient.v2_0 import client
 from oslo.config import cfg
+from oslo import messaging
 import six.moves.urllib.parse as urlparse
 import webob
 
@@ -37,7 +38,7 @@ from neutron.common import utils
 from neutron import context
 from neutron.openstack.common.cache import cache
 from neutron.openstack.common import excutils
-from neutron.openstack.common.gettextutils import _LW
+from neutron.openstack.common.gettextutils import _LE, _LW
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron import wsgi
@@ -146,7 +147,7 @@ class MetadataProxyHandler(object):
     @webob.dec.wsgify(RequestClass=webob.Request)
     def __call__(self, req):
         try:
-            LOG.debug(_("Request: %s"), req)
+            LOG.debug("Request: %s", req)
 
             instance_id, tenant_id = self._get_instance_and_tenant_id(req)
             if instance_id:
@@ -155,7 +156,7 @@ class MetadataProxyHandler(object):
                 return webob.exc.HTTPNotFound()
 
         except Exception:
-            LOG.exception(_("Unexpected error."))
+            LOG.exception(_LE("Unexpected error."))
             msg = _('An unknown error has occurred. '
                     'Please try your request again.')
             return webob.exc.HTTPInternalServerError(explanation=unicode(msg))
@@ -167,7 +168,7 @@ class MetadataProxyHandler(object):
         if self.use_rpc:
             try:
                 return self.plugin_rpc.get_ports(self.context, filters)
-            except (n_rpc.RPCException, AttributeError):
+            except (messaging.MessagingException, AttributeError):
                 # TODO(obondarev): remove fallback once RPC is proven
                 # to work fine with metadata agent (K or L release at most)
                 LOG.warning(_LW('Server does not support metadata RPC, '
@@ -285,11 +286,10 @@ class MetadataProxyHandler(object):
             req.response.body = content
             return req.response
         elif resp.status == 403:
-            msg = _(
+            LOG.warn(_LW(
                 'The remote metadata server responded with Forbidden. This '
                 'response usually occurs when shared secrets do not match.'
-            )
-            LOG.warn(msg)
+            ))
             return webob.exc.HTTPForbidden()
         elif resp.status == 400:
             return webob.exc.HTTPBadRequest()
@@ -411,12 +411,12 @@ class UnixDomainMetadataProxy(object):
                 use_call=self.agent_state.get('start_flag'))
         except AttributeError:
             # This means the server does not support report_state
-            LOG.warn(_('Neutron server does not support state report.'
-                       ' State report for this agent will be disabled.'))
+            LOG.warn(_LW('Neutron server does not support state report.'
+                         ' State report for this agent will be disabled.'))
             self.heartbeat.stop()
             return
         except Exception:
-            LOG.exception(_("Failed reporting state!"))
+            LOG.exception(_LE("Failed reporting state!"))
             return
         self.agent_state.pop('start_flag', None)
 

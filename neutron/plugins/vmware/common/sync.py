@@ -15,6 +15,8 @@
 
 import random
 
+from oslo.serialization import jsonutils
+
 from neutron.common import constants
 from neutron.common import exceptions
 from neutron import context
@@ -22,7 +24,6 @@ from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import l3
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log
 from neutron.openstack.common import loopingcall
 from neutron.openstack.common import timeutils
@@ -329,7 +330,7 @@ class NsxSynchronizer():
 
         for network in networks:
             lswitches = neutron_nsx_mappings.get(network['id'], [])
-            lswitches = [lswitch.get('data') for lswitch in lswitches]
+            lswitches = [lsw.get('data') for lsw in lswitches]
             self.synchronize_network(ctx, network, lswitches)
 
     def synchronize_router(self, context, neutron_router_data,
