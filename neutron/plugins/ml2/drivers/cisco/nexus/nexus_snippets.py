@@ -174,11 +174,11 @@ CMD_VLAN_SVI_SNIPPET = """
             <no>
               <shutdown/>
             </no>
-            <ip>
+            <ip%s>
                 <address>
                     <address>%s</address>
                 </address>
-            </ip>
+            </ip%s>
         </__XML__MODE_vlan>
     </vlan>
 </interface>
