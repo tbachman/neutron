@@ -473,7 +473,7 @@ def reserve_vlan(db_session, network_profile):
                         n1kv_models_v2.N1kvVlanAllocation.physical_network ==
                         network_profile['physical_network'],
                         n1kv_models_v2.N1kvVlanAllocation.allocated == False)
-                        )).first()
+                        )).with_lockmode('update').first()
         if alloc:
             segment_id = alloc.vlan_id
             physical_network = alloc.physical_network
@@ -502,7 +502,7 @@ def reserve_vxlan(db_session, network_profile):
                         n1kv_models_v2.N1kvVxlanAllocation.vxlan_id <=
                         seg_max,
                         n1kv_models_v2.N1kvVxlanAllocation.allocated == False)
-                        ).first())
+                        ).with_lockmode('update').first())
         if alloc:
             segment_id = alloc.vxlan_id
             alloc.allocated = True
