@@ -64,7 +64,7 @@ class L3HATestFramework(testlib_api.SqlTestCase,
             router['ha'] = ha
         if distributed is not None:
             router['distributed'] = distributed
-        return self.plugin._create_router_db(ctx, router, tenant_id)
+        return self.plugin.create_router(ctx, {'router': router})
 
     def _update_router(self, router_id, ha=True, distributed=None, ctx=None):
         if ctx is None:
