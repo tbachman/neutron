@@ -54,7 +54,6 @@ from neutron.plugins.cisco.extensions import n1kv
 from neutron.plugins.cisco.n1kv import n1kv_client
 from neutron.plugins.common import constants as svc_constants
 
-
 LOG = logging.getLogger(__name__)
 
 
@@ -1370,10 +1369,10 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         session = context.session
         with session.begin(subtransactions=True):
             network = self.get_network(context, id)
-            if network['subnets']:
-                msg = _("Cannot delete network '%s', "
-                        "delete the associated subnet first") % network['name']
-                raise n_exc.InvalidInput(error_message=msg)
+            for subnet in network['subnets']:
+                self.delete_subnet(context, subnet)
+            msg = _('Removed subnets for network %s' % network['id'])
+            LOG.debug(msg)
             if n1kv_db_v2.is_trunk_member(session, id):
                 msg = _("Cannot delete network '%s' "
                         "that is member of a trunk segment") % network['name']
@@ -1697,9 +1696,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         """
         if self.full_sync:
             raise cisco_exceptions.FullSyncInProgress
+        subnet = self.get_subnet(context, id)
         LOG.debug(_('Delete subnet: %s'), id)
         sub = super(N1kvNeutronPluginV2, self).delete_subnet(context, id)
         try:
+            port_list = self.get_ports(context, {'network_id': [subnet['network_id']]})
+            for port in port_list:
+                if port['device_owner'] in [constants.DEVICE_OWNER_DHCP]:
+                    self.delete_port(context, port['id'])
             self._send_delete_subnet_request(context, id)
         except cisco_exceptions.VSMConnectionFailed:
             LOG.warning(_("VSM: Subnet delete timed out"))
