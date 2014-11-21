@@ -16,14 +16,14 @@
 """Cisco N1kv ML2 driver tables
 
 Revision ID: 589f9237ca0e
-Revises: 86d6d9776e2b
+Revises: 3bc23c072a91
 Create Date: 2014-08-13 13:31:43.537460
 
 """
 
 # revision identifiers, used by Alembic.
 revision = '589f9237ca0e'
-down_revision = '86d6d9776e2b'
+down_revision = '3bc23c072a91'
 
 
 from alembic import op

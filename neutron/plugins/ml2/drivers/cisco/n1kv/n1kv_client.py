@@ -15,6 +15,7 @@
 
 import base64
 import eventlet
+import json
 import requests
 
 from oslo.config import cfg
@@ -22,7 +23,6 @@ from oslo.config import cfg
 from neutron.extensions import providernet
 from neutron.openstack.common import excutils
 from neutron.openstack.common.gettextutils import _LI
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import config  # noqa
@@ -298,7 +298,7 @@ class Client(object):
             headers = self._get_auth_header()
         headers['Content-Type'] = headers['Accept'] = "application/json"
         if body:
-            body = jsonutils.dumps(body, indent=2)
+            body = json.dumps(body)
             LOG.debug("req: %s", body)
         try:
             resp = self.pool.spawn(requests.request,
