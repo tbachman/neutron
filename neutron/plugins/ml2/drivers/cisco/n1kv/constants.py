@@ -31,6 +31,8 @@ LOGICAL_NETWORK_SUFFIX = '_log_net'
 PROPERTIES = 'properties'
 ID = 'id'
 
+# Network Profile Types
+TYPE_TRUNK = 'trunk'
 
 # VXLAN modes
 MODE_NATIVE_VXLAN = 'native_vxlan'

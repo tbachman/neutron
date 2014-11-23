@@ -29,7 +29,8 @@ down_revision = '796c68dffbb'
 from alembic import op
 import sqlalchemy as sa
 
-network_profile_type = sa.Enum('vlan', 'vxlan', name='network_profile_type')
+network_profile_type = sa.Enum('vlan', 'vxlan', 'trunk',
+                               name='network_profile_type')
 
 
 def upgrade(active_plugins=None, options=None):
@@ -46,6 +47,11 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('name', sa.String(length=255), nullable=False),
         sa.Column('segment_type', network_profile_type, nullable=False),
+        sa.Column('segment_range', sa.String(length=255), nullable=True),
+        sa.Column('multicast_ip_index', sa.Integer(), nullable=True),
+        sa.Column('multicast_ip_range', sa.String(length=255), nullable=True),
+        sa.Column('sub_type', sa.String(length=255), nullable=True),
+        sa.Column('physical_network', sa.String(length=255), nullable=True),
         sa.PrimaryKeyConstraint('id'),
     )
 
@@ -72,9 +78,29 @@ def upgrade(active_plugins=None, options=None):
         sa.PrimaryKeyConstraint('network_id')
     )
 
+    op.create_table(
+        'cisco_ml2_n1kv_vxlan_allocations',
+        sa.Column('vxlan_id', sa.Integer(), autoincrement=False,
+                  nullable=False),
+        sa.Column('allocated', sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint('vxlan_id')
+    )
+
+    op.create_table(
+        'cisco_ml2_n1kv_vlan_allocations',
+        sa.Column('physical_network', sa.String(length=64), nullable=False),
+        sa.Column('vlan_id', sa.Integer(), autoincrement=False,
+                  nullable=False),
+        sa.Column('allocated', sa.Boolean(), autoincrement=False,
+                  nullable=False),
+        sa.PrimaryKeyConstraint('physical_network', 'vlan_id')
+     )
+
 
 def downgrade(active_plugins=None, options=None):
 
+    op.drop_table('cisco_ml2_n1kv_vlan_allocations')
+    op.drop_table('cisco_ml2_n1kv_vxlan_allocations')
     op.drop_table('cisco_ml2_n1kv_network_bindings')
     op.drop_table('cisco_ml2_n1kv_port_bindings')
     op.drop_table('cisco_ml2_n1kv_network_profiles')

@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.plugins.common import constants
+from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 
 
 class PolicyProfile(model_base.BASEV2):
@@ -41,8 +42,14 @@ class NetworkProfile(model_base.BASEV2, models_v2.HasId):
     name = sa.Column(sa.String(255), nullable=False)
     segment_type = sa.Column(sa.Enum(constants.TYPE_VLAN,
                                      constants.TYPE_VXLAN,
+                                     n1kv_const.TYPE_TRUNK,
                                      name='segment_type'),
                              nullable=False)
+    sub_type = sa.Column(sa.String(255))
+    segment_range = sa.Column(sa.String(255))
+    multicast_ip_index = sa.Column(sa.Integer, default=0)
+    multicast_ip_range = sa.Column(sa.String(255))
+    physical_network = sa.Column(sa.String(255))
 
 
 class N1kvPortBinding(model_base.BASEV2):
@@ -71,3 +78,36 @@ class N1kvNetworkBinding(model_base.BASEV2):
     profile_id = sa.Column(sa.String(36),
                            sa.ForeignKey('cisco_ml2_n1kv_network_profiles.id'),
                            nullable=False)
+
+
+class N1kvVlanAllocation(model_base.BASEV2):
+
+    """Represents allocation state of vlan_id on physical network."""
+    __tablename__ = 'cisco_ml2_n1kv_vlan_allocations'
+
+    physical_network = sa.Column(sa.String(64),
+                                 nullable=False,
+                                 primary_key=True)
+    vlan_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
+                        autoincrement=False)
+    allocated = sa.Column(sa.Boolean, nullable=False, default=False)
+    network_profile_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey(
+                                      'cisco_ml2_n1kv_network_profiles.id',
+                                      ondelete="CASCADE"),
+                                   nullable=False)
+
+
+class N1kvVxlanAllocation(model_base.BASEV2):
+
+    """Represents allocation state of vxlan_id."""
+    __tablename__ = 'cisco_ml2_n1kv_vxlan_allocations'
+
+    vxlan_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
+                         autoincrement=False)
+    allocated = sa.Column(sa.Boolean, nullable=False, default=False)
+    network_profile_id = sa.Column(sa.String(36),
+                                   sa.ForeignKey(
+                                       'cisco_ml2_n1kv_network_profiles.id',
+                                       ondelete="CASCADE"),
+                                   nullable=False)
