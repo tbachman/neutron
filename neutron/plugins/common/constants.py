@@ -21,6 +21,7 @@ FIREWALL = "FIREWALL"
 VPN = "VPN"
 METERING = "METERING"
 L3_ROUTER_NAT = "L3_ROUTER_NAT"
+CISCO_N1KV = 'CISCO_N1KV'
 
 
 #maps extension alias to service type
@@ -30,7 +31,8 @@ EXT_TO_SERVICE_MAPPING = {
     'fwaas': FIREWALL,
     'vpnaas': VPN,
     'metering': METERING,
-    'router': L3_ROUTER_NAT
+    'router': L3_ROUTER_NAT,
+    'cisco_n1kv_profile': CISCO_N1KV
 }
 
 # TODO(salvatore-orlando): Move these (or derive them) from conf file
