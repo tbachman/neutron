@@ -75,21 +75,6 @@ def remove_network_profile(netp_id, db_session=None):
         db_session.flush()
 
 
-def add_policy_profile(id, pprofile_name):
-    """Create a policy profile."""
-    db_session = db.get_session()
-    pprofile = n1kv_models.PolicyProfile(id=id, name=pprofile_name)
-    db_session.add(pprofile)
-    db_session.flush()
-    return pprofile
-
-
-def get_policy_profiles():
-    """Retrieve all policy profiles."""
-    db_session = db.get_session()
-    return db_session.query(n1kv_models.PolicyProfile)
-
-
 def get_policy_profile_by_name(name, db_session=None):
     """Retrieve policy profile by name."""
     db_session = db_session or db.get_session()
@@ -100,15 +85,13 @@ def get_policy_profile_by_name(name, db_session=None):
         raise n1kv_exc.PolicyProfileNotFound(profile=name)
 
 
-def remove_policy_profile(pprofile_id):
-    """Delete a policy profile."""
-    db_session = db.get_session()
-    pprofile = (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(id=pprofile_id).first())
-    if pprofile:
-        db_session.delete(pprofile)
-        db_session.flush()
-
+def get_policy_profile_by_uuid(db_session, id):
+    """Retrieve policy profile by its UUID."""
+    try:
+        return (db_session.query(n1kv_models.PolicyProfile).
+                filter_by(id=id).one())
+    except sa_exc.NoResultFound:
+        raise n1kv_exc.PolicyProfileNotFound(profile=id)
 
 def get_network_binding(network_id):
     """Retrieve network binding."""
@@ -130,9 +113,9 @@ def add_policy_binding(port_id, pprofile_id, db_session=None):
     return binding
 
 
-def get_policy_binding(port_id):
+def get_policy_binding(port_id, db_session=None):
     """Retrieve port to policy profile binding."""
-    db_session = db.get_session()
+    db_session = db_session or db.get_session()
     try:
         return (db_session.query(n1kv_models.N1kvPortBinding).
                 filter_by(port_id=port_id).one())

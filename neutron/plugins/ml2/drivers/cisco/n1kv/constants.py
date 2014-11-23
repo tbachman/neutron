@@ -35,3 +35,6 @@ ID = 'id'
 # VXLAN modes
 MODE_NATIVE_VXLAN = 'native_vxlan'
 MODE_UNICAST = 'unicast'
+
+# Attribute extension identifier
+N1KV_PROFILE_ID = 'n1kv:profile_id'
