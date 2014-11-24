@@ -152,11 +152,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # conditionally remove router from backlog just to be sure
         self.remove_router_from_backlog(id)
         # BOB: This needs to be taken out of the transaction
+        self.l3_cfg_rpc_notifier.router_deleted(context, router)
         if router['hosting_device'] is not None:
             LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
             self.unschedule_router_from_hosting_device(context, r_hd_binding)
         super(L3RouterApplianceDBMixin, self).delete_router(context, id)
-        self.l3_cfg_rpc_notifier.router_deleted(context, router)
 
     def notify_router_interface_action(
             self, context, router_interface_info, routers, action):
