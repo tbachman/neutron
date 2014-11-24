@@ -250,6 +250,7 @@ FIRST_CFG_AGENT = {
 
 CHK_INTERVAL = 2
 
+
 class RouterSchedulingTestCase(L3RouterApplianceTestCaseBase,
                                test_l3_plugin.L3NatTestCaseMixin):
 

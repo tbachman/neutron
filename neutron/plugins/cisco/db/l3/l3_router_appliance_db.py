@@ -30,6 +30,7 @@ from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
 from neutron.extensions import providernet as pr_net
+from neutron.openstack.common import excutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -120,7 +121,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             p_drv = self.get_hosting_device_plugging_driver()
             if p_drv is not None:
                 p_drv.teardown_logical_port_connectivity(e_context,
-                                                             o_r_db.gw_port)
+                                                         o_r_db.gw_port)
         router_updated = (
             super(L3RouterApplianceDBMixin, self).update_router(context, id,
                                                                 router))
@@ -156,7 +157,15 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if router['hosting_device'] is not None:
             LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
             self.unschedule_router_from_hosting_device(context, r_hd_binding)
-        super(L3RouterApplianceDBMixin, self).delete_router(context, id)
+        try:
+            super(L3RouterApplianceDBMixin, self).delete_router(context, id)
+        except n_exc.NeutronException:
+            with excutils.save_and_reraise_exception():
+                # put router back in backlog if deletion failed so that it
+                # gets reinstated
+                LOG.exception(_("Deletion of router %s failed. It will be "
+                                "re-hosted."), id)
+                self.backlog_router(id)
 
     def notify_router_interface_action(
             self, context, router_interface_info, routers, action):
@@ -350,7 +359,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
      #       self.backlog_router(r_hd_binding)
             return False
         with context.session.begin(subtransactions=True):
-            router = r_hd_binding['router']
+#            router = r_hd_binding['router']
             r_hd_binding.hosting_device = result
 #            self.remove_router_from_backlog(router['id'])
             LOG.info(_('Successfully scheduled router %(r_id)s to '
