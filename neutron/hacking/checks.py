@@ -45,9 +45,21 @@ def _directory_to_check_translation(filename):
     # do it on a directory by directory basis. The last patch of the
     # series will remove this and the entire code base will be validated.
     dirs = ["neutron/agent",
+            "neutron/api",
             "neutron/cmd",
+            "neutron/common",
             "neutron/db",
-            "neutron/extensions"]
+            "neutron/debug",
+            "neutron/extensions",
+            "neutron/hacking",
+            "neutron/locale",
+            "neutron/notifiers",
+            "neutron/openstack",
+            "neutron/scheduler",
+            "neutron/server",
+            "neutron/services",
+            "neutron/plugins/ml2",
+            "neutron/plugins/openvswitch"]
     return any([dir in filename for dir in dirs])
 
 
