@@ -46,6 +46,7 @@ PROFILE = 'binding:profile'
 CAP_PORT_FILTER = 'port_filter'
 OVS_HYBRID_PLUG = 'ovs_hybrid_plug'
 VIF_DETAILS_VLAN = 'vlan'
+VIF_DETAILS_PROFILEID = 'vmfex_profileid'
 
 VIF_TYPE_UNBOUND = 'unbound'
 VIF_TYPE_BINDING_FAILED = 'binding_failed'
