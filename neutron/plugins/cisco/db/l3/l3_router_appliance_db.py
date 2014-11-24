@@ -65,9 +65,9 @@ class RouterBindingInfoError(n_exc.NeutronException):
 class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     """Mixin class implementing Neutron's routing service using appliances."""
 
-    # Dictionary of routers for which new scheduling attempts should
+    # Set of ids of routers for which new scheduling attempts should
     # be made and the refresh setting and heartbeat for that.
-    _backlogged_routers = {}
+    _backlogged_routers = set()
     _refresh_router_backlog = True
     _heartbeat = None
 
@@ -94,7 +94,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
         # backlog so this new router gets scheduled asynchronously
-        self.backlog_router(r_hd_b_db['router'])
+        self.backlog_router(context, r_hd_b_db)
         return router_created
 
     def update_router(self, context, id, router):
@@ -314,7 +314,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 for binding in hd_bindings:
                     router_ids.append(binding['router_id'])
                     if binding['auto_schedule']:
-                        self.backlog_router(binding['router'])
+                        self.backlog_router(context, binding)
                 try:
                     affected_resources[hd['id']].update(
                         {'routers': router_ids})
@@ -345,14 +345,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # BOB: at risk of DB deadlocks
         result = self._create_csr1kv_vm_hosting_device(context.elevated())
         if result is None:
-            # CSR1kv hosting device creation was unsuccessful so backlog
-            # it for another scheduling attempt later.
-            self.backlog_router(r_hd_binding['router'])
+            # CSR1kv hosting device creation was unsuccessful so it
+            # will stay in backlog for another scheduling attempt later.
+     #       self.backlog_router(r_hd_binding)
             return False
         with context.session.begin(subtransactions=True):
             router = r_hd_binding['router']
             r_hd_binding.hosting_device = result
-            self.remove_router_from_backlog(router['id'])
+#            self.remove_router_from_backlog(router['id'])
             LOG.info(_('Successfully scheduled router %(r_id)s to '
                        'hosting device %(d_id)s'),
                      {'r_id': r_hd_binding['router']['id'],
@@ -369,18 +369,29 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                hosting_device)
 
     @lockutils.synchronized('routers', 'neutron-')
-    def backlog_router(self, router):
-        if ((router or {}).get('id') is None or
-                router['id'] in self._backlogged_routers):
+    def backlog_router(self, context, router_binding):
+        # Ensure we get latest state from DB in case it was updated while
+        # thread was waiting for lock to enter this function
+        context.session.expire(router_binding)
+        if (router_binding.hosting_device_id is not None or
+                router_binding.router_id in self._backlogged_routers):
+ #       if ((router or {}).get('id') is None or
+ #               router['id'] in self._backlogged_routers):
             return
         LOG.info(_('Backlogging router %s for renewed scheduling attempt '
-                   'later'), router['id'])
-        self._backlogged_routers[router['id']] = router
+#                   'later'), router['id'])
+                   'later'), router_binding.router_id)
+#        self._backlogged_routers[router_binding.router_id] = router
+        self._backlogged_routers.add(router_binding.router_id)
 
     @lockutils.synchronized('routers', 'neutron-')
-    def remove_router_from_backlog(self, id):
-        self._backlogged_routers.pop(id, None)
-        LOG.info(_('Router %s removed from backlog'), id)
+    def remove_router_from_backlog(self, router_id):
+        self._remove_router_from_backlog(router_id)
+
+    def _remove_router_from_backlog(self, router_id):
+#        self._backlogged_routers.pop(id, None)
+        self._backlogged_routers.discard(router_id)
+        LOG.info(_('Router %s removed from backlog'), router_id)
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _process_backlogged_routers(self):
@@ -392,12 +403,20 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         scheduled_routers = []
         LOG.info(_('Processing router (scheduling) backlog'))
         # try to reschedule
-        for r_id, router in self._backlogged_routers.items():
-            self._add_type_and_hosting_device_info(context, router)
-            if router.get('hosting_device'):
+#        for r_id, router in self._backlogged_routers.items():
+        for r_id in set(self._backlogged_routers):
+            binding_info = self._get_router_binding_info(context, r_id)
+            self.schedule_router_on_hosting_device(context, binding_info)
+            context.session.expire(binding_info)
+            if binding_info.hosting_device is not None:
+#            if router.get('hosting_device'):
+                router = self.get_router(context, r_id)
+                self._add_type_and_hosting_device_info(
+                    context, router, binding_info, schedule=False)
                 # scheduling attempt succeeded
                 scheduled_routers.append(router)
-                self._backlogged_routers.pop(r_id, None)
+#                self._backlogged_routers.pop(r_id, None)
+                self._remove_router_from_backlog(r_id)
         # notify cfg agents so the scheduled routers are instantiated
         if scheduled_routers:
             self.l3_cfg_rpc_notifier.routers_updated(context,
@@ -417,10 +436,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         query = query.filter(
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             expr.null())
-        for binding in query:
-            router = self._make_router_dict(binding.router,
-                                            process_extensions=False)
-            self._backlogged_routers[binding.router_id] = router
+ #       for binding in query:
+ #           router = self._make_router_dict(binding.router,
+ #                                           process_extensions=False)
+ #           self._backlogged_routers[binding.router_id] = router
+        self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
@@ -470,13 +490,22 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             'name': 'CSR1kv_router',
             'cfg_agent_driver': (cfg.CONF.hosting_devices
                                  .csr1kv_cfgagent_router_driver)}
-        if binding_info.hosting_device is None and schedule:
-            # This router has not been scheduled to a hosting device
-            # so we try to do it now.
-            self.schedule_router_on_hosting_device(context, binding_info)
-            context.session.expire(binding_info)
+  #      if binding_info.hosting_device is None and schedule:
+  #          # This router has not been scheduled to a hosting device
+  #          # so we try to do it now.
+  #          # BOB: This can lead to multiple CSRs being spun up.
+  #          # BOB: Change so that the router is instead backlogged
+  #          self.schedule_router_on_hosting_device(context, binding_info)
+  #          context.session.expire(binding_info)
+  #      if binding_info.hosting_device is None:
+  #          router['hosting_device'] = None
+  #      else:
+  #          router['hosting_device'] = self.get_device_info_for_agent(
+  #              binding_info.hosting_device)
         if binding_info.hosting_device is None:
             router['hosting_device'] = None
+            if schedule:
+                self.backlog_router(context, binding_info)
         else:
             router['hosting_device'] = self.get_device_info_for_agent(
                 binding_info.hosting_device)
