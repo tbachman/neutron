@@ -204,7 +204,7 @@ class CiscoNexusDriver(object):
     def create_vlan_svi(self, nexus_host, vlan_id, gateway_ip, ip_version):
         ip_version_str = "" if (ip_version == 4) else "v6"
         confstr = snipp.CMD_VLAN_SVI_SNIPPET % (vlan_id, ip_version_str,
-                                                gateway_ip)
+                                                gateway_ip, ip_version_str)
         confstr = self.create_xml_snippet(confstr)
         LOG.debug(_("NexusDriver: %s"), confstr)
         self._edit_config(nexus_host, target='running', config=confstr)
