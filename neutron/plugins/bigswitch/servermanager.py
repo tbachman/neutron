@@ -473,6 +473,13 @@ class ServerPool(object):
                            'data': ret[3]})
                 active_server.failed = True
 
+        # A failure on a delete means the object is gone from Neutron but not
+        # from the controller. Set the consistency hash to a bad value to
+        # trigger a sync on the next check.
+        # NOTE: The hash must have a comma in it otherwise it will be ignored
+        # by the backend.
+        if action == 'DELETE':
+            hash_handler.put_hash('INCONSISTENT,INCONSISTENT')
         # All servers failed, reset server list and try again next time
         LOG.error(_('ServerProxy: %(action)s failure for all servers: '
                     '%(server)r'),
@@ -578,12 +585,12 @@ class ServerPool(object):
     def rest_create_floatingip(self, tenant_id, floatingip):
         resource = FLOATINGIPS_PATH % (tenant_id, floatingip['id'])
         errstr = _("Unable to create floating IP: %s")
-        self.rest_action('PUT', resource, errstr=errstr)
+        self.rest_action('PUT', resource, floatingip, errstr=errstr)
 
     def rest_update_floatingip(self, tenant_id, floatingip, oldid):
         resource = FLOATINGIPS_PATH % (tenant_id, oldid)
         errstr = _("Unable to update floating IP: %s")
-        self.rest_action('PUT', resource, errstr=errstr)
+        self.rest_action('PUT', resource, floatingip, errstr=errstr)
 
     def rest_delete_floatingip(self, tenant_id, oldid):
         resource = FLOATINGIPS_PATH % (tenant_id, oldid)
