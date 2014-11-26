@@ -274,6 +274,20 @@ class CiscoNexusDriver(object):
             self.enable_vlan_on_trunk_int(nexus_host, vlan_id, intf_type,
                                           nexus_port)
 
+    def create_vlan_svi(self, nexus_host, vlan_id, gateway_ip):
+        """Create VLAN vn_segment."""
+        confstr = snipp.CMD_VLAN_SVI_SNIPPET % (vlan_id, gateway_ip)
+        confstr = self.create_xml_snippet(confstr)
+        LOG.debug("NexusDriver: %s", confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
+    def delete_vlan_svi(self, nexus_host, vlan_id):
+        """Delete VLAN vn_segment."""
+        confstr = snipp.CMD_NO_VLAN_SVI_SNIPPET % vlan_id
+        confstr = self.create_xml_snippet(confstr)
+        LOG.debug("NexusDriver: %s", confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
     def enable_vxlan_feature(self, nexus_host, nve_int_num, src_intf):
         """Enable VXLAN on the switch."""
 
@@ -284,7 +298,7 @@ class CiscoNexusDriver(object):
         # To get around the N9K failing on the "interface nve" command
         # send the two XML snippets down separately.
         confstr = self.create_xml_snippet(snipp.CMD_FEATURE_VXLAN_SNIPPET)
-        LOG.debug(_("NexusDriver: %s"), confstr)
+        LOG.debug("NexusDriver: %s", confstr)
         self._edit_config(nexus_host, config=confstr)
 
         confstr = self.create_xml_snippet((snipp.CMD_INT_NVE_SNIPPET %
