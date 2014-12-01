@@ -1160,6 +1160,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 self.assertEqual(res['port']['fixed_ips'],
                                  data['port']['fixed_ips'])
 
+    """ /32 is no longer a valid subnet
     def test_no_more_port_exception(self):
         with self.subnet(cidr='10.0.0.0/32') as subnet:
             id = subnet['subnet']['network_id']
@@ -1168,6 +1169,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             msg = str(q_exc.IpAddressGenerationFailure(net_id=id))
             self.assertEqual(data['NeutronError']['message'], msg)
             self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
+    """
 
     def test_update_port_update_ip(self):
         """Test update of port IP.
@@ -3259,6 +3261,37 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             subnet_req = self.new_create_request('subnets', data)
             res = subnet_req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
+
+    def test_subnet_ip_address_not_allowed(self):
+        cidrs = ['0.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
+                 '169.254.0.0/16', '192.0.0.0/24', '192.88.99.0/24',
+                 '198.18.0.0/15', '224.0.0.0/4', '240.0.0.0/4',
+                 '255.2555.255.255/32']
+        with self.network() as network:
+            for cidr in cidrs:
+                data = {'subnet': {
+                        'network_id': network['network']['id'],
+                        'cidr': cidr,
+                        'ip_version': 4,
+                        'tenant_id': network['network']['tenant_id']}}
+                subnet_req = self.new_create_request('subnets', data)
+                res = subnet_req.get_response(self.api)
+                self.assertEqual(res.status_int,
+                                 webob.exc.HTTPClientError.code)
+
+    def test_subnet_ip_address_allowed(self):
+        cidrs = ['10.0.0.0/8', '172.16.0.0/12', '192.0.2.0/24',
+                 '192.168.0.0/16', '198.51.100.0/24', '203.0.113.0/24']
+        with self.network() as network:
+            for cidr in cidrs:
+                data = {'subnet': {
+                        'network_id': network['network']['id'],
+                        'cidr': cidr,
+                        'ip_version': 4,
+                        'tenant_id': network['network']['tenant_id']}}
+                subnet_req = self.new_create_request('subnets', data)
+                res = subnet_req.get_response(self.api)
+                self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
     def test_invalid_uuid(self):
         with self.network() as network:

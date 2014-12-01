@@ -716,6 +716,32 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             err_msg = (_("%s has size %d") % (new_subnet_cidr, new_ip.size))
             LOG.error(err_msg)
             raise q_exc.InvalidInput(error_message=err_msg)
+        if new_ip.prefixlen < 8:
+            err_msg = (_("%s has prefix length < 8") % new_subnet_cidr)
+            LOG.error(err_msg)
+            raise q_exc.InvalidInput(error_message=err_msg)
+
+    def _validate_subnet_reserved(self, new_subnet_cidr):
+        """Validate CIDR is not using reserved IP for a subnet.
+
+        Verifies the specified CIDR is not in iana-ipv4-special-registry
+        except Private-Use network and Documentation TEST-NET.
+        """
+        ipv4_reserved = netaddr.IPSet([
+            netaddr.IPNetwork('0.0.0.0/8'),         # This host on this network
+            netaddr.IPNetwork('100.64.0.0/10'),     # Shared Address Space
+            netaddr.IPNetwork('192.0.0.0/24'),      # IETF Protocol Assignments
+            netaddr.IPNetwork('192.88.99.0/24'),    # 6to4 Relay Anycast
+            netaddr.IPNetwork('198.18.0.0/15'),     # Benchmarking
+            netaddr.IPNetwork('240.0.0.0/4'),       # Reserved
+        ])
+        new_ip = netaddr.IPNetwork(new_subnet_cidr)
+        if (new_ip.version == 4 and
+           (new_ip.is_link_local() or new_ip.is_loopback() or
+            new_ip.is_multicast() or new_ip in ipv4_reserved)):
+            err_msg = (_("%s is a special-purpose address") % new_subnet_cidr)
+            LOG.error(err_msg)
+            raise q_exc.InvalidInput(error_message=err_msg)
 
     def _validate_allocation_pools(self, ip_pools, subnet_cidr):
         """Validate IP allocation pools.
@@ -1102,6 +1128,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         tenant_id = self._get_tenant_id_for_create(context, s)
         with context.session.begin(subtransactions=True):
             network = self._get_network(context, s["network_id"])
+            self._validate_subnet_reserved(s['cidr'])
             self._validate_subnet_cidr(context, network, s['cidr'])
             # The 'shared' attribute for subnets is for internal plugin
             # use only. It is not exposed through the API
