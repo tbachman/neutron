@@ -1444,7 +1444,3 @@ class TestConvertProtocol(base.BaseTestCase):
 
     def test_convert_numeric_protocol_to_string(self):
         self.assertIsInstance(ext_sg.convert_protocol(2), str)
-
-
-class TestSecurityGroupsXML(TestSecurityGroups):
-    fmt = 'xml'
