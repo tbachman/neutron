@@ -141,7 +141,11 @@ class ConsumerBase(object):
         self.channel = channel
         self.kwargs['channel'] = channel
         self.queue = kombu.entity.Queue(**self.kwargs)
-        self.queue.declare()
+        try:
+            self.queue.declare()
+        except Exception as e:
+            LOG.exception(_("Declaring queue failed with (%s), retrying"), e)
+            self.queue.declare()
 
     def _callback_handler(self, message, callback):
         """Call callback with deserialized message.
