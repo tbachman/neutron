@@ -255,7 +255,6 @@ class DeviceHandlingMixin(object):
                                                                    hd):
                     # exclude this device since we did not remove it
                     del hosting_info[hd['id']]
-        # BOB: RPC needs to be taken out of the transaction
         self.l3_cfg_rpc_notifier.hosting_devices_removed(
             context, hosting_info, False, host)
 

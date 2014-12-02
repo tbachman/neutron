@@ -107,18 +107,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         old_ext_gw = (o_r_db.gw_port or {}).get('network_id')
         new_ext_gw = (r.get('external_gateway_info', {}) or {}).get(
             'network_id')
-#        with context.session.begin(subtransactions=True):
         e_context = context.elevated()
         if old_ext_gw is not None and old_ext_gw != new_ext_gw:
             o_r = self._make_router_dict(o_r_db, process_extensions=False)
             # no need to schedule now since we're only doing this to tear-down
             # connectivity and there won't be any if not already scheduled.
-            # BOB: This _add_type... does not schedule so it should not
-            # BOB: be prone to the DB deadlock issue
             self._add_type_and_hosting_device_info(e_context, o_r,
                                                    schedule=False)
-            # BOB: teardown_logical_... may call to Nova (hot-plug case)
-            # BOB: so it has to be outside transaction
             p_drv = self.get_hosting_device_plugging_driver()
             if p_drv is not None:
                 p_drv.teardown_logical_port_connectivity(e_context,
@@ -127,21 +122,15 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).update_router(context, id,
                                                                 router))
         routers = [copy.deepcopy(router_updated)]
-        # BOB: This _add_type... can trigger scheduling and VM dispatching
-        # BOB: so it needs to be taken out of the transaction
         self._add_type_and_hosting_device_info(e_context, routers[0])
         self.l3_cfg_rpc_notifier.routers_updated(context, routers)
         return router_updated
 
     def delete_router(self, context, id):
-        #router_db = self._get_router(context, id)
         router_db = self._ensure_router_not_in_use(context, id)
         router = self._make_router_dict(router_db)
-#        with context.session.begin(subtransactions=True):
         e_context = context.elevated()
         r_hd_binding = self._get_router_binding_info(e_context, id)
-        # BOB: This _add_type... does not schedule so it should not
-        # BOB: be prone to the DB deadlock issues
         self._add_type_and_hosting_device_info(
             e_context, router, binding_info=r_hd_binding, schedule=False)
         if router_db.gw_port is not None:
@@ -153,7 +142,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                          router_db.gw_port)
         # conditionally remove router from backlog just to be sure
         self.remove_router_from_backlog(id)
-        # BOB: This needs to be taken out of the transaction
         self.l3_cfg_rpc_notifier.router_deleted(context, router)
         if router['hosting_device'] is not None:
             LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
@@ -180,12 +168,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                       {'router_interface': router_interface_info})
 
     def add_router_interface(self, context, router_id, interface_info):
-#        with context.session.begin(subtransactions=True):
         info = (super(L3RouterApplianceDBMixin, self).
                 add_router_interface(context, router_id, interface_info))
         routers = [self.get_router(context, router_id)]
-        # BOB: This _add_type... can trigger scheduling and VM dispatching
-        # BOB: so it needs to be taken out of the transaction
         self._add_type_and_hosting_device_info(context.elevated(), routers[0])
         self.notify_router_interface_action(context, info, routers, 'add')
         return info
@@ -204,13 +189,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             raise n_exc.BadRequest(resource='router', msg=msg)
         routers = [self.get_router(context, router_id)]
         e_context = context.elevated()
-        # BOB: This _add_type... can trigger scheduling and VM dispatching
-        # BOB: so it needs to be taken out of the transaction
         self._add_type_and_hosting_device_info(e_context, routers[0])
         p_drv = self.get_hosting_device_plugging_driver()
         if p_drv is not None:
             p_drv.teardown_logical_port_connectivity(e_context, port_db)
-#        with context.session.begin(subtransactions=True):
         info = super(L3RouterApplianceDBMixin, self).remove_router_interface(
             context, router_id, interface_info)
         self.notify_router_interface_action(context, info, routers, 'remove')
@@ -219,16 +201,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def create_floatingip(
             self, context, floatingip,
             initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
-#        with context.session.begin(subtransactions=True):
         info = super(L3RouterApplianceDBMixin, self).create_floatingip(
             context, floatingip)
         if info['router_id']:
             routers = [self.get_router(context, info['router_id'])]
-            # BOB: This _add_type... can trigger scheduling and VM dispatching
-            # BOB: so it needs to be taken out of the transaction
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            # BOB: RPC needs to be taken out of the transaction
             self.l3_cfg_rpc_notifier.routers_updated(context, routers,
                                                      'create_floatingip')
         return info
@@ -237,7 +215,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         orig_fl_ip = super(L3RouterApplianceDBMixin, self).get_floatingip(
             context, id)
         before_router_id = orig_fl_ip['router_id']
- #       with context.session.begin(subtransactions=True):
         info = super(L3RouterApplianceDBMixin, self).update_floatingip(
             context, id, floatingip)
         router_ids = []
@@ -247,8 +224,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if router_id and router_id != before_router_id:
             router_ids.append(router_id)
         routers = []
-        # BOB: This _add_type... can trigger scheduling and VM dispatching
-        # BOB: so it needs to be taken out of the transaction
         for router_id in router_ids:
             router = self.get_router(context, router_id)
             self._add_type_and_hosting_device_info(context.elevated(), router)
@@ -260,33 +235,24 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def delete_floatingip(self, context, id):
         floatingip_db = self._get_floatingip(context, id)
         router_id = floatingip_db['router_id']
-  #      with context.session.begin(subtransactions=True):
         super(L3RouterApplianceDBMixin, self).delete_floatingip(context, id)
         if router_id:
             routers = [self.get_router(context, router_id)]
-            # BOB: This _add_type... can trigger scheduling and VM dispatching
-            # BOB: so it needs to be taken out of the transaction
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            # BOB: RPC needs to be taken out of the transaction
             self.l3_cfg_rpc_notifier.routers_updated(context, routers,
                                                      'delete_floatingip')
 
     def disassociate_floatingips(self, context, port_id, do_notify=True):
-#        with context.session.begin(subtransactions=True):
         router_ids = super(L3RouterApplianceDBMixin,
                            self).disassociate_floatingips(context, port_id)
         if router_ids and do_notify:
             routers = []
             for router_id in router_ids:
                 router = self.get_router(context, router_id)
-                # BOB: This _add_type... can trigger scheduling and VM
-                # BOB: dispatching so it needs to be taken out of the
-                # BOB: transaction
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        router)
                 routers.append(router)
-            # BOB: RPC needs to be taken out of the transaction
             self.l3_cfg_rpc_notifier.routers_updated(
                 context, routers, 'disassociate_floatingips')
             # since caller assumes that we handled notifications on its
@@ -336,12 +302,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
         Adds information about hosting device as well as trunking.
         """
-#        with context.session.begin(subtransactions=True):
         sync_data = (super(L3RouterApplianceDBMixin, self).
                      get_sync_data(context, router_ids, active))
         for router in sync_data:
-            # BOB: This _add_type... can trigger scheduling and VM dispatching
-            # so it needs to be taken out of the transaction
             self._add_type_and_hosting_device_info(context, router)
             plg_drv = self.get_hosting_device_plugging_driver()
             if plg_drv and router['hosting_device']:
@@ -351,18 +314,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
         LOG.info(_LI('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
-        # BOB: If the following line happens inside a DB transaction we are
-        # BOB: at risk of DB deadlocks
         result = self._create_csr1kv_vm_hosting_device(context.elevated())
         if result is None:
             # CSR1kv hosting device creation was unsuccessful so it
             # will stay in backlog for another scheduling attempt later.
-     #       self.backlog_router(r_hd_binding)
             return False
         with context.session.begin(subtransactions=True):
-#            router = r_hd_binding['router']
             r_hd_binding.hosting_device = result
-#            self.remove_router_from_backlog(router['id'])
             LOG.info(_LI('Successfully scheduled router %(r_id)s to '
                        'hosting device %(d_id)s'),
                      {'r_id': r_hd_binding['router']['id'],
@@ -385,13 +343,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         context.session.expire(router_binding)
         if (router_binding.hosting_device_id is not None or
                 router_binding.router_id in self._backlogged_routers):
- #       if ((router or {}).get('id') is None or
- #               router['id'] in self._backlogged_routers):
             return
         LOG.info(_LI('Backlogging router %s for renewed scheduling attempt '
-#                   'later'), router['id'])
-                   'later'), router_binding.router_id)
-#        self._backlogged_routers[router_binding.router_id] = router
+                     'later'), router_binding.router_id)
         self._backlogged_routers.add(router_binding.router_id)
 
     @lockutils.synchronized('routers', 'neutron-')
@@ -399,7 +353,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self._remove_router_from_backlog(router_id)
 
     def _remove_router_from_backlog(self, router_id):
-#        self._backlogged_routers.pop(id, None)
         self._backlogged_routers.discard(router_id)
         LOG.info(_LI('Router %s removed from backlog'), id)
 
@@ -413,19 +366,16 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         scheduled_routers = []
         LOG.info(_LI('Processing router (scheduling) backlog'))
         # try to reschedule
-#        for r_id, router in self._backlogged_routers.items():
         for r_id in set(self._backlogged_routers):
             binding_info = self._get_router_binding_info(context, r_id)
             self.schedule_router_on_hosting_device(context, binding_info)
             context.session.expire(binding_info)
             if binding_info.hosting_device is not None:
-#            if router.get('hosting_device'):
                 router = self.get_router(context, r_id)
                 self._add_type_and_hosting_device_info(
                     context, router, binding_info, schedule=False)
                 # scheduling attempt succeeded
                 scheduled_routers.append(router)
-#                self._backlogged_routers.pop(r_id, None)
                 self._remove_router_from_backlog(r_id)
         # notify cfg agents so the scheduled routers are instantiated
         if scheduled_routers:
@@ -446,10 +396,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         query = query.filter(
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             expr.null())
- #       for binding in query:
- #           router = self._make_router_dict(binding.router,
- #                                           process_extensions=False)
- #           self._backlogged_routers[binding.router_id] = router
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
@@ -500,18 +446,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             'name': 'CSR1kv_router',
             'cfg_agent_driver': (cfg.CONF.hosting_devices
                                  .csr1kv_cfgagent_router_driver)}
-  #      if binding_info.hosting_device is None and schedule:
-  #          # This router has not been scheduled to a hosting device
-  #          # so we try to do it now.
-  #          # BOB: This can lead to multiple CSRs being spun up.
-  #          # BOB: Change so that the router is instead backlogged
-  #          self.schedule_router_on_hosting_device(context, binding_info)
-  #          context.session.expire(binding_info)
-  #      if binding_info.hosting_device is None:
-  #          router['hosting_device'] = None
-  #      else:
-  #          router['hosting_device'] = self.get_device_info_for_agent(
-  #              binding_info.hosting_device)
         if binding_info.hosting_device is None:
             router['hosting_device'] = None
             if schedule:
