@@ -1,4 +1,3 @@
-# Copyright (c) 2013 Rackspace Hosting
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,16 +12,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""Middleware that attaches a correlation id to WSGI request"""
+from oslo import i18n
 
-import uuid
+_translators = i18n.TranslatorFactory(domain='neutron')
 
-from neutron.openstack.common.middleware import base
+# The primary translation function using the well-known name "_"
+_ = _translators.primary
 
-
-class CorrelationIdMiddleware(base.Middleware):
-
-    def process_request(self, req):
-        correlation_id = (req.headers.get("X_CORRELATION_ID") or
-                          str(uuid.uuid4()))
-        req.headers['X_CORRELATION_ID'] = correlation_id
+# Translators for log levels.
+#
+# The abbreviated names are meant to reflect the usual use of a short
+# name like '_'. The "L" is for "log" and the other letter comes from
+# the level.
+_LI = _translators.log_info
+_LW = _translators.log_warning
+_LE = _translators.log_error
+_LC = _translators.log_critical

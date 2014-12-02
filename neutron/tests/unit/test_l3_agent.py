@@ -30,7 +30,7 @@ from neutron.agent.linux import interface
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
-from neutron.openstack.common.gettextutils import _LE
+from neutron.i18n import _LE
 from neutron.openstack.common import processutils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as p_const
@@ -283,14 +283,17 @@ def _get_subnet_id(port):
     return port['fixed_ips'][0]['subnet_id']
 
 
-def get_ha_interface():
+#TODO(jschwarz): This is a shared function with both the unit tests
+# and the functional tests, and should be moved elsewhere (probably
+# neutron/tests/common/).
+def get_ha_interface(ip='169.254.0.2', mac='12:34:56:78:2b:5d'):
     return {'admin_state_up': True,
             'device_id': _uuid(),
             'device_owner': 'network:router_ha_interface',
-            'fixed_ips': [{'ip_address': '169.254.0.2',
+            'fixed_ips': [{'ip_address': ip,
                            'subnet_id': _uuid()}],
             'id': _uuid(),
-            'mac_address': '12:34:56:78:2b:5d',
+            'mac_address': mac,
             'name': u'L3 HA Admin port 0',
             'network_id': _uuid(),
             'status': u'ACTIVE',
@@ -415,18 +418,18 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         return agent, ri, port
 
-    def test__sync_routers_task_raise_exception(self):
+    def test_periodic_sync_routers_task_raise_exception(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_routers.side_effect = Exception()
         with mock.patch.object(agent, '_cleanup_namespaces') as f:
-            agent._sync_routers_task(agent.context)
+            agent.periodic_sync_routers_task(agent.context)
         self.assertFalse(f.called)
 
-    def test__sync_routers_task_call_clean_stale_namespaces(self):
+    def test_periodic_sync_routers_task_call_clean_stale_namespaces(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_routers.return_value = []
         with mock.patch.object(agent, '_cleanup_namespaces') as f:
-            agent._sync_routers_task(agent.context)
+            agent.periodic_sync_routers_task(agent.context)
         self.assertTrue(f.called)
 
     def test_router_info_create(self):
@@ -1488,8 +1491,8 @@ vrrp_instance VR_1 {
             # The unexpected exception has been fixed manually
             internal_network_added.side_effect = None
 
-            # _sync_routers_task finds out that _rpc_loop failed to process the
-            # router last time, it will retry in the next run.
+            # periodic_sync_routers_task finds out that _rpc_loop failed to
+            # process the router last time, it will retry in the next run.
             agent.process_router(ri)
             # We were able to add the port to ri.internal_ports
             self.assertIn(
@@ -1519,8 +1522,8 @@ vrrp_instance VR_1 {
             # The unexpected exception has been fixed manually
             internal_net_removed.side_effect = None
 
-            # _sync_routers_task finds out that _rpc_loop failed to process the
-            # router last time, it will retry in the next run.
+            # periodic_sync_routers_task finds out that _rpc_loop failed to
+            # process the router last time, it will retry in the next run.
             agent.process_router(ri)
             # We were able to remove the port from ri.internal_ports
             self.assertNotIn(
@@ -1837,7 +1840,7 @@ vrrp_instance VR_1 {
 
         self.conf.set_override('router_id', '1234')
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        self.assertEqual(['1234'], agent._router_ids())
+        self.assertEqual('1234', agent.conf.router_id)
         self.assertFalse(agent._clean_stale_namespaces)
 
     def test_process_router_if_compatible_with_no_ext_net_in_conf(self):
@@ -2104,6 +2107,7 @@ vrrp_instance VR_1 {
         fip_ns_name = agent.get_fip_ns_name(str(fip['floating_network_id']))
 
         with mock.patch.object(l3_agent.LinkLocalAllocator, '_write'):
+            self.device_exists.return_value = False
             agent.create_rtr_2_fip_link(ri, fip['floating_network_id'])
         self.mock_ip.add_veth.assert_called_with(rtr_2_fip_name,
                                                  fip_2_rtr_name, fip_ns_name)
@@ -2112,6 +2116,17 @@ vrrp_instance VR_1 {
             '169.254.31.29', table=16)
 
     # TODO(mrsmith): test _create_agent_gateway_port
+
+    def test_create_rtr_2_fip_link_already_exists(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        router = prepare_router_data()
+
+        ri = l3_agent.RouterInfo(router['id'], self.conf.root_helper,
+                                 router=router)
+        self.device_exists.return_value = True
+        with mock.patch.object(l3_agent.LinkLocalAllocator, '_write'):
+            agent.create_rtr_2_fip_link(ri, {})
+        self.assertFalse(self.mock_ip.add_veth.called)
 
     def test_floating_ip_added_dist(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)

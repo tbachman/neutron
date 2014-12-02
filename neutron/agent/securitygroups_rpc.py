@@ -18,11 +18,11 @@ import functools
 
 from oslo.config import cfg
 from oslo import messaging
+from oslo.utils import importutils
 
 from neutron.agent import firewall
 from neutron.common import topics
-from neutron.openstack.common.gettextutils import _LI, _LW
-from neutron.openstack.common import importutils
+from neutron.i18n import _LI, _LW
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -356,10 +356,6 @@ class SecurityGroupAgentRpcMixin(object):
                 self.refresh_firewall(updated_devices)
 
 
-# NOTE(russellb) This class has been conditionally converted to use the
-# oslo.messaging APIs because it's a mix-in used in different places.  The
-# conditional usage is temporary until the whole code base has been converted
-# to stop using the RpcProxy compatibility class.
 class SecurityGroupAgentRpcApiMixin(object):
 
     def _get_security_group_topic(self):
@@ -371,45 +367,25 @@ class SecurityGroupAgentRpcApiMixin(object):
         """Notify rule updated security groups."""
         if not security_groups:
             return
-        if hasattr(self, 'client'):
-            cctxt = self.client.prepare(version=SG_RPC_VERSION,
-                                        topic=self._get_security_group_topic(),
-                                        fanout=True)
-            cctxt.cast(context, 'security_groups_rule_updated',
-                       security_groups=security_groups)
-        else:
-            self.fanout_cast(context,
-                             self.make_msg('security_groups_rule_updated',
-                                           security_groups=security_groups),
-                             version=SG_RPC_VERSION,
-                             topic=self._get_security_group_topic())
+        cctxt = self.client.prepare(version=SG_RPC_VERSION,
+                                    topic=self._get_security_group_topic(),
+                                    fanout=True)
+        cctxt.cast(context, 'security_groups_rule_updated',
+                   security_groups=security_groups)
 
     def security_groups_member_updated(self, context, security_groups):
         """Notify member updated security groups."""
         if not security_groups:
             return
-        if hasattr(self, 'client'):
-            cctxt = self.client.prepare(version=SG_RPC_VERSION,
-                                        topic=self._get_security_group_topic(),
-                                        fanout=True)
-            cctxt.cast(context, 'security_groups_member_updated',
-                       security_groups=security_groups)
-        else:
-            self.fanout_cast(context,
-                             self.make_msg('security_groups_member_updated',
-                                           security_groups=security_groups),
-                             version=SG_RPC_VERSION,
-                             topic=self._get_security_group_topic())
+        cctxt = self.client.prepare(version=SG_RPC_VERSION,
+                                    topic=self._get_security_group_topic(),
+                                    fanout=True)
+        cctxt.cast(context, 'security_groups_member_updated',
+                   security_groups=security_groups)
 
     def security_groups_provider_updated(self, context):
         """Notify provider updated security groups."""
-        if hasattr(self, 'client'):
-            cctxt = self.client.prepare(version=SG_RPC_VERSION,
-                                        topic=self._get_security_group_topic(),
-                                        fanout=True)
-            cctxt.cast(context, 'security_groups_member_updated')
-        else:
-            self.fanout_cast(context,
-                             self.make_msg('security_groups_provider_updated'),
-                             version=SG_RPC_VERSION,
-                             topic=self._get_security_group_topic())
+        cctxt = self.client.prepare(version=SG_RPC_VERSION,
+                                    topic=self._get_security_group_topic(),
+                                    fanout=True)
+        cctxt.cast(context, 'security_groups_member_updated')

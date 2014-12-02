@@ -1,5 +1,4 @@
-# Copyright 2014: Mirantis Inc.
-# All Rights Reserved.
+# Copyright 2014 Red Hat, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,17 +13,17 @@
 #    under the License.
 
 
-from rally.benchmark.scenarios.neutron import utils
+from neutron.agent import l3_agent
 
 
-class NeutronListNetworks(utils.NeutronScenario):
+class TestL3NATAgent(l3_agent.L3NATAgentWithStateReport):
+    NESTED_NAMESPACE_SEPARATOR = '@'
 
-    @base.scenario()
-    def list_networks(self):
-        """Test listing all networks.
+    def get_ns_name(self, router_id):
+        ns_name = super(TestL3NATAgent, self).get_ns_name(router_id)
+        return "%s%s%s" % (ns_name, self.NESTED_NAMESPACE_SEPARATOR, self.host)
 
-        This scenario is a very useful tool to measure
-        the "neutron net-list" command performance.
-
-        """
-        self._list_networks()
+    def get_router_id(self, ns_name):
+        # 'ns_name' should be in the format of: 'qrouter-<id>@<host>'.
+        return super(TestL3NATAgent, self).get_router_id(
+            ns_name.split(self.NESTED_NAMESPACE_SEPARATOR)[0])

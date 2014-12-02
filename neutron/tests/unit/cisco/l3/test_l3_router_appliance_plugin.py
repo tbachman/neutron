@@ -16,6 +16,7 @@ import time
 
 import mock
 from oslo.config import cfg
+from oslo.utils import timeutils
 from webob import exc
 
 import neutron
@@ -25,7 +26,6 @@ from neutron.db import agents_db
 from neutron.db import common_db_mixin
 from neutron.extensions import providernet as pnet
 from neutron import manager
-from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import device_handling_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db

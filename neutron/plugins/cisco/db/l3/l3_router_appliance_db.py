@@ -31,6 +31,7 @@ from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
 from neutron.extensions import providernet as pr_net
 from neutron.openstack.common import excutils
+from neutron.i18n import _LE, _LI
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -163,8 +164,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             with excutils.save_and_reraise_exception():
                 # put router back in backlog if deletion failed so that it
                 # gets reinstated
-                LOG.exception(_("Deletion of router %s failed. It will be "
-                                "re-hosted."), id)
+                LOG.exception(_LE("Deletion of router %s failed. It will be "
+                                  "re-hosted."), id)
                 self.backlog_router(id)
 
     def notify_router_interface_action(
@@ -199,7 +200,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             port_db = self._get_router_port_db_on_subnet(
                 context, router_id, subnet_db)
         else:
-            msg = "Either subnet_id or port_id must be specified"
+            msg = _("Either subnet_id or port_id must be specified")
             raise n_exc.BadRequest(resource='router', msg=msg)
         routers = [self.get_router(context, router_id)]
         e_context = context.elevated()
@@ -348,7 +349,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         return sync_data
 
     def schedule_router_on_hosting_device(self, context, r_hd_binding):
-        LOG.info(_('Attempting to schedule router %s.'),
+        LOG.info(_LI('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
         # BOB: If the following line happens inside a DB transaction we are
         # BOB: at risk of DB deadlocks
@@ -362,14 +363,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 #            router = r_hd_binding['router']
             r_hd_binding.hosting_device = result
 #            self.remove_router_from_backlog(router['id'])
-            LOG.info(_('Successfully scheduled router %(r_id)s to '
+            LOG.info(_LI('Successfully scheduled router %(r_id)s to '
                        'hosting device %(d_id)s'),
                      {'r_id': r_hd_binding['router']['id'],
                       'd_id': result['id']})
         return True
 
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
-        LOG.info(_('Un-schedule router %s.'),
+        LOG.info(_LI('Un-schedule router %s.'),
                  r_hd_binding['router']['id'])
         hosting_device = r_hd_binding['hosting_device']
         if r_hd_binding['hosting_device'] is None:
@@ -387,7 +388,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
  #       if ((router or {}).get('id') is None or
  #               router['id'] in self._backlogged_routers):
             return
-        LOG.info(_('Backlogging router %s for renewed scheduling attempt '
+        LOG.info(_LI('Backlogging router %s for renewed scheduling attempt '
 #                   'later'), router['id'])
                    'later'), router_binding.router_id)
 #        self._backlogged_routers[router_binding.router_id] = router
@@ -400,7 +401,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def _remove_router_from_backlog(self, router_id):
 #        self._backlogged_routers.pop(id, None)
         self._backlogged_routers.discard(router_id)
-        LOG.info(_('Router %s removed from backlog'), router_id)
+        LOG.info(_LI('Router %s removed from backlog'), id)
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _process_backlogged_routers(self):
@@ -410,7 +411,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             return
         context = n_context.get_admin_context()
         scheduled_routers = []
-        LOG.info(_('Processing router (scheduling) backlog'))
+        LOG.info(_LI('Processing router (scheduling) backlog'))
         # try to reschedule
 #        for r_id, router in self._backlogged_routers.items():
         for r_id in set(self._backlogged_routers):
@@ -438,7 +439,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             interval=cfg.CONF.general.backlog_processing_interval)
 
     def _sync_router_backlog(self):
-        LOG.info(_('Synchronizing router (scheduling) backlog'))
+        LOG.info(_LI('Synchronizing router (scheduling) backlog'))
         context = n_context.get_admin_context()
         query = context.session.query(l3_models.RouterHostingDeviceBinding)
         query = query.options(joinedload('router'))
@@ -462,13 +463,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             return query.one()
         except exc.NoResultFound:
             # This should not happen
-            LOG.error(_('DB inconsistency: No type and hosting info associated'
-                        ' with router %s'), id)
+            LOG.error(_LE('DB inconsistency: No type and hosting info '
+                          'associated with router %s'), id)
             raise RouterBindingInfoError(router_id=id)
         except exc.MultipleResultsFound:
             # This should not happen either
-            LOG.error(_('DB inconsistency: Multiple type and hosting info'
-                        ' associated with router %s'), id)
+            LOG.error(_LE('DB inconsistency: Multiple type and hosting info '
+                          'associated with router %s'), id)
             raise RouterBindingInfoError(router_id=id)
 
     def _get_hosting_device_bindings(self, context, id, load_routers=False,
@@ -490,7 +491,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 binding_info = self._get_router_binding_info(context,
                                                              router['id'])
         except RouterBindingInfoError:
-            LOG.error(_('DB inconsistency: No hosting info associated with '
+            LOG.error(_LE('DB inconsistency: No hosting info associated with '
                         'router %s'), router['id'])
             router['hosting_device'] = None
             return
@@ -576,7 +577,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         alloc = plugging_driver.allocate_hosting_port(
             context, router_id, port_db, network_type, hosting_device_id)
         if alloc is None:
-            LOG.error(_('Failed to allocate hosting port for port %s'),
+            LOG.error(_LE('Failed to allocate hosting port for port %s'),
                       port_db['id'])
             return
         with context.session.begin(subtransactions=True):
