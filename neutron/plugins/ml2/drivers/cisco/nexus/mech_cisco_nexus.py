@@ -54,10 +54,13 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
                 cfg.CONF.ml2_cisco.managed_physical_network ==
                 segment[api.PHYSICAL_NETWORK])
 
-    def _get_vlanid(self, segment):
+    def _get_vlan_info(self, segment):
         if (segment and segment[api.NETWORK_TYPE] == p_const.TYPE_VLAN and
             self._valid_network_segment(segment)):
-            return segment.get(api.SEGMENTATION_ID)
+            return (segment.get(api.SEGMENTATION_ID),
+                    segment.get(api.PROVIDER_SEGMENT))
+        else:
+            return None, None
 
     def _is_deviceowner_compute(self, port):
         return port['device_owner'].startswith('compute')
@@ -303,16 +306,17 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         """Verify configuration and then process event."""
         device_id = port.get('device_id')
         host_id = port.get(portbindings.HOST_ID)
-        vlan_id = self._get_vlanid(segment)
-        is_provider_vlan = segment.get(api.PROVIDER_SEGMENT)
-
-        if vlan_id and device_id and host_id:
-            func(vlan_id, device_id, host_id, vni, is_provider_vlan)
+        vlan_id, is_provider = self._get_vlan_info(segment)
+        settings = {"vlan_id": vlan_id,
+                    "device_id": device_id,
+                    "host_id": host_id,
+                    "is_provider": is_provider is not None}
+        missing_fields = [field for field, value in settings.items()
+                          if not value]
+        if not missing_fields:
+            func(vlan_id, device_id, host_id, vni, is_provider)
         else:
-            fields = "vlan_id " if not vlan_id else ""
-            fields += "device_id " if not device_id else ""
-            fields += "host_id" if not host_id else ""
-            raise excep.NexusMissingRequiredFields(fields=fields)
+            raise ValueError(fields=' '.join(missing_fields))
 
     def _port_action_vxlan(self, port, segment, func):
         """Verify configuration and then process event."""

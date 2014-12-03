@@ -64,10 +64,12 @@ VXLAN_SEGMENT = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
                  api.ID: PORT_ID}
 BOUND_SEGMENT1 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                   api.PHYSICAL_NETWORK: PHYS_NET,
-                  api.SEGMENTATION_ID: VLAN_START}
+                  api.SEGMENTATION_ID: VLAN_START,
+                  api.PROVIDER_SEGMENT: False}
 BOUND_SEGMENT2 = {api.NETWORK_TYPE: p_const.TYPE_VLAN,
                   api.PHYSICAL_NETWORK: PHYS_NET,
-                  api.SEGMENTATION_ID: VLAN_START + 1}
+                  api.SEGMENTATION_ID: VLAN_START + 1,
+                  api.PROVIDER_SEGMENT: False}
 BOUND_SEGMENT_VXLAN = {api.NETWORK_TYPE: p_const.TYPE_NEXUS_VXLAN,
                        api.PHYSICAL_NETWORK: MCAST_ADDR,
                        api.SEGMENTATION_ID: VNI}
@@ -843,6 +845,17 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
 
         """
         with self._create_resources(device_id='',
+                                    expected_failure=True) as result:
+            self._assertExpectedHTTP(result.status_int,
+                                     c_exc.NexusMissingRequiredFields)
+
+    def test_nexus_segment_none(self):
+        """Test handling of segment is None.
+
+        Verify the port_action method handles when the segment is None.
+        """
+        self.mock_top_bound_segment.return_value = None
+        with self._create_resources(name='net1', cidr=CIDR_1,
                                     expected_failure=True) as result:
             self._assertExpectedHTTP(result.status_int,
                                      c_exc.NexusMissingRequiredFields)

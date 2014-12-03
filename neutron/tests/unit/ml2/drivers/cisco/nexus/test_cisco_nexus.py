@@ -62,7 +62,8 @@ class FakeNetworkContext(object):
 
     def __init__(self, segment_id):
         self._network_segments = {api.SEGMENTATION_ID: segment_id,
-                                  api.NETWORK_TYPE: NETWORK_TYPE}
+                                  api.NETWORK_TYPE: NETWORK_TYPE,
+                                  api.PROVIDER_SEGMENT: False}
 
     @property
     def network_segments(self):
