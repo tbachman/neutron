@@ -82,24 +82,37 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         else:
             raise excep.NexusComputeHostNotConfigured(host=host_id)
 
+    def _get_switch_nve_info(self, host_id):
+        host_nve_connections = []
+        for switch_ip, attr in self._nexus_switches:
+            if str(attr) == str(host_id):
+                host_nve_connections.append(switch_ip)
+
+        if host_nve_connections:
+            return host_nve_connections
+        else:
+            raise excep.NexusComputeHostNotConfigured(host=host_id)
+
     def _configure_nve_db(self, vni, device_id, mcast_group, host_id):
         """Create the nexus NVE database entry.
 
         Called during update precommit port event.
         """
-        host_connections = self._get_switch_info(host_id)
-        for switch_ip, intf_type, nexus_port in host_connections:
-            nxos_db.add_nexusnve_binding(vni, switch_ip, device_id,
-                                         mcast_group)
+        host_nve_connections = self._get_switch_nve_info(host_id)
+        for switch_ip in host_nve_connections:
+            if not nxos_db.get_nve_vni_member_bindings(vni, switch_ip,
+                                                       device_id):
+                nxos_db.add_nexusnve_binding(vni, switch_ip, device_id,
+                                             mcast_group)
 
     def _configure_nve_member(self, vni, device_id, mcast_group, host_id):
         """Add "member vni" configuration to the NVE interface.
 
         Called during update postcommit port event.
         """
-        host_connections = self._get_switch_info(host_id)
+        host_nve_connections = self._get_switch_nve_info(host_id)
 
-        for switch_ip, intf_type, nexus_port in host_connections:
+        for switch_ip in host_nve_connections:
             # If configured to set global VXLAN values then
             #   If this is the first database entry for this switch_ip
             #   then configure the "interface nve" entry on the switch.
@@ -135,8 +148,8 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
 
         Called during delete postcommit port event.
         """
-        host_connections = self._get_switch_info(host_id)
-        for switch_ip, intf_type, nexus_port in host_connections:
+        host_nve_connections = self._get_switch_nve_info(host_id)
+        for switch_ip in host_nve_connections:
             if not nxos_db.get_nve_vni_switch_bindings(vni, switch_ip):
                 self.driver.delete_nve_member(switch_ip, const.NVE_INT_NUM,
                                               vni)

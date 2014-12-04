@@ -52,6 +52,7 @@ NETWORK_NAME = 'test_network'
 NETWORK_NAME_2 = 'test_network_2'
 NEXUS_INTERFACE = '1/1'
 NEXUS_INTERFACE_2 = '1/2'
+NEXUS_TWO_INTERFACES = NEXUS_INTERFACE + ', ' + NEXUS_INTERFACE_2
 CIDR_1 = '10.0.0.0/24'
 CIDR_2 = '10.0.1.0/24'
 DEVICE_ID_1 = '11111111-1111-1111-1111-111111111111'
@@ -80,7 +81,7 @@ NEXUS_2ND_SWITCH = {(NEXUS_IP_ADDR2, 'username'): 'admin',
                     (NEXUS_IP_ADDR2, 'password'): 'mySecretPassword',
                     (NEXUS_IP_ADDR2, 'ssh_port'): 22,
                     (NEXUS_IP_ADDR2, 'physnet'): PHYS_NET,
-                    (NEXUS_IP_ADDR2, COMP_HOST_NAME): NEXUS_INTERFACE}
+                    (NEXUS_IP_ADDR2, COMP_HOST_NAME): NEXUS_TWO_INTERFACES}
 
 
 class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
