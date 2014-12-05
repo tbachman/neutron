@@ -17,6 +17,8 @@
 Implements a Nexus-OS NETCONF over SSHv2 API Client
 """
 
+import re
+
 from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
@@ -45,6 +47,18 @@ class CiscoNexusDriver(object):
 
         """
         return importutils.import_module('ncclient.manager')
+
+    def _get_config(self, nexus_host, filter=''):
+        """Get Nexus Host Configuration:
+
+           :param nexus_host: IP address of switch
+           :param filter: filter string in XML format
+
+           :returns: Configuration requested in string format
+
+           """
+        mgr = self.nxos_connect(nexus_host)
+        return mgr.get(filter=('subtree', filter)).data_xml
 
     def _edit_config(self, nexus_host, target='running', config='',
                      allowed_exc_strs=None):
@@ -120,6 +134,42 @@ class CiscoNexusDriver(object):
         conf_xml_snippet = snipp.EXEC_CONF_SNIPPET % (customized_config)
         return conf_xml_snippet
 
+    def get_interface_switch_trunk_allowed(self, nexus_host,
+                                           intf_type, interface):
+        """Given the nexus host and specific interface data, get the
+           interface data from host and determine if
+           'switchport trunk allowed vlan' is configured.
+
+           :param nexus_host: IP address of Nexus switch
+           :param intf_type:  String which specifies interface type.
+                              example: ethernet
+           :param interface:  String indicating which interface.
+                              example: 1/19
+
+           :returns False:     On error or when config CLI not present.
+                    True:      When config CLI is present.
+           """
+
+        confstr = snipp.EXEC_GET_INTF_SNIPPET % (intf_type, interface)
+        try:
+            response = self._get_config(nexus_host, confstr)
+            LOG.debug("GET call returned interface %s %s config",
+                intf_type, interface)
+            try:
+                result = re.search("switchport trunk allowed vlan", response)
+                if (result is None):
+                    result = False
+                else:
+                    result = True
+            except Exception:
+                result = False
+        except Exception:
+            LOG.debug("Failed to get interface %s %s config",
+                intf_type, interface)
+            result = False
+
+        return result
+
     def create_vlan(self, nexus_host, vlanid, vlanname, vni):
         """Create a VLAN on a Nexus Switch.
 
@@ -170,30 +220,42 @@ class CiscoNexusDriver(object):
 
     def enable_vlan_on_trunk_int(self, nexus_host, vlanid, intf_type,
                                  interface):
-        """Enable a VLAN on a trunk interface."""
-        # Configure a new VLAN into the interface using 'ADD' keyword
+        """Enable a VLAN on a trunk interface.
+
+           :param nexus_host: IP address of Nexus switch
+           :param vlanid:     Vlanid to add to interface
+           :param intf_type:  String which specifies interface type.
+                              example: ethernet
+           :param interface:  String indicating which interface.
+                              example: 1/19
+
+           :returns None: if config was successfully
+                    Exception object: See _edit_config for details
+           """
+        response = self.get_interface_switch_trunk_allowed(nexus_host,
+            intf_type, interface)
+        #
+        # If 'switchport trunk allowed vlan' not configured on the
+        # switch, configure the VLAN onto the interface without the
+        # 'add' keyword to define initial vlan config; otherwise
+        # include the 'add' keyword.
+        #
+        snippet = (snipp.CMD_INT_VLAN_SNIPPET if (response is False)
+            else snipp.CMD_INT_VLAN_ADD_SNIPPET)
         confstr = self.build_intf_confstr(
-            snippet=snipp.CMD_INT_VLAN_ADD_SNIPPET,
+            snippet=snippet,
             intf_type=intf_type,
             interface=interface,
             vlanid=vlanid
         )
-        exc_str = ["switchport trunk allowed vlan list is empty"]
         ret_exc = self._edit_config(nexus_host, target='running',
-                                    config=confstr,
-                                    allowed_exc_strs=exc_str)
+                          config=confstr)
         if ret_exc:
-            # If no switchports have been configured on the switch
-            # before the new 'ADD', configure the VLAN into the
-            # interface without the keyword so as to create a vlan list
-            confstr = self.build_intf_confstr(
-                snippet=snipp.CMD_INT_VLAN_SNIPPET,
-                intf_type=intf_type,
-                interface=interface,
-                vlanid=vlanid
-            )
-            self._edit_config(nexus_host, target='running',
-                              config=confstr)
+            LOG.err("Failed to add switchport trunk vlan %s on int %s %s.",
+                vlanid, intf_type, interface)
+        else:
+            LOG.debug("Successfully added switchport trunk vlan %s on int "
+                "%s %s.", vlanid, intf_type, interface)
 
     def disable_vlan_on_trunk_int(self, nexus_host, vlanid, intf_type,
                                   interface):
