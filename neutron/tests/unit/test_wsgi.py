@@ -64,6 +64,7 @@ class TestWSGIServer(base.BaseTestCase):
         launcher.wait.assert_called_once_with()
 
     def test_start_random_port_with_ipv6(self):
+        self.skipTest("Do not support IPv6")
         server = wsgi.Server("test_random_port")
         server.start(None, 0, host="::1")
         self.assertEqual("::1", server.host)
@@ -72,6 +73,7 @@ class TestWSGIServer(base.BaseTestCase):
         server.wait()
 
     def test_ipv6_listen_called_with_scope(self):
+        self.skipTest("Do not support IPv6")
         server = wsgi.Server("test_app")
 
         with mock.patch.object(wsgi.eventlet, 'listen') as mock_listen:

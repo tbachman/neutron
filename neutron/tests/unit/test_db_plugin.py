@@ -1160,8 +1160,8 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 self.assertEqual(res['port']['fixed_ips'],
                                  data['port']['fixed_ips'])
 
-    """ /32 is no longer a valid subnet
     def test_no_more_port_exception(self):
+        self.skipTest("/32 is no longer a valid subnet")
         with self.subnet(cidr='10.0.0.0/32') as subnet:
             id = subnet['subnet']['network_id']
             res = self._create_port(self.fmt, id)
@@ -1169,7 +1169,6 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             msg = str(q_exc.IpAddressGenerationFailure(net_id=id))
             self.assertEqual(data['NeutronError']['message'], msg)
             self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
-    """
 
     def test_update_port_update_ip(self):
         """Test update of port IP.
@@ -1380,37 +1379,25 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
 
     def test_requested_subnet_id_v4_and_v6(self):
+        # Do not support IPv6, do not create port with IPv6 subnet
         with self.subnet() as subnet:
-                # Get a IPv4 and IPv6 address
-                tenant_id = subnet['subnet']['tenant_id']
+                # Get a IPv4 address
                 net_id = subnet['subnet']['network_id']
-                res = self._create_subnet(self.fmt,
-                                          tenant_id=tenant_id,
-                                          net_id=net_id,
-                                          cidr='2607:f0d0:1002:51::/124',
-                                          ip_version=6,
-                                          gateway_ip=ATTR_NOT_SPECIFIED)
-                subnet2 = self.deserialize(self.fmt, res)
                 kwargs = {"fixed_ips":
-                          [{'subnet_id': subnet['subnet']['id']},
-                           {'subnet_id': subnet2['subnet']['id']}]}
+                          [{'subnet_id': subnet['subnet']['id']}]}
                 res = self._create_port(self.fmt, net_id=net_id, **kwargs)
                 port3 = self.deserialize(self.fmt, res)
                 ips = port3['port']['fixed_ips']
-                self.assertEqual(len(ips), 2)
+                self.assertEqual(len(ips), 1)
                 self.assertEqual(ips[0]['ip_address'], '10.0.0.2')
                 self.assertEqual(ips[0]['subnet_id'], subnet['subnet']['id'])
-                self.assertEqual(ips[1]['ip_address'], '2607:f0d0:1002:51::2')
-                self.assertEqual(ips[1]['subnet_id'], subnet2['subnet']['id'])
                 res = self._create_port(self.fmt, net_id=net_id)
                 port4 = self.deserialize(self.fmt, res)
-                # Check that a v4 and a v6 address are allocated
+                # Check that a v4 address is allocated
                 ips = port4['port']['fixed_ips']
-                self.assertEqual(len(ips), 2)
+                self.assertEqual(len(ips), 1)
                 self.assertEqual(ips[0]['ip_address'], '10.0.0.3')
                 self.assertEqual(ips[0]['subnet_id'], subnet['subnet']['id'])
-                self.assertEqual(ips[1]['ip_address'], '2607:f0d0:1002:51::3')
-                self.assertEqual(ips[1]['subnet_id'], subnet2['subnet']['id'])
                 self._delete('ports', port3['port']['id'])
                 self._delete('ports', port4['port']['id'])
 
@@ -2724,6 +2711,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                  allocation_pools=allocation_pools)
 
     def test_create_subnet_with_v6_allocation_pool(self):
+        self.skipTest("Do not support IPv6")
         gateway_ip = 'fe80::1'
         cidr = 'fe80::/80'
         allocation_pools = [{'start': 'fe80::2',
@@ -2834,6 +2822,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                          webob.exc.HTTPClientError.code)
 
     def test_create_subnet_inconsistent_ipv6_cidrv4(self):
+        self.skipTest("Do not support IPv6")
         with self.network() as network:
             data = {'subnet': {'network_id': network['network']['id'],
                                'cidr': '10.0.2.0/24',
@@ -2865,6 +2854,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
 
     def test_create_subnet_inconsistent_ipv6_gatewayv4(self):
+        self.skipTest("Do not support IPv6")
         with self.network() as network:
             data = {'subnet': {'network_id': network['network']['id'],
                                'cidr': 'fe80::0/80',
@@ -2876,6 +2866,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
 
     def test_create_subnet_inconsistent_ipv6_dns_v4(self):
+        self.skipTest("Do not support IPv6")
         with self.network() as network:
             data = {'subnet': {'network_id': network['network']['id'],
                                'cidr': 'fe80::0/80',
@@ -3013,6 +3004,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                  webob.exc.HTTPClientError.code)
 
     def test_update_subnet_inconsistent_ipv6_gatewayv4(self):
+        self.skipTest("Do not support IPv6")
         with self.network() as network:
             with self.subnet(network=network,
                              ip_version=6, cidr='fe80::/48') as subnet:
@@ -3035,6 +3027,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                  webob.exc.HTTPClientError.code)
 
     def test_update_subnet_inconsistent_ipv6_hostroute_dst_v4(self):
+        self.skipTest("Do not support IPv6")
         host_routes = [{'destination': 'fe80::0/48',
                         'nexthop': '10.0.2.20'}]
         with self.network() as network:
@@ -3048,6 +3041,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                  webob.exc.HTTPClientError.code)
 
     def test_update_subnet_inconsistent_ipv6_hostroute_np_v4(self):
+        self.skipTest("Do not support IPv6")
         host_routes = [{'destination': '172.16.0.0/24',
                         'nexthop': 'fe80::1'}]
         with self.network() as network:
