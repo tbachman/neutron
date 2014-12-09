@@ -129,8 +129,8 @@ class Client(object):
 
         :param network_profile: network profile dict
         """
-        body = {'description': network_profile.name}
-        logical_network_name = (network_profile.id +
+        body = {'description': network_profile['name']}
+        logical_network_name = (network_profile['id'] +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
         return self._post(self.logical_network_path % logical_network_name,
                           body=body)
@@ -150,14 +150,14 @@ class Client(object):
         :param network_profile: network profile dict
         """
         self._create_logical_network(network_profile)
-        logical_network_name = (network_profile.id +
+        logical_network_name = (network_profile['id'] +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
-        body = {'name': network_profile.name,
-                'description': network_profile.name,
-                'id': network_profile.id,
+        body = {'name': network_profile['name'],
+                'description': network_profile['name'],
+                'id': network_profile['id'],
                 'logicalNetwork': logical_network_name}
         return self._post(
-            self.network_segment_pool_path % network_profile.id,
+            self.network_segment_pool_path % network_profile['id'],
             body=body)
 
     def delete_network_segment_pool(self, network_segment_pool_id):
@@ -166,8 +166,11 @@ class Client(object):
         :param network_segment_pool_id: UUID representing the network
                                         segment pool
         """
-        return self._delete(self.network_segment_pool_path %
-                            network_segment_pool_id)
+        logical_network_name = (network_segment_pool_id +
+                                n1kv_const.LOGICAL_NETWORK_SUFFIX)
+        self._delete(self.network_segment_pool_path %
+                     network_segment_pool_id)
+        return self._delete_logical_network(logical_network_name)
 
     def create_network_segment(self, network, network_profile):
         """Create a network segment on the VSM.

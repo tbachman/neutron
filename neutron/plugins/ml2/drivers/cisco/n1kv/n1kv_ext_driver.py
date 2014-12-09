@@ -69,3 +69,27 @@ class CiscoN1kvExtensionDriver(api.ExtensionDriver):
         res = n1kv_db.get_policy_binding(port_id, session)
         if res:
             result[constants.N1KV_PROFILE_ID] = res.profile_id
+
+    def process_create_network(self, session, data, result):
+        net_id = result.get('id')
+        net_profile_id = data.get(constants.N1KV_PROFILE_ID)
+        if not attributes.is_attr_set(net_profile_id):
+            try:
+                net_profile = n1kv_db.get_network_profile_by_name(
+                    cfg.CONF.ml2_cisco_n1kv.default_network_profile, session)
+                net_profile_id = net_profile.id
+            except n1kv_exc.NetworkProfileNotFound as e:
+                with excutils.save_and_reraise_exception(reraise=False):
+                    LOG.info(e.message)
+                    raise ml2_exc.MechanismDriverError()
+        try:
+            n1kv_db.get_network_binding(net_id, session)
+        except n1kv_exc.NetworkBindingNotFound:
+            n1kv_db.add_network_binding(net_id, net_profile_id, session)
+        result[constants.N1KV_PROFILE_ID] = net_profile_id
+
+    def extend_network_dict(self, session, result):
+        net_id = result.get('id')
+        res = n1kv_db.get_network_binding(net_id, session)
+        if res:
+            result[constants.N1KV_PROFILE_ID] = res.profile_id

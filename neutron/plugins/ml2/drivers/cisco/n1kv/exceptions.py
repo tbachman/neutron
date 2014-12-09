@@ -18,6 +18,16 @@
 from neutron.common import exceptions
 
 
+class VlanIDNotFound(exceptions.NeutronException):
+    """VLAN ID cannot be found."""
+    message = _("Vlan ID %(vlan_id)s not found.")
+
+
+class VxlanIDNotFound(exceptions.NotFound):
+    """VXLAN ID cannot be found."""
+    message = _("Vxlan ID %(vxlan_id)s not found.")
+
+
 class VSMConnectionFailed(exceptions.ServiceUnavailable):
     """No response from Cisco Nexus1000V VSM."""
     message = _("Connection to VSM failed: %(reason)s.")
@@ -53,3 +63,15 @@ class NetworkProfileNotFound(exceptions.NotFound):
 class PolicyProfileNotFound(exceptions.NotFound):
     """Policy Profile with given UUID/name cannot be found."""
     message = _("Policy Profile %(profile)s could not be found.")
+
+
+class ProfileTenantBindingNotFound(exceptions.NotFound):
+    """Profile to Tenant binding for given profile ID cannot be found."""
+    message = _("Profile-Tenant binding for profile %(profile_id)s could "
+                "not be found.")
+
+
+class NetworkProfileInUse(exceptions.InUse):
+    """Network Profile with the given UUID is in use."""
+    message = _("One or more network segments belonging to network "
+                "profile %(profile)s is in use.")

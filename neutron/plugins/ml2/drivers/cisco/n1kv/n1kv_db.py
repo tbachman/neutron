@@ -21,8 +21,6 @@ from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_models
 
 
 def add_network_binding(network_id,
-                        network_type,
-                        segment_id,
                         netp_id,
                         db_session=None):
     """
@@ -30,15 +28,11 @@ def add_network_binding(network_id,
 
     :param db_session: database session
     :param network_id: UUID representing the network
-    :param network_type: string representing type of network (VLAN, VXLAN)
-    :param segment_id: integer representing VLAN or VXLAN ID
     :param netp_id: network profile ID based on which this network
                     is created
     """
     db_session = db_session or db.get_session()
     binding = n1kv_models.N1kvNetworkBinding(network_id=network_id,
-                                             network_type=network_type,
-                                             segmentation_id=segment_id,
                                              profile_id=netp_id)
     db_session.add(binding)
     db_session.flush()
@@ -53,6 +47,26 @@ def get_network_profile_by_type(segment_type, db_session=None):
                 filter_by(segment_type=segment_type).one())
     except sa_exc.NoResultFound:
         raise n1kv_exc.NetworkProfileNotFound(profile=segment_type)
+
+
+def get_network_profile_by_name(name, db_session=None):
+    """Retrieve a network profile using its name."""
+    db_session = db_session or db.get_session()
+    try:
+        return (db_session.query(n1kv_models.NetworkProfile).
+                filter_by(name=name).one())
+    except sa_exc.NoResultFound:
+        raise n1kv_exc.NetworkProfileNotFound(profile=name)
+
+
+def get_network_profile_by_uuid(id, db_session=None):
+    """Retrieve a network profile using its UUID."""
+    db_session = db_session or db.get_session()
+    try:
+        return (db_session.query(n1kv_models.NetworkProfile).
+                filter_by(id=id).one())
+    except sa_exc.NoResultFound:
+        raise n1kv_exc.NetworkProfileNotFound(profile=id)
 
 
 def add_network_profile(netp_name, netp_type, db_session=None):
@@ -93,9 +107,9 @@ def get_policy_profile_by_uuid(db_session, id):
     except sa_exc.NoResultFound:
         raise n1kv_exc.PolicyProfileNotFound(profile=id)
 
-def get_network_binding(network_id):
+def get_network_binding(network_id, db_session=None):
     """Retrieve network binding."""
-    db_session = db.get_session()
+    db_session = db_session or db.get_session()
     try:
         return (db_session.query(n1kv_models.N1kvNetworkBinding).
                 filter_by(network_id=network_id).one())

@@ -54,7 +54,7 @@ class Policy_profile(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_namespace(cls):
-        return "http://docs.openstack.org/ext/dfa/policy_profile/api/v2.0"
+        return "http://docs.openstack.org/ext/n1kv/policy_profile/api/v2.0"
 
     @classmethod
     def get_updated(cls):

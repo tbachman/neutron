@@ -19,6 +19,7 @@ NEXUS_VLAN_RESERVED_MIN = 3968
 NEXUS_VLAN_RESERVED_MAX = 4047
 NEXUS_VXLAN_MIN = 4096
 NEXUS_VXLAN_MAX = 16000000
+MAX_VXLAN_RANGE = 1000000
 
 
 # Affix values
@@ -33,6 +34,11 @@ ID = 'id'
 
 # Network Profile Types
 TYPE_TRUNK = 'trunk'
+TYPE_OVERLAY = 'overlay'
+
+# Network Profiles attributes
+ADD_TENANTS = 'add_tenants'
+REMOVE_TENANTS = 'remove_tenants'
 
 # VXLAN modes
 MODE_NATIVE_VXLAN = 'native_vxlan'
@@ -40,3 +46,5 @@ MODE_UNICAST = 'unicast'
 
 # Attribute extension identifier
 N1KV_PROFILE_ID = 'n1kv:profile_id'
+
+TENANT_ID_NOT_SET = 'TENANT_ID_NOT_SET'

@@ -48,7 +48,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
         self.netp_vxlan_name = (cfg.CONF.ml2_cisco_n1kv.
                                 default_vxlan_network_profile)
         # Ensure network profiles are created on the VSM
-        self._ensure_network_profiles_created_on_vsm()
+        #self._ensure_network_profiles_created_on_vsm()
         self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True,
                             portbindings.OVS_HYBRID_PLUG: True}
@@ -117,26 +117,6 @@ class N1KVMechanismDriver(api.MechanismDriver):
                      "type: %s. Network type VLAN and VXLAN "
                      "supported.") % network_type)
             raise n_exc.InvalidInput(error_message=msg)
-        # Try to find the network profile
-        try:
-            netp = n1kv_db.get_network_profile_by_type(network_type, session)
-        # If not found, try creating profiles before failing
-        except n1kv_exc.NetworkProfileNotFound:
-            self._ensure_network_profiles_created_on_vsm()
-            try:
-                netp = n1kv_db.get_network_profile_by_type(network_type,
-                                                           session)
-            # If not found again, raise driver error
-            except n1kv_exc.NetworkProfileNotFound:
-                with excutils.save_and_reraise_exception(reraise=False):
-                    raise ml2_exc.MechanismDriverError()
-
-        kwargs = {"network_id": network['id'],
-                  "network_type": network_type,
-                  "db_session": session,
-                  "segment_id": segment['segmentation_id'],
-                  "netp_id": netp['id']}
-        n1kv_db.add_network_binding(**kwargs)
 
     def create_network_postcommit(self, context):
         """Send network parameters to the VSM."""
@@ -144,7 +124,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
         segment = context.network_segments[0]
         network_type = segment['network_type']
         session = context._plugin_context.session
-        netp = n1kv_db.get_network_profile_by_type(network_type, session)
+        binding = n1kv_db.get_network_binding(network['id'], session)
+        netp = n1kv_db.get_network_profile_by_uuid(binding.profile_id, session)
         try:
             self.n1kvclient.create_network_segment(network, netp)
         except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:

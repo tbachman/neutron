@@ -22,6 +22,7 @@ VPN = "VPN"
 METERING = "METERING"
 L3_ROUTER_NAT = "L3_ROUTER_NAT"
 CISCO_N1KV = 'CISCO_N1KV'
+CISCO_N1KV_NET_PROFILE = 'CISCO_N1KV_NET_PROFILE'
 
 
 #maps extension alias to service type
@@ -32,7 +33,8 @@ EXT_TO_SERVICE_MAPPING = {
     'vpnaas': VPN,
     'metering': METERING,
     'router': L3_ROUTER_NAT,
-    'cisco_n1kv_profile': CISCO_N1KV
+    'cisco_n1kv_profile': CISCO_N1KV,
+    'cisco_n1kv_net_profile': CISCO_N1KV_NET_PROFILE,
 }
 
 # TODO(salvatore-orlando): Move these (or derive them) from conf file

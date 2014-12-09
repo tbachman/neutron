@@ -41,7 +41,7 @@ class NetworkProfile(model_base.BASEV2, models_v2.HasId):
 
     name = sa.Column(sa.String(255), nullable=False)
     segment_type = sa.Column(sa.Enum(constants.TYPE_VLAN,
-                                     constants.TYPE_VXLAN,
+                                     n1kv_const.TYPE_OVERLAY,
                                      n1kv_const.TYPE_TRUNK,
                                      name='segment_type'),
                              nullable=False)
@@ -73,8 +73,6 @@ class N1kvNetworkBinding(model_base.BASEV2):
     network_id = sa.Column(sa.String(36),
                            sa.ForeignKey('networks.id', ondelete="CASCADE"),
                            primary_key=True)
-    network_type = sa.Column(sa.String(32), nullable=False)
-    segmentation_id = sa.Column(sa.Integer)
     profile_id = sa.Column(sa.String(36),
                            sa.ForeignKey('cisco_ml2_n1kv_network_profiles.id'),
                            nullable=False)
@@ -111,3 +109,20 @@ class N1kvVxlanAllocation(model_base.BASEV2):
                                        'cisco_ml2_n1kv_network_profiles.id',
                                        ondelete="CASCADE"),
                                    nullable=False)
+
+
+class ProfileBinding(model_base.BASEV2):
+
+    """
+    Represents a binding of Network Profile
+    or Policy Profile to tenant_id
+    """
+    __tablename__ = 'cisco_ml2_n1kv_profile_bindings'
+
+    profile_type = sa.Column(sa.Enum('network', 'policy',
+                                     name='profile_type'))
+    tenant_id = sa.Column(sa.String(36),
+                          primary_key=True,
+                          default=n1kv_const.TENANT_ID_NOT_SET,
+                          server_default=n1kv_const.TENANT_ID_NOT_SET)
+    profile_id = sa.Column(sa.String(36), primary_key=True)

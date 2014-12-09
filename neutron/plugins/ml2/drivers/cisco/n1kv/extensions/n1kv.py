@@ -20,6 +20,12 @@ from neutron.plugins.ml2.drivers.cisco.n1kv import constants
 
 PROFILE_ID = constants.N1KV_PROFILE_ID
 EXTENDED_ATTRIBUTES_2_0 = {
+    'networks': {PROFILE_ID: {
+        'allow_post': True,
+        'allow_put': False,
+        'default': attributes.ATTR_NOT_SPECIFIED,
+        'is_visible': True,
+        'validate': {'type:uuid': attributes.UUID_PATTERN}}},
     'ports': {PROFILE_ID: {
         'allow_post': True,
         'allow_put': False,
@@ -40,7 +46,7 @@ class N1kv(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_description(cls):
-        return _("Add new policy profile attribute to port resource.")
+        return _("Add new profile attribute to network and port resource.")
 
     @classmethod
     def get_namespace(cls):
@@ -54,4 +60,4 @@ class N1kv(extensions.ExtensionDescriptor):
         if version == "2.0":
             return EXTENDED_ATTRIBUTES_2_0
         else:
-            return {} 
+            return {}
