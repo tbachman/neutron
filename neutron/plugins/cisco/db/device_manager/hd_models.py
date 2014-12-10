@@ -28,6 +28,8 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
 
        Such devices may be physical or virtual.
     """
+    __tablename__ = 'cisco_hosting_device_templates'
+
     # name given to hosting devices created using this template
     name = sa.Column(sa.String(255))
     # template enabled if True
@@ -84,6 +86,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
        When the hosting device is a Nova VM 'id' is uuid of that VM.
     """
+    __tablename__ = 'cisco_hosting_devices'
+
     # complementary id to enable identification of associated Neutron resources
     complementary_id = sa.Column(sa.String(36))
     # id of hosting device template used to create the hosting device
@@ -126,6 +130,9 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class SlotAllocation(model_base.BASEV2):
     """Tracks allocation of slots in hosting devices."""
+    __tablename__ = 'cisco_slot_allocations'
+
+
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('hostingdevicetemplates.id'),
                             nullable=False)
@@ -143,6 +150,8 @@ class SlotAllocation(model_base.BASEV2):
 
 class HostedHostingPortBinding(model_base.BASEV2):
     """Represents binding of logical resource's port to its hosting port."""
+    __tablename__ = 'cisco_port_mappings'
+
     logical_resource_id = sa.Column(sa.String(36), primary_key=True)
     logical_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id',

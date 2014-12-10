@@ -53,6 +53,8 @@ class RouterType(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class RouterHostingDeviceBinding(model_base.BASEV2):
     """Represents binding between Neutron routers and their hosting devices."""
+    __tablename__ = 'cisco_router_mappings'
+
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)
@@ -76,6 +78,6 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
     share_hosting_device = sa.Column(sa.Boolean, default=True, nullable=False)
     # id of hosting device hosting this router, None/NULL if unscheduled.
     hosting_device_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('hostingdevices.id',
+                                  sa.ForeignKey('cisco_hosting_devices.id',
                                                 ondelete='SET NULL'))
     hosting_device = orm.relationship(hd_models.HostingDevice)

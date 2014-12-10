@@ -15,11 +15,11 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
+from oslo import messaging
 
 from neutron.common import constants as q_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.db import api as qdbapi
 from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
@@ -43,11 +43,12 @@ from neutron.plugins.common import constants
 class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
                                     l3_rpc_base.L3RpcCallbackMixin,
                                     l3_router_rpc.L3RouterCfgRpcCallbackMixin):
-    RPC_API_VERSION = '1.1'
 
-    def __init__(self, plugin):
+    target = messaging.Target(version='1.1')
+
+    def __init__(self, l3plugin):
         super(CiscoRouterPluginRpcCallbacks, self).__init__()
-        self._l3plugin = plugin
+        self._l3plugin = l3plugin
 
     @property
     def _core_plugin(self):
@@ -79,7 +80,6 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         routertype.ROUTERTYPE_ALIAS]
 
     def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         basepath = neutron.plugins.__path__[0]
         ext_paths = [basepath + '/cisco/extensions']
@@ -118,3 +118,11 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         return ("Cisco Router Service Plugin for basic L3 forwarding"
                 " between (L2) Neutron networks and access to external"
                 " networks via a NAT gateway.")
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin

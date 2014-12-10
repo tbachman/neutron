@@ -11,14 +11,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Hareesh Puthalath, Cisco Systems, Inc.
 import sys
 
 import datetime
 import mock
 
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
 sys.modules['ncclient'] = mock.MagicMock()
@@ -27,7 +24,6 @@ from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.tests import base
 
 _uuid = uuidutils.generate_uuid
-LOG = logging.getLogger(__name__)
 
 TYPE_STRING = 'string'
 TYPE_DATETIME = 'datetime'

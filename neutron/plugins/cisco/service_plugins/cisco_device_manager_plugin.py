@@ -15,6 +15,7 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
+from oslo import messaging
 
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
@@ -37,8 +38,7 @@ from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 
 class CiscoDevMgrPluginRpcCallbacks(n_rpc.RpcCallback,
                                     devices_rpc.DeviceMgrCfgRpcCallbackMixin):
-    # Set RPC API version to 1.0 by default.
-    RPC_API_VERSION = '1.0'
+    target = messaging.Target(version='1.0')
 
     def __init__(self, plugin):
         super(CiscoDevMgrPluginRpcCallbacks, self).__init__()
@@ -86,5 +86,9 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
 
     @property
     def _core_plugin(self):
-        return manager.NeutronManager.get_plugin()
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 

@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import mock
 from oslo.config import cfg
@@ -21,7 +19,6 @@ import testtools
 from neutron.agent.common import config
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.cfg_agent import cfg_agent
 from neutron.tests import base
@@ -29,8 +26,6 @@ from neutron.tests import base
 _uuid = uuidutils.generate_uuid
 HOSTNAME = 'myhost'
 FAKE_ID = _uuid()
-
-LOG = logging.getLogger(__name__)
 
 
 def prepare_router_data(enable_snat=None, num_internal_ports=1):
@@ -73,7 +68,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.conf = cfg.ConfigOpts()
         config.register_agent_state_opts_helper(cfg.CONF)
         self.conf.register_opts(base_config.core_opts)
-        self.conf.register_opts(cfg_agent.CiscoCfgAgent.OPTS)
+        self.conf.register_opts(cfg_agent.CiscoCfgAgent.OPTS, "cfg_agent")
         cfg.CONF.set_override('report_interval', 0, 'AGENT')
         super(TestCiscoCfgAgentWIthStateReporting, self).setUp()
         self.devmgr_plugin_api_cls_p = mock.patch(
@@ -87,8 +82,8 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.plugin_reportstate_api_cls_p = mock.patch(
             'neutron.agent.rpc.PluginReportStateAPI')
         plugin_reportstate_api_cls = self.plugin_reportstate_api_cls_p.start()
-        self.pluginreportstateAPI = mock.Mock()
-        plugin_reportstate_api_cls.return_value = self.pluginreportstateAPI
+        self.plugin_reportstate_api = mock.Mock()
+        plugin_reportstate_api_cls.return_value = self.plugin_reportstate_api
 
         self.looping_call_p = mock.patch(
             'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
@@ -101,13 +96,8 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
         self.assertTrue(agent.devmgr_rpc.register_for_duty(agent.context))
 
     def test_agent_registration_success_after_2_tries(self):
-        return_values = [True, False, False]
-
-        def register_for_duty(context):
-            return return_values.pop()
-
         self.devmgr_plugin_api.register_for_duty = mock.Mock(
-            side_effect=register_for_duty)
+            side_effect=[False, False, True])
         cfg_agent.REGISTRATION_RETRY_DELAY = 0.01
         agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         self.assertEqual(agent.devmgr_rpc.register_for_duty.call_count, 3)
@@ -139,7 +129,7 @@ class TestCiscoCfgAgentWIthStateReporting(base.BaseTestCase):
                 'cfg_agent.CiscoCfgAgentWithStateReport._agent_registration')
     def test_report_state_attribute_error(self, agent_registration):
         cfg.CONF.set_override('report_interval', 1, 'AGENT')
-        self.pluginreportstateAPI.report_state.side_effect = AttributeError
+        self.plugin_reportstate_api.report_state.side_effect = AttributeError
         agent = cfg_agent.CiscoCfgAgentWithStateReport(HOSTNAME, self.conf)
         agent.heartbeat = mock.Mock()
         agent.send_agent_report(None, None)

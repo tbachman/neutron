@@ -11,16 +11,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Hareesh Puthalath, Cisco Systems, Inc.
 
 import datetime
 
 from oslo.config import cfg
+from oslo.utils import timeutils
 
 from neutron.agent.linux import utils as linux_utils
+from neutron.i18n import _LI, _LW
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import timeutils
+
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ STATUS_OPTS = [
                       "or high load when the device may not be responding.")),
 ]
 
-cfg.CONF.register_opts(STATUS_OPTS)
+cfg.CONF.register_opts(STATUS_OPTS, "cfg_agent")
 
 
 def _is_pingable(ip):
@@ -56,7 +56,7 @@ def _is_pingable(ip):
         linux_utils.execute(ping_cmd, check_exit_code=True)
         return True
     except RuntimeError:
-        LOG.warn(_("Cannot ping ip address: %s"), ip)
+        LOG.warning(_LW("Cannot ping ip address: %s"), ip)
         return False
 
 
@@ -78,9 +78,9 @@ class DeviceStatus(object):
 
     def get_backlogged_hosting_devices_info(self):
         wait_time = datetime.timedelta(
-            seconds=cfg.CONF.hosting_device_dead_timeout)
+            seconds=cfg.CONF.cfg_agent.hosting_device_dead_timeout)
         resp = []
-        for hd_id in self.backlog_hosting_devices.keys():
+        for hd_id in self.backlog_hosting_devices:
             hd = self.backlog_hosting_devices[hd_id]['hd']
             created_time = hd['created_at']
             boottime = datetime.timedelta(seconds=hd['booting_time'])
@@ -109,7 +109,7 @@ class DeviceStatus(object):
         hosting_device['created_at'] = datetime.datetime.strptime(
             hosting_device['created_at'], '%Y-%m-%d %H:%M:%S')
 
-        if hd_id not in self.backlog_hosting_devices.keys():
+        if hd_id not in self.backlog_hosting_devices:
             if _is_pingable(hd_mgmt_ip):
                 LOG.debug("Hosting device: %(hd_id)s@%(ip)s is reachable.",
                           {'hd_id': hd_id, 'ip': hd_mgmt_ip})
@@ -140,33 +140,34 @@ class DeviceStatus(object):
             hd = self.backlog_hosting_devices[hd_id]['hd']
             if not timeutils.is_older_than(hd['created_at'],
                                            hd['booting_time']):
-                LOG.info(_("Hosting device: %(hd_id)s @ %(ip)s hasn't passed "
-                           "minimum boot time. Skipping it. "),
+                LOG.info(_LI("Hosting device: %(hd_id)s @ %(ip)s hasn't "
+                             "passed minimum boot time. Skipping it. "),
                          {'hd_id': hd_id, 'ip': hd['management_ip_address']})
                 continue
-            LOG.info(_("Checking hosting device: %(hd_id)s @ %(ip)s for "
+            LOG.info(_LI("Checking hosting device: %(hd_id)s @ %(ip)s for "
                        "reachability."), {'hd_id': hd_id,
                                           'ip': hd['management_ip_address']})
             if _is_pingable(hd['management_ip_address']):
                 hd.pop('backlog_insertion_ts', None)
                 del self.backlog_hosting_devices[hd_id]
                 response_dict['reachable'].append(hd_id)
-                LOG.info(_("Hosting device: %(hd_id)s @ %(ip)s is now "
+                LOG.info(_LI("Hosting device: %(hd_id)s @ %(ip)s is now "
                            "reachable. Adding it to response"),
                          {'hd_id': hd_id, 'ip': hd['management_ip_address']})
             else:
-                LOG.info(_("Hosting device: %(hd_id)s @ %(ip)s still not "
+                LOG.info(_LI("Hosting device: %(hd_id)s @ %(ip)s still not "
                            "reachable "), {'hd_id': hd_id,
                                            'ip': hd['management_ip_address']})
                 if timeutils.is_older_than(
                         hd['backlog_insertion_ts'],
-                        cfg.CONF.hosting_device_dead_timeout):
+                        cfg.CONF.cfg_agent.hosting_device_dead_timeout):
                     LOG.debug("Hosting device: %(hd_id)s @ %(ip)s hasn't "
                               "been reachable for the last %(time)d seconds. "
                               "Marking it dead.",
                               {'hd_id': hd_id,
                                'ip': hd['management_ip_address'],
-                               'time': cfg.CONF.hosting_device_dead_timeout})
+                               'time': cfg.CONF.cfg_agent.
+                              hosting_device_dead_timeout})
                     response_dict['dead'].append(hd_id)
                     hd.pop('backlog_insertion_ts', None)
                     del self.backlog_hosting_devices[hd_id]
