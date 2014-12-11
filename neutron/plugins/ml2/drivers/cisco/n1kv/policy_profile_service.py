@@ -285,7 +285,7 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
             self._remove_all_fake_policy_profiles()
         except (n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
             with excutils.save_and_reraise_exception(reraise=False):
-                LOG.warning(_LW('No policy profile populated from VSM'))
+                LOG.warning('No policy profile populated from VSM')
 
     def get_policy_profiles(self, context, filters=None, fields=None):
         """Return Cisco N1KV policy profiles."""
