@@ -111,3 +111,20 @@ class N1kvVxlanAllocation(model_base.BASEV2):
                                        'cisco_ml2_n1kv_network_profiles.id',
                                        ondelete="CASCADE"),
                                    nullable=False)
+
+
+class ProfileBinding(model_base.BASEV2):
+
+    """
+    Represents a binding of Network Profile
+    or Policy Profile to tenant_id
+    """
+    __tablename__ = 'cisco_ml2_n1kv_profile_bindings'
+
+    profile_type = sa.Column(sa.Enum('network', 'policy',
+                                     name='profile_type'))
+    tenant_id = sa.Column(sa.String(36),
+                          primary_key=True,
+                          default=n1kv_const.TENANT_ID_NOT_SET,
+                          server_default=n1kv_const.TENANT_ID_NOT_SET)
+    profile_id = sa.Column(sa.String(36), primary_key=True)

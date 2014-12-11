@@ -31,7 +31,7 @@ import sqlalchemy as sa
 
 network_profile_type = sa.Enum('vlan', 'vxlan', 'trunk',
                                name='network_profile_type')
-
+profile_type = sa.Enum('network', 'policy', name='profile_type')
 
 def upgrade(active_plugins=None, options=None):
 
@@ -96,9 +96,19 @@ def upgrade(active_plugins=None, options=None):
         sa.PrimaryKeyConstraint('physical_network', 'vlan_id')
      )
 
+    op.create_table(
+        'cisco_ml2_n1kv_profile_bindings',
+        sa.Column('profile_type', profile_type, nullable=True),
+        sa.Column('tenant_id', sa.String(length=36), nullable=False),
+        sa.Column('profile_id', sa.String(length=36), nullable=False),
+        sa.PrimaryKeyConstraint('tenant_id', 'profile_id')
+    )
+
 
 def downgrade(active_plugins=None, options=None):
 
+    op.drop_table('cisco_ml2_n1kv_profile_bindings')
+    profile_type.drop(op.get_bind(), checkfirst=False)
     op.drop_table('cisco_ml2_n1kv_vlan_allocations')
     op.drop_table('cisco_ml2_n1kv_vxlan_allocations')
     op.drop_table('cisco_ml2_n1kv_network_bindings')

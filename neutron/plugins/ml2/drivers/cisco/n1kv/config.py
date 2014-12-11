@@ -31,6 +31,9 @@ n1kv_opts = [
                       "networks")),
     cfg.StrOpt('default_policy_profile', default='default-pp',
                help=_("Cisco Nexus1000V default policy profile")),
+    cfg.BoolOpt('restrict_policy_profiles', default=False,
+               help=_("Restrict the visibility of policy profiles to the "
+                      "tenants")),
     cfg.IntOpt('poll_duration', default=60,
                help=_("Cisco Nexus1000V policy profile polling duration in "
                       "seconds")),
