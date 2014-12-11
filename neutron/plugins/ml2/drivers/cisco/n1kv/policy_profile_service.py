@@ -132,7 +132,7 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         except exc.NoResultFound:
             raise n1kv_exc.ProfileTenantBindingNotFound(profile_id=profile_id)
 
-    def _get_profile_bindings(db_session):
+    def _get_profile_bindings(self, db_session):
         """Get all Policy Profile - Tenant bindings."""
         return (db_session.query(n1kv_models.ProfileBinding).
                 filter_by(profile_type=n1kv_const.POLICY))
