@@ -35,6 +35,13 @@ RESOURCE_ATTRIBUTE_MAP = {
         'name': {'allow_post': False, 'allow_put': False,
                  'is_visible': True, 'default': ''},
     },
+    'policy_profile_bindings': {
+        'profile_id': {'allow_post': False, 'allow_put': False,
+                       'validate': {'type:regex': attributes.UUID_PATTERN},
+                       'is_visible': True},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'is_visible': True},
+    },
 }
 
 
@@ -70,16 +77,16 @@ class Policy_profile(extensions.ExtensionDescriptor):
         exts = []
         plugin = (manager.NeutronManager.
                   get_service_plugins()[constants.CISCO_N1KV])
-        resource_name = POLICY_PROFILE
-        collection_name = POLICY_PROFILES
-        controller = base.create_resource(
-            collection_name,
-            resource_name,
-            plugin,
-            RESOURCE_ATTRIBUTE_MAP.get(collection_name))
-        ex = extensions.ResourceExtension(collection_name,
-                                          controller)
-        exts.append(ex)
+        for resource_name in [POLICY_PROFILE, 'policy_profile_binding']:
+            collection_name = resource_name + 's'
+            controller = base.create_resource(
+                collection_name,
+                resource_name,
+                plugin,
+                RESOURCE_ATTRIBUTE_MAP.get(collection_name))
+            ex = extensions.ResourceExtension(collection_name,
+                                              controller)
+            exts.append(ex)
         return exts
 
 
@@ -102,3 +109,7 @@ class PolicyProfilePluginBase(sb.ServicePluginBase):
     @abc.abstractmethod
     def get_policy_profile(self, context, profile_id, fields=None):
         pass 
+
+    @abc.abstractmethod
+    def get_policy_profile_bindings(self, context, filters=None, fields=None):
+        pass

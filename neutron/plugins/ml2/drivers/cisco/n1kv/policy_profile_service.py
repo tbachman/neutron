@@ -16,6 +16,7 @@
 import eventlet
 from oslo.config import cfg
 from sqlalchemy.orm import exc
+from sqlalchemy import sql
 
 from neutron.api import extensions
 import neutron.db.api as db
@@ -31,6 +32,8 @@ from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_db
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_models
 from neutron.plugins.ml2.drivers.cisco.n1kv import policy_profile
 
+LOG = logging.getLogger(__name__)
+
 class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
                              base_db.CommonDbMixin):
     """Policy Profile Mixin class."""
@@ -39,13 +42,39 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         res = {"id": policy_profile["id"], "name": policy_profile["name"]}
         return self._fields(res, fields)
 
-    def _add_policy_profile(self, id, pprofile_name):
+    def _make_profile_bindings_dict(self, profile_binding, fields=None):
+        res = {"profile_id": profile_binding["profile_id"],
+               "tenant_id": profile_binding["tenant_id"]}
+        return self._fields(res, fields)
+
+    def _policy_profile_exists(self, id):
+        db_session = db.get_session()
+        return (db_session.query(n1kv_models.PolicyProfile).
+                filter_by(id=id).first())
+
+    def _create_policy_profile(self, id, pprofile_name):
         """Create a policy profile."""
         db_session = db.get_session()
         pprofile = n1kv_models.PolicyProfile(id=id, name=pprofile_name)
         db_session.add(pprofile)
         db_session.flush()
         return pprofile
+
+    def _add_policy_profile(self, name, policy_profile_id, tenant_id=None):
+        """
+        Add Policy profile and tenant binding.
+
+        :param name: string representing the name for the
+                     policy profile
+        :param policy_profile_id: UUID representing the policy profile
+        :param tenant_id: UUID representing the tenant
+        """
+        tenant_id = tenant_id or n1kv_const.TENANT_ID_NOT_SET
+        if not self._policy_profile_exists(policy_profile_id):
+            self._create_policy_profile(policy_profile_id, name)
+        self._create_profile_binding(None,
+                                     tenant_id,
+                                     policy_profile_id)
 
     def _get_policy_profiles(self):
         """Retrieve all policy profiles."""
@@ -55,6 +84,15 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
     def _get_policy_profile(self, session, id):
         return n1kv_db.get_policy_profile_by_uuid(session, id)
 
+    def _get_policy_collection_for_tenant(self, db_session, model, tenant_id):
+        profile_ids = (db_session.query(n1kv_models.
+                       ProfileBinding.profile_id)
+                       .filter_by(tenant_id=tenant_id).
+                       filter_by(profile_type=n1kv_const.POLICY).all())
+        profiles = db_session.query(model).filter(model.id.in_(
+            pid[0] for pid in profile_ids))
+        return [self._make_policy_profile_dict(p) for p in profiles]
+
     def _remove_policy_profile(self, pprofile_id):
         """Delete a policy profile."""
         db_session = db.get_session()
@@ -63,6 +101,84 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         if pprofile:
             db_session.delete(pprofile)
             db_session.flush()
+
+    def _create_profile_binding(self, db_session, tenant_id, profile_id):
+        """Create Policy Profile association with a tenant."""
+        db_session = db_session or db.get_session()
+        if self._profile_binding_exists(db_session,
+                                        tenant_id,
+                                        profile_id):
+            return self._get_profile_binding(db_session, tenant_id, profile_id)
+
+        with db_session.begin(subtransactions=True):
+            binding = n1kv_models.ProfileBinding(profile_type=n1kv_const.POLICY,
+                                                 profile_id=profile_id,
+                                                 tenant_id=tenant_id)
+            db_session.add(binding)
+            return binding
+
+    def _profile_binding_exists(self, db_session, tenant_id, profile_id):
+        """Check if the profile-tenant binding exists."""
+        db_session = db_session or db.get_session()
+        return (db_session.query(n1kv_models.ProfileBinding).
+                filter_by(tenant_id=tenant_id, profile_id=profile_id,
+                          profile_type=n1kv_const.POLICY).first())
+
+    def _get_profile_binding(self, db_session, tenant_id, profile_id):
+        """Get Policy Profile - Tenant binding."""
+        try:
+            return (db_session.query(n1kv_models.ProfileBinding).filter_by(
+                tenant_id=tenant_id, profile_id=profile_id).one())
+        except exc.NoResultFound:
+            raise n1kv_exc.ProfileTenantBindingNotFound(profile_id=profile_id)
+
+    def _get_profile_bindings(db_session):
+        """Get all Policy Profile - Tenant bindings."""
+        return (db_session.query(n1kv_models.ProfileBinding).
+                filter_by(profile_type=n1kv_const.POLICY))
+
+    def _remove_all_fake_policy_profiles(self):
+        """
+        Remove all policy profiles associated with fake tenant id.
+
+        This will find all Profile ID where tenant is not set yet - set A
+        and profiles where tenant was already set - set B
+        and remove what is in both and no tenant id set
+        """
+        db_session = db.get_session()
+        with db_session.begin(subtransactions=True):
+            a_set_q = (db_session.query(n1kv_models.ProfileBinding).
+                       filter_by(tenant_id=n1kv_const.TENANT_ID_NOT_SET,
+                                 profile_type=n1kv_const.POLICY))
+            a_set = set(i.profile_id for i in a_set_q)
+            b_set_q = (db_session.query(n1kv_models.ProfileBinding).
+                       filter(sql.and_(n1kv_models.ProfileBinding.
+                                       tenant_id != n1kv_const.TENANT_ID_NOT_SET,
+                                       n1kv_models.ProfileBinding.
+                                       profile_type == n1kv_const.POLICY)))
+            b_set = set(i.profile_id for i in b_set_q)
+            (db_session.query(n1kv_models.ProfileBinding).
+             filter(sql.and_(n1kv_models.ProfileBinding.profile_id.
+                             in_(a_set & b_set),
+                             n1kv_models.ProfileBinding.tenant_id ==
+                             n1kv_const.TENANT_ID_NOT_SET)).
+             delete(synchronize_session="fetch"))
+
+    def _replace_fake_tenant_id_with_real(self, context):
+        """
+        Replace default tenant-id with admin tenant-ids.
+
+        Default tenant-ids are populated in profile bindings when plugin is
+        initialized. Replace these tenant-ids with admin's tenant-id.
+        :param context: neutron api request context
+        """
+        if context.is_admin and context.tenant_id:
+            tenant_id = context.tenant_id
+            db_session = context.session
+            with db_session.begin(subtransactions=True):
+                (db_session.query(n1kv_models.ProfileBinding).
+                 filter_by(tenant_id=n1kv_const.TENANT_ID_NOT_SET).
+                 update({'tenant_id': tenant_id}))
 
     def get_policy_profile(self, context, id, fields=None):
         """
@@ -94,9 +210,36 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
                         profile dictionary. Only these fields will be returned
         :returns: list of all policy profiles
         """
-        return self._get_collection(context, n1kv_models.PolicyProfile,
-                                    self._make_policy_profile_dict,
-                                    filters=filters, fields=fields)
+        if (context.is_admin or
+            not cfg.CONF.ml2_cisco_n1kv.restrict_policy_profiles):
+            return self._get_collection(context, n1kv_models.PolicyProfile,
+                                        self._make_policy_profile_dict,
+                                        filters=filters, fields=fields)
+        else:
+            return self._get_policy_collection_for_tenant(context.session,
+                                                          n1kv_models.
+                                                          PolicyProfile,
+                                                          context.tenant_id)
+
+    def get_policy_profile_bindings(self, context, filters=None, fields=None):
+        """
+        Retrieve a list of profile bindings for policy profiles.
+
+        :param context: neutron api request context
+        :param filters: a dictionary with keys that are valid keys for a
+                        profile bindings object. Values in this dictiontary are
+                        an iterable containing values that will be used for an
+                        exact match comparison for that value. Each result
+                        returned by this function will have matched one of the
+                        values for each key in filters
+        :params fields: a list of strings that are valid keys in a profile
+                        bindings dictionary. Only these fields will be returned
+        :returns: list of profile bindings
+        """
+        if context.is_admin:
+            profile_bindings = self._get_profile_bindings(context.session)
+            return [self._make_profile_bindings_dict(pb)
+                    for pb in profile_bindings]
 
 
 class PolicyProfilePlugin(PolicyProfile_db_mixin):
@@ -139,12 +282,14 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
                 # Delete profiles from database if profiles were deleted in VSM
                 for pid in plugin_profiles_set.difference(vsm_profiles_set):
                     self._remove_policy_profile(pid)
+            self._remove_all_fake_policy_profiles()
         except (n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
             with excutils.save_and_reraise_exception(reraise=False):
                 LOG.warning(_LW('No policy profile populated from VSM'))
 
     def get_policy_profiles(self, context, filters=None, fields=None):
         """Return Cisco N1KV policy profiles."""
+        self._replace_fake_tenant_id_with_real(context)
         return super(PolicyProfilePlugin, self).get_policy_profiles(context,
                                                                     filters,
                                                                     fields)
@@ -154,3 +299,9 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
         return super(PolicyProfilePlugin, self).get_policy_profile(context,
                                                                    id,
                                                                    fields)
+
+    def get_policy_profile_bindings(self, context, filters=None, fields=None):
+        """Return Cisco N1KV policy profile - tenant bindings."""
+        return super(PolicyProfilePlugin,
+                     self).get_policy_profile_bindings(context, filters,
+                                                       fields)

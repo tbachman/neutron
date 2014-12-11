@@ -40,3 +40,8 @@ MODE_UNICAST = 'unicast'
 
 # Attribute extension identifier
 N1KV_PROFILE_ID = 'n1kv:profile_id'
+
+# Profile Types
+POLICY = 'policy'
+
+TENANT_ID_NOT_SET = 'TENANT_ID_NOT_SET'
