@@ -60,13 +60,13 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         db_session.flush()
         return pprofile
 
-    def _add_policy_profile(self, name, policy_profile_id, tenant_id=None):
+    def _add_policy_profile(self, policy_profile_id, name, tenant_id=None):
         """
         Add Policy profile and tenant binding.
 
+        :param policy_profile_id: UUID representing the policy profile
         :param name: string representing the name for the
                      policy profile
-        :param policy_profile_id: UUID representing the policy profile
         :param tenant_id: UUID representing the tenant
         """
         tenant_id = tenant_id or n1kv_const.TENANT_ID_NOT_SET
