@@ -20,12 +20,16 @@ from oslo.config import cfg
 from neutron.api import extensions as api_extensions
 from neutron.api.v2 import attributes
 from neutron.openstack.common import excutils
+from neutron.openstack.common import log
+from neutron.openstack.common import uuidutils
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import extensions
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_db
+
+LOG = log.getLogger(__name__)
 
 
 class CiscoN1kvExtensionDriver(api.ExtensionDriver):
@@ -48,24 +52,27 @@ class CiscoN1kvExtensionDriver(api.ExtensionDriver):
 
     def process_create_port(self, session, data, result):
         port_id = result.get('id')
-        policy_profile_id = data.get(constants.N1KV_PROFILE_ID)
-        if not attributes.is_attr_set(policy_profile_id):
-            try:
-                policy_profile = n1kv_db.get_policy_profile_by_name(
-                    cfg.CONF.ml2_cisco_n1kv.default_policy_profile, session)
-                policy_profile_id = policy_profile.id
-            except n1kv_exc.PolicyProfileNotFound as e:
-                with excutils.save_and_reraise_exception(reraise=False):
-                    LOG.info(e.message)
-                    raise ml2_exc.MechanismDriverError()
+        policy_profile_attr = data.get(constants.N1KV_PROFILE)
+        if not attributes.is_attr_set(policy_profile_attr):
+            policy_profile_attr = (cfg.CONF.ml2_cisco_n1kv.
+                                   default_policy_profile)
         try:
             n1kv_db.get_policy_binding(port_id, session)
         except n1kv_exc.PortBindingNotFound:
-            n1kv_db.add_policy_binding(port_id, policy_profile_id, session)
-        result[constants.N1KV_PROFILE_ID] = policy_profile_id
+            if not uuidutils.is_uuid_like(policy_profile_attr):
+                try:
+                    policy_profile = n1kv_db.get_policy_profile_by_name(
+                        policy_profile_attr)
+                    policy_profile_attr = policy_profile.id
+                except n1kv_exc.PolicyProfileNotFound as e:
+                    with excutils.save_and_reraise_exception(reraise=False):
+                        LOG.info(e.message)
+                        raise ml2_exc.MechanismDriverError()
+            n1kv_db.add_policy_binding(port_id, policy_profile_attr, session)
+        result[constants.N1KV_PROFILE] = policy_profile_attr
 
     def extend_port_dict(self, session, result):
         port_id = result.get('id')
         res = n1kv_db.get_policy_binding(port_id, session)
         if res:
-            result[constants.N1KV_PROFILE_ID] = res.profile_id
+            result[constants.N1KV_PROFILE] = res.profile_id

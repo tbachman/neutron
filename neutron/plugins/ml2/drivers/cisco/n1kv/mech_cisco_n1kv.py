@@ -191,6 +191,41 @@ class N1KVMechanismDriver(api.MechanismDriver):
                   "network_type": network_type,
                   "segment_id": segment['segmentation_id']})
 
+    def create_subnet_postcommit(self, context):
+        """Send subnet parameters to the VSM."""
+        subnet = context.current
+        try:
+            self.n1kvclient.create_ip_pool(subnet)
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            with excutils.save_and_reraise_exception(reraise=False):
+                LOG.info(e.message)
+                raise ml2_exc.MechanismDriverError()
+        LOG.info(_LI("Create subnet(postcommit) succeeded for subnet: "
+                     "ID: %s"), subnet['id'])
+
+    def update_subnet_postcommit(self, context):
+        """Send updated subnet parameters to the VSM."""
+        updated_subnet = context.current
+        try:
+            self.n1kvclient.update_ip_pool(updated_subnet)
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            with excutils.save_and_reraise_exception(reraise=False):
+                LOG.info(e.message)
+                raise ml2_exc.MechanismDriverError()
+        LOG.info(_LI("Update subnet(postcommit) succeeded for subnet: "
+                     "ID: %s"), updated_subnet['id'])
+
+    def delete_subnet_postcommit(self, context):
+        """Send delete subnet notification to the VSM."""
+        try:
+            self.n1kvclient.delete_ip_pool(context.current['id'])
+        except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
+            with excutils.save_and_reraise_exception(reraise=False):
+                LOG.info(e.message)
+                raise ml2_exc.MechanismDriverError()
+        LOG.info(_LI("Delete subnet(postcommit) succeeded for subnet: "
+                     "ID: %s"), context.current['id'])
+
     def create_port_postcommit(self, context):
         """Send port parameters to the VSM."""
         port = context.current
