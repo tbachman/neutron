@@ -18,14 +18,13 @@ from neutron.api.v2 import attributes
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants
 
 
-PROFILE_ID = constants.N1KV_PROFILE_ID
+PROFILE = constants.N1KV_PROFILE
 EXTENDED_ATTRIBUTES_2_0 = {
-    'ports': {PROFILE_ID: {
+    'ports': {PROFILE: {
         'allow_post': True,
         'allow_put': False,
         'default': attributes.ATTR_NOT_SPECIFIED,
-        'is_visible': True,
-        'validate': {'type:uuid': attributes.UUID_PATTERN}}}}
+        'is_visible': True}}}
 
 
 class N1kv(extensions.ExtensionDescriptor):
