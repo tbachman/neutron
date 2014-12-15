@@ -56,7 +56,8 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             if credentials:
                 self._csr_user = credentials['username']
                 self._csr_password = credentials['password']
-            self._timeout = cfg.CONF.cfg_agent.device_connection_timeout
+            self._timeout = (device_params['timeout'] or
+                             cfg.CONF.cfg_agent.device_connection_timeout)
             self._csr_conn = None
             self._intfs_enabled = False
         except KeyError as e:
@@ -384,9 +385,9 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         vrfs = []
         ioscfg = self._get_running_config()
         parse = ciscoconfparse.CiscoConfParse(ioscfg)
-        vrfs_raw = parse.find_lines("^ip vrf")
+        vrfs_raw = parse.find_lines("^vrf definition")
         for line in vrfs_raw:
-            #  raw format ['ip vrf <vrf-name>',....]
+            #  raw format ['vrf definition <vrf-name>',....]
             vrf_name = line.strip().split(' ')[2]
             vrfs.append(vrf_name)
         LOG.info(_LI("VRFs:%s"), vrfs)
