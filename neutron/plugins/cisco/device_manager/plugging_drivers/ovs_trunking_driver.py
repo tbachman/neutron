@@ -11,11 +11,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager.plugging_drivers import (
     n1kv_plugging_constants as n1kv_const)
@@ -90,7 +89,7 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         t2_n, s_spec, n1kv_const.T2_SUBNET_NAME, t2_sn,
                         p_spec, n1kv_const.T2_PORT_NAME, t_p)
             except n_exc.NeutronException as e:
-                LOG.error(_('Error %s when creating service VM resources. '
+                LOG.error(_LE('Error %s when creating service VM resources. '
                             'Cleaning up.'), e)
                 resources = {'ports': t_p, 'networks': t1_n + t2_n,
                              'subnets': t1_sn + t2_sn}

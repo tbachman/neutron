@@ -21,6 +21,7 @@ from neutron.common import exceptions as n_exc
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
+from neutron.i18n import _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.scheduler import l3_agent_scheduler
@@ -55,12 +56,11 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
             try:
                 l3_agent = query.one()
             except (exc.MultipleResultsFound, exc.NoResultFound):
-                LOG.debug(_('No enabled L3 agent on host %s'),
-                          host)
+                LOG.debug('No enabled L3 agent on host %s', host)
                 return False
             if agents_db.AgentDbMixin.is_agent_down(
                     l3_agent.heartbeat_timestamp):
-                LOG.warn(_('L3 agent %s is not active'), l3_agent.id)
+                LOG.warn(_LW('L3 agent %s is not active'), l3_agent.id)
             # Only network namespace based routers should be scheduled here
             ns_routertype_id = plugin.get_namespace_router_type_id(context)
             # check if each of the specified routers is hosted
@@ -73,15 +73,15 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                     except n_exc.NeutronException:
                         router_type_id = None
                     if router_type_id != ns_routertype_id:
-                        LOG.debug(_('Router %(r_id)s is of type %(t_id)s '
-                                    'which is not hosted by l3 agents'),
+                        LOG.debug('Router %(r_id)s is of type %(t_id)s which '
+                                  'is not hosted by l3 agents',
                                   {'r_id': router_id, 't_id': router_type_id})
                     else:
                         l3_agents = plugin.get_l3_agents_hosting_routers(
                             context, [router_id], admin_state_up=True)
                         if l3_agents:
-                            LOG.debug(_('Router %(router_id)s has already been'
-                                        ' hosted by L3 agent %(agent_id)s'),
+                            LOG.debug('Router %(router_id)s has already been '
+                                      'hosted by L3 agent %(agent_id)s',
                                       {'router_id': router_id,
                                        'agent_id': l3_agents[0]['id']})
                         else:
@@ -104,7 +104,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 unscheduled_router_ids = [router_id_[0] for router_id_ in
                                           query]
             if not unscheduled_router_ids:
-                LOG.debug(_('No non-hosted routers'))
+                LOG.debug('No non-hosted routers')
                 return False
 
             # check if the configuration of l3 agent is compatible
@@ -118,8 +118,8 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                     to_removed_ids.append(router['id'])
             router_ids = set([r['id'] for r in routers]) - set(to_removed_ids)
             if not router_ids:
-                LOG.warn(_('No routers compatible with L3 agent configuration'
-                           ' on host %s'), host)
+                LOG.warn(_LW('No routers compatible with L3 agent '
+                             'configuration on host %s'), host)
                 return False
 
             for router_id in router_ids:

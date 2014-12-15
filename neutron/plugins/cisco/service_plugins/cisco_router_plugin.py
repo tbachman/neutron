@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
 from oslo import messaging
@@ -23,7 +21,6 @@ from neutron.common import topics
 from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
 from neutron.db import l3_rpc_base
-from neutron.db import model_base
 from neutron import manager
 from neutron.openstack.common import importutils
 import neutron.plugins
@@ -40,8 +37,7 @@ from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.common import constants
 
 
-class CiscoRouterPluginRpcCallbacks(n_rpc.RpcCallback,
-                                    l3_rpc_base.L3RpcCallbackMixin,
+class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
                                     l3_router_rpc.L3RouterCfgRpcCallbackMixin):
 
     target = messaging.Target(version='1.1')

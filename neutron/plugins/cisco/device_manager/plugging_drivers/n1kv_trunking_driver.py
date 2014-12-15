@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import eventlet
 
@@ -25,6 +23,7 @@ from neutron.common import exceptions as n_exc
 from neutron import context as n_context
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
+from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.db.device_manager import hd_models
@@ -54,7 +53,7 @@ N1KV_TRUNKING_DRIVER_OPTS = [
                       "trunk networks for VLAN segmented traffic).")),
 ]
 
-cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS)
+cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS, "n1kv")
 
 MIN_LL_VLAN_TAG = 10
 MAX_LL_VLAN_TAG = 200
@@ -110,13 +109,13 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             return profiles[0]['id']
         elif len(profiles) > 1:
             # Profile must have a unique name.
-            LOG.error(_('The %(resource)s %(name)s does not have unique name. '
-                        'Please refer to admin guide and create one.'),
+            LOG.error(_LE('The %(resource)s %(name)s does not have unique '
+                          'name. Please refer to admin guide and create one.'),
                       {'resource': resource, 'name': name})
         else:
             # Profile has not been created.
-            LOG.error(_('There is no %(resource)s %(name)s. Please refer to '
-                        'admin guide and create one.'),
+            LOG.error(_LE('There is no %(resource)s %(name)s. Please refer to '
+                          'admin guide and create one.'),
                       {'resource': resource, 'name': name})
 
     @classmethod
@@ -124,21 +123,23 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._mgmt_port_profile_id is None:
             cls._mgmt_port_profile_id = cls._get_profile_id(
                 'port_profile', 'N1kv port profile',
-                cfg.CONF.management_port_profile)
+                cfg.CONF.n1kv.management_port_profile)
         return cls._mgmt_port_profile_id
 
     @classmethod
     def t1_port_profile_id(cls):
         if cls._t1_port_profile_id is None:
             cls._t1_port_profile_id = cls._get_profile_id(
-                'port_profile', 'N1kv port profile', cfg.CONF.t1_port_profile)
+                'port_profile', 'N1kv port profile',
+                cfg.CONF.n1kv.t1_port_profile)
         return cls._t1_port_profile_id
 
     @classmethod
     def t2_port_profile_id(cls):
         if cls._t2_port_profile_id is None:
             cls._t2_port_profile_id = cls._get_profile_id(
-                'port_profile', 'N1kv port profile', cfg.CONF.t2_port_profile)
+                'port_profile', 'N1kv port profile',
+                cfg.CONF.n1kv.t2_port_profile)
         return cls._t2_port_profile_id
 
     @classmethod
@@ -146,7 +147,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._t1_network_profile_id is None:
             cls._t1_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
-                cfg.CONF.t1_network_profile)
+                cfg.CONF.n1kv.t1_network_profile)
         return cls._t1_network_profile_id
 
     @classmethod
@@ -154,7 +155,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if cls._t2_network_profile_id is None:
             cls._t2_network_profile_id = cls._get_profile_id(
                 'net_profile', 'N1kv network profile',
-                cfg.CONF.t2_network_profile)
+                cfg.CONF.n1kv.t2_network_profile)
         return cls._t2_network_profile_id
 
     def create_hosting_device_resources(self, context, complementary_id,
@@ -213,8 +214,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                         n1kv_const.T2_PORT_NAME, self.t2_port_profile_id(),
                         t_p)
             except n_exc.NeutronException as e:
-                LOG.error(_('Error %s when creating service VM resources. '
-                            'Cleaning up.'), e)
+                LOG.error(_LE('Error %s when creating service VM resources. '
+                              'Cleaning up.'), e)
                 resources = {'ports': t_p, 'networks': t1_n + t2_n,
                              'subnets': t1_sn + t2_sn}
                 self.delete_hosting_device_resources(
@@ -278,19 +279,20 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,
                                         **kwargs):
         attempts = 1
-        port_ids = set([p['id'] for p in kwargs['ports']])
-        subnet_ids = set([s['id'] for s in kwargs['subnets']])
-        net_ids = set([n['id'] for n in kwargs['networks']])
+        port_ids = set(p['id'] for p in kwargs['ports'])
+        subnet_ids = set(s['id'] for s in kwargs['subnets'])
+        net_ids = set(n['id'] for n in kwargs['networks'])
 
         while mgmt_port is not None or port_ids or subnet_ids or net_ids:
             if attempts == DELETION_ATTEMPTS:
-                LOG.warning(_('Aborting resource deletion after %d '
-                              'unsuccessful attempts'), DELETION_ATTEMPTS)
-                break
+                LOG.warning(_LW('Aborting resource deletion after %d '
+                                'unsuccessful attempts'), DELETION_ATTEMPTS)
+                return
             else:
                 if attempts > 1:
                     eventlet.sleep(SECONDS_BETWEEN_DELETION_ATTEMPTS)
-                LOG.info(_('Initiating deletion attempt %d'), attempts)
+                LOG.info(_LI('Resource deletion attempt %d starting'),
+                         attempts)
             # Remove anything created.
             if mgmt_port is not None:
                 ml = set([mgmt_port['id']])
@@ -309,6 +311,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                                    self._core_plugin.delete_network,
                                    n_exc.NetworkNotFound, net_ids)
             attempts += 1
+        LOG.info(_LI('Resource deletion succeeded'))
 
     def _delete_resources(self, context, name, deleter, exception_type,
                           resource_ids):
@@ -319,8 +322,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             except exception_type:
                 resource_ids.remove(item_id)
             except n_exc.NeutronException as e:
-                LOG.error(_('Failed to delete %(resource_name) %(net_id)s '
-                            'for service vm due to %(err)s'),
+                LOG.error(_LE('Failed to delete %(resource_name) %(net_id)s '
+                              'for service vm due to %(err)s'),
                           {'resource_name': name, 'net_id': item_id, 'err': e})
 
     def setup_logical_port_connectivity(self, context, port_db):
@@ -334,14 +337,14 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             context, port_db, 'Removing', n1kv.SEGMENT_DEL)
 
     def extend_hosting_port_info(self, context, port_db, hosting_info):
-        hosting_info['segmentation_id'] = port_db.hosting_info.segmentation_tag
+        hosting_info['segmentation_id'] = port_db.hosting_info.segmentation_id
 
     def allocate_hosting_port(self, context, router_id, port_db, network_type,
                               hosting_device_id):
         allocations = self._get_router_ports_with_hosting_info_qry(
             context, router_id).all()
         trunk_mappings = {}
-        if len(allocations) == 0:
+        if not allocations:
             # Router has no ports with hosting port allocated to them yet
             # whatsoever, so we select an unused port (that trunks networks
             # of correct type) on the hosting device.
@@ -358,7 +361,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                     # For VLAN we don't need to but the following lines will
                     # be performed once anyway since we break out of the
                     # loop later. That does not matter.
-                    tag = item.hosting_info['segmentation_tag']
+                    tag = item.hosting_info['segmentation_id']
                     trunk_mappings[item['network_id']] = tag
                     id_allocated_port = item.hosting_info['hosting_port_id']
                 else:
@@ -408,13 +411,13 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         if np_id_t_nw.get(n1kv.PROFILE_ID) == self.t1_network_profile_id():
             # for vxlan trunked segment, id:s end with ':'link local vlan tag
             trunk_spec = (port_db['network_id'] + ':' +
-                          str(port_db.hosting_info.segmentation_tag))
+                          str(port_db.hosting_info.segmentation_id))
         else:
             trunk_spec = port_db['network_id']
-        LOG.info(_('Updating trunk: %(action)s VLAN %(tag)d for network_id '
-                   '%(id)s'), {'action': action,
-                               'tag': port_db.hosting_info.segmentation_tag,
-                               'id': port_db['network_id']})
+        LOG.info(_LI('Updating trunk: %(action)s VLAN %(tag)d for network_id '
+                     '%(id)s'), {'action': action,
+                                 'tag': port_db.hosting_info.segmentation_id,
+                                 'id': port_db['network_id']})
         #TODO(bobmel): enable statement below when N1kv does not trunk all
         if False:
             self._core_plugin.update_network(
@@ -426,7 +429,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         query = query.filter(
             hd_models.HostedHostingPortBinding.hosting_port_id ==
             hosting_port_id)
-        return dict((hhpb.logical_port['network_id'], hhpb.segmentation_tag)
+        return dict((hhpb.logical_port['network_id'], hhpb.segmentation_id)
                     for hhpb in query)
 
     def _get_unused_service_vm_trunk_port(self, context, hd_id, network_type):
@@ -451,16 +454,16 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             if res is None:
                 if attempts >= MAX_HOSTING_PORT_LOOKUP_ATTEMPTS:
                     # This should not happen ...
-                    LOG.error(_('Hosting port DB inconsistency for '
-                                'hosting device %s'), hd_id)
+                    LOG.error(_LE('Hosting port DB inconsistency for '
+                                  'hosting device %s'), hd_id)
                     return
                 else:
                     # The service VM may not have plugged its VIF into the
                     # Neutron Port yet so we wait and make another lookup.
                     attempts += 1
-                    LOG.info(_('Attempt %(attempt)d to find trunk ports for '
-                               'hosting device %(hd_id)s failed. Trying '
-                               'again in %(time)d seconds.'),
+                    LOG.info(_LI('Attempt %(attempt)d to find trunk ports for '
+                                 'hosting device %(hd_id)s failed. Trying '
+                                 'again in %(time)d seconds.'),
                              {'attempt': attempts, 'hd_id': hd_id,
                               'time': SECONDS_BETWEEN_HOSTING_PORT_LOOKSUPS})
                     eventlet.sleep(SECONDS_BETWEEN_HOSTING_PORT_LOOKSUPS)
@@ -504,6 +507,6 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             return other_port['id']
         except (exc.NoResultFound, exc.MultipleResultsFound):
             # This should not happen ...
-            LOG.error(_('Port trunk pair DB inconsistency for port %s'),
+            LOG.error(_LE('Port trunk pair DB inconsistency for port %s'),
                       port_id)
             return

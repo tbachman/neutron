@@ -25,6 +25,7 @@ from neutron.api.v2 import attributes
 from neutron.db import api as db_api
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
+from neutron.i18n import _LE, _LI
 from neutron import neutron_plugin_base_v2
 from neutron.openstack.common import importutils
 from neutron.plugins.cisco.common import cisco_constants as const
@@ -133,9 +134,9 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
         plugin implementation) for completing this operation.
         """
         if plugin_key not in self._plugins:
-            LOG.info(_("No %s Plugin loaded"), plugin_key)
-            LOG.info(_("%(plugin_key)s: %(function_name)s with args %(args)s "
-                     "ignored"),
+            LOG.info(_LI("No %s Plugin loaded"), plugin_key)
+            LOG.info(_LI("%(plugin_key)s: %(function_name)s with args "
+                         "%(args)s ignored"),
                      {'plugin_key': plugin_key,
                       'function_name': function_name,
                       'args': args})
@@ -403,7 +404,7 @@ class VirtualPhysicalSwitchModelV2(neutron_plugin_base_v2.NeutronPluginBaseV2):
             return ovs_output
         except Exception:
             exc_info = sys.exc_info()
-            LOG.error(_("Unable to update port '%s' on Nexus switch"),
+            LOG.error(_LE("Unable to update port '%s' on Nexus switch"),
                       old_port['name'], exc_info=exc_info)
             try:
                 # Roll back vSwitch plugin to original port attributes.

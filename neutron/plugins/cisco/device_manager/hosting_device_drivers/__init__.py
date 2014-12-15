@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import abc
 
@@ -32,34 +30,21 @@ class HostingDeviceDriver(object):
         pass
 
     @abc.abstractmethod
-    def create_configdrive_files(self, context, mgmtport):
-        """Creates configuration file(s) for a service VM.
+    def create_config(self, context, mgmtport):
+        """Creates configuration(s) for a service VM.
 
-        This function can be used to make initial configurations. The file(s)
-        is/are injected in the VM's file system using Nova's configdrive
-        feature.
+        This function can be used to make initial configurations. The
+        configuration(s) is/are injected in the VM's file system using
+        Nova's configdrive feature.
 
         Called when a service VM-based hosting device is to be created.
         This function should cleanup after itself in case of error.
 
-        returns: Dict with filenames and corresponding source filenames:
-                 {filename1: src_filename1, filename2: src_filename2, ...}
+        returns: Dict with filenames and their corresponding content strings:
+                 {filename1: content_string1, filename2: content_string2, ...}
                  The file system of the VM will contain files with the
-                 specified filenames and content from the src_filename
-                 files. If the dict is empty no configdrive will be used.
-
-        :param context: neutron api request context.
-        :param mgmt_port: management port for the hosting device.
-        """
-        pass
-
-    @abc.abstractmethod
-    def delete_configdrive_files(self, context, mgmtport):
-        """Deletes any configuration file(s) used by service VM's configdrive.
-
-        Called when a service VM-based hosting device is to be deleted.
-
-        returns: -
+                 specified filenames and content. If the dict is empty no
+                 configdrive will be used.
 
         :param context: neutron api request context.
         :param mgmt_port: management port for the hosting device.

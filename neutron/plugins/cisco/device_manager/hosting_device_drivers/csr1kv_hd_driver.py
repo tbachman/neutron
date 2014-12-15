@@ -11,18 +11,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import netaddr
-import os
 
 from oslo.config import cfg
 
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.device_manager.hosting_device_drivers import (
-    HostingDeviceDriver)
+from neutron.plugins.cisco.device_manager import hosting_device_drivers
 
 LOG = logging.getLogger(__name__)
 
@@ -36,15 +33,15 @@ CSR1KV_HD_DRIVER_OPTS = [
                help=_("CSR1kv configdrive template file.")),
 ]
 
-cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
+cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS, "hosting_devices")
 
 
-class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
+class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
 
     def hosting_device_name(self):
         return "CSR1kv"
 
-    def create_configdrive_files(self, context, mgmtport):
+    def create_config(self, context, mgmtport):
         mgmt_ip = mgmtport['fixed_ips'][0]['ip_address']
         subnet_data = self._core_plugin.get_subnet(
             context, mgmtport['fixed_ips'][0]['subnet_id'],
@@ -54,34 +51,23 @@ class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
                   '<gw>': subnet_data['gateway_ip'],
                   '<name_server>': '8.8.8.8'}
         try:
-            cfg_template_filename = (cfg.CONF.templates_path + "/" +
-                                     cfg.CONF.csr1kv_configdrive_template)
-            vm_cfg_filename = self._unique_cfgdrive_filename(mgmtport['id'])
+            cfg_template_filename = (
+                cfg.CONF.general.templates_path + "/" +
+                cfg.CONF.hosting_devices.csr1kv_configdrive_template)
+            vm_cfg_data = ''
             with open(cfg_template_filename, 'r') as cfg_template_file:
-                with open(vm_cfg_filename, "w") as vm_cfg_file:
-                    # insert proper instance values in the template
-                    for line in cfg_template_file:
-                        tokens = line.strip('\n').split(' ')
-                        line = ' '.join(map(lambda x: params.get(x, x),
-                                            tokens)) + '\n'
-                        vm_cfg_file.write(line)
-            return {'iosxe_config.txt': vm_cfg_filename}
+                # insert proper instance values in the template
+                for line in cfg_template_file:
+                    tokens = line.strip('\n').split(' ')
+                    line = ' '.join(map(lambda x: params.get(x, x),
+                                        tokens)) + '\n'
+                    vm_cfg_data += line
+            return {'iosxe_config.txt': vm_cfg_data}
         except IOError as e:
-            LOG.error(_('Failed to create config file: %s. Trying to'
+            LOG.error(_LE('Failed to create config file: %s. Trying to'
                         'clean up.'), str(e))
             self.delete_configdrive_files(context, mgmtport)
             raise
-
-    def delete_configdrive_files(self, context, mgmtport):
-        try:
-            os.remove(self._unique_cfgdrive_filename(mgmtport['id']))
-        except OSError as e:
-            LOG.error(_('Failed to delete config file: %s'), str(e))
-
-    def _unique_cfgdrive_filename(self, uuid):
-        end = CFG_DRIVE_UUID_START + CFG_DRIVE_UUID_LEN
-        return (cfg.CONF.service_vm_config_path + "/csr1kv_" +
-                uuid[CFG_DRIVE_UUID_START:end] + ".cfg")
 
     @property
     def _core_plugin(self):

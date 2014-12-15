@@ -11,13 +11,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
+
+from oslo import messaging
 
 from neutron.common import constants
 from neutron.common import utils
 from neutron import context as neutron_context
-from neutron.extensions import portbindings
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 
@@ -26,6 +25,8 @@ LOG = logging.getLogger(__name__)
 
 class L3RouterCfgRpcCallbackMixin(object):
     """Mixin for Cisco cfg agent rpc support in L3 routing service plugin."""
+
+    target = messaging.Target(version='1.0')
 
     def cfg_sync_routers(self, context, host, router_ids=None,
                          hosting_device_ids=None):

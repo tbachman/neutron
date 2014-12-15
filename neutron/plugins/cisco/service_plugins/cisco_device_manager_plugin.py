@@ -12,15 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
 from oslo import messaging
 
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.db import api as qdbapi
-from neutron.db import model_base
 from neutron import manager
 from neutron.openstack.common import importutils
 import neutron.plugins
@@ -36,8 +33,8 @@ from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 
 
-class CiscoDevMgrPluginRpcCallbacks(n_rpc.RpcCallback,
-                                    devices_rpc.DeviceMgrCfgRpcCallbackMixin):
+class CiscoDevMgrPluginRpcCallbacks(devices_rpc.DeviceMgrCfgRpcCallbackMixin):
+
     target = messaging.Target(version='1.0')
 
     def __init__(self, plugin):
@@ -59,7 +56,6 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
         ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS]
 
     def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
         self.setup_rpc()
         basepath = neutron.plugins.__path__[0]
         ext_paths = [basepath + '/cisco/extensions']

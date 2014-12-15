@@ -13,6 +13,8 @@
 #    under the License.
 #
 
+from oslo import messaging
+
 from neutron.common import rpc as n_rpc
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -24,13 +26,13 @@ LOG = logging.getLogger(__name__)
 CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
 
-class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
+class DeviceMgrCfgAgentNotifyAPI(object):
     """API for Device manager service plugin to notify Cisco cfg agent."""
-    BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, devmgr_plugin, topic=c_constants.CFG_AGENT):
-        super(DeviceMgrCfgAgentNotifyAPI, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
+        self.topic = topic
+        target = messaging.Target(topic=topic, version='1.0')
+        self.client = n_rpc.get_client(target)
         self._dmplugin = devmgr_plugin
 
     def _host_notification(self, context, method, payload, host,
@@ -38,13 +40,11 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
         """Notify the cfg agent that is handling the hosting device."""
         LOG.debug('Notify Cisco cfg agent at %(host)s the message '
                   '%(method)s', {'host': host, 'method': method})
-        self.cast(context,
-                  self.make_msg(method, payload=payload),
-                  topic='%s.%s' % (self.topic if topic is None else topic,
-                                   host))
+        topic_to_use = self.topic if topic is None else topic
+        cctxt = self.client.prepare(topic=topic_to_use, server=host)
+        cctxt.cast(context, method, payload=payload)
 
-    def _agent_notification(self, context, method, hosting_devices,
-                            operation, data):
+    def _agent_notification(self, context, method, hosting_devices, operation):
         """Notify individual Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()
         for hosting_device in hosting_devices:
@@ -58,10 +58,10 @@ class DeviceMgrCfgAgentNotifyAPI(n_rpc.RpcProxy):
                            'topic': agent.topic,
                            'host': agent.host,
                            'method': method})
-                self.cast(context,
-                          self.make_msg(method),
-                          topic='%s.%s' % (agent.topic, agent.host),
-                          version='1.0')
+                cctxt = self.client.prepare(topic=agent.topic,
+                                            server=agent.host,
+                                            version='1.0')
+                cctxt.cast(context, method)
 
     # def _notification_fanout(self, context, method, router_id):
     #     """Fanout the deleted router to all L3 agents."""

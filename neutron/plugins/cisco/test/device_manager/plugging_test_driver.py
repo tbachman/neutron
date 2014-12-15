@@ -16,6 +16,7 @@
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
                                                   n1kv_const)
@@ -76,8 +77,8 @@ class TestTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         {'name': n1kv_const.T1_NETWORK_NAME + indx})
                     t1_n.append(self._core_plugin.create_network(
                         context, n_spec))
-                    LOG.debug(_('Created T1 network with name %(name)s and '
-                                'id %(id)s'),
+                    LOG.debug('Created T1 network with name %(name)s and id '
+                              '%(id)s',
                               {'name': n1kv_const.T1_NETWORK_NAME + indx,
                                'id': t1_n[i]['id']})
                     # Create dummy subnet for this trunk network
@@ -91,8 +92,8 @@ class TestTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         {'name': n1kv_const.T1_PORT_NAME + indx,
                          'network_id': t1_n[i]['id']})
                     t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T1 port with name %(name)s, '
-                                'id %(id)s and subnet %(subnet)s'),
+                    LOG.debug('Created T1 port with name %(name)s, id %(id)s '
+                              'and subnet %(subnet)s',
                               {'name': t1_n[i]['name'],
                                'id': t1_n[i]['id'],
                                'subnet': t1_sn[i]['id']})
@@ -101,8 +102,8 @@ class TestTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         {'name': n1kv_const.T2_NETWORK_NAME + indx})
                     t2_n.append(self._core_plugin.create_network(context,
                                                                  n_spec))
-                    LOG.debug(_('Created T2 network with name %(name)s and '
-                                'id %(id)s'),
+                    LOG.debug('Created T2 network with name %(name)s and id '
+                              '%(id)s',
                               {'name': n1kv_const.T2_NETWORK_NAME + indx,
                                'id': t2_n[i]['id']})
                     # Create dummy subnet for this trunk network
@@ -116,14 +117,14 @@ class TestTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         {'name': n1kv_const.T2_PORT_NAME + indx,
                          'network_id': t2_n[i]['id']})
                     t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T2 port with name %(name)s,  '
-                                'id %(id)s and subnet %(subnet)s'),
+                    LOG.debug('Created T2 port with name %(name)s, id %(id)s '
+                              'and subnet %(subnet)s',
                               {'name': t2_n[i]['name'],
                                'id': t2_n[i]['id'],
                                'subnet': t2_sn[i]['id']})
             except n_exc.NeutronException as e:
-                LOG.error(_('Error %s when creating service VM resources. '
-                            'Cleaning up.'), e)
+                LOG.error(_LE('Error %s when creating service VM resources. '
+                              'Cleaning up.'), e)
                 resources = {'ports': t_p, 'networks': t1_n + t2_n,
                              'subnets': t1_sn + t2_sn}
                 self.delete_hosting_device_resources(

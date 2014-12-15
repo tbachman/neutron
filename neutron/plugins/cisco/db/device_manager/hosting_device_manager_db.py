@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import eventlet
 import math
@@ -29,6 +27,7 @@ from sqlalchemy.sql import expression as expr
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron import context as neutron_context
+from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
@@ -58,7 +57,7 @@ HOSTING_DEVICE_MANAGER_OPTS = [
                        "create any CSR1kv VM."))
 ]
 
-cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
+cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS, "general")
 
 
 class HostingDeviceTemplateNotFound(n_exc.NeutronException):
@@ -127,10 +126,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 tenant = keystone.tenants.find(name=cfg.CONF.l3_admin_tenant)
                 cls._l3_tenant_uuid = tenant.id
             except k_exceptions.NotFound:
-                LOG.error(_('No tenant with a name or ID of %s exists.'),
+                LOG.error(_LE('No tenant with a name or ID of %s exists.'),
                           cfg.CONF.l3_admin_tenant)
             except k_exceptions.NoUniqueMatch:
-                LOG.error(_('Multiple tenants matches found for %s'),
+                LOG.error(_LE('Multiple tenants matches found for %s'),
                           cfg.CONF.l3_admin_tenant)
         return cls._l3_tenant_uuid
 
@@ -149,21 +148,21 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if len(net) == 1:
                 num_subnets = len(net[0]['subnets'])
                 if num_subnets == 0:
-                    LOG.error(_('The management network has no subnet. '
-                                'Please assign one.'))
+                    LOG.error(_LE('The management network has no subnet. '
+                                  'Please assign one.'))
                     return
                 elif num_subnets > 1:
-                    LOG.info(_('The management network has %d subnets. The '
-                               'first one will be used.'), num_subnets)
+                    LOG.info(_LE('The management network has %d subnets. The '
+                                 'first one will be used.'), num_subnets)
                 cls._mgmt_nw_uuid = net[0].get('id')
             elif len(net) > 1:
                 # Management network must have a unique name.
-                LOG.error(_('The management network for does not have unique '
-                            'name. Please ensure that it is.'))
+                LOG.error(_LE('The management network for does not have '
+                              'unique name. Please ensure that it is.'))
             else:
                 # Management network has not been created.
-                LOG.error(_('There is no virtual management network. Please '
-                            'create one.'))
+                LOG.error(_LE('There is no virtual management network. Please '
+                              'create one.'))
         return cls._mgmt_nw_uuid
 
     @classmethod
@@ -185,13 +184,13 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 cls._mgmt_sec_grp_id = sec_grp_id
             elif len(res) > 1:
                 # the mgmt sec group must be unique.
-                LOG.error(_('The security group for the management network '
-                            'does not have unique name. Please ensure that '
-                            'it is.'))
+                LOG.error(_LE('The security group for the management network '
+                              'does not have unique name. Please ensure that '
+                              'it is.'))
             else:
                 # CSR Mgmt security group is not present.
-                LOG.error(_('There is no security group for the management '
-                            'network. Please create one.'))
+                LOG.error(_LE('There is no security group for the management '
+                              'network. Please create one.'))
         return cls._mgmt_sec_grp_id
 
     def get_hosting_device_driver(self, context, id):
@@ -206,8 +205,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 self._hosting_device_drivers[id] = importutils.import_object(
                     template['device_driver'])
             except (ImportError, TypeError, n_exc.NeutronException):
-                LOG.exception(_("Error loading hosting device driver for "
-                                "hosting device template %s"), id)
+                LOG.exception(_LE("Error loading hosting device driver for "
+                                  "hosting device template %s"), id)
             return self._hosting_device_drivers.get(id)
 
     def get_hosting_device_plugging_driver(self, context, id):
@@ -222,8 +221,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 self._plugging_drivers[id] = importutils.import_object(
                     template['plugging_driver'])
             except (ImportError, TypeError, n_exc.NeutronException):
-                LOG.exception(_("Error loading plugging driver for hosting "
-                                "device template %s"), id)
+                LOG.exception(_LE("Error loading plugging driver for hosting "
+                                  "device template %s"), id)
             return self._plugging_drivers.get(id)
 
     def report_hosting_device_shortage(self, context, template, requested=0):
@@ -243,9 +242,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
              hosting_device['tenant_bound'] != resource['tenant_id']) or
             (exclusive and not self._exclusively_used(context, hosting_device,
                                                       resource['tenant_id']))):
-            LOG.debug(_('Rejecting allocation of %(num)d slots in hosting '
-                        'device %(device)s to logical resource %(id)s due to '
-                        'conflict of exclusive usage.'),
+            LOG.debug('Rejecting allocation of %(num)d slots in hosting '
+                      'device %(device)s to logical resource %(id)s due to '
+                      'conflict of exclusive usage.',
                       {'num': num, 'device': hosting_device['id'],
                        'id': resource['id']})
             return False
@@ -257,9 +256,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     hosting_device_id=hosting_device['id']).one())
             except exc.MultipleResultsFound:
                 # this should not happen
-                LOG.error(_('DB inconsistency: Multiple slot allocation '
-                            'entries for logical resource %(res)s in hosting '
-                            'device %(device)s. Rejecting slot allocation!'),
+                LOG.error(_LE('DB inconsistency: Multiple slot allocation '
+                              'entries for logical resource %(res)s in '
+                              'hosting device %(device)s. Rejecting slot '
+                              'allocation!'),
                           {'res': resource['id'],
                            'device': hosting_device['id']})
                 return False
@@ -273,9 +273,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     tenant_bound=None)
             new_allocation = num + slot_info.num_allocated
             if hosting_device['template']['slot_capacity'] < new_allocation:
-                LOG.debug(_('Rejecting allocation of %(num)d slots in '
-                            'hosting device %(device)s to logical resource '
-                            '%(id)s due to insufficent slot availability.'),
+                LOG.debug('Rejecting allocation of %(num)d slots in '
+                          'hosting device %(device)s to logical resource '
+                          '%(id)s due to insufficent slot availability.',
                           {'num': num, 'device': hosting_device['id'],
                            'id': resource['id']})
                 self._dispatch_pool_maintenance_job(hosting_device['template'],
@@ -292,10 +292,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             context.session.add(slot_info)
         self._dispatch_pool_maintenance_job(hosting_device['template'])
         # report success
-        LOG.info(_('Allocated %(num)d additional slots in hosting device '
-                   '%(hd_id)s. %(total)d slots are now allocated in that '
-                   'hosting device.'), {'num': num, 'total': new_allocation,
-                                        'hd_id': hosting_device['id']})
+        LOG.info(_LI('Allocated %(num)d additional slots in hosting device '
+                     '%(hd_id)s. %(total)d slots are now allocated in that '
+                     'hosting device.'), {'num': num, 'total': new_allocation,
+                                          'hd_id': hosting_device['id']})
         return True
 
     def release_hosting_device_slots(self, context, hosting_device, resource,
@@ -313,26 +313,26 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 slot_info = query.one()
             except exc.MultipleResultsFound:
                 # this should not happen
-                LOG.error(_('DB inconsistency: Multiple slot allocation '
-                            'entries for logical resource %(res)s in hosting '
-                            'device %(dev)s. Rejecting slot deallocation!'),
+                LOG.error(_LE('DB inconsistency: Multiple slot allocation '
+                              'entries for logical resource %(res)s in '
+                              'hosting device %(dev)s. Rejecting slot '
+                              'deallocation!'),
                           {'res': resource['id'], 'dev': hosting_device['id']})
                 return False
             except exc.NoResultFound:
-                LOG.error(_('Logical resource %(res)s does not have '
-                            'allocated any slots in hosting device %(dev)s. '
-                            'Rejecting slot deallocation!'),
+                LOG.error(_LE('Logical resource %(res)s does not have '
+                              'allocated any slots in hosting device %(dev)s. '
+                              'Rejecting slot deallocation!'),
                           {'res': resource['id'], 'dev': hosting_device['id']})
                 return False
             new_allocation = slot_info.num_allocated - num
             if new_allocation < 0:
-                LOG.debug(_('Rejecting deallocation of %(num)d slots in '
-                            'hosting device %(device)s for logical resource '
-                            '%(id)s since only %(alloc)d slots are '
-                            'allocated.'),
+                LOG.debug('Rejecting deallocation of %(num)d slots in '
+                          'hosting device %(device)s for logical resource '
+                          '%(id)s since only %(alloc)d slots are allocated.',
                           {'num': num, 'device': hosting_device['id'],
-                          'id': resource['id'],
-                          'alloc': slot_info.num_allocated})
+                           'id': resource['id'],
+                           'alloc': slot_info.num_allocated})
                 self._dispatch_pool_maintenance_job(hosting_device['template'])
                 return False
             elif new_allocation == 0:
@@ -347,9 +347,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     context.session.add(hosting_device)
                 self._dispatch_pool_maintenance_job(hosting_device['template'])
                 return result == 1
-            LOG.info(_('Deallocated %(num)d slots from hosting device '
-                       '%(hd_id)s. %(total)d slots are now allocated in that '
-                       'hosting device.'),
+            LOG.info(_LI('Deallocated %(num)d slots from hosting device '
+                         '%(hd_id)s. %(total)d slots are now allocated in '
+                         'that hosting device.'),
                      {'num': num, 'total': new_allocation,
                       'hd_id': hosting_device['id']})
             slot_info.num_allocated = new_allocation
@@ -513,9 +513,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
-                LOG.info(_('Not all Nova services are up and running. '
-                           'Skipping this service vm pool management '
-                           'request.'))
+                LOG.info(_LI('Not all Nova services are up and running. '
+                             'Skipping this service vm pool management '
+                             'request.'))
                 return
         mgr_context = neutron_context.get_admin_context()
         mgr_context.tenant_id = self.l3_tenant_id()
@@ -557,9 +557,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 num_created = len(self._create_svc_vm_hosting_devices(
                     context, num_req, template))
                 if num_created < num_req:
-                    LOG.warn(_('Requested %(requested)d instances based on '
-                               'hosting device template %(template)s but '
-                               'could only create %(created)d instances'),
+                    LOG.warn(_LW('Requested %(requested)d instances based on '
+                                 'hosting device template %(template)s but '
+                                 'could only create %(created)d instances'),
                              {'requested': num_req, 'template': template['id'],
                               'created': num_created})
             elif available >= desired + capacity:
@@ -568,9 +568,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 num_deleted = self._delete_idle_service_vm_hosting_devices(
                     context, num_req, template)
                 if num_deleted < num_req:
-                    LOG.warn(_('Tried to delete %(requested)d instances based '
-                               'on hosting device template %(template)s but '
-                               'could only delete %(deleted)d instances'),
+                    LOG.warn(_LW('Tried to delete %(requested)d instances '
+                                 'based on hosting device template '
+                                 '%(template)s but could only delete '
+                                 '%(deleted)d instances'),
                              {'requested': num_req, 'template': template['id'],
                               'deleted': num_deleted})
         finally:
@@ -626,9 +627,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     plugging_drv.delete_hosting_device_resources(
                         context, self.l3_tenant_id(), **res)
                     return hosting_devices
-        LOG.info(_('Created %(num)d hosting device VMs based on template '
-                   '%(t_id)s'), {'num': len(hosting_devices),
-                                 't_id': template['id']})
+        LOG.info(_LI('Created %(num)d hosting device VMs based on template '
+                     '%(t_id)s'), {'num': len(hosting_devices),
+                                   't_id': template['id']})
         return hosting_devices
 
     def _delete_idle_service_vm_hosting_devices(self, context, num, template):
@@ -678,8 +679,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     plugging_drv.delete_hosting_device_resources(
                         context, self.l3_tenant_id(), **res)
                     num_deleted += 1
-        LOG.info(_('Deleted %(num)d hosting devices based on template '
-                   '%(t_id)s'), {'num': num_deleted, 't_id': template['id']})
+        LOG.info(_LI('Deleted %(num)d hosting devices based on template '
+                     '%(t_id)s'), {'num': num_deleted, 't_id': template['id']})
         return num_deleted
 
     def _delete_dead_service_vm_hosting_device(self, context, hosting_device):
@@ -701,8 +702,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         if not self._svc_vm_mgr.delete_service_vm(
                 context, hosting_device['id'], hosting_device_drv,
                 self.mgmt_nw_id()):
-            LOG.error(_('Failed to delete hosting device %s service VM. '
-                        'Will un-register it anyway.'),
+            LOG.error(_LE('Failed to delete hosting device %s service VM. '
+                          'Will un-register it anyway.'),
                       hosting_device['id'])
         plugging_drv.delete_hosting_device_resources(
             context, self.l3_tenant_id(), **res)

@@ -13,6 +13,10 @@
 #    under the License.
 #
 
+import random
+
+from oslo import messaging
+
 from neutron.common import constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
@@ -30,13 +34,12 @@ L3AGENT_SCHED = constants.L3_AGENT_SCHEDULER_EXT_ALIAS
 CFGAGENT_SCHED = ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS
 
 
-class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
+class L3RouterJointAgentNotifyAPI(object):
     """API for plugin to notify Cisco cfg agent and L3 agent."""
-    BASE_RPC_API_VERSION = '1.0'
 
     def __init__(self, l3plugin, topic=topics.L3_AGENT):
-        super(L3RouterJointAgentNotifyAPI, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
+        target = messaging.Target(topic=topic, version='1.0')
+        self.client = n_rpc.get_client(target)
         self._l3plugin = l3plugin
 
     def _host_notification(self, context, method, payload, host,
@@ -44,11 +47,11 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
         """Notify the agent that is hosting the router."""
         LOG.debug('Notify agent at %(host)s the message %(method)s',
                   {'host': host, 'method': method})
-        self.cast(context,
-                  self.make_msg(method, payload=payload),
-                  topic='%s.%s' % (topic, host))
+        cctxt = self.client.prepare(topic=topic, server=host)
+        cctxt.cast(context, method, payload=payload)
 
-    def _agent_notification(self, context, method, routers, operation, data):
+    def _agent_notification(self, context, method, routers, operation,
+                            shuffle_agents):
         """Notify individual L3 agents and Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()
         dmplugin = manager.NeutronManager.get_service_plugins().get(
@@ -61,6 +64,8 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
                     admin_context, [router['id']],
                     admin_state_up=True,
                     active=True)
+                if shuffle_agents:
+                    random.shuffle(agents)
             elif (router['hosting_device'] is not None and
                   utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
                 agents = dmplugin.get_cfg_agents_for_hosting_devices(
@@ -83,12 +88,13 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
                            'topic': topic,
                            'host': agent.host,
                            'method': method})
-                self.cast(context,
-                          self.make_msg(method, routers=[router['id']]),
-                          topic='%s.%s' % (topic, agent.host),
-                          version=version)
+                cctxt = self.client.prepare(topic=topic,
+                                            server=agent.host,
+                                            version=version)
+                cctxt.cast(context, method, routers=[router['id']])
 
-    def _notification(self, context, method, routers, operation, data):
+    def _notification(self, context, method, routers, operation,
+                      shuffle_agents):
         """Notify all or individual L3 agents and Cisco cfg agents."""
         if utils.is_extension_supported(self._l3plugin, L3AGENT_SCHED):
             adm_context = (context.is_admin and context or context.elevated())
@@ -97,30 +103,26 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
             # routers get scheduled to a l3 agent.
             self._l3plugin.schedule_routers(adm_context, routers)
             self._agent_notification(
-                context, method, routers, operation, data)
+                context, method, routers, operation, shuffle_agents)
         else:
-            self.fanout_cast(
-                context, self.make_msg(method,
-                                       routers=[r['id'] for r in routers]),
-                topic=topics.L3_AGENT)
+            cctxt = self.client.prepare(topics=topics.L3_AGENT, fanout=True)
+            cctxt.cast(context, method, routers=[r['id'] for r in routers])
 
     def _notification_fanout(self, context, method, router_id):
         """Fanout the deleted router to all L3 agents."""
-        LOG.debug(_('Fanout notify agent at %(topic)s the message '
-                    '%(method)s on router %(router_id)s'),
+        LOG.debug('Fanout notify agent at %(topic)s the message %(method)s on '
+                  'router %(router_id)s',
                   {'topic': topics.DHCP_AGENT,
                    'method': method,
                    'router_id': router_id})
-        self.fanout_cast(context,
-                         self.make_msg(method, router_id=router_id),
-                         topic=topics.L3_AGENT)
+        cctxt = self.client.prepare(topics=topics.L3_AGENT, fanout=True)
+        cctxt.cast(context, method, router_id=router_id)
 
     def agent_updated(self, context, admin_state_up, host):
         """Updates agent on host to enable or disable it."""
         #TODO(bobmel): Ensure only used for l3agent
         self._host_notification(context, 'agent_updated',
-                                {'admin_state_up': admin_state_up},
-                                host)
+                                {'admin_state_up': admin_state_up}, host)
 
     def router_deleted(self, context, router):
         """Notifies agents about a deleted router."""
@@ -129,10 +131,11 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
         if router['router_type']['id'] == namespace_routertype_id:
             self._notification_fanout(context, 'router_deleted', router['id'])
         else:
-            self._agent_notification(context, 'router_deleted', [router],
-                                     operation=None, data=None)
+            self._agent_notification(context, 'router_deleted', [router], None,
+                                     False)
 
-    def routers_updated(self, context, routers, operation=None, data=None):
+    def routers_updated(self, context, routers, operation=None, data=None,
+                        shuffle_agents=False):
         """Notifies agents about configuration changes to routers.
 
         This includes operations performed on the router like when a
@@ -142,8 +145,8 @@ class L3RouterJointAgentNotifyAPI(n_rpc.RpcProxy):
         notification.
         """
         if routers:
-            self._notification(context, 'routers_updated', routers,
-                               operation, data)
+            self._notification(context, 'routers_updated', routers, operation,
+                               shuffle_agents)
 
     def router_removed_from_agent(self, context, router_id, host):
         """Notifies L3 agent on host that router has been removed from it."""

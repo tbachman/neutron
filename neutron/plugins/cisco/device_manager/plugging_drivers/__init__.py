@@ -11,9 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
-
 
 import abc
 
@@ -134,7 +131,7 @@ class PluginSidePluggingDriver(object):
                               hosting_device_id):
         """Allocates a hosting port for a logical port.
 
-        Schedules a logical port to a hosting port. Not that the hosting port
+        Schedules a logical port to a hosting port. Note that the hosting port
         may be the logical port itself.
 
         returns: a dict {'allocated_port_id': <id of allocated port>,

@@ -19,6 +19,7 @@ import random
 from sqlalchemy.orm import exc
 
 from neutron.db import agents_db
+from neutron.i18n import _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
@@ -51,7 +52,7 @@ class HostingDeviceCfgAgentScheduler(object):
                 return False
             if agents_db.AgentDbMixin.is_agent_down(
                     cfg_agent.heartbeat_timestamp):
-                LOG.warn(_('Cisco cfg agent %s is not alive'), cfg_agent.id)
+                LOG.warn(_LW('Cisco cfg agent %s is not alive'), cfg_agent.id)
             query = context.session.query(HostingDevice)
             query = query.filter_by(cfg_agent_id=None)
             for hd in query:
@@ -73,7 +74,7 @@ class HostingDeviceCfgAgentScheduler(object):
                 return
             active_cfg_agents = plugin.get_cfg_agents(context, active=True)
             if not active_cfg_agents:
-                LOG.warn(_('There are no active Cisco cfg agents'))
+                LOG.warn(_LW('There are no active Cisco cfg agents'))
                 # No worries, once a Cisco cfg agent is started and
                 # announces itself any "dangling" hosting devices
                 # will be scheduled to it.

@@ -11,12 +11,14 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
+
+from oslo import messaging
 
 
 class DeviceMgrCfgRpcCallbackMixin(object):
     """Mixin for Cisco cfg agent rpc support in Device mgr service plugin."""
+
+    target = messaging.Target(version='1.0')
 
     def report_non_responding_hosting_devices(self, context, host,
                                               hosting_device_ids):

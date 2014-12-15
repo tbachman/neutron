@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.db import exception as db_exc
 from sqlalchemy import exc as sql_exc
@@ -39,7 +37,7 @@ class HostingDeviceDBMixin(
     """A class implementing DB functionality for hosting devices."""
 
     def create_hosting_device(self, context, hosting_device):
-        LOG.debug(_("create_hosting_device() called"))
+        LOG.debug("create_hosting_device() called")
         hd = hosting_device['hosting_device']
         tenant_id = self._get_tenant_id_for_create(context, hd)
         with context.session.begin(subtransactions=True):
@@ -67,7 +65,7 @@ class HostingDeviceDBMixin(
         return self._make_hosting_device_dict(hd_db)
 
     def update_hosting_device(self, context, id, hosting_device):
-        LOG.debug(_("update_hosting_device() called"))
+        LOG.debug("update_hosting_device() called")
         hd = hosting_device['hosting_device']
         with context.session.begin(subtransactions=True):
             #TODO(bobmel): handle tenant_bound changes
@@ -80,7 +78,7 @@ class HostingDeviceDBMixin(
         return self._make_hosting_device_dict(hd_db)
 
     def delete_hosting_device(self, context, id):
-        LOG.debug(_("delete_hosting_device() called"))
+        LOG.debug("delete_hosting_device() called")
         try:
             with context.session.begin(subtransactions=True):
                 hd_query = context.session.query(
@@ -94,20 +92,20 @@ class HostingDeviceDBMixin(
                     raise ciscohostingdevicemanager.HostingDeviceInUse(id=id)
 
     def get_hosting_device(self, context, id, fields=None):
-        LOG.debug(_("get_hosting_device() called"))
+        LOG.debug("get_hosting_device() called")
         hd_db = self._get_hosting_device(context, id)
         return self._make_hosting_device_dict(hd_db)
 
     def get_hosting_devices(self, context, filters=None, fields=None,
                             sorts=None, limit=None, marker=None,
                             page_reverse=False):
-        LOG.debug(_("get_hosting_devices() called"))
+        LOG.debug("get_hosting_devices() called")
         return self._get_collection(context, hd_models.HostingDevice,
                                     self._make_hosting_device_dict,
                                     filters=filters, fields=fields)
 
     def create_hosting_device_template(self, context, hosting_device_template):
-        LOG.debug(_("create_hosting_device_template() called"))
+        LOG.debug("create_hosting_device_template() called")
         hdt = hosting_device_template['hosting_device_template']
         tenant_id = self._get_tenant_id_for_create(context, hdt)
         #TODO(bobmel): check service types
@@ -135,7 +133,7 @@ class HostingDeviceDBMixin(
 
     def update_hosting_device_template(self, context,
                                        id, hosting_device_template):
-        LOG.debug(_("update_hosting_device_template() called"))
+        LOG.debug("update_hosting_device_template() called")
         hdt = hosting_device_template['hosting_device_template']
         with context.session.begin(subtransactions=True):
             hdt_query = context.session.query(
@@ -145,7 +143,7 @@ class HostingDeviceDBMixin(
         return self._make_hosting_device_template_dict(hdt_db)
 
     def delete_hosting_device_template(self, context, id):
-        LOG.debug(_("delete_hosting_device_template() called"))
+        LOG.debug("delete_hosting_device_template() called")
         try:
             with context.session.begin(subtransactions=True):
                 hdt_query = context.session.query(
@@ -160,14 +158,14 @@ class HostingDeviceDBMixin(
                            HostingDeviceTemplateInUse(id=id))
 
     def get_hosting_device_template(self, context, id, fields=None):
-        LOG.debug(_("get_hosting_device_template() called"))
+        LOG.debug("get_hosting_device_template() called")
         hdt_db = self._get_hosting_device_template(context, id)
         return self._make_hosting_device_template_dict(hdt_db)
 
     def get_hosting_device_templates(self, context, filters=None, fields=None,
                                      sorts=None, limit=None, marker=None,
                                      page_reverse=False):
-        LOG.debug(_("get_hosting_device_templates() called"))
+        LOG.debug("get_hosting_device_templates() called")
         return self._get_collection(context, hd_models.HostingDeviceTemplate,
                                     self._make_hosting_device_template_dict,
                                     filters=filters, fields=fields)

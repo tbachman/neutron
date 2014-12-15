@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from abc import abstractmethod
 
@@ -23,6 +21,7 @@ from neutron.api.v2 import base
 from neutron.api.v2 import resource
 from neutron.common import exceptions
 from neutron.extensions import agent
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
@@ -64,8 +63,8 @@ class HostingDeviceSchedulerController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             svc_constants.DEVICE_MANAGER)
         if not plugin:
-            LOG.error(_('No Device manager service plugin registered to '
-                        'handle hosting device scheduling'))
+            LOG.error(_LE('No Device manager service plugin registered to '
+                          'handle hosting device scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
@@ -94,8 +93,8 @@ class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             svc_constants.DEVICE_MANAGER)
         if not plugin:
-            LOG.error(_('No Device manager service plugin registered to '
-                        'handle hosting device scheduling'))
+            LOG.error(_LE('No device manager service plugin registered to '
+                          'handle hosting device scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin

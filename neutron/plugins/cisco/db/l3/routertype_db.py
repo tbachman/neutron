@@ -51,7 +51,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         return self._make_routertype_dict(routertype_db)
 
     def update_routertype(self, context, id, routertype):
-        LOG.debug(_("update_routertype() called"))
+        LOG.debug("update_routertype() called")
         rt = routertype['routertype']
         with context.session.begin(subtransactions=True):
             rt_query = context.session.query(
@@ -61,7 +61,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         return self._make_routertype_dict(rt_db)
 
     def delete_routertype(self, context, id):
-        LOG.debug(_("delete_routertype() called"))
+        LOG.debug("delete_routertype() called")
         with context.session.begin(subtransactions=True):
             routertype_query = context.session.query(
                 l3_models.RouterType).with_lockmode('update')
@@ -69,7 +69,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
             context.session.delete(routertype_db)
 
     def get_routertype(self, context, id, fields=None):
-        LOG.debug(_("get_routertype() called"))
+        LOG.debug("get_routertype() called")
         try:
             query = self._model_query(context, l3_models.RouterType)
             rt = query.filter(l3_models.RouterType.id == id).one()
@@ -80,7 +80,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
     def get_routertypes(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        LOG.debug(_("get_routertypes() called"))
+        LOG.debug("get_routertypes() called")
         return self._get_collection(context, l3_models.RouterType,
                                     self._make_routertype_dict,
                                     filters=filters, fields=fields,
