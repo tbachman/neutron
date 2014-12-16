@@ -57,8 +57,18 @@ class CiscoNexusDriver(object):
            :returns: Configuration requested in string format
 
            """
-        mgr = self.nxos_connect(nexus_host)
-        return mgr.get(filter=('subtree', filter)).data_xml
+        try:
+            mgr = self.nxos_connect(nexus_host)
+            data_xml = mgr.get(filter=('subtree', filter)).data_xml
+            return data_xml
+        except Exception as e:
+            try:
+                if mgr:
+                    self.connections.pop(nexus_host, None)
+                    mgr.close_session()
+            except Exception:
+                pass
+            raise cexc.NexusConfigFailed(config=filter, exc=e)
 
     def _edit_config(self, nexus_host, target='running', config='',
                      allowed_exc_strs=None):
@@ -81,16 +91,23 @@ class CiscoNexusDriver(object):
         """
         if not allowed_exc_strs:
             allowed_exc_strs = []
-        mgr = self.nxos_connect(nexus_host)
         try:
+            mgr = self.nxos_connect(nexus_host)
             LOG.debug("NexusDriver config: %s", config)
             mgr.edit_config(target=target, config=config)
         except Exception as e:
             for exc_str in allowed_exc_strs:
                 if exc_str in str(e):
                     return e
-                # Raise a Neutron exception. Include a description of
-                # the original ncclient exception.
+            try:
+                if mgr:
+                    self.connections.pop(nexus_host, None)
+                    mgr.close_session()
+            except Exception:
+                pass
+
+            # Raise a Neutron exception. Include a description of
+            # the original ncclient exception.
             raise cexc.NexusConfigFailed(config=config, exc=e)
 
     def nxos_connect(self, nexus_host):
@@ -151,24 +168,12 @@ class CiscoNexusDriver(object):
            """
 
         confstr = snipp.EXEC_GET_INTF_SNIPPET % (intf_type, interface)
-        try:
-            response = self._get_config(nexus_host, confstr)
-            LOG.debug("GET call returned interface %s %s config",
-                intf_type, interface)
-            try:
-                result = re.search("switchport trunk allowed vlan", response)
-                if (result is None):
-                    result = False
-                else:
-                    result = True
-            except Exception:
-                result = False
-        except Exception:
-            LOG.debug("Failed to get interface %s %s config",
-                intf_type, interface)
-            result = False
-
-        return result
+        response = self._get_config(nexus_host, confstr)
+        LOG.debug("GET call returned interface %s %s config",
+            intf_type, interface)
+        if response and re.search("switchport trunk allowed vlan", response):
+            return True
+        return False
 
     def create_vlan(self, nexus_host, vlanid, vlanname, vni):
         """Create a VLAN on a Nexus Switch.
@@ -185,7 +190,8 @@ class CiscoNexusDriver(object):
 
         LOG.debug(_("NexusDriver: %s"), confstr)
 
-        self._edit_config(nexus_host, target='running', config=confstr)
+        self._edit_config(nexus_host, target='running', config=confstr,
+                          allowed_exc_strs=["VLAN with the same name exists"])
 
         # Enable VLAN active and no-shutdown states. Some versions of
         # Nexus switch do not allow state changes for the extended VLAN

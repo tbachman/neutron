@@ -153,6 +153,8 @@ class TestCiscoNexusDevice(testlib_api.SqlTestCase):
         mock.patch.object(nexus_network_driver.CiscoNexusDriver,
                           '_import_ncclient',
                           return_value=mock_ncclient).start()
+        data_xml = {'connect.return_value.get.return_value.data_xml': ''}
+        mock_ncclient.configure_mock(**data_xml)
 
         def new_nexus_init(mech_instance):
             mech_instance.driver = importutils.import_object(NEXUS_DRIVER)

@@ -132,6 +132,8 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         mock.patch.object(nexus_network_driver.CiscoNexusDriver,
                           '_import_ncclient',
                           return_value=self.mock_ncclient).start()
+        data_xml = {'connect.return_value.get.return_value.data_xml': ''}
+        self.mock_ncclient.configure_mock(**data_xml)
 
         # Mock port context values.
         self.mock_top_bound_segment = mock.patch.object(
@@ -569,12 +571,28 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
         # The code we are exercising calls connect() twice, if there is a
         # TypeError on the first call (if the old ncclient is installed).
         # The second call should succeed. That's what we are simulating here.
-        connect = self.mock_ncclient.connect
+        orig_connect_return_val = self.mock_ncclient.connect.return_value
         with self._patch_ncclient('connect.side_effect',
-                                  [TypeError, connect]):
+                                  [TypeError, orig_connect_return_val]):
             with self._create_resources() as result:
                 self.assertEqual(result.status_int,
                                  wexc.HTTPOk.code)
+
+    def test_ncclient_get_config_fail(self):
+        """Test that the connection is reset after a get_config error
+
+        Test that after an error from get_config, ncc_client connect
+        is called again to re-establish the connection.
+        """
+
+        with self._patch_ncclient(
+            'connect.return_value.edit_config.side_effect',
+            [IOError, None, None]):
+            with self._create_resources() as result:
+                self._assertExpectedHTTP(result.status_int,
+                                         c_exc.NexusConfigFailed)
+            #on deleting the resources, connect should be called a second time
+            self.assertEqual(self.mock_ncclient.connect.call_count, 2)
 
     def test_ncclient_fail_on_second_connect(self):
         """Test that other errors during connect() sequences are still handled.
