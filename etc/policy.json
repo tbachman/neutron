@@ -135,5 +135,27 @@
 
     "get_service_provider": "rule:regular_user",
     "get_lsn": "rule:admin_only",
-    "create_lsn": "rule:admin_only"
+    "create_lsn": "rule:admin_only",
+
+    "create_hosting_device": "rule:admin_only",
+    "get_hosting_device": "rule:admin",
+    "update_hosting_device": "rule:admin",
+    "delete_hosting_device": "rule:admin",
+    "create_hosting_device_template": "rule:admin_only",
+    "get_hosting_device_template": "rule:admin",
+    "update_hosting_device_template": "rule:admin",
+    "delete_hosting_device_template": "rule:admin",
+    "create_routertype": "rule:admin_only",
+    "get_routertype": "",
+    "update_routertype": "rule:admin",
+    "delete_routertype": "rule:admin",
+    "create_l3-router-device": "rule:admin_only",
+    "delete_l3-router-device": "rule:admin_only",
+    "get_l3-router-devices": "rule:admin_only",
+    "get_l3-hosting-devices": "rule:admin_only",
+
+    "create_hosting-device": "rule:admin_only",
+    "delete_hosting-device": "rule:admin_only",
+    "get_hosting-devices": "rule:admin_only",
+    "get_cfg-agents": "rule:admin_only"
 }

@@ -19,6 +19,10 @@ import threading
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from oslo.config import cfg
+from oslo.utils import excutils
+from oslo.utils import importutils
+from oslo.utils import timeutils
+
 from sqlalchemy import func
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
@@ -29,12 +33,12 @@ from neutron.common import utils
 from neutron import context as neutron_context
 from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import timeutils
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.device_manager import hosting_devices_db
+from neutron.plugins.cisco.device_manager import config
 from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
@@ -60,15 +64,6 @@ HOSTING_DEVICE_MANAGER_OPTS = [
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS, "general")
 
 
-class HostingDeviceTemplateNotFound(n_exc.NeutronException):
-    message = _("Could not find hosting device template %(template)s.")
-
-
-class MultipleHostingDeviceTemplates(n_exc.NeutronException):
-    message = _("Multiple hosting device templates with same name %(name)s. "
-                "exist. Id must be used to.")
-
-
 VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
 
 
@@ -83,6 +78,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     # The management network for hosting devices
     _mgmt_nw_uuid = None
     _mgmt_sec_grp_id = None
+
+    # Dictionary with credentials keyed on credential UUID
+    _credentials = {}
 
     # Dictionaries with loaded driver modules for different host types
     _plugging_drivers = {}
@@ -100,17 +98,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     # Flag indicating is needed Nova services are reported as up.
     _nova_running = False
 
-    @property
-    def dm_cfg_rpc_notifier(self):
-        if not hasattr(self, '_l3_cfg_rpc_notifier'):
-            self._dm_cfg_rpc_notifier = (devmgr_rpc_cfgagent_api.
-                                         DeviceMgrCfgAgentNotifyAPI(self))
-        return self._dm_cfg_rpc_notifier
-
-    @dm_cfg_rpc_notifier.setter
-    def dm_cfg_rpc_notifier(self, value):
-        self._dm_cfg_rpc_notifier = value
-
     @classmethod
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
@@ -123,14 +110,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                        tenant_name=tenant,
                                        auth_url=auth_url)
             try:
-                tenant = keystone.tenants.find(name=cfg.CONF.l3_admin_tenant)
+                tenant = keystone.tenants.find(
+                    name=cfg.CONF.general.l3_admin_tenant)
                 cls._l3_tenant_uuid = tenant.id
             except k_exceptions.NotFound:
                 LOG.error(_LE('No tenant with a name or ID of %s exists.'),
-                          cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.general.l3_admin_tenant)
             except k_exceptions.NoUniqueMatch:
                 LOG.error(_LE('Multiple tenants matches found for %s'),
-                          cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.general.l3_admin_tenant)
         return cls._l3_tenant_uuid
 
     @classmethod
@@ -143,7 +131,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             net = manager.NeutronManager.get_plugin().get_networks(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
-                 'name': [cfg.CONF.management_network]},
+                 'name': [cfg.CONF.general.management_network]},
                 ['id', 'subnets'])
             if len(net) == 1:
                 num_subnets = len(net[0]['subnets'])
@@ -177,7 +165,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             res = manager.NeutronManager.get_plugin().get_security_groups(
                 neutron_context.get_admin_context(),
                 {'tenant_id': [tenant_id],
-                 'name': [cfg.CONF.default_security_group]},
+                 'name': [cfg.CONF.general.default_security_group]},
                 ['id'])
             if len(res) == 1:
                 sec_grp_id = res[0].get('id', None)
@@ -336,6 +324,11 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 return False
             elif new_allocation == 0:
                 result = query.delete()
+                LOG.info(_LI('Deallocated %(num)d slots from hosting device '
+                         '%(hd_id)s. %(total)d slots are now allocated in '
+                         'that hosting device.'),
+                         {'num': num, 'total': new_allocation,
+                          'hd_id': hosting_device['id']})
                 if (hosting_device['tenant_bound'] is not None and
                     context.session.query(hd_models.SlotAllocation).filter_by(
                         hosting_device_id=hosting_device['id']).first() is
@@ -344,6 +337,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     # resource use it anymore
                     hosting_device['tenant_bound'] = None
                     context.session.add(hosting_device)
+                    LOG.info(_LI('Making hosting device %(hd_id)s with no '
+                                 'allocated slots tenant unbound.'),
+                             {'hd_id': hosting_device['id']})
                 self._dispatch_pool_maintenance_job(hosting_device['template'])
                 return result == 1
             LOG.info(_LI('Deallocated %(num)d slots from hosting device '
@@ -447,12 +443,14 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 context, hosting_devices, hosting_info)
         except AttributeError:
             pass
+        notifier = self.agent_notifiers.get(c_constants.AGENT_TYPE_CFG)
         for hd in hosting_devices:
-            if self._process_non_responsive_hosting_device(e_context, hd):
-                self.dm_cfg_rpc_notifier.hosting_devices_removed(
-                    context, hosting_info, False, cfg_agent)
+            if (self._process_non_responsive_hosting_device(e_context, hd) and
+                    notifier):
+                notifier.hosting_devices_removed(context, hosting_info, False,
+                                                 cfg_agent)
 
-    def get_device_info_for_agent(self, hosting_device):
+    def get_device_info_for_agent(self, context, hosting_device):
         """ Returns information about <hosting_device> needed by config agent.
 
             Convenience function that service plugins can use to populate
@@ -460,21 +458,46 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             logical resource.
         """
         template = hosting_device.template
-        credentials = (None if hosting_device.credentials is None
-                       else {'username': hosting_device.credentials.user_name,
-                             'password': hosting_device.credentials.password})
+#        credentials = (None if hosting_device.credentials is None
+#                       else {'username': hosting_device.credentials.user_name,
+#                             'password': hosting_device.credentials.password})
+        if hosting_device.management_port is None:
+            # This can happen for hardware hosting devices which may have been
+            # registered via .ini file before the management network exists.
+            # Allocate the ip address for the hosting device by creating the
+            # Neutron port for it.
+            self._create_management_port(context, hosting_device)
         mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
                    if hosting_device.management_port else None)
         return {'id': hosting_device.id,
                 'name': template.name,
                 'template_id': template.id,
-                'credentials': credentials,
+#                'credentials': credentials,
+                'credentials': self._get_credentials(hosting_device.id),
                 'host_category': template.host_category,
                 'service_types': template.service_types,
                 'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
                 'created_at': str(hosting_device.created_at),
                 'booting_time': template.booting_time}
+
+    def _create_management_port(self, context, hosting_device):
+        mgmt_nw_id = self.mgmt_nw_id()
+        if mgmt_nw_id is None:
+            # mgmt network not yet created, need to abort
+            return
+        adm_context = neutron_context.get_admin_context()
+        plg_drv = self.get_hosting_device_plugging_driver(adm_context,
+                                                          hosting_device.id)
+        if not plg_drv:
+            return
+        res = plg_drv.create_hosting_device_resources(
+            adm_context, uuidutils.generate_uuid(), self.l3_tenant_id,
+            mgmt_nw_id, self.mgmt_sec_grp_id, 1)
+        if not res['mgmt_port']:
+            return
+        # refresh so that we get latest contents from DB
+        context.session.expire(hosting_device)
 
     def _process_non_responsive_hosting_device(self, context, hosting_device):
         """Host type specific processing of non responsive hosting devices.
@@ -493,13 +516,16 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
         u_name = cfg.CONF.keystone_authtoken.admin_user
         pw = cfg.CONF.keystone_authtoken.admin_password
-        tenant = cfg.CONF.l3_admin_tenant
+        tenant = cfg.CONF.general.l3_admin_tenant
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
             user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
+        self._obtain_hosting_device_credentials_from_config()
+        self._create_hosting_device_templates_from_config()
+        self._create_hosting_devices_from_config()
         self._gt_pool = eventlet.GreenPool()
         # initialize hosting device pools
-        ctx = neutron_context.get_admin_context()
-        for template in ctx.session.query(hd_models.HostingDeviceTemplate):
+        adm_ctx = neutron_context.get_admin_context()
+        for template in adm_ctx.session.query(hd_models.HostingDeviceTemplate):
             self._dispatch_pool_maintenance_job(template)
 
     def _dispatch_pool_maintenance_job(self, template):
@@ -508,7 +534,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
-        if cfg.CONF.ensure_nova_running and not self._nova_running:
+        if cfg.CONF.general.ensure_nova_running and not self._nova_running:
             if self._svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
@@ -516,9 +542,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                              'Skipping this service vm pool management '
                              'request.'))
                 return
-        mgr_context = neutron_context.get_admin_context()
-        mgr_context.tenant_id = self.l3_tenant_id()
-        self._gt_pool.spawn_n(self._maintain_hosting_device_pool, mgr_context,
+        adm_context = neutron_context.get_admin_context()
+        adm_context.tenant_id = self.l3_tenant_id()
+        self._gt_pool.spawn_n(self._maintain_hosting_device_pool, adm_context,
                               template)
 
     def _maintain_hosting_device_pool(self, context, template):
@@ -761,3 +787,106 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         except KeyError:
             self._hosting_device_locks[id] = threading.Lock()
             return self._hosting_device_locks.get(id)
+
+    def _obtain_hosting_device_credentials_from_config(self):
+        """Obtains credentials from config file and stores them in memory.
+        To be called before hosting device templates defined in the config file
+        are created.
+        """
+        cred_dict = config.get_specific_config(
+            'cisco_hosting_device_credential')
+        attr_info = {
+            'credentials': {
+                'name': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:string': None}, 'is_visible': True,
+                         'default': ''},
+                'description': {'allow_post': True, 'allow_put': True,
+                                'validate': {'type:string': None},
+                                'is_visible': True, 'default': ''},
+                'user_name': {'allow_post': True, 'allow_put': True,
+                              'validate': {'type:string': None},
+                              'is_visible': True, 'default': ''},
+                'password': {'allow_post': True, 'allow_put': True,
+                             'validate': {'type:string': None},
+                             'is_visible': True, 'default': ''},
+                'type': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:string': None}, 'is_visible': True,
+                         'default': ''},
+            },
+        }
+        for cred_uuid, kv_dict in cred_dict.items():
+            # ensure cred_uuid is properly formatted
+            cred_uuid = config.uuidify(cred_uuid)
+            config.verify_resource_dict(kv_dict, True, attr_info)
+            self._credentials[cred_uuid] = kv_dict
+
+    def _get_credentials(self, device_id):
+        creds = self._credentials.get(device_id)
+        return {'user_name': creds['user_name'],
+                'password': creds['password']} if creds else None
+
+    def _create_hosting_device_templates_from_config(self):
+        """To be called late during plugin initialization so that any hosting
+        device templates defined in the config file is properly inserted in
+        the DB.
+        """
+        hdt_dict = config.get_specific_config('cisco_hosting_device_template')
+        attr_info = ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP[
+            ciscohostingdevicemanager.DEVICE_TEMPLATES]
+        adm_context = neutron_context.get_admin_context()
+
+        for hdt_uuid, kv_dict in hdt_dict.items():
+            # ensure hdt_uuid is properly formatted
+            hdt_uuid = config.uuidify(hdt_uuid)
+            try:
+                self.get_hosting_device_template(adm_context, hdt_uuid)
+                is_create = False
+            except ciscohostingdevicemanager.HostingDeviceTemplateNotFound:
+                is_create = True
+            kv_dict['id'] = hdt_uuid
+            kv_dict['tenant_id'] = self.l3_tenant_id()
+            config.verify_resource_dict(kv_dict, is_create, attr_info)
+            hdt = {ciscohostingdevicemanager.DEVICE_TEMPLATE: kv_dict}
+            try:
+                if is_create:
+                    self.create_hosting_device_template(adm_context, hdt)
+                else:
+                    self.update_hosting_device_template(adm_context,
+                                                        kv_dict['id'], hdt)
+            except n_exc.NeutronException:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE('Invalid hosting device template definition '
+                                  'in configuration file for template = %s'),
+                              hdt_uuid)
+
+    def _create_hosting_devices_from_config(self):
+        """To be called late during plugin initialization so that any hosting
+        device specified in the config file is properly inserted in the DB.
+        """
+        hd_dict = config.get_specific_config('cisco_hosting_device')
+        attr_info = ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP[
+            ciscohostingdevicemanager.DEVICES]
+        adm_context = neutron_context.get_admin_context()
+
+        for hd_uuid, kv_dict in hd_dict.items():
+            # ensure hd_uuid is properly formatted
+            hd_uuid = config.uuidify(hd_uuid)
+            try:
+                self.get_hosting_device(adm_context, hd_uuid)
+                is_create = False
+            except ciscohostingdevicemanager.HostingDeviceNotFound:
+                is_create = True
+            kv_dict['id'] = hd_uuid
+            kv_dict['tenant_id'] = self.l3_tenant_id()
+            config.verify_resource_dict(kv_dict, is_create, attr_info)
+            hd = {ciscohostingdevicemanager.DEVICE: kv_dict}
+            try:
+                if is_create:
+                    self.create_hosting_device(adm_context, hd)
+                else:
+                    self.update_hosting_device(adm_context, kv_dict['id'], hd)
+            except n_exc.NeutronException:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE('Invalid hosting device specification in '
+                                  'configuration file for device = %s'),
+                              hd_uuid)

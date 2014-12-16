@@ -11,12 +11,13 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Hareesh Puthalath, Cisco Systems, Inc.
 
+
+from oslo.db import exception as db_exc
+from oslo.utils import excutils
+from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
-from neutron.db import db_base_plugin_v2 as base_db
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import l3_models
@@ -54,28 +55,28 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         LOG.debug("update_routertype() called")
         rt = routertype['routertype']
         with context.session.begin(subtransactions=True):
-            rt_query = context.session.query(
-                l3_models.RouterType).with_lockmode('update')
-            rt_db = rt_query.filter_by(id=id).one()
-            rt_db.update(rt)
-        return self._make_routertype_dict(rt_db)
+            rt_query = context.session.query(l3_models.RouterType)
+            if not rt_query.filter_by(id=id).update(rt):
+                raise routertype.RouterTypeNotFound(id=id)
+        return self.get_routertype(context, id)
 
     def delete_routertype(self, context, id):
         LOG.debug("delete_routertype() called")
-        with context.session.begin(subtransactions=True):
-            routertype_query = context.session.query(
-                l3_models.RouterType).with_lockmode('update')
-            routertype_db = routertype_query.filter_by(id=id).one()
-            context.session.delete(routertype_db)
+        try:
+            with context.session.begin(subtransactions=True):
+                routertype_query = context.session.query(l3_models.RouterType)
+                if not routertype_query.filter_by(id=id).delete():
+                    raise routertype.RouterTypeNotFound(id=id)
+        except db_exc.DBError as e:
+            with excutils.save_and_reraise_exception() as ctxt:
+                if isinstance(e.inner_exception, sql_exc.IntegrityError):
+                    ctxt.reraise = False
+                    raise routertype.RouterTypeInUse(id=id)
 
     def get_routertype(self, context, id, fields=None):
         LOG.debug("get_routertype() called")
-        try:
-            query = self._model_query(context, l3_models.RouterType)
-            rt = query.filter(l3_models.RouterType.id == id).one()
-            return self._make_routertype_dict(rt, fields)
-        except exc.NoResultFound:
-            raise routertype.RouterTypeNotFound(routertype_id=id)
+        rtd = self._get_routertype(context, id)
+        return self._make_routertype_dict(rtd, fields)
 
     def get_routertypes(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
@@ -87,6 +88,12 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker,
                                     page_reverse=page_reverse)
+
+    def _get_routertype(self, context, id):
+        try:
+            return self._get_by_id(context, l3_models.RouterType, id)
+        except exc.NoResultFound:
+            raise routertype.RouterTypeNotFound(id=id)
 
     def _make_routertype_dict(self, routertype, fields=None):
         res = {'id': routertype['id'],

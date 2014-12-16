@@ -160,20 +160,18 @@ class L3RouterJointAgentNotifyAPI(object):
                                 routers, host,
                                 topic=topics.L3_AGENT)
 
-    def router_removed_from_hosting_device(self, context, router_id, host):
+    def router_removed_from_hosting_device(self, context, router):
         """Notification that router has been removed from hosting device.
 
         A Cisco configuration agent is the receiver of these notifications.
         """
-        self._host_notification(context, 'router_removed_from_hosting_device',
-                                {'router_id': router_id}, host,
-                                topic=c_constants.CFG_AGENT)
+        self._notification(context, 'router_removed_from_hosting_device',
+                           [router], operation=None, shuffle_agents=False)
 
-    def router_added_to_hosting_device(self, context, routers, host):
+    def router_added_to_hosting_device(self, context, router):
         """Notification that router has been added to hosting device.
 
         A Cisco configuration agent is the receiver of these notifications.
         """
-        self._host_notification(context, 'router_added_to_hosting_device',
-                                routers, host,
-                                topic=c_constants.CFG_AGENT)
+        self._notification(context, 'router_added_to_hosting_device',
+                           [router], operation=None, shuffle_agents=False)

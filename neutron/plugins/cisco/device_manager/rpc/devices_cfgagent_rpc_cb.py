@@ -15,10 +15,13 @@
 from oslo import messaging
 
 
-class DeviceMgrCfgRpcCallbackMixin(object):
-    """Mixin for Cisco cfg agent rpc support in Device mgr service plugin."""
+class DeviceMgrCfgRpcCallback(object):
+    """Cisco cfg agent rpc support in Device mgr service plugin."""
 
     target = messaging.Target(version='1.0')
+
+    def __init__(self, plugin):
+        self._dmplugin = plugin
 
     def report_non_responding_hosting_devices(self, context, host,
                                               hosting_device_ids):

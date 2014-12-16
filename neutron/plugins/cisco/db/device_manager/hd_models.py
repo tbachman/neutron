@@ -36,13 +36,15 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     host_category = sa.Column(sa.String(255), nullable=False)
     # list of service types hosting devices based on this template support
     service_types = sa.Column(sa.String(255))
-    # the image name or uuid in Glance
+    # the image name or UUID in Glance
     image = sa.Column(sa.String(255))
-    # the VM flavor or uuid in Nova
+    # the VM flavor name or UUID in Nova
     flavor = sa.Column(sa.String(255))
-    # id of default credentials (if any) for devices created from this template
-    default_credentials_id = sa.Column(sa.String(36),
-                                       sa.ForeignKey('devicecredentials.id'))
+    # UUID of default credentials (if any) for devices created from this
+    # template
+    default_credentials_id = sa.Column(sa.String(36))
+#,
+#        sa.ForeignKey('cisco_device_credentials.id'))
     #TODO(bobmel): Evolve to support multiple mechanisms and protocol ports
     # 'configuration_mechanism' indicates how configurations are made
     configuration_mechanism = sa.Column(sa.String(255))
@@ -56,27 +58,29 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # desired number of slots to keep available at all times
     desired_slots_free = sa.Column(sa.Integer, nullable=False, default=0,
                                    autoincrement=False)
-    # 'tenant_bound' is a (possibly empty) string of ':'-separated tenant ids
+    # 'tenant_bound' is a (possibly empty) string of ':'-separated tenant UUIDs
     # representing the only tenants allowed to own/place resources on
     # hosting devices created using this template. If string is empty all
     # tenants are allowed.
     tenant_bound = sa.Column(sa.String(512))
-    # module to be used as plugging driver for logical resources
-    # hosted inside hosting devices created using this template
-    device_driver = sa.Column(sa.String(255), nullable=False)
     # module to be used as hosting device driver when creating
     # hosting devices using his template
+    device_driver = sa.Column(sa.String(255), nullable=False)
+    # module to be used as plugging driver for logical resources
+    # hosted inside hosting devices created using this template
     plugging_driver = sa.Column(sa.String(255), nullable=False)
 
 
-class DeviceCredential(model_base.BASEV2, models_v2.HasId):
-    """Represents credentials to control Cisco devices."""
-
-    name = sa.Column(sa.String(255))
-    description = sa.Column(sa.String(255))
-    user_name = sa.Column(sa.String(255))
-    password = sa.Column(sa.String(255))
-    type = sa.Column(sa.String(255))
+#class DeviceCredential(model_base.BASEV2, models_v2.HasId,
+#                       models_v2.HasTenant):
+#    """Represents credentials to control Cisco devices."""
+#
+#    __tablename__ = 'cisco_device_credentials'
+#    name = sa.Column(sa.String(255))
+#    description = sa.Column(sa.String(255))
+#    user_name = sa.Column(sa.String(255))
+#    password = sa.Column(sa.String(255))
+#    type = sa.Column(sa.String(255))
 
 
 class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -88,17 +92,20 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
     # complementary id to enable identification of associated Neutron resources
     complementary_id = sa.Column(sa.String(36))
-    # id of hosting device template used to create the hosting device
+    # UUID of hosting device template used to create the hosting device
     template_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('hostingdevicetemplates.id'),
+                            sa.ForeignKey('cisco_hosting_device_templates.id'),
                             nullable=False)
     template = orm.relationship(HostingDeviceTemplate)
-    # id of credentials for this hosting device
-    credentials_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('devicecredentials.id'))
-    credentials = orm.relationship(DeviceCredential)
+    # UUID of credentials for this hosting device
+    credentials_id = sa.Column(sa.String(36))
+#,
+#                               sa.ForeignKey('cisco_device_credentials.id'))
+#    credentials = orm.relationship(DeviceCredential)
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
+    # version 4 or 6 IP address of management interface
+    management_ip_address = sa.Column(sa.String(255))
     admin_state_up = sa.Column(sa.Boolean, nullable=False, default=True)
     # 'management_port_id' is the Neutron Port used for management interface
     management_port_id = sa.Column(sa.String(36),
@@ -116,7 +123,7 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # so we can give preference to older ones when scheduling
     created_at = sa.Column(sa.DateTime, nullable=False)
     status = sa.Column(sa.String(16))
-    # 'tenant_bound' is empty or is id of the only tenant allowed to
+    # 'tenant_bound' is empty or is UUID of the only tenant allowed to
     # own/place resources on this hosting device
     tenant_bound = sa.Column(sa.String(36))
     # If 'auto_delete' is True, a VM-based hosting device is subject to
@@ -132,15 +139,15 @@ class SlotAllocation(model_base.BASEV2):
 
 
     template_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('hostingdevicetemplates.id'),
+                            sa.ForeignKey('cisco_hosting_device_templates.id'),
                             nullable=False)
     hosting_device_id = sa.Column(sa.String(36),
-                                  sa.ForeignKey('hostingdevices.id'),
+                                  sa.ForeignKey('cisco_hosting_devices.id'),
 #                                                ondelete='CASCADE'),
                                   nullable=False)
     logical_resource_id = sa.Column(sa.String(36), primary_key=True,
                                     nullable=False)
-    # id of tenant owning logical resource
+    # UUID of tenant owning logical resource
     logical_resource_owner = sa.Column(sa.String(36), nullable=False)
     num_allocated = sa.Column(sa.Integer, autoincrement=False, nullable=False)
     tenant_bound = sa.Column(sa.String(36))
@@ -171,4 +178,4 @@ class HostedHostingPortBinding(model_base.BASEV2):
         models_v2.Port,
         primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')
     # VLAN tag for trunk ports
-    segmentation_tag = sa.Column(sa.Integer, autoincrement=False)
+    segmentation_id = sa.Column(sa.Integer, autoincrement=False)

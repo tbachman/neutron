@@ -14,50 +14,50 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from abc import ABCMeta
-from abc import abstractmethod
+import abc
 
+from oslo.utils import importutils
 import six
+
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
-from neutron.common import exceptions as qexception
-from neutron.openstack.common import importutils
+from neutron.common import exceptions as nexception
 from neutron.plugins.common import constants
 from neutron.services.service_base import ServicePluginBase
 
 
 # Hosting device and hosting device template exceptions
-class HostingDeviceInvalidPortValue(qexception.InvalidInput):
+class HostingDeviceInvalidPortValue(nexception.InvalidInput):
     message = _("Invalid value for port %(port)s")
 
 
-class HostingDeviceInUse(qexception.InUse):
+class HostingDeviceInUse(nexception.InUse):
     message = _("Hosting device %(id)s in use.")
 
 
-class HostingDeviceMgmtPortNotFound(qexception.InUse):
+class HostingDeviceMgmtPortNotFound(nexception.InUse):
     message = _("Specified management port %(id)s does not exist.")
 
 
-class HostingDeviceNotFound(qexception.NotFound):
+class HostingDeviceNotFound(nexception.NotFound):
     message = _("Hosting device %(id)s does not exist")
 
 
-class HostingDeviceTemplateNotFound(qexception.NotFound):
+class HostingDeviceTemplateNotFound(nexception.NotFound):
     message = _("Hosting device template %(id)s does not exist")
 
 
-class HostingDeviceTemplateInUse(qexception.InUse):
+class HostingDeviceTemplateInUse(nexception.InUse):
     message = _("Hosting device template %(id)s in use.")
 
 
-class DriverNotFound(qexception.NetworkNotFound):
+class DriverNotFound(nexception.NetworkNotFound):
     message = _("Driver %(driver)s does not exist")
 
 
-class TenantBoundNotUUIDListOrNone(qexception.NetworkNotFound):
+class TenantBoundNotUUIDListOrNone(nexception.NetworkNotFound):
     message = _("Attribute tenant_bound must be a list of tenant ids or None")
 
 
@@ -105,7 +105,7 @@ RESOURCE_ATTRIBUTE_MAP = {
     DEVICES: {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'is_visible': True},
-        'id': {'allow_post': False, 'allow_put': False,
+        'id': {'allow_post': True, 'allow_put': False,
                'validate': {'type:uuid': None},
                'is_visible': True,
                'primary_key': True},
@@ -142,7 +142,7 @@ RESOURCE_ATTRIBUTE_MAP = {
     DEVICE_TEMPLATES: {
         'tenant_id': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True, 'is_visible': True},
-        'id': {'allow_post': False, 'allow_put': False,
+        'id': {'allow_post': True, 'allow_put': False,
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
@@ -160,12 +160,15 @@ RESOURCE_ATTRIBUTE_MAP = {
         'service_types': {'allow_post': True, 'allow_put': True,
                           'default': None, 'is_visible': True},
         'image': {'allow_post': True, 'allow_put': True,
+                  'validate': {'type:string_or_none': None},
                   'default': None, 'is_visible': True},
         'flavor': {'allow_post': True, 'allow_put': True,
+                   'validate': {'type:string_or_none': None},
                    'default': None, 'is_visible': True},
         'default_credentials_id': {'allow_post': True, 'allow_put': True,
                                    'default': None, 'is_visible': True},
         'configuration_mechanism': {'allow_post': True, 'allow_put': True,
+                                    'validate': {'type:string_or_none': None},
                                     'is_visible': True},
         'protocol_port': {'allow_post': True, 'allow_put': True,
                           'convert_to': convert_validate_port_value,
@@ -184,7 +187,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                                'default': 0, 'is_visible': True},
         'tenant_bound': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_list': []},
-                         'default': None, 'is_visible': True},
+                         'default': [], 'is_visible': True},
         'device_driver': {'allow_post': True, 'allow_put': False,
                           'convert_to': convert_validate_driver,
                           'required_by_policy': True, 'is_visible': True},
@@ -237,7 +240,7 @@ class Ciscohostingdevicemanager(extensions.ExtensionDescriptor):
             return {}
 
 
-@six.add_metaclass(ABCMeta)
+@six.add_metaclass(abc.ABCMeta)
 class CiscoHostingDevicePluginBase(ServicePluginBase):
 
     def get_plugin_name(self):
@@ -250,47 +253,47 @@ class CiscoHostingDevicePluginBase(ServicePluginBase):
         return ("Cisco Device Manager Service Plugin for management of "
                 "hosting devices and their templates.")
 
-    @abstractmethod
+    @abc.abstractmethod
     def create_hosting_device(self, context, hosting_device):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def update_hosting_device(self, context, id, hosting_device):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def delete_hosting_device(self, context, id):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_hosting_device(self, context, id, fields=None):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_hosting_devices(self, context, filters=None, fields=None,
                             sorts=None, limit=None, marker=None,
                             page_reverse=False):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def create_hosting_device_template(self, context,
                                        hosting_device_template):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def update_hosting_device_template(self, context, id,
                                        hosting_device_template):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def delete_hosting_device_template(self, context, id):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_hosting_device_template(self, context, id, fields=None):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_hosting_device_templates(self, context, filters=None, fields=None,
                                      sorts=None, limit=None, marker=None,
                                      page_reverse=False):

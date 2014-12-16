@@ -336,7 +336,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         self._perform_logical_port_connectivity_action(
             context, port_db, 'Removing', n1kv.SEGMENT_DEL)
 
-    def extend_hosting_port_info(self, context, port_db, hosting_info):
+    def extend_hosting_port_info(self, context, port_db, hosting_device,
+                                 hosting_info):
         hosting_info['segmentation_id'] = port_db.hosting_info.segmentation_id
 
     def allocate_hosting_port(self, context, router_id, port_db, network_type,

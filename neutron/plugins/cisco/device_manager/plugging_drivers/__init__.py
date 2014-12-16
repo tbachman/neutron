@@ -114,7 +114,8 @@ class PluginSidePluggingDriver(object):
         pass
 
     @abc.abstractmethod
-    def extend_hosting_port_info(self, context, port_db, hosting_info):
+    def extend_hosting_port_info(self, context, port_db, hosting_device,
+                                 hosting_info):
         """Extends hosting information for a logical port.
 
         Allows a driver to add driver specific information to the
@@ -122,6 +123,7 @@ class PluginSidePluggingDriver(object):
 
         :param context: Neutron api request context.
         :param port_db: Neutron port that hosting information concerns.
+        :param hosting_device: Device that hosts the port.
         :param hosting_info: dict with hosting port information to be extended.
         """
         pass

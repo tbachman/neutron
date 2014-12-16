@@ -55,6 +55,7 @@ class ServiceVMManager(object):
 
     def nova_services_up(self):
         """Checks if required Nova services are up and running.
+
         returns: True if all needed Nova services are up, False otherwise
         """
         required = set(['nova-conductor', 'nova-cert', 'nova-scheduler',

@@ -29,11 +29,11 @@ CFG_DRIVE_UUID_START = 24
 CFG_DRIVE_UUID_LEN = 12
 
 CSR1KV_HD_DRIVER_OPTS = [
-    cfg.StrOpt('csr1kv_configdrive_template', default='csr1kv_cfg_template',
+    cfg.StrOpt('configdrive_template', default='csr1kv_cfg_template',
                help=_("CSR1kv configdrive template file.")),
 ]
 
-cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS, "hosting_devices")
+cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS, "csr1kv_hosting_devices")
 
 
 class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
@@ -53,7 +53,7 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
         try:
             cfg_template_filename = (
                 cfg.CONF.general.templates_path + "/" +
-                cfg.CONF.hosting_devices.csr1kv_configdrive_template)
+                cfg.CONF.csr1kv_hosting_devices.configdrive_template)
             vm_cfg_data = ''
             with open(cfg_template_filename, 'r') as cfg_template_file:
                 # insert proper instance values in the template

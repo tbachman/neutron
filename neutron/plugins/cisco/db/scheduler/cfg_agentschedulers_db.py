@@ -13,11 +13,11 @@
 #    under the License.
 
 from oslo.config import cfg
+from oslo.utils import timeutils
 
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 
@@ -36,7 +36,7 @@ COMPOSITE_AGENTS_SCHEDULER_OPTS = [
                       'configuration agent')),
 ]
 
-cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS)
+cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS, "general")
 
 
 class CfgAgentSchedulerDbMixin(
@@ -48,7 +48,7 @@ class CfgAgentSchedulerDbMixin(
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
-                      timeout=cfg.CONF.cfg_agent_down_time):
+                      timeout=cfg.CONF.general.cfg_agent_down_time):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
     def auto_schedule_hosting_devices(self, context, host):

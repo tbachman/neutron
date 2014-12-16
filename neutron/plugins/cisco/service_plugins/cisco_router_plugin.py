@@ -13,16 +13,15 @@
 #    under the License.
 
 from oslo.config import cfg
-from oslo import messaging
+from oslo.utils import importutils
 
+from neutron.api.rpc.handlers import l3_rpc
 from neutron.common import constants as q_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
-from neutron.db import l3_rpc_base
 from neutron import manager
-from neutron.openstack.common import importutils
 import neutron.plugins
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
@@ -30,29 +29,10 @@ from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
-from neutron.plugins.cisco.l3.rpc import (l3_router_cfgagent_rpc_cb as
-                                          l3_router_rpc)
+from neutron.plugins.cisco.extensions import routertypeawarescheduler
+from neutron.plugins.cisco.l3.rpc import l3_router_cfgagent_rpc_cb as l3cfg_rpc
 from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
-from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.plugins.common import constants
-
-
-class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
-                                    l3_router_rpc.L3RouterCfgRpcCallbackMixin):
-
-    target = messaging.Target(version='1.1')
-
-    def __init__(self, l3plugin):
-        super(CiscoRouterPluginRpcCallbacks, self).__init__()
-        self._l3plugin = l3plugin
-
-    @property
-    def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
 
 
 class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
@@ -73,7 +53,8 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         "router",  # "ext-gw-mode",
         "extraroute", "l3_agent_scheduler",
         routerhostingdevice.ROUTERHOSTINGDEVICE_ALIAS,
-        routertype.ROUTERTYPE_ALIAS]
+        routertype.ROUTERTYPE_ALIAS,
+        routertypeawarescheduler.ROUTERTYPE_AWARE_SCHEDULER_ALIAS]
 
     def __init__(self):
         self.setup_rpc()
@@ -87,9 +68,10 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         if to_add != "":
             cfg.CONF.set_override('api_extensions_path', cp + to_add)
         self.router_scheduler = importutils.import_object(
-            cfg.CONF.router_type_aware_scheduler_driver)
+            cfg.CONF.routing.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
             cfg.CONF.router_scheduler_driver)
+        self._create_router_types_from_config()
         # for backlogging of non-scheduled routers
         self._setup_backlog_handling()
 
@@ -97,11 +79,10 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = n_rpc.create_connection(new=True)
-        self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
+        self.agent_notifiers[q_const.AGENT_TYPE_L3_CFG] = (
             l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self))
-        # Disable notifications from l3 base class to l3 agents
-        self.l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
-        self.endpoints = [CiscoRouterPluginRpcCallbacks(self)]
+        self.endpoints = [l3_rpc.L3RpcCallback(),
+                          l3cfg_rpc.L3RouterCfgRpcCallback(self)]
         self.conn.create_consumer(self.topic, self.endpoints,
                                   fanout=False)
         # Consume from all consumers in threads

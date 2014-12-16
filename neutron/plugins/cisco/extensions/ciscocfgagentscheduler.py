@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from abc import abstractmethod
+import abc
 
 import webob.exc
 
@@ -52,9 +52,9 @@ class HostingDeviceNotHandledByCfgAgent(exceptions.Conflict):
 
 
 CFG_AGENT_SCHEDULER_ALIAS = 'cisco-cfg-agent-scheduler'
-HOSTING_DEVICE = ciscohostingdevicemanager.DEVICE
-HOSTING_DEVICES = ciscohostingdevicemanager.DEVICES
-CFG_AGENT = 'cisco_cfg_agent'
+HOSTING_DEVICE = 'hosting-device'
+HOSTING_DEVICES = HOSTING_DEVICE + 's'
+CFG_AGENT = 'cfg-agent'
 CFG_AGENTS = CFG_AGENT + 's'
 
 
@@ -81,11 +81,11 @@ class HostingDeviceSchedulerController(wsgi.Controller):
         return plugin.assign_hosting_device_to_cfg_agent(
             request.context, kwargs['agent_id'], body['hosting_device_id'])
 
-    def delete(self, request, id, **kwargs):
+    def delete(self, request, hosting_device_id, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "delete_%s" % HOSTING_DEVICES, {})
+        policy.enforce(request.context, "delete_%s" % HOSTING_DEVICE, {})
         return plugin.unassign_hosting_device_from_cfg_agent(
-            request.context, kwargs['agent_id'], id)
+            request.context, kwargs['agent_id'], hosting_device_id)
 
 
 class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
@@ -107,7 +107,7 @@ class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
 
 
 class Ciscocfgagentscheduler(extensions.ExtensionDescriptor):
-    """Extension class supporting l3 agent scheduler."""
+    """Extension class supporting configuration agent scheduler."""
     @classmethod
     def get_name(cls):
         return "Cisco Configuration Agent Scheduler"
@@ -156,21 +156,21 @@ class CfgAgentSchedulerPluginBase(object):
 
     All of method must be in an admin context.
     """
-    @abstractmethod
+    @abc.abstractmethod
     def assign_hosting_device_to_cfg_agent(self, context, id,
                                            hosting_device_id):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def unassign_hosting_device_from_cfg_agent(self, context, id,
                                                hosting_device_id):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def list_hosting_devices_handled_by_cfg_agent(self, context, id):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def list_cfg_agents_handling_hosting_device(self, context,
                                                 hosting_device_id):
         pass

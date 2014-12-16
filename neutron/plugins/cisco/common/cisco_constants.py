@@ -107,6 +107,7 @@ NEXUS_VXLAN_MAX = 16000000
 # Type and topic for Cisco cfg agent
 # ==================================
 AGENT_TYPE_CFG = 'Cisco cfg agent'
+AGENT_TYPE_L3_CFG = 'Cisco l3 cfg agent'
 
 # Topic for Cisco configuration agent
 CFG_AGENT = 'cisco_cfg_agent'

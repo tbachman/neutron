@@ -12,17 +12,26 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from abc import abstractmethod
+import abc
+
+from oslo.utils import importutils
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
+
+
+class RouterTypeInUse(exceptions.InUse):
+    message = _("Router type %(id)s in use.")
+
+
+class RouterTypeNotFound(exceptions.NotFound):
+    message = _("Router type %(id)s does not exist")
 
 
 class DriverNotFound(exceptions.NetworkNotFound):
@@ -71,6 +80,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'slot_need': {'allow_post': True, 'allow_put': True,
                       'required_by_policy': True,
                       'validate': {'type:non_negative': None},
+                      'convert_to': attr.convert_to_int,
                       'is_visible': True},
         'scheduler': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
@@ -179,29 +189,29 @@ class RoutertypePluginBase(object):
 
     All methods except listing require admin context.
     """
-    @abstractmethod
+    @abc.abstractmethod
     def create_routertype(self, context, routertype):
         """Creates a router type.
          Also binds it to the specified hosting device template.
          """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def update_routertype(self, context, id, routertype):
         """Updates a router type."""
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def delete_routertype(self, context, id):
         """Deletes a router type."""
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_routertype(self, context, id, fields=None):
         """Lists defined router type."""
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_routertypes(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):

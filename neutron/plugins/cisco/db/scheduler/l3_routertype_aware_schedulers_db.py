@@ -13,17 +13,19 @@
 #    under the License.
 
 from oslo.config import cfg
-import sqlalchemy as sql
+from sqlalchemy.orm import exc
+from sqlalchemy import sql
 
 from neutron.common import topics
 from neutron.db import agents_db
-from neutron.db import l3_agentschedulers_db as l3agentsched_db
+from neutron.db import l3_agentschedulers_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.common import cisco_constants as c_consts
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.l3 import l3_models
+from neutron.plugins.cisco.extensions import routertypeawarescheduler
 
 LOG = logging.getLogger(__name__)
 
@@ -37,22 +39,102 @@ ROUTER_TYPE_AWARE_SCHEDULER_OPTS = [
                       'router to a default L3 agent')),
 ]
 
-cfg.CONF.register_opts(ROUTER_TYPE_AWARE_SCHEDULER_OPTS)
+cfg.CONF.register_opts(ROUTER_TYPE_AWARE_SCHEDULER_OPTS, "routing")
 
 
 class L3RouterTypeAwareSchedulerDbMixin(
-        l3agentsched_db.L3AgentSchedulerDbMixin):
+        l3_agentschedulers_db.L3AgentSchedulerDbMixin):
     """Mixin class to add L3 router type-aware scheduler capability.
 
     This class can schedule Neutron routers to hosting devices
     and to L3 agents on network nodes.
     """
+    def validate_hosting_device_router_combination(context, binding_info,
+                                                   hosting_device_id):
+        #TODO(bobmel): Perform proper hosting device validation
+        if False:
+            raise routertypeawarescheduler.RouterHostingDeviceMismatch(
+                hosting_device_id=hosting_device_id)
+
+    def add_router_to_hosting_device(self, context, hosting_device_id,
+                                     router_id):
+        """Add a (non-hosted) router to a hosting device."""
+        e_context = context.elevated()
+        r_hd_binding = self._get_router_binding_info(e_context, router_id)
+        if r_hd_binding.hosting_device_id:
+            raise routertypeawarescheduler.RouterHostedByHostingDevice(
+                router_id=router_id, hosting_device_id=hosting_device_id)
+        self.validate_hosting_device_router_combination(context, r_hd_binding)
+        result = self.schedule_router_on_hosting_device(
+            e_context, r_hd_binding, hosting_device_id)
+        if result:
+            router = self.get_router(context, router_id)
+            self._add_type_and_hosting_device_info(
+                e_context, router, binding_info=r_hd_binding, schedule=False)
+            l3_cfg_notifier = self.agent_notifiers.get(
+                c_consts.AGENT_TYPE_L3_CFG)
+            if l3_cfg_notifier:
+                l3_cfg_notifier.router_added_to_hosting_device(context, router)
+        else:
+            raise routertypeawarescheduler.RouterSchedulingFailed(
+                router_id=router_id, hosting_device_id=hosting_device_id)
+
+    def remove_router_from_hosting_device(self, context, hosting_device_id,
+                                          router_id):
+        """Remove the router from hosting device.
+
+        After removal, the router will be non-hosted until there is update
+        which leads to re-schedule or be added to another hosting device
+        manually.
+        """
+        e_context = context.elevated()
+        r_hd_binding = self._get_router_binding_info(e_context, router_id)
+        if r_hd_binding.hosting_device_id != hosting_device_id:
+            raise routertypeawarescheduler.RouterNotHostedByHostingDevice(
+                router_id=router_id, hosting_device_id=hosting_device_id)
+        router = self.get_router(context, router_id)
+        self._add_type_and_hosting_device_info(
+            e_context, router, binding_info=r_hd_binding, schedule=False)
+        # conditionally remove router from backlog ensure it does not get
+        # scheduled automatically
+        self.remove_router_from_backlog(id)
+        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
+        if l3_cfg_notifier:
+            l3_cfg_notifier.router_removed_from_hosting_device(context, router)
+        LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
+        self.unschedule_router_from_hosting_device(context, r_hd_binding)
+        # now unbind the router from the hosting device
+        with context.session.begin(subtransactions=True):
+            r_hd_binding.hosting_device = None
+            context.session.update(r_hd_binding)
+
+    def list_routers_on_hosting_device(self, context, hosting_device_id):
+        query = context.session.query(
+            l3_models.RouterHostingDeviceBinding.router_id)
+        query = query.filter(
+            l3_models.RouterHostingDeviceBinding.hosting_device_id ==
+            hosting_device_id)
+        router_ids = [item[0] for item in query]
+        return self.get_sync_data_ext(context, router_ids=router_ids)
+
+    def list_hosting_devices_hosting_router(self, context, router_id):
+        query = context.session.query(
+            l3_models.RouterHostingDeviceBinding.hosting_device_id)
+        query = query.filter(l3_models.RouterHostingDeviceBinding.router_id ==
+                             router_id)
+        hd_ids = [item[0] for item in query]
+        if hd_ids:
+            return {'hosting devices':
+                    self._dev_mgr.get_hosting_devices(context,
+                                                      filters={'id': hd_ids})}
+        else:
+            return {'hosting_devices': []}
 
     def list_active_sync_routers_on_hosting_devices(self, context, host,
                                                     router_ids=None,
                                                     hosting_device_ids=None):
-        agent = self._get_agent_by_type_and_host(
-            context, c_constants.AGENT_TYPE_CFG, host)
+        agent = self._get_agent_by_type_and_host(context,
+                                                 c_consts.AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []
         query = context.session.query(
@@ -60,29 +142,15 @@ class L3RouterTypeAwareSchedulerDbMixin(
         query = query.join(hd_models.HostingDevice)
         query = query.filter(hd_models.HostingDevice.cfg_agent_id == agent.id)
         if router_ids:
-            if len(router_ids) == 1:
-                query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.router_id ==
-                    router_ids[0])
-            else:
-                query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.router_id.in_(
-                        router_ids))
+            query = query.filter(
+                l3_models.RouterHostingDeviceBinding.router_id.in_(router_ids))
         if hosting_device_ids:
-            if len(hosting_device_ids) == 1:
-                query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.hosting_device_id ==
-                    hosting_device_ids[0])
-            elif len(hosting_device_ids) > 1:
-                query = query.filter(
-                    l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
-                        hosting_device_ids))
+            query = query.filter(
+                l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
+                    hosting_device_ids))
         router_ids = [item[0] for item in query]
-        if router_ids:
-            return self.get_sync_data_ext(context, router_ids=router_ids,
-                                          active=True)
-        else:
-            return []
+        return self.get_sync_data_ext(context, router_ids=router_ids,
+                                      active=True)
 
     def get_active_routers_for_host(self, context, host):
         query = context.session.query(
@@ -95,12 +163,8 @@ class L3RouterTypeAwareSchedulerDbMixin(
         query = query.filter(p_binding.PortBindingPort.host == host)
         query = query.filter(models_v2.Port.name == 'mgmt')
         router_ids = [item[0] for item in query]
-        # TODO(pcm) Don't think we need if clause, as it'll work w/empty list
-        if router_ids:
-            return self.get_sync_data_ext(context, router_ids=router_ids,
-                                          active=True)
-        else:
-            return []
+        return self.get_sync_data_ext(context, router_ids=router_ids,
+                                      active=True)
 
     def _agent_state_filter(self, check_active, last_heartbeat):
         """Filters only active agents, if requested."""

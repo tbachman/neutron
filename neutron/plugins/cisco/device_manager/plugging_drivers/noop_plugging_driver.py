@@ -39,7 +39,8 @@ class NoopPluggingDriver(plug.PluginSidePluggingDriver):
     def teardown_logical_port_connectivity(self, context, port_db):
         pass
 
-    def extend_hosting_port_info(self, context, port_db, hosting_info):
+    def extend_hosting_port_info(self, context, port_db, hosting_device,
+                                 hosting_info):
         pass
 
     def allocate_hosting_port(self, context, router_id, port_db, network_type,
