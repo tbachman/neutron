@@ -12,12 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Alessandro Pilotti, Cloudbase Solutions Srl
+
+from oslo import messaging
 
 from neutron.common import constants as q_const
-from neutron.common import rpc as n_rpc
-from neutron.db import dhcp_rpc_base
-from neutron.db import l3_rpc_base
 from neutron.openstack.common import log as logging
 from neutron.plugins.hyperv import db as hyperv_db
 
@@ -25,15 +23,12 @@ from neutron.plugins.hyperv import db as hyperv_db
 LOG = logging.getLogger(__name__)
 
 
-class HyperVRpcCallbacks(
-        n_rpc.RpcCallback,
-        dhcp_rpc_base.DhcpRpcCallbackMixin,
-        l3_rpc_base.L3RpcCallbackMixin):
+class HyperVRpcCallbacks(object):
 
     # history
     # 1.1 Support Security Group RPC
     # 1.2 Support get_devices_details_list
-    RPC_API_VERSION = '1.2'
+    target = messaging.Target(version='1.2')
 
     def __init__(self, notifier):
         super(HyperVRpcCallbacks, self).__init__()
@@ -44,7 +39,7 @@ class HyperVRpcCallbacks(
         """Agent requests device details."""
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
-        LOG.debug(_("Device %(device)s details requested from %(agent_id)s"),
+        LOG.debug("Device %(device)s details requested from %(agent_id)s",
                   {'device': device, 'agent_id': agent_id})
         port = self._db.get_port(device)
         if port:
@@ -60,7 +55,7 @@ class HyperVRpcCallbacks(
             self._db.set_port_status(port['id'], q_const.PORT_STATUS_ACTIVE)
         else:
             entry = {'device': device}
-            LOG.debug(_("%s can not be found in database"), device)
+            LOG.debug("%s can not be found in database", device)
         return entry
 
     def get_devices_details_list(self, rpc_context, **kwargs):
@@ -78,7 +73,7 @@ class HyperVRpcCallbacks(
         # TODO(garyk) - live migration and port status
         agent_id = kwargs.get('agent_id')
         device = kwargs.get('device')
-        LOG.debug(_("Device %(device)s no longer exists on %(agent_id)s"),
+        LOG.debug("Device %(device)s no longer exists on %(agent_id)s",
                   {'device': device, 'agent_id': agent_id})
         port = self._db.get_port(device)
         if port:
@@ -89,7 +84,7 @@ class HyperVRpcCallbacks(
         else:
             entry = {'device': device,
                      'exists': False}
-            LOG.debug(_("%s can not be found in database"), device)
+            LOG.debug("%s can not be found in database", device)
         return entry
 
     def tunnel_sync(self, rpc_context, **kwargs):

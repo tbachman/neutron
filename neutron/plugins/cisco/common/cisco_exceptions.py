@@ -11,9 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Sumit Naiksatam, Cisco Systems, Inc.
-# @author: Rohit Agarwalla, Cisco Systems, Inc.
 
 """Exceptions used by the Cisco plugin."""
 
@@ -154,6 +151,11 @@ class PolicyProfileAlreadyExists(exceptions.NeutronException):
 class PolicyProfileIdNotFound(exceptions.NotFound):
     """Policy Profile with the given UUID cannot be found."""
     message = _("Policy Profile %(profile_id)s could not be found.")
+
+
+class PolicyProfileNameNotFound(exceptions.NotFound):
+    """Policy Profile with the given name cannot be found."""
+    message = _("Policy Profile %(profile_name)s could not be found.")
 
 
 class NetworkProfileAlreadyExists(exceptions.NeutronException):

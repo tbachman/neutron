@@ -49,3 +49,9 @@ class SanityTestCaseRoot(functional_base.BaseSudoTestCase):
 
     def test_ovs_patch_support_runs(self):
         checks.patch_supported(self.root_helper)
+
+    def test_arp_responder_runs(self):
+        checks.arp_responder_supported(self.root_helper)
+
+    def test_vf_management_runs(self):
+        checks.vf_management_supported(self.root_helper)

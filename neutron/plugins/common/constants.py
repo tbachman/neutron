@@ -52,6 +52,7 @@ COMMON_PREFIXES = {
 # Service operation status constants
 ACTIVE = "ACTIVE"
 DOWN = "DOWN"
+CREATED = "CREATED"
 PENDING_CREATE = "PENDING_CREATE"
 PENDING_UPDATE = "PENDING_UPDATE"
 PENDING_DELETE = "PENDING_DELETE"
@@ -80,3 +81,6 @@ TYPE_LOCAL = 'local'
 TYPE_VXLAN = 'vxlan'
 TYPE_VLAN = 'vlan'
 TYPE_NONE = 'none'
+
+# Values for network_type
+VXLAN_UDP_PORT = 4789

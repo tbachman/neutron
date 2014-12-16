@@ -22,6 +22,7 @@ from neutron.api.v2 import attributes as attr
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
 from neutron.db import models_v2
+from neutron.i18n import _LI
 from neutron.openstack.common import log
 from neutron.openstack.common import uuidutils
 from neutron.plugins.vmware.extensions import qos
@@ -228,12 +229,12 @@ class QoSDbMixin(qos.QueuePluginBase):
             port['device_owner'].startswith('network:')):
             return
 
-        # Check if there is a queue assocated with the network
+        # Check if there is a queue associated with the network
         filters = {'network_id': [port['network_id']]}
         network_queue_id = self._get_network_queue_bindings(
             context, filters, ['queue_id'])
         if network_queue_id:
-            # get networks that queue is assocated with
+            # get networks that queue is associated with
             filters = {'queue_id': [network_queue_id[0]['queue_id']]}
             networks_with_same_queue = self._get_network_queue_bindings(
                 context, filters)
@@ -292,8 +293,8 @@ class QoSDbMixin(qos.QueuePluginBase):
             if dscp:
                 # must raise because a non-zero dscp was provided
                 raise qos.QueueInvalidMarking()
-            LOG.info(_("DSCP value (%s) will be ignored with 'trusted' "
-                       "marking"), dscp)
+            LOG.info(_LI("DSCP value (%s) will be ignored with 'trusted' "
+                         "marking"), dscp)
         max = qos_queue.get('max')
         min = qos_queue.get('min')
         # Max can be None

@@ -24,6 +24,7 @@ from neutron.common import constants
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
 from neutron.extensions import agent
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
@@ -45,8 +46,8 @@ class RouterSchedulerController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if not plugin:
-            LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router scheduling'))
+            LOG.error(_LE('No plugin for L3 routing registered to handle '
+                          'router scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
@@ -88,8 +89,8 @@ class L3AgentsHostingRouterController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if not plugin:
-            LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router scheduling'))
+            LOG.error(_LE('No plugin for L3 routing registered to handle '
+                          'router scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
@@ -175,6 +176,11 @@ class RouterReschedulingFailed(exceptions.Conflict):
 class RouterNotHostedByL3Agent(exceptions.Conflict):
     message = _("The router %(router_id)s is not hosted"
                 " by L3 agent %(agent_id)s.")
+
+
+class RouterL3AgentMismatch(exceptions.Conflict):
+    message = _("Cannot host %(router_type)s router %(router_id)s "
+                "on %(agent_mode)s L3 agent %(agent_id)s.")
 
 
 class L3AgentSchedulerPluginBase(object):

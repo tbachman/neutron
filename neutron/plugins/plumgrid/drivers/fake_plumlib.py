@@ -11,10 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Edgar Magana, emagana@plumgrid.com, PLUMgrid, Inc.
 
 from neutron.extensions import providernet as provider
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -28,12 +27,12 @@ class Plumlib():
     """
 
     def __init__(self):
-        LOG.info(_('Python PLUMgrid Fake Library Started '))
+        LOG.info(_LI('Python PLUMgrid Fake Library Started '))
         pass
 
     def director_conn(self, director_plumgrid, director_port, timeout,
                       director_admin, director_password):
-        LOG.info(_('Fake Director: %s'),
+        LOG.info(_LI('Fake Director: %s'),
                  director_plumgrid + ':' + director_port)
         pass
 

@@ -11,7 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 import contextlib
 import random
@@ -20,7 +19,6 @@ from neutron.common import constants as q_const
 from neutron.openstack.common import uuidutils
 from neutron.plugins.nec.common import exceptions as nexc
 from neutron.plugins.nec.db import api as ndb
-from neutron.plugins.nec.db import models as nmodels  # noqa
 from neutron.tests.unit.nec import test_nec_plugin
 
 

@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -15,7 +13,6 @@
 # under the License.
 
 import contextlib
-import logging
 
 import webob.exc
 
@@ -27,8 +24,6 @@ from neutron.extensions import metering
 from neutron.plugins.common import constants
 from neutron.services.metering import metering_plugin
 from neutron.tests.unit import test_db_plugin
-
-LOG = logging.getLogger(__name__)
 
 DB_METERING_PLUGIN_KLASS = (
     "neutron.services.metering."
@@ -43,6 +38,7 @@ class MeteringPluginDbTestCaseMixin(object):
         data = {'metering_label': {'name': name,
                                    'tenant_id': kwargs.get('tenant_id',
                                                            'test-tenant'),
+                                   'shared': kwargs.get('shared', False),
                                    'description': description}}
         req = self.new_create_request('metering-labels', data,
                                       fmt)
@@ -149,6 +145,17 @@ class TestMetering(MeteringPluginDbTestCase):
         description = 'my metering label'
         keys = [('name', name,), ('description', description)]
         with self.metering_label(name, description) as metering_label:
+            for k, v, in keys:
+                self.assertEqual(metering_label['metering_label'][k], v)
+
+    def test_create_metering_label_shared(self):
+        name = 'my label'
+        description = 'my metering label'
+        shared = True
+        keys = [('name', name,), ('description', description),
+                ('shared', shared)]
+        with self.metering_label(name, description,
+                                 shared=shared) as metering_label:
             for k, v, in keys:
                 self.assertEqual(metering_label['metering_label'][k], v)
 
@@ -260,6 +267,29 @@ class TestMetering(MeteringPluginDbTestCase):
                 self._test_list_resources('metering-label-rule',
                                           metering_label_rule)
 
+    def test_create_overlap_metering_label_rules(self):
+        name = 'my label'
+        description = 'my metering label'
+
+        with self.metering_label(name, description) as metering_label:
+            metering_label_id = metering_label['metering_label']['id']
+
+            direction = 'egress'
+            remote_ip_prefix1 = '192.168.0.0/24'
+            remote_ip_prefix2 = '192.168.0.0/16'
+            excluded = True
+
+            with self.metering_label_rule(metering_label_id,
+                                          direction,
+                                          remote_ip_prefix1,
+                                          excluded):
+                res = self._create_metering_label_rule(self.fmt,
+                                                       metering_label_id,
+                                                       direction,
+                                                       remote_ip_prefix2,
+                                                       excluded)
+                self.assertEqual(webob.exc.HTTPConflict.code, res.status_int)
+
     def test_create_metering_label_rule_two_labels(self):
         name1 = 'my label 1'
         name2 = 'my label 2'
@@ -287,7 +317,3 @@ class TestMetering(MeteringPluginDbTestCase):
 
                     self._test_list_resources('metering-label-rule',
                                               metering_label_rule)
-
-
-class TestMeteringDbXML(TestMetering):
-    fmt = 'xml'

@@ -11,7 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 from neutron.plugins.nec.common import config
 from neutron.tests import base
@@ -30,6 +29,7 @@ class ConfigurationTest(base.BaseTestCase):
         self.assertEqual('', config.CONF.OFC.path_prefix)
         self.assertEqual('trema', config.CONF.OFC.driver)
         self.assertTrue(config.CONF.OFC.enable_packet_filter)
+        self.assertTrue(config.CONF.OFC.support_packet_filter_on_ofc_router)
         self.assertFalse(config.CONF.OFC.use_ssl)
         self.assertIsNone(config.CONF.OFC.key_file)
         self.assertIsNone(config.CONF.OFC.cert_file)

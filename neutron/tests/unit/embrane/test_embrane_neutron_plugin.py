@@ -12,14 +12,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author:  Ivar Lazzaro, Embrane, Inc.
 import sys
 
 import mock
 from oslo.config import cfg
 
-from neutron.db import api as db
 from neutron.plugins.embrane.common import config  # noqa
 from neutron.tests.unit import test_db_plugin as test_plugin
 
@@ -34,7 +31,6 @@ class EmbranePluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
         cfg.CONF.set_override('admin_password', "admin123", 'heleos')
         p = mock.patch.dict(sys.modules, {'heleosapi': mock.Mock()})
         p.start()
-        self.addCleanup(db.clear_db)
         # dict patches must be explicitly stopped
         self.addCleanup(p.stop)
         super(EmbranePluginV2TestCase, self).setUp(self._plugin_name)

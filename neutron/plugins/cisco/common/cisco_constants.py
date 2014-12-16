@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Sumit Naiksatam, Cisco Systems, Inc.
 
 
 # Attachment attributes
@@ -40,7 +38,6 @@ PASSWORD = 'password'
 
 LOGGER_COMPONENT_NAME = "cisco_plugin"
 
-NEXUS_PLUGIN = 'nexus_plugin'
 VSWITCH_PLUGIN = 'vswitch_plugin'
 
 DEVICE_IP = 'device_ip'
@@ -152,3 +149,6 @@ ROUTER_WAITING_HOST = 'AWAITING_HOST'
 ROUTER_ACTIVE = "ACTIVE"
 # Deletion in progress (by cfg agent)
 ROUTER_PENDING_DELETE = "PENDING_DELETE"
+# Values for network profile fields
+ADD_TENANTS = 'add_tenants'
+REMOVE_TENANTS = 'remove_tenants'

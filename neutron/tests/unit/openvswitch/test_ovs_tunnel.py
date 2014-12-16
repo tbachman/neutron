@@ -15,6 +15,7 @@
 #
 
 import contextlib
+import time
 
 import mock
 from oslo.config import cfg
@@ -74,15 +75,7 @@ class TunnelTest(base.BaseTestCase):
         cfg.CONF.set_default('firewall_driver',
                              'neutron.agent.firewall.NoopFirewallDriver',
                              group='SECURITYGROUP')
-        cfg.CONF.set_override('rpc_backend',
-                              'neutron.openstack.common.rpc.impl_fake')
         cfg.CONF.set_override('report_interval', 0, 'AGENT')
-
-        check_arp_responder_str = ('neutron.plugins.openvswitch.agent.'
-                                   'ovs_neutron_agent.OVSNeutronAgent.'
-                                   '_check_arp_responder_support')
-        self.mock_check_arp_resp = mock.patch(check_arp_responder_str).start()
-        self.mock_check_arp_resp.return_value = True
 
         self.INT_BRIDGE = 'integration_bridge'
         self.TUN_BRIDGE = 'tunnel_bridge'
@@ -527,8 +520,10 @@ class TunnelTest(base.BaseTestCase):
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
                               'process_network_ports'),
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
-                              'tunnel_sync')
-        ) as (log_exception, scan_ports, process_network_ports, ts):
+                              'tunnel_sync'),
+            mock.patch.object(time, 'sleep')
+        ) as (log_exception, scan_ports, process_network_ports,
+              ts, time_sleep):
             log_exception.side_effect = Exception(
                 'Fake exception to get out of the loop')
             scan_ports.side_effect = [reply2, reply3]
@@ -678,7 +673,7 @@ class TunnelTestUseVethInterco(TunnelTest):
 
         self.inta_expected = [mock.call.link.set_up()]
         self.intb_expected = [mock.call.link.set_up()]
-        self.execute_expected = [mock.call(['/sbin/udevadm', 'settle',
+        self.execute_expected = [mock.call(['udevadm', 'settle',
                                             '--timeout=10'])]
 
 

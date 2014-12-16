@@ -12,19 +12,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Sylvain Afchain, eNovance SAS
-# @author: Francois Eleouet, Orange
-# @author: Mathieu Rohon, Orange
 
+from oslo.serialization import jsonutils
+from oslo.utils import timeutils
 from sqlalchemy import sql
 
 from neutron.common import constants as const
 from neutron.db import agents_db
 from neutron.db import common_db_mixin as base_db
 from neutron.db import models_v2
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import timeutils
 from neutron.plugins.ml2.drivers.l2pop import constants as l2_const
 from neutron.plugins.ml2 import models as ml2_models
 
@@ -47,6 +43,10 @@ class L2populationDbMixin(base_db.CommonDbMixin):
     def get_agent_tunnel_types(self, agent):
         configuration = jsonutils.loads(agent.configurations)
         return configuration.get('tunnel_types')
+
+    def get_agent_l2pop_network_types(self, agent):
+        configuration = jsonutils.loads(agent.configurations)
+        return configuration.get('l2pop_network_types')
 
     def get_agent_by_host(self, session, agent_host):
         with session.begin(subtransactions=True):

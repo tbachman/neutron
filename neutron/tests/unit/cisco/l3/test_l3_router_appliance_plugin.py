@@ -11,20 +11,18 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import mock
 from oslo.config import cfg
 
-from neutron import context
-from neutron.extensions import external_net
+import neutron
+from neutron.api.v2 import attributes
 from neutron.extensions import extraroute
 from neutron.extensions import l3
-from neutron.manager import NeutronManager
+from neutron.extensions import providernet as pnet
 from neutron.openstack.common import log as logging
+from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
-from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.cisco.device_manager import device_manager_test_support
@@ -43,6 +41,20 @@ CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
     "neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin."
     "TestApplianceL3RouterServicePlugin")
+extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
+
+
+class L3RouterApplianceTestExtensionManager(
+        test_ext_extraroute.ExtraRouteTestExtensionManager):
+
+    def get_actions(self):
+        return []
+
+    def get_request_extensions(self):
+        return []
+
+    def get_extended_resources(self, version):
+        return pnet.get_extended_resources(version)
 
 
 class TestApplianceL3RouterExtensionManager(
@@ -54,8 +66,51 @@ class TestApplianceL3RouterExtensionManager(
         return super(TestApplianceL3RouterExtensionManager,
                      self).get_resources()
 
+class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
+                        agents_db.AgentDbMixin):
 
-# A routertype and set routes capable L3 routing service plugin class
+    # There is no need to expose agent REST API
+    supported_extension_aliases = ["external-net", "provider"]
+    NET_TYPE = 'vlan'
+
+    def __init__(self):
+        self.tags = {}
+        self.tag = 1
+        super(TestNoL3NatPlugin, self).__init__()
+
+    def _make_network_dict(self, network, fields=None,
+                           process_extensions=True):
+        res = {'id': network['id'],
+               'name': network['name'],
+               'tenant_id': network['tenant_id'],
+               'admin_state_up': network['admin_state_up'],
+               'status': network['status'],
+               'shared': network['shared'],
+               'subnets': [subnet['id']
+                           for subnet in network['subnets']]}
+        try:
+            tag = self.tags[network['id']]
+        except KeyError:
+            self.tag += 1
+            tag = self.tag
+            self.tags[network['id']] = tag
+        res.update({pnet.PHYSICAL_NETWORK: 'phy',
+                    pnet.NETWORK_TYPE: self.NET_TYPE,
+                    pnet.SEGMENTATION_ID: tag})
+        # Call auxiliary extend functions, if any
+        if process_extensions:
+            self._apply_dict_extend_functions(
+                attributes.NETWORKS, res, network)
+        return self._fields(res, fields)
+
+    def get_network_profiles(self, context, filters=None, fields=None):
+        return [{'id': "1234"}]
+
+    def get_policy_profiles(self, context, filters=None, fields=None):
+        return [{'id': "4321"}]
+
+
+# A set routes capable L3 routing service plugin class supporting appliances
 class TestApplianceL3RouterServicePlugin(
         l3_router_test_support.TestL3RouterServicePlugin):
 
@@ -94,6 +149,10 @@ class L3RouterApplianceTestCaseBase(
             plugin=core_plugin, service_plugins=service_plugins,
             ext_mgr=ext_mgr)
 
+        self.core_plugin = manager.NeutronManager.get_plugin()
+        self.plugin = manager.NeutronManager.get_service_plugins().get(
+            service_constants.L3_ROUTER_NAT)
+
         self.setup_notification_driver()
 
         cfg.CONF.set_override('allow_sorting', True)
@@ -116,11 +175,27 @@ class L3RouterApplianceTestCaseBase(
         self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
+        self._mock_svc_vm_create_delete(self.plugin)
+        self._mock_io_file_ops()
+
+    def restore_attribute_map(self):
+        # Restore the original RESOURCE_ATTRIBUTE_MAP
+        attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def tearDown(self):
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
         self._remove_mgmt_nw_for_tests()
+        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
+            TestApplianceL3RouterServicePlugin._mgmt_nw_uuid) = None
+        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
+            TestApplianceL3RouterServicePlugin._refresh_router_backlog) = True
+        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
+            TestApplianceL3RouterServicePlugin._nova_running) = False
+        plugin = manager.NeutronManager.get_service_plugins()[
+            service_constants.L3_ROUTER_NAT]
+        plugin._heartbeat.stop()
+        self.restore_attribute_map()
         super(L3RouterApplianceTestCaseBase, self).tearDown()
 
 
@@ -152,8 +227,9 @@ class L3RouterApplianceVMTestCase(
         self._mock_get_routertype_scheduler_always_none()
 
 
-#class L3RouterApplianceVMTestCaseXML(L3RouterApplianceVMTestCase):
-#    fmt = 'xml'
+    def test_floatingip_with_assoc_fails(self):
+        self._test_floatingip_with_assoc_fails(
+            'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
 
 
 class L3AgentRouterApplianceNamespaceTestCase(
@@ -176,20 +252,20 @@ class L3AgentRouterApplianceNamespaceTestCase(
         l3_rpc_agent_api_str = (
             'neutron.plugins.cisco.l3.rpc.l3_router_rpc_joint_agent_api'
             '.L3RouterJointAgentNotifyAPI')
-        plugin = NeutronManager.get_service_plugins()[
+        plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
-        oldNotify = plugin.l3_rpc_notifier
+        oldNotify = plugin.l3_cfg_rpc_notifier
         try:
             with mock.patch(l3_rpc_agent_api_str) as notifyApi:
-                plugin.l3_rpc_notifier = notifyApi
+                plugin.l3_cfg_rpc_notifier = notifyApi
                 kargs = [item for item in args]
                 kargs.append(notifyApi)
                 target_func(*kargs)
         except Exception:
-            plugin.l3_rpc_notifier = oldNotify
+            plugin.l3_cfg_rpc_notifier = oldNotify
             raise
         else:
-            plugin.l3_rpc_notifier = oldNotify
+            plugin.l3_cfg_rpc_notifier = oldNotify
 
 
 class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
@@ -218,7 +294,7 @@ class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
         l3_rpc_agent_api_str = (
             'neutron.plugins.cisco.l3.rpc.l3_router_rpc_joint_agent_api'
             '.L3RouterJointAgentNotifyAPI')
-        plugin = NeutronManager.get_service_plugins()[
+        plugin = manager.NeutronManager.get_service_plugins()[
             service_constants.L3_ROUTER_NAT]
         oldNotify = plugin.l3_rpc_notifier
         try:

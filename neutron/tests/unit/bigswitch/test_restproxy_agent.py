@@ -12,14 +12,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Kevin Benton, Big Switch Networks
 
 import contextlib
 
 import mock
+from oslo.utils import importutils
 
-from neutron.openstack.common import importutils
 from neutron.tests import base
 
 OVSBRIDGE = 'neutron.agent.linux.ovs_lib.OVSBridge'

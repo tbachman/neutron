@@ -12,28 +12,19 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author:  Ivar Lazzaro, Embrane, Inc.
 
 from oslo.config import cfg
 
-from neutron.db import api as db
 from neutron.plugins.embrane.common import config  # noqa
 from neutron.tests.unit import test_extension_extraroute as extraroute_test
-from neutron.tests.unit import test_l3_plugin as router_test
 
 PLUGIN_NAME = ('neutron.plugins.embrane.plugins.embrane_fake_plugin.'
                'EmbraneFakePlugin')
 
 
-class TestEmbraneL3NatDBTestCase(router_test.L3NatDBIntTestCase):
+class TestEmbraneL3NatDBTestCase(extraroute_test.ExtraRouteDBIntTestCase):
     _plugin_name = PLUGIN_NAME
 
     def setUp(self):
         cfg.CONF.set_override('admin_password', "admin123", 'heleos')
-        self.addCleanup(db.clear_db)
         super(TestEmbraneL3NatDBTestCase, self).setUp()
-
-
-class ExtraRouteDBTestCase(extraroute_test.ExtraRouteDBIntTestCase):
-    _plugin_name = PLUGIN_NAME

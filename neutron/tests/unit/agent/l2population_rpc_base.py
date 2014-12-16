@@ -1,4 +1,6 @@
 # Copyright (C) 2014 VA Linux Systems Japan K.K.
+# Copyright (C) 2014 Fumihiko Kakuma <kakuma at valinux co jp>
+# All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -11,11 +13,12 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Fumihiko Kakuma, VA Linux Systems Japan K.K.
 
 import collections
+import mock
 
 from neutron.agent import l2population_rpc
+from neutron.plugins.ml2.drivers.l2pop import rpc as l2pop_rpc
 from neutron.plugins.openvswitch.agent import ovs_neutron_agent
 from neutron.tests import base
 
@@ -28,16 +31,20 @@ class FakeNeutronAgent(l2population_rpc.L2populationRpcCallBackTunnelMixin):
     def fdb_remove(self, context, fdb_entries):
         pass
 
-    def add_fdb_flow(self, port_info, remote_ip, lvm, ofport):
+    def add_fdb_flow(self, br, port_info, remote_ip, lvm, ofport):
         pass
 
-    def del_fdb_flow(self, port_info, remote_ip, lvm, ofport):
+    def del_fdb_flow(self, br, port_info, remote_ip, lvm, ofport):
         pass
 
-    def setup_tunnel_port(self, remote_ip, network_type):
+    def setup_tunnel_port(self, br, remote_ip, network_type):
         pass
 
-    def cleanup_tunnel_port(self, tun_ofport, tunnel_type):
+    def cleanup_tunnel_port(self, br, tun_ofport, tunnel_type):
+        pass
+
+    def setup_entry_for_arp_reply(self, br, action, local_vid, mac_address,
+                                  ip_address):
         pass
 
 
@@ -46,6 +53,7 @@ class TestL2populationRpcCallBackTunnelMixinBase(base.BaseTestCase):
     def setUp(self):
         super(TestL2populationRpcCallBackTunnelMixinBase, self).setUp()
         self.fakeagent = FakeNeutronAgent()
+        self.fakebr = mock.Mock()
         Port = collections.namedtuple('Port', 'ip, ofport')
         LVM = collections.namedtuple(
             'LVM', 'net, vlan, phys, segid, mac, ip, vif, port')
@@ -74,9 +82,9 @@ class TestL2populationRpcCallBackTunnelMixinBase(base.BaseTestCase):
                          port='port3')]
 
         self.agent_ports = {
-            self.ports[0].ip: [[self.lvms[0].mac, self.lvms[0].ip]],
-            self.ports[1].ip: [[self.lvms[1].mac, self.lvms[1].ip]],
-            self.ports[2].ip: [[self.lvms[2].mac, self.lvms[2].ip]],
+            self.ports[0].ip: [(self.lvms[0].mac, self.lvms[0].ip)],
+            self.ports[1].ip: [(self.lvms[1].mac, self.lvms[1].ip)],
+            self.ports[2].ip: [(self.lvms[2].mac, self.lvms[2].ip)],
         }
 
         self.fdb_entries1 = {
@@ -85,21 +93,21 @@ class TestL2populationRpcCallBackTunnelMixinBase(base.BaseTestCase):
                 'segment_id': self.lvms[0].segid,
                 'ports': {
                     self.local_ip: [],
-                    self.ports[0].ip: [[self.lvms[0].mac, self.lvms[0].ip]]},
+                    self.ports[0].ip: [(self.lvms[0].mac, self.lvms[0].ip)]},
             },
             self.lvms[1].net: {
                 'network_type': self.type_gre,
                 'segment_id': self.lvms[1].segid,
                 'ports': {
                     self.local_ip: [],
-                    self.ports[1].ip: [[self.lvms[1].mac, self.lvms[1].ip]]},
+                    self.ports[1].ip: [(self.lvms[1].mac, self.lvms[1].ip)]},
             },
             self.lvms[2].net: {
                 'network_type': self.type_gre,
                 'segment_id': self.lvms[2].segid,
                 'ports': {
                     self.local_ip: [],
-                    self.ports[2].ip: [[self.lvms[2].mac, self.lvms[2].ip]]},
+                    self.ports[2].ip: [(self.lvms[2].mac, self.lvms[2].ip)]},
             },
         }
 
@@ -122,18 +130,24 @@ class TestL2populationRpcCallBackTunnelMixinBase(base.BaseTestCase):
         self.upd_fdb_entry1_val = {
             self.lvms[0].net: {
                 self.ports[0].ip: {
-                    'before': [[self.lvms[0].mac, self.lvms[0].ip]],
-                    'after': [[self.lvms[1].mac, self.lvms[1].ip]],
+                    'before': [l2pop_rpc.PortInfo(self.lvms[0].mac,
+                               self.lvms[0].ip)],
+                    'after': [l2pop_rpc.PortInfo(self.lvms[1].mac,
+                              self.lvms[1].ip)],
                 },
                 self.ports[1].ip: {
-                    'before': [[self.lvms[0].mac, self.lvms[0].ip]],
-                    'after': [[self.lvms[1].mac, self.lvms[1].ip]],
+                    'before': [l2pop_rpc.PortInfo(self.lvms[0].mac,
+                               self.lvms[0].ip)],
+                    'after': [l2pop_rpc.PortInfo(self.lvms[1].mac,
+                              self.lvms[1].ip)],
                 },
             },
             self.lvms[1].net: {
                 self.ports[2].ip: {
-                    'before': [[self.lvms[0].mac, self.lvms[0].ip]],
-                    'after': [[self.lvms[2].mac, self.lvms[2].ip]],
+                    'before': [l2pop_rpc.PortInfo(self.lvms[0].mac,
+                               self.lvms[0].ip)],
+                    'after': [l2pop_rpc.PortInfo(self.lvms[2].mac,
+                              self.lvms[2].ip)],
                 },
             },
         }

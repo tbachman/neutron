@@ -17,17 +17,19 @@ import mock
 from oslo.config import cfg
 
 from neutron.common import constants as n_const
-import neutron.db.api as ndb
+from neutron.extensions import portbindings
 from neutron.plugins.ml2.drivers.arista import db
 from neutron.plugins.ml2.drivers.arista import exceptions as arista_exc
 from neutron.plugins.ml2.drivers.arista import mechanism_arista as arista
 from neutron.tests import base
+from neutron.tests.unit import testlib_api
 
 
 def setup_arista_wrapper_config(value=''):
     cfg.CONF.keystone_authtoken = fake_keystone_info_class()
     cfg.CONF.set_override('eapi_host', value, "ml2_arista")
     cfg.CONF.set_override('eapi_username', value, "ml2_arista")
+    cfg.CONF.set_override('sync_interval', 10, "ml2_arista")
 
 
 def setup_valid_config():
@@ -35,17 +37,12 @@ def setup_valid_config():
     setup_arista_wrapper_config('value')
 
 
-class AristaProvisionedVlansStorageTestCase(base.BaseTestCase):
+class AristaProvisionedVlansStorageTestCase(testlib_api.SqlTestCase):
     """Test storing and retriving functionality of Arista mechanism driver.
 
     Tests all methods of this class by invoking them separately as well
     as a group.
     """
-
-    def setUp(self):
-        super(AristaProvisionedVlansStorageTestCase, self).setUp()
-        ndb.configure_db()
-        self.addCleanup(ndb.clear_db)
 
     def test_tenant_is_remembered(self):
         tenant_id = 'test'
@@ -222,6 +219,24 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
 
     def test_no_exception_on_correct_configuration(self):
         self.assertIsNotNone(self.drv)
+
+    def test_sync_start(self):
+        self.drv.sync_start()
+        cmds = ['enable', 'configure', 'cvx', 'service openstack',
+                'region RegionOne',
+                'sync start',
+                'exit', 'exit', 'exit']
+
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
+    def test_sync_end(self):
+        self.drv.sync_end()
+        cmds = ['enable', 'configure', 'cvx', 'service openstack',
+                'region RegionOne',
+                'sync end',
+                'exit', 'exit', 'exit']
+
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
     def test_plug_host_into_network(self):
         tenant_id = 'ten-1'
@@ -507,6 +522,29 @@ class PositiveRPCWrapperValidConfigTestCase(base.BaseTestCase):
         cmds = ['show openstack config region RegionOne timestamp']
         self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
 
+    def test_register_with_eos(self):
+        self.drv.register_with_eos()
+        auth = fake_keystone_info_class()
+        keystone_url = '%s://%s:%s/v2.0/' % (auth.auth_protocol,
+                                             auth.auth_host,
+                                             auth.auth_port)
+        auth_cmd = 'auth url %s user %s password %s tenant %s' % (keystone_url,
+                    auth.admin_user,
+                    auth.admin_password,
+                    auth.admin_tenant_name)
+        cmds = ['enable',
+                'configure',
+                'cvx',
+                'service openstack',
+                'region %s' % self.region,
+                auth_cmd,
+                'sync interval %d' % cfg.CONF.ml2_arista.sync_interval,
+                'exit',
+                'exit',
+                'exit',
+                ]
+        self.drv._server.runCmds.assert_called_once_with(version=1, cmds=cmds)
+
 
 class AristaRPCWrapperInvalidConfigTestCase(base.BaseTestCase):
     """Negative test cases to test the Arista Driver configuration."""
@@ -538,7 +576,7 @@ class NegativeRPCWrapperTestCase(base.BaseTestCase):
         self.assertRaises(arista_exc.AristaRpcError, drv.get_tenants)
 
 
-class RealNetStorageAristaDriverTestCase(base.BaseTestCase):
+class RealNetStorageAristaDriverTestCase(testlib_api.SqlTestCase):
     """Main test cases for Arista Mechanism driver.
 
     Tests all mechanism driver APIs supported by Arista Driver. It invokes
@@ -548,7 +586,6 @@ class RealNetStorageAristaDriverTestCase(base.BaseTestCase):
     def setUp(self):
         super(RealNetStorageAristaDriverTestCase, self).setUp()
         self.fake_rpc = mock.MagicMock()
-        ndb.configure_db()
         self.drv = arista.AristaDriver(self.fake_rpc)
 
     def tearDown(self):
@@ -681,6 +718,7 @@ class fake_keystone_info_class(object):
     auth_port = 5000
     admin_user = 'neutron'
     admin_password = 'fun'
+    admin_tenant_name = 'tenant_name'
 
 
 class FakeNetworkContext(object):
@@ -723,3 +761,11 @@ class FakePortContext(object):
     @property
     def network(self):
         return self._network_context
+
+    @property
+    def host(self):
+        return self._port.get(portbindings.HOST_ID)
+
+    @property
+    def original_host(self):
+        return self._original_port.get(portbindings.HOST_ID)

@@ -11,18 +11,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut, Cisco Systems, Inc.
-# @author: Rudrajit Tapadar, Cisco Systems, Inc.
 
 import base64
+
 import eventlet
 import netaddr
+from oslo.serialization import jsonutils
 import requests
 
 from neutron.common import exceptions as n_exc
 from neutron.extensions import providernet
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
@@ -223,7 +221,7 @@ class Client(object):
         :param network_profile: network profile dict
         :param tenant_id: UUID representing the tenant
         """
-        LOG.debug(_("Logical network"))
+        LOG.debug("Logical network")
         body = {'description': network_profile['name'],
                 'tenantId': tenant_id}
         logical_network_name = (network_profile['id'] +
@@ -248,7 +246,7 @@ class Client(object):
         :param network_profile: network profile dict
         :param tenant_id: UUID representing the tenant
         """
-        LOG.debug(_("network_segment_pool"))
+        LOG.debug("network_segment_pool")
         logical_network_name = (network_profile['id'] +
                                 c_const.LOGICAL_NETWORK_SUFFIX)
         body = {'name': network_profile['name'],
@@ -256,6 +254,8 @@ class Client(object):
                 'id': network_profile['id'],
                 'logicalNetwork': logical_network_name,
                 'tenantId': tenant_id}
+        if network_profile['segment_type'] == c_const.NETWORK_TYPE_OVERLAY:
+            body['subType'] = network_profile['sub_type']
         return self._post(
             self.network_segment_pool_path % network_profile['id'],
             body=body)
@@ -436,7 +436,7 @@ class Client(object):
         headers['Accept'] = self._set_content_type('json')
         if body:
             body = jsonutils.dumps(body, indent=2)
-            LOG.debug(_("req: %s"), body)
+            LOG.debug("req: %s", body)
         try:
             resp = self.pool.spawn(requests.request,
                                    method,
@@ -446,7 +446,7 @@ class Client(object):
                                    timeout=self.timeout).wait()
         except Exception as e:
             raise c_exc.VSMConnectionFailed(reason=e)
-        LOG.debug(_("status_code %s"), resp.status_code)
+        LOG.debug("status_code %s", resp.status_code)
         if resp.status_code == requests.codes.OK:
             if 'application/json' in resp.headers['content-type']:
                 try:
@@ -454,7 +454,7 @@ class Client(object):
                 except ValueError:
                     return {}
             elif 'text/plain' in resp.headers['content-type']:
-                LOG.debug(_("VSM: %s"), resp.text)
+                LOG.debug("VSM: %s", resp.text)
         else:
             raise c_exc.VSMError(reason=resp.text)
 

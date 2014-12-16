@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mark McClain, DreamHost
 
 import httplib
 import socket
@@ -28,6 +26,7 @@ import webob
 from neutron.agent.linux import daemon
 from neutron.common import config
 from neutron.common import utils
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron import wsgi
 
@@ -65,7 +64,7 @@ class NetworkMetadataProxyHandler(object):
 
     @webob.dec.wsgify(RequestClass=webob.Request)
     def __call__(self, req):
-        LOG.debug(_("Request: %s"), req)
+        LOG.debug("Request: %s", req)
         try:
             return self._proxy_request(req.remote_addr,
                                        req.method,
@@ -73,7 +72,7 @@ class NetworkMetadataProxyHandler(object):
                                        req.query_string,
                                        req.body)
         except Exception:
-            LOG.exception(_("Unexpected error."))
+            LOG.exception(_LE("Unexpected error."))
             msg = _('An unknown error has occurred. '
                     'Please try your request again.')
             return webob.exc.HTTPInternalServerError(explanation=unicode(msg))
@@ -112,6 +111,8 @@ class NetworkMetadataProxyHandler(object):
             response.headers['Content-Type'] = resp['content-type']
             response.body = content
             return response
+        elif resp.status == 400:
+            return webob.exc.HTTPBadRequest()
         elif resp.status == 404:
             return webob.exc.HTTPNotFound()
         elif resp.status == 409:
@@ -169,7 +170,7 @@ def main():
     cfg.CONF.register_cli_opts(opts)
     # Don't get the default configuration file
     cfg.CONF(project='neutron', default_config_files=[])
-    config.setup_logging(cfg.CONF)
+    config.setup_logging()
     utils.log_opt_values(LOG)
     proxy = ProxyDaemon(cfg.CONF.pid_file,
                         cfg.CONF.metadata_port,

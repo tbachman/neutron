@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import threading
 
 import jsonrpclib
 from oslo.config import cfg
 
 from neutron.common import constants as n_const
-from neutron.extensions import portbindings
+from neutron.i18n import _LI, _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import driver_api
@@ -30,6 +31,7 @@ from neutron.plugins.ml2.drivers.arista import exceptions as arista_exc
 LOG = logging.getLogger(__name__)
 
 EOS_UNREACHABLE_MSG = _('Unable to reach EOS')
+DEFAULT_VLAN = 1
 
 
 class AristaRPCWrapper(object):
@@ -43,6 +45,7 @@ class AristaRPCWrapper(object):
         self._server = jsonrpclib.Server(self._eapi_host_url())
         self.keystone_conf = cfg.CONF.keystone_authtoken
         self.region = cfg.CONF.ml2_arista.region_name
+        self.sync_interval = cfg.CONF.ml2_arista.sync_interval
         self._region_updated_time = None
         # The cli_commands dict stores the mapping between the CLI command key
         # and the actual CLI command.
@@ -71,8 +74,8 @@ class AristaRPCWrapper(object):
             self.cli_commands['timestamp'] = cmd
         except arista_exc.AristaRpcError:
             self.cli_commands['timestamp'] = []
-            msg = _("'timestamp' command '%s' is not available on EOS") % cmd
-            LOG.warn(msg)
+            LOG.warn(_LW("'timestamp' command '%s' is not available on EOS"),
+                     cmd)
 
     def _keystone_url(self):
         keystone_auth_url = ('%s://%s:%s/v2.0/' %
@@ -198,6 +201,18 @@ class AristaRPCWrapper(object):
                 'exit']
         self._run_openstack_cmds(cmds)
 
+    def sync_start(self):
+        """Sends indication to EOS that ML2->EOS sync has started."""
+
+        sync_start_cmd = ['sync start']
+        self._run_openstack_cmds(sync_start_cmd)
+
+    def sync_end(self):
+        """Sends indication to EOS that ML2->EOS sync has completed."""
+
+        sync_end_cmd = ['sync end']
+        self._run_openstack_cmds(sync_end_cmd)
+
     def create_network(self, tenant_id, network):
         """Creates a single network on Arista hardware
 
@@ -224,6 +239,8 @@ class AristaRPCWrapper(object):
             except KeyError:
                 append_cmd('network id %s' % network['network_id'])
             # Enter segment mode without exiting out of network mode
+            if not network['segmentation_id']:
+                network['segmentation_id'] = DEFAULT_VLAN
             append_cmd('segment 1 type vlan id %d' %
                        network['segmentation_id'])
         cmds.extend(self._get_exit_mode_cmds(['segment', 'network', 'tenant']))
@@ -311,10 +328,8 @@ class AristaRPCWrapper(object):
             try:
                 vm = vms[port['device_id']]
             except KeyError:
-                msg = _("VM id %(vmid)s not found for port %(portid)s") % {
-                    'vmid': port['device_id'],
-                    'portid': port['id']}
-                LOG.warn(msg)
+                LOG.warn(_LW("VM id %(vmid)s not found for port %(portid)s"),
+                         {'vmid': port['device_id'], 'portid': port['id']})
                 continue
 
             port_name = '' if 'name' not in port else 'name "%s"' % (
@@ -330,8 +345,7 @@ class AristaRPCWrapper(object):
                 append_cmd('port id %s %s network-id %s' %
                            (port['id'], port_name, port['network_id']))
             else:
-                msg = _("Unknown device owner: %s") % port['device_owner']
-                LOG.warn(msg)
+                LOG.warn(_LW("Unknown device owner: %s"), port['device_owner'])
                 continue
 
         append_cmd('exit')
@@ -375,14 +389,22 @@ class AristaRPCWrapper(object):
         This the initial handshake between Neutron and EOS.
         critical end-point information is registered with EOS.
         """
-        cmds = ['auth url %s user "%s" password "%s"' %
-                (self._keystone_url(),
-                self.keystone_conf.admin_user,
-                self.keystone_conf.admin_password)]
 
-        log_cmds = ['auth url %s user %s password ******' %
-                    (self._keystone_url(),
-                    self.keystone_conf.admin_user)]
+        cmds = ['auth url %s user %s password %s tenant %s' % (
+                self._keystone_url(),
+                self.keystone_conf.admin_user,
+                self.keystone_conf.admin_password,
+                self.keystone_conf.admin_tenant_name)]
+
+        log_cmds = ['auth url %s user %s password %s tenant %s' % (
+                    self._keystone_url(),
+                    self.keystone_conf.admin_user,
+                    '******',
+                    self.keystone_conf.admin_tenant_name)]
+
+        sync_interval_cmd = 'sync interval %d' % self.sync_interval
+        cmds.append(sync_interval_cmd)
+        log_cmds.append(sync_interval_cmd)
 
         self._run_openstack_cmds(cmds, commands_to_log=log_cmds)
 
@@ -422,11 +444,11 @@ class AristaRPCWrapper(object):
                                  param is logged.
         """
 
-        log_cmd = commands
+        log_cmds = commands
         if commands_to_log:
-            log_cmd = commands_to_log
+            log_cmds = commands_to_log
 
-        LOG.info(_('Executing command on Arista EOS: %s'), log_cmd)
+        LOG.info(_LI('Executing command on Arista EOS: %s'), log_cmds)
 
         try:
             # this returns array of return values for every command in
@@ -434,10 +456,21 @@ class AristaRPCWrapper(object):
             ret = self._server.runCmds(version=1, cmds=commands)
         except Exception as error:
             host = cfg.CONF.ml2_arista.eapi_host
+            error_msg_str = unicode(error)
+            if commands_to_log:
+                # The command might contain sensitive information. If the
+                # command to log is different from the actual command, use
+                # that in the error message.
+                for cmd, log_cmd in itertools.izip(commands, log_cmds):
+                    error_msg_str = error_msg_str.replace(cmd, log_cmd)
             msg = (_('Error %(err)s while trying to execute '
                      'commands %(cmd)s on EOS %(host)s') %
-                   {'err': error, 'cmd': commands_to_log, 'host': host})
-            LOG.exception(msg)
+                  {'err': error_msg_str,
+                   'cmd': commands_to_log,
+                   'host': host})
+            # Logging exception here can reveal passwords as the exception
+            # contains the CLI command which contains the credentials.
+            LOG.error(msg)
             raise arista_exc.AristaRpcError(msg=msg)
 
         return ret
@@ -512,7 +545,7 @@ class AristaRPCWrapper(object):
 
 
 class SyncService(object):
-    """Synchronizatin of information between Neutron and EOS
+    """Synchronization of information between Neutron and EOS
 
     Periodically (through configuration option), this service
     ensures that Networks and VMs configured on EOS/Arista HW
@@ -523,16 +556,34 @@ class SyncService(object):
         self._ndb = neutron_db
         self._force_sync = True
 
+    def do_synchronize(self):
+        try:
+            # Send trigger to EOS that the ML2->EOS sync has started.
+            self._rpc.sync_start()
+            LOG.info(_LI('Sync start trigger sent to EOS'))
+        except arista_exc.AristaRpcError:
+            LOG.warning(EOS_UNREACHABLE_MSG)
+            return
+
+        # Perform the sync
+        self.synchronize()
+
+        try:
+            # Send trigger to EOS that the ML2->EOS sync is Complete.
+            self._rpc.sync_end()
+        except arista_exc.AristaRpcError:
+            LOG.warning(EOS_UNREACHABLE_MSG)
+
     def synchronize(self):
         """Sends data to EOS which differs from neutron DB."""
 
-        LOG.info(_('Syncing Neutron <-> EOS'))
+        LOG.info(_LI('Syncing Neutron <-> EOS'))
         try:
             # Get the time at which entities in the region were updated.
             # If the times match, then ML2 is in sync with EOS. Otherwise
             # perform a complete sync.
             if not self._force_sync and self._rpc.region_in_sync():
-                LOG.info(_('OpenStack and EOS are in sync!'))
+                LOG.info(_LI('OpenStack and EOS are in sync!'))
                 return
         except arista_exc.AristaRpcError:
             LOG.warning(EOS_UNREACHABLE_MSG)
@@ -554,14 +605,14 @@ class SyncService(object):
             # No tenants configured in Neutron. Clear all EOS state
             try:
                 self._rpc.delete_this_region()
-                msg = _('No Tenants configured in Neutron DB. But %d '
-                        'tenants disovered in EOS during synchronization.'
-                        'Enitre EOS region is cleared') % len(eos_tenants)
-                LOG.info(msg)
+                LOG.info(_LI('No Tenants configured in Neutron DB. But %d '
+                             'tenants discovered in EOS during '
+                             'synchronization. Entire EOS region is cleared'),
+                         len(eos_tenants))
                 # Re-register with EOS so that the timestamp is updated.
                 self._rpc.register_with_eos()
                 # Region has been completely cleaned. So there is nothing to
-                # syncronize
+                # synchronize
                 self._force_sync = False
             except arista_exc.AristaRpcError:
                 LOG.warning(EOS_UNREACHABLE_MSG)
@@ -656,7 +707,7 @@ class SyncService(object):
 class AristaDriver(driver_api.MechanismDriver):
     """Ml2 Mechanism driver for Arista networking hardware.
 
-    Remebers all networks and VMs that are provisioned on Arista Hardware.
+    Remembers all networks and VMs that are provisioned on Arista Hardware.
     Does not send network provisioning request if the network has already been
     provisioned before for the given port.
     """
@@ -719,9 +770,8 @@ class AristaDriver(driver_api.MechanismDriver):
                     LOG.info(EOS_UNREACHABLE_MSG)
                     raise ml2_exc.MechanismDriverError()
             else:
-                msg = _('Network %s is not created as it is not found in'
-                        'Arista DB') % network_id
-                LOG.info(msg)
+                LOG.info(_LI('Network %s is not created as it is not found in '
+                             'Arista DB'), network_id)
 
     def update_network_precommit(self, context):
         """At the moment we only support network name change
@@ -733,8 +783,7 @@ class AristaDriver(driver_api.MechanismDriver):
         new_network = context.current
         orig_network = context.original
         if new_network['name'] != orig_network['name']:
-            msg = _('Network name changed to %s') % new_network['name']
-            LOG.info(msg)
+            LOG.info(_LI('Network name changed to %s'), new_network['name'])
 
     def update_network_postcommit(self, context):
         """At the moment we only support network name change
@@ -761,9 +810,8 @@ class AristaDriver(driver_api.MechanismDriver):
                         LOG.info(EOS_UNREACHABLE_MSG)
                         raise ml2_exc.MechanismDriverError()
                 else:
-                    msg = _('Network %s is not updated as it is not found in'
-                            'Arista DB') % network_id
-                    LOG.info(msg)
+                    LOG.info(_LI('Network %s is not updated as it is not found'
+                                 ' in Arista DB'), network_id)
 
     def delete_network_precommit(self, context):
         """Delete the network infromation from the DB."""
@@ -801,7 +849,7 @@ class AristaDriver(driver_api.MechanismDriver):
         port = context.current
         device_id = port['device_id']
         device_owner = port['device_owner']
-        host = port[portbindings.HOST_ID]
+        host = context.host
 
         # device_id and device_owner are set on VM boot
         is_vm_boot = device_id and device_owner
@@ -822,7 +870,7 @@ class AristaDriver(driver_api.MechanismDriver):
         port = context.current
         device_id = port['device_id']
         device_owner = port['device_owner']
-        host = port[portbindings.HOST_ID]
+        host = context.host
 
         # device_id and device_owner are set on VM boot
         is_vm_boot = device_id and device_owner
@@ -853,9 +901,8 @@ class AristaDriver(driver_api.MechanismDriver):
                         LOG.info(EOS_UNREACHABLE_MSG)
                         raise ml2_exc.MechanismDriverError()
                 else:
-                    msg = _('VM %s is not created as it is not found in '
-                            'Arista DB') % device_id
-                    LOG.info(msg)
+                    LOG.info(_LI('VM %s is not created as it is not found in '
+                                 'Arista DB'), device_id)
 
     def update_port_precommit(self, context):
         """Update the name of a given port.
@@ -868,8 +915,7 @@ class AristaDriver(driver_api.MechanismDriver):
         new_port = context.current
         orig_port = context.original
         if new_port['name'] != orig_port['name']:
-            msg = _('Port name changed to %s') % new_port['name']
-            LOG.info(msg)
+            LOG.info(_LI('Port name changed to %s'), new_port['name'])
 
     def update_port_postcommit(self, context):
         """Update the name of a given port in EOS.
@@ -885,7 +931,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
         device_id = port['device_id']
         device_owner = port['device_owner']
-        host = port[portbindings.HOST_ID]
+        host = context.host
         is_vm_boot = device_id and device_owner
 
         if host and is_vm_boot:
@@ -918,15 +964,14 @@ class AristaDriver(driver_api.MechanismDriver):
                         LOG.info(EOS_UNREACHABLE_MSG)
                         raise ml2_exc.MechanismDriverError()
                 else:
-                    msg = _('VM %s is not updated as it is not found in '
-                            'Arista DB') % device_id
-                    LOG.info(msg)
+                    LOG.info(_LI('VM %s is not updated as it is not found in '
+                                 'Arista DB'), device_id)
 
     def delete_port_precommit(self, context):
         """Delete information about a VM and host from the DB."""
         port = context.current
 
-        host_id = port[portbindings.HOST_ID]
+        host_id = context.host
         device_id = port['device_id']
         tenant_id = port['tenant_id']
         network_id = port['network_id']
@@ -947,7 +992,7 @@ class AristaDriver(driver_api.MechanismDriver):
         """
         port = context.current
         device_id = port['device_id']
-        host = port[portbindings.HOST_ID]
+        host = context.host
         port_id = port['id']
         network_id = port['network_id']
         tenant_id = port['tenant_id']
@@ -989,7 +1034,7 @@ class AristaDriver(driver_api.MechanismDriver):
 
     def _synchronization_thread(self):
         with self.eos_sync_lock:
-            self.eos.synchronize()
+            self.eos.do_synchronize()
 
         self.timer = threading.Timer(self.sync_timeout,
                                      self._synchronization_thread)

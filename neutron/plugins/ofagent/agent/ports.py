@@ -1,4 +1,5 @@
 # Copyright (C) 2014 VA Linux Systems Japan K.K.
+# Copyright (C) 2014 YAMAMOTO Takashi <yamamoto at valinux co jp>
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,8 +13,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: YAMAMOTO Takashi, VA Linux Systems Japan K.K.
+
+from neutron.common import constants as n_const
 
 
 class OFPort(object):
@@ -29,7 +30,7 @@ class OFPort(object):
 
 PORT_NAME_LEN = 14
 PORT_NAME_PREFIXES = [
-    "tap",  # common cases, including ovs_use_veth=True
+    n_const.TAP_DEVICE_PREFIX,  # common cases, including ovs_use_veth=True
     "qvo",  # nova hybrid interface driver
     "qr-",  # l3-agent INTERNAL_DEV_PREFIX  (ovs_use_veth=False)
     "qg-",  # l3-agent EXTERNAL_DEV_PREFIX  (ovs_use_veth=False)
@@ -62,7 +63,7 @@ def get_normalized_port_name(interface_id):
     use "tap" prefix throughout the agent and plugin for simplicity.
     Some care should be taken when talking to the switch.
     """
-    return ("tap" + interface_id)[0:PORT_NAME_LEN]
+    return (n_const.TAP_DEVICE_PREFIX + interface_id)[0:PORT_NAME_LEN]
 
 
 def _normalize_port_name(name):
@@ -72,11 +73,15 @@ def _normalize_port_name(name):
     """
     for pref in PORT_NAME_PREFIXES:
         if name.startswith(pref):
-            return "tap" + name[len(pref):]
+            return n_const.TAP_DEVICE_PREFIX + name[len(pref):]
     return name
 
 
 class Port(OFPort):
+    def __init__(self, *args, **kwargs):
+        super(Port, self).__init__(*args, **kwargs)
+        self.vif_mac = None
+
     def is_neutron_port(self):
         """Return True if the port looks like a neutron port."""
         return _is_neutron_port(self.port_name)

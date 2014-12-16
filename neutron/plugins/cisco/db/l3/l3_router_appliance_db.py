@@ -252,7 +252,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         self._add_type_and_hosting_device_info(context.elevated(),
                                                routers[0])
         self.notify_router_interface_action(context, info, routers, 'add')
-
         return info
 
     def remove_router_interface(self, context, router_id, interface_info):
@@ -265,7 +264,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             port_db = self._get_router_port_db_on_subnet(
                 context, router_id, subnet_db)
         else:
-             msg = _("Either subnet_id or port_id must be specified")
+            msg = _("Either subnet_id or port_id must be specified")
             raise n_exc.BadRequest(resource='router', msg=msg)
         routers = [self.get_router(context, router_id)]
         e_context = context.elevated()
@@ -274,9 +273,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             e_context, (routers[0]['hosting_device'] or {}).get('template_id'))
         if p_drv is not None:
             p_drv.teardown_logical_port_connectivity(e_context, port_db)
-        info = (super(L3RouterApplianceDBMixin, self).
-                remove_router_interface(context, router_id,
-                                            interface_info))
+        info = super(L3RouterApplianceDBMixin, self).remove_router_interface(
+            context, router_id, interface_info)
         self.notify_router_interface_action(context, info, routers, 'remove')
         return info
 
@@ -344,8 +342,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         return router_ids
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
-    def handle_non_responding_hosting_devices(self, context, hosting_devices,
-                                              affected_resources):
+    def _handle_non_responding_hosting_devices(self, context, hosting_devices,
+                                               affected_resources):
         """Handle hosting devices determined to be "dead".
 
         This function is called by the hosting device manager.
@@ -734,7 +732,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                 logical_port_id=port_db['id'],
                 network_type=network_type,
                 hosting_port_id=alloc['allocated_port_id'],
-                segmentation_tag=alloc['allocated_vlan'])
+                segmentation_id=alloc['allocated_vlan'])
             context.session.add(h_info)
             context.session.expire(port_db)
         # allocation succeeded so establish connectivity for logical port

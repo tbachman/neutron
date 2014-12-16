@@ -11,7 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -20,7 +19,7 @@ from neutron.db import model_base
 from neutron.db import models_v2
 
 
-"""New mapping tables."""
+# New mapping tables.
 
 
 class OFCId(object):

@@ -11,19 +11,17 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Edgar Magana, emagana@plumgrid.com, PLUMgrid, Inc.
 
 """
 Test cases for  Neutron PLUMgrid Plug-in
 """
 
 import mock
+from oslo.utils import importutils
 
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
 from neutron import manager
-from neutron.openstack.common import importutils
 from neutron.plugins.plumgrid.plumgrid_plugin import plumgrid_plugin
 from neutron.tests.unit import _test_extension_portbindings as test_bindings
 from neutron.tests.unit import test_db_plugin as test_plugin
@@ -83,6 +81,7 @@ class TestPlumgridPluginSubnetsV2(test_plugin.TestSubnetsV2,
     _unsupported = (
         'test_create_subnet_default_gw_conflict_allocation_pool_returns_409',
         'test_create_subnet_defaults', 'test_create_subnet_gw_values',
+        'test_create_subnet_ipv6_gw_values',
         'test_update_subnet_gateway_in_allocation_pool_returns_409',
         'test_update_subnet_allocation_pools',
         'test_update_subnet_allocation_pools_invalid_pool_for_cidr')

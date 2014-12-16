@@ -11,15 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Abhishek Raut, Cisco Systems Inc.
-# @author: Sourabh Patwardhan, Cisco Systems Inc.
 
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_exceptions as c_exc
 from neutron.plugins.cisco.n1kv import n1kv_client
-
-LOG = logging.getLogger(__name__)
 
 _resource_metadata = {'port': ['id', 'macAddress', 'ipAddress', 'subnetId'],
                       'vmnetwork': ['name', 'networkSegmentId',

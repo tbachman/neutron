@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mark McClain, DreamHost
 
 import atexit
 import fcntl
@@ -20,6 +18,7 @@ import os
 import signal
 import sys
 
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ class Pidfile(object):
             self.fd = os.open(pidfile, os.O_CREAT | os.O_RDWR)
             fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
-            LOG.exception(_("Error while handling pidfile: %s"), pidfile)
+            LOG.exception(_LE("Error while handling pidfile: %s"), pidfile)
             sys.exit(1)
 
     def __str__(self):
@@ -91,7 +90,7 @@ class Daemon(object):
             if pid > 0:
                 sys.exit(0)
         except OSError:
-            LOG.exception(_('Fork failed'))
+            LOG.exception(_LE('Fork failed'))
             sys.exit(1)
 
     def daemonize(self):
@@ -133,8 +132,8 @@ class Daemon(object):
 
         if self.pidfile.is_running():
             self.pidfile.unlock()
-            message = _('Pidfile %s already exist. Daemon already running?')
-            LOG.error(message, self.pidfile)
+            LOG.error(_LE('Pidfile %s already exist. Daemon already '
+                          'running?'), self.pidfile)
             sys.exit(1)
 
         # Start the daemon

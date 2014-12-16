@@ -35,7 +35,6 @@ class RetryDecorator(object):
     :param retries: number of times to try before giving up
     :raises: exceptionToCheck
     """
-    sleep_fn = time.sleep
 
     def __init__(self, exceptionToCheck,
                  interval=cfg.CONF.ESWITCH.request_timeout / 1000,
@@ -54,9 +53,9 @@ class RetryDecorator(object):
                 try:
                     return original_func(*args, **kwargs)
                 except self.exc:
-                    LOG.debug(_("Request timeout - call again after "
-                              "%s seconds"), sleep_interval)
-                    RetryDecorator.sleep_fn(sleep_interval)
+                    LOG.debug("Request timeout - call again after "
+                              "%s seconds", sleep_interval)
+                    time.sleep(sleep_interval)
                     num_of_iter -= 1
                     sleep_interval *= self.backoff_rate
 

@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo import messaging
+
 from neutron.common import log
 from neutron.common import topics
 from neutron import manager
@@ -28,39 +30,33 @@ class DVRServerRpcApiMixin(object):
 
     @log.log
     def get_dvr_mac_address_by_host(self, context, host):
-        return self.call(context,
-                         self.make_msg('get_dvr_mac_address_by_host',
-                                       host=host),
-                         version=self.DVR_RPC_VERSION,
-                         topic=self.topic)
+        cctxt = self.client.prepare(version=self.DVR_RPC_VERSION)
+        return cctxt.call(context, 'get_dvr_mac_address_by_host', host=host)
 
     @log.log
     def get_dvr_mac_address_list(self, context):
-        return self.call(context,
-                         self.make_msg('get_dvr_mac_address_list'),
-                         version=self.DVR_RPC_VERSION,
-                         topic=self.topic)
+        cctxt = self.client.prepare(version=self.DVR_RPC_VERSION)
+        return cctxt.call(context, 'get_dvr_mac_address_list')
 
     @log.log
-    def get_compute_ports_on_host_by_subnet(self, context, host, subnet):
-        return self.call(context,
-                         self.make_msg('get_compute_ports_on_host_by_subnet',
-                                       host=host,
-                                       subnet=subnet),
-                         version=self.DVR_RPC_VERSION,
-                         topic=self.topic)
+    def get_ports_on_host_by_subnet(self, context, host, subnet):
+        cctxt = self.client.prepare(version=self.DVR_RPC_VERSION)
+        return cctxt.call(context, 'get_ports_on_host_by_subnet',
+                          host=host, subnet=subnet)
 
     @log.log
     def get_subnet_for_dvr(self, context, subnet):
-        return self.call(context,
-                         self.make_msg('get_subnet_for_dvr',
-                                       subnet=subnet),
-                         version=self.DVR_RPC_VERSION,
-                         topic=self.topic)
+        cctxt = self.client.prepare(version=self.DVR_RPC_VERSION)
+        return cctxt.call(context, 'get_subnet_for_dvr', subnet=subnet)
 
 
-class DVRServerRpcCallbackMixin(object):
+class DVRServerRpcCallback(object):
     """Plugin-side RPC (implementation) for agent-to-plugin interaction."""
+
+    # History
+    #   1.0 Initial version
+
+    target = messaging.Target(version='1.0')
 
     @property
     def plugin(self):
@@ -71,15 +67,20 @@ class DVRServerRpcCallbackMixin(object):
     def get_dvr_mac_address_list(self, context):
         return self.plugin.get_dvr_mac_address_list(context)
 
-    def get_dvr_mac_address_by_host(self, context, host):
+    def get_dvr_mac_address_by_host(self, context, **kwargs):
+        host = kwargs.get('host')
+        LOG.debug("DVR Agent requests mac_address for host %s", host)
         return self.plugin.get_dvr_mac_address_by_host(context, host)
 
-    def get_compute_ports_on_host_by_subnet(self, context, host, subnet):
-        return self.plugin.get_compute_ports_on_host_by_subnet(context,
-                                                               host,
-                                                               subnet)
+    def get_ports_on_host_by_subnet(self, context, **kwargs):
+        host = kwargs.get('host')
+        subnet = kwargs.get('subnet')
+        LOG.debug("DVR Agent requests list of VM ports on host %s", host)
+        return self.plugin.get_ports_on_host_by_subnet(context,
+            host, subnet)
 
-    def get_subnet_for_dvr(self, context, subnet):
+    def get_subnet_for_dvr(self, context, **kwargs):
+        subnet = kwargs.get('subnet')
         return self.plugin.get_subnet_for_dvr(context, subnet)
 
 
@@ -97,17 +98,13 @@ class DVRAgentRpcApiMixin(object):
         """Notify dvr mac address updates."""
         if not dvr_macs:
             return
-        self.fanout_cast(context,
-                         self.make_msg('dvr_mac_address_update',
-                                       dvr_macs=dvr_macs),
-                         version=self.DVR_RPC_VERSION,
-                         topic=self._get_dvr_update_topic())
+        cctxt = self.client.prepare(topic=self._get_dvr_update_topic(),
+                                    version=self.DVR_RPC_VERSION, fanout=True)
+        cctxt.cast(context, 'dvr_mac_address_update', dvr_macs=dvr_macs)
 
 
 class DVRAgentRpcCallbackMixin(object):
     """Agent-side RPC (implementation) for plugin-to-agent interaction."""
-
-    dvr_agent = None
 
     def dvr_mac_address_update(self, context, **kwargs):
         """Callback for dvr_mac_addresses update.
@@ -116,7 +113,4 @@ class DVRAgentRpcCallbackMixin(object):
         """
         dvr_macs = kwargs.get('dvr_macs', [])
         LOG.debug("dvr_macs updated on remote: %s", dvr_macs)
-        if not self.dvr_agent:
-            LOG.warn(_("DVR agent binding currently not set."))
-            return
         self.dvr_agent.dvr_mac_address_update(dvr_macs)

@@ -28,6 +28,7 @@ from neutron.common import constants
 from neutron.common import exceptions as ntn_exc
 import neutron.common.test_lib as test_lib
 from neutron import context
+from neutron.extensions import dvr
 from neutron.extensions import external_net
 from neutron.extensions import l3
 from neutron.extensions import l3_ext_gw_mode
@@ -43,7 +44,6 @@ from neutron.plugins.vmware.common import exceptions as nsx_exc
 from neutron.plugins.vmware.common import sync
 from neutron.plugins.vmware.common import utils
 from neutron.plugins.vmware.dbexts import db as nsx_db
-from neutron.plugins.vmware.extensions import distributedrouter as dist_router
 from neutron.plugins.vmware import nsxlib
 from neutron.tests.unit import _test_extension_portbindings as test_bindings
 import neutron.tests.unit.test_db_plugin as test_plugin
@@ -124,7 +124,8 @@ class TestV2HTTPResponse(test_plugin.TestV2HTTPResponse, NsxPluginV2TestCase):
 class TestPortsV2(NsxPluginV2TestCase,
                   test_plugin.TestPortsV2,
                   test_bindings.PortBindingsTestCase,
-                  test_bindings.PortBindingsHostTestCaseMixin):
+                  test_bindings.PortBindingsHostTestCaseMixin,
+                  test_bindings.PortBindingsVnicTestCaseMixin):
 
     VIF_TYPE = portbindings.VIF_TYPE_OVS
     HAS_PORT_FILTER = True
@@ -240,7 +241,7 @@ class TestPortsV2(NsxPluginV2TestCase,
 class TestNetworksV2(test_plugin.TestNetworksV2, NsxPluginV2TestCase):
 
     def _test_create_bridge_network(self, vlan_id=0):
-        net_type = vlan_id and 'vlan' or 'flat'
+        net_type = 'vlan' if vlan_id else 'flat'
         name = 'bridge_net'
         expected = [('subnets', []), ('name', name), ('admin_state_up', True),
                     ('status', 'ACTIVE'), ('shared', False),
@@ -408,7 +409,7 @@ class TestL3ExtensionManager(object):
             l3.RESOURCE_ATTRIBUTE_MAP[key].update(
                 l3_ext_gw_mode.EXTENDED_ATTRIBUTES_2_0.get(key, {}))
             l3.RESOURCE_ATTRIBUTE_MAP[key].update(
-                dist_router.EXTENDED_ATTRIBUTES_2_0.get(key, {}))
+                dvr.EXTENDED_ATTRIBUTES_2_0.get(key, {}))
         # Finally add l3 resources to the global attribute map
         attributes.RESOURCE_ATTRIBUTE_MAP.update(
             l3.RESOURCE_ATTRIBUTE_MAP)
@@ -619,7 +620,7 @@ class TestL3NatTestCase(L3NatTest,
                         res.status_int)
 
     def test_router_add_gateway_invalid_network_returns_404(self):
-        # NOTE(salv-orlando): This unit test has been overriden
+        # NOTE(salv-orlando): This unit test has been overridden
         # as the nsx plugin support the ext_gw_mode extension
         # which mandates a uuid for the external network identifier
         with self.router() as r:
@@ -937,14 +938,14 @@ class TestL3NatTestCase(L3NatTest,
         subnets = self._list('subnets')['subnets']
         with self.subnet() as s:
             with self.port(subnet=s, device_id='1234',
-                           device_owner=constants.DEVICE_OWNER_DHCP):
+                           device_owner=constants.DEVICE_OWNER_DHCP) as port:
                 subnets = self._list('subnets')['subnets']
                 self.assertEqual(len(subnets), 1)
                 self.assertEqual(subnets[0]['host_routes'][0]['nexthop'],
                                  '10.0.0.2')
                 self.assertEqual(subnets[0]['host_routes'][0]['destination'],
                                  '169.254.169.254/32')
-
+            self._delete('ports', port['port']['id'])
             subnets = self._list('subnets')['subnets']
             # Test that route is deleted after dhcp port is removed
             self.assertEqual(len(subnets[0]['host_routes']), 0)
@@ -960,23 +961,28 @@ class TestL3NatTestCase(L3NatTest,
         with self.port() as p:
             private_sub = {'subnet': {'id':
                                       p['port']['fixed_ips'][0]['subnet_id']}}
-            with self.floatingip_no_assoc(private_sub) as fip:
-                port_id = p['port']['id']
-                body = self._update('floatingips', fip['floatingip']['id'],
-                                    {'floatingip': {'port_id': port_id}})
-                self.assertEqual(body['floatingip']['port_id'], port_id)
-                # Floating IP status should be active
-                self.assertEqual(constants.FLOATINGIP_STATUS_ACTIVE,
-                                 body['floatingip']['status'])
-                # Disassociate
-                body = self._update('floatingips', fip['floatingip']['id'],
-                                    {'floatingip': {'port_id': None}})
-                body = self._show('floatingips', fip['floatingip']['id'])
-                self.assertIsNone(body['floatingip']['port_id'])
-                self.assertIsNone(body['floatingip']['fixed_ip_address'])
-                # Floating IP status should be down
-                self.assertEqual(constants.FLOATINGIP_STATUS_DOWN,
-                                 body['floatingip']['status'])
+            plugin = manager.NeutronManager.get_plugin()
+            with mock.patch.object(plugin, 'notify_routers_updated') as notify:
+                with self.floatingip_no_assoc(private_sub) as fip:
+                    port_id = p['port']['id']
+                    body = self._update('floatingips', fip['floatingip']['id'],
+                                        {'floatingip': {'port_id': port_id}})
+                    self.assertEqual(body['floatingip']['port_id'], port_id)
+                    # Floating IP status should be active
+                    self.assertEqual(constants.FLOATINGIP_STATUS_ACTIVE,
+                                     body['floatingip']['status'])
+                    # Disassociate
+                    body = self._update('floatingips', fip['floatingip']['id'],
+                                        {'floatingip': {'port_id': None}})
+                    body = self._show('floatingips', fip['floatingip']['id'])
+                    self.assertIsNone(body['floatingip']['port_id'])
+                    self.assertIsNone(body['floatingip']['fixed_ip_address'])
+                    # Floating IP status should be down
+                    self.assertEqual(constants.FLOATINGIP_STATUS_DOWN,
+                                     body['floatingip']['status'])
+
+                # check that notification was not requested
+                self.assertFalse(notify.called)
 
     def test_create_router_maintenance_returns_503(self):
         with self._create_l3_ext_network() as net:
