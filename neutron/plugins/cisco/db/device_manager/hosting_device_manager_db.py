@@ -278,16 +278,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                           '%(id)s due to insufficent slot availability.',
                           {'num': num, 'device': hosting_device['id'],
                            'id': resource['id']})
-                self._dispatch_pool_maintenance_job(hosting_device['template'],
-                                                    num)
+                self._dispatch_pool_maintenance_job(hosting_device['template'])
                 return False
             # handle any changes to exclusive usage by tenant
             if exclusive and hosting_device['tenant_bound'] is None:
                 self._update_hosting_device_exclusivity(
                     context, hosting_device, resource['tenant_id'])
             elif not exclusive and hosting_device['tenant_bound'] is not None:
-                self._update_hosting_device_exclusivity(
-                    context, hosting_device, None)
+                self._update_hosting_device_exclusivity(context,
+                                                        hosting_device, None)
             slot_info.num_allocated = new_allocation
             context.session.add(slot_info)
         self._dispatch_pool_maintenance_job(hosting_device['template'])
@@ -394,30 +393,30 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def delete_all_hosting_devices_by_template(self, context, template,
                                                force_delete=False):
         """Deletes all hosting devices based on <template>."""
-        with context.session.begin(subtransactions=True):
-            plugging_drv = self.get_hosting_device_plugging_driver(
-                context, template['id'])
-            hosting_device_drv = self.get_hosting_device_driver(context,
-                                                                template['id'])
-            if plugging_drv is None or hosting_device_drv is None:
-                return
-            is_vm = template['host_category'] == VM_CATEGORY
-            query = context.session.query(hd_models.HostingDevice)
-            query = query.filter(hd_models.HostingDevice.template_id ==
-                                 template['id'])
-            for hd in query:
-                if not (hd.auto_delete or force_delete):
-                    # device manager is not responsible for life cycle
-                    # management of this hosting device.
-                    continue
-                res = plugging_drv.get_hosting_device_resources(
-                    context, hd.id, hd.complementary_id, self.l3_tenant_id(),
-                    self.mgmt_nw_id())
-                if is_vm:
-                    self._svc_vm_mgr.delete_service_vm(
-                        context, hd.id, hosting_device_drv, self.mgmt_nw_id())
-                plugging_drv.delete_hosting_device_resources(
-                    context, self.l3_tenant_id(), **res)
+#        with context.session.begin(subtransactions=True):
+        plugging_drv = self.get_hosting_device_plugging_driver(
+            context, template['id'])
+        hosting_device_drv = self.get_hosting_device_driver(context,
+                                                            template['id'])
+        if plugging_drv is None or hosting_device_drv is None:
+            return
+        is_vm = template['host_category'] == VM_CATEGORY
+        query = context.session.query(hd_models.HostingDevice)
+        query = query.filter(hd_models.HostingDevice.template_id ==
+                             template['id'])
+        for hd in query:
+            if not (hd.auto_delete or force_delete):
+                # device manager is not responsible for life cycle
+                # management of this hosting device.
+                continue
+            res = plugging_drv.get_hosting_device_resources(
+                context, hd.id, hd.complementary_id, self.l3_tenant_id(),
+                self.mgmt_nw_id())
+            if is_vm:
+                self._svc_vm_mgr.delete_service_vm(context, hd.id)
+            plugging_drv.delete_hosting_device_resources(
+                context, self.l3_tenant_id(), **res)
+            with context.session.begin(subtransactions=True):
                 # remove all allocations in this hosting device
                 context.session.query(hd_models.SlotAllocation).filter_by(
                     hosting_device_id=hd['id']).delete()
@@ -425,33 +424,33 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
                                               hosting_device_ids):
-        with context.session.begin(subtransactions=True):
-            e_context = context.elevated()
-            hosting_devices = self.get_hosting_devices_qry(
-                e_context, hosting_device_ids).all()
-            # 'hosting_info' is dictionary with ids of removed hosting
-            # devices and the affected logical resources for each
-            # removed hosting device:
-            #    {'hd_id1': {'routers': [id1, id2, ...],
-            #                'fw': [id1, ...],
-            #                 ...},
-            #     'hd_id2': {'routers': [id3, id4, ...]},
-            #                'fw': [id1, ...],
-            #                ...},
-            #     ...}
-            hosting_info = dict((id, {}) for id in hosting_device_ids)
-            #TODO(bobmel): Modify so service plugins register themselves
-            try:
-                l3plugin = manager.NeutronManager.get_service_plugins().get(
-                    svc_constants.L3_ROUTER_NAT)
-                l3plugin.handle_non_responding_hosting_devices(
-                    context, hosting_devices, hosting_info)
-            except AttributeError:
-                pass
-            for hd in hosting_devices:
-                if self._process_non_responsive_hosting_device(e_context, hd):
-                    self.dm_cfg_rpc_notifier.hosting_devices_removed(
-                        context, hosting_info, False, cfg_agent)
+#        with context.session.begin(subtransactions=True):
+        e_context = context.elevated()
+        hosting_devices = self.get_hosting_devices_qry(
+            e_context, hosting_device_ids).all()
+        # 'hosting_info' is dictionary with ids of removed hosting
+        # devices and the affected logical resources for each
+        # removed hosting device:
+        #    {'hd_id1': {'routers': [id1, id2, ...],
+        #                'fw': [id1, ...],
+        #                 ...},
+        #     'hd_id2': {'routers': [id3, id4, ...]},
+        #                'fw': [id1, ...],
+        #                ...},
+        #     ...}
+        hosting_info = dict((id, {}) for id in hosting_device_ids)
+        #TODO(bobmel): Modify so service plugins register themselves
+        try:
+            l3plugin = manager.NeutronManager.get_service_plugins().get(
+                svc_constants.L3_ROUTER_NAT)
+            l3plugin.handle_non_responding_hosting_devices(
+                context, hosting_devices, hosting_info)
+        except AttributeError:
+            pass
+        for hd in hosting_devices:
+            if self._process_non_responsive_hosting_device(e_context, hd):
+                self.dm_cfg_rpc_notifier.hosting_devices_removed(
+                    context, hosting_info, False, cfg_agent)
 
     def get_device_info_for_agent(self, hosting_device):
         """ Returns information about <hosting_device> needed by config agent.
@@ -612,21 +611,21 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 context, template['name'] + '_nrouter', template['image'],
                 template['flavor'], hosting_device_drv, res['mgmt_port'],
                 res.get('ports'))
-            with context.session.begin(subtransactions=True):
-                if vm_instance is not None:
-                    dev_data.update(
-                        {'id': vm_instance['id'],
-                         'complementary_id': complementary_id,
-                         'management_port_id': res['mgmt_port']['id']})
-                    self.create_hosting_device(context,
-                                               {'hosting_device': dev_data})
-                    hosting_devices.append(vm_instance)
-                else:
-                    # Fundamental error like could not contact Nova
-                    # Cleanup anything we created
-                    plugging_drv.delete_hosting_device_resources(
-                        context, self.l3_tenant_id(), **res)
-                    return hosting_devices
+#            with context.session.begin(subtransactions=True):
+            if vm_instance is not None:
+                dev_data.update(
+                    {'id': vm_instance['id'],
+                     'complementary_id': complementary_id,
+                     'management_port_id': res['mgmt_port']['id']})
+                self.create_hosting_device(context,
+                                           {'hosting_device': dev_data})
+                hosting_devices.append(vm_instance)
+            else:
+                # Fundamental error like could not contact Nova
+                # Cleanup anything we created
+                plugging_drv.delete_hosting_device_resources(
+                    context, self.l3_tenant_id(), **res)
+                break
         LOG.info(_LI('Created %(num)d hosting device VMs based on template '
                      '%(t_id)s'), {'num': len(hosting_devices),
                                    't_id': template['id']})
@@ -666,19 +665,19 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             func.count(hd_models.SlotAllocation.logical_resource_id))
         hd_candidates = query.all()
         num_possible_to_delete = min(len(hd_candidates), num)
-        with context.session.begin(subtransactions=True):
-            for i in xrange(num_possible_to_delete):
-                res = plugging_drv.get_hosting_device_resources(
-                    context, hd_candidates[i]['id'],
-                    hd_candidates[i]['complementary_id'], self.l3_tenant_id(),
-                    self.mgmt_nw_id())
-                if self._svc_vm_mgr.delete_service_vm(
-                        context, hd_candidates[i]['id'], hosting_device_drv,
-                        self.mgmt_nw_id()):
+#        with context.session.begin(subtransactions=True):
+        for i in xrange(num_possible_to_delete):
+            res = plugging_drv.get_hosting_device_resources(
+                context, hd_candidates[i]['id'],
+                hd_candidates[i]['complementary_id'], self.l3_tenant_id(),
+                self.mgmt_nw_id())
+            if self._svc_vm_mgr.delete_service_vm(context,
+                                                  hd_candidates[i]['id']):
+                with context.session.begin(subtransactions=True):
                     context.session.delete(hd_candidates[i])
-                    plugging_drv.delete_hosting_device_resources(
-                        context, self.l3_tenant_id(), **res)
-                    num_deleted += 1
+                plugging_drv.delete_hosting_device_resources(
+                    context, self.l3_tenant_id(), **res)
+                num_deleted += 1
         LOG.info(_LI('Deleted %(num)d hosting devices based on template '
                      '%(t_id)s'), {'num': num_deleted, 't_id': template['id']})
         return num_deleted
@@ -699,9 +698,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         res = plugging_drv.get_hosting_device_resources(
             context, hosting_device['id'], hosting_device['complementary_id'],
             self.l3_tenant_id(), self.mgmt_nw_id())
-        if not self._svc_vm_mgr.delete_service_vm(
-                context, hosting_device['id'], hosting_device_drv,
-                self.mgmt_nw_id()):
+        if not self._svc_vm_mgr.delete_service_vm(context,
+                                                  hosting_device['id']):
             LOG.error(_LE('Failed to delete hosting device %s service VM. '
                           'Will un-register it anyway.'),
                       hosting_device['id'])
