@@ -117,17 +117,74 @@ class CiscoNexusL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     nxdb.add_nexus_vrf_binding(context.session, vrf_id,
                                                connection[0])
 
+    def _create_floatingip(self, context, port, floating_ip):
+        host_id = port.get(portbindings.HOST_ID)
+        fixed_ips = port.get('fixed_ips')
+        ips = []
+        for ip in fixed_ips:
+            ips.append(ip.get('ip_address'))
+
+        # Get switch connections for this host
+        connections = self._get_switch_info(host_id)
+        for connection in connections:
+            self.driver.create_floatingip_nat_rule(
+                connection[0], floating_ip.get('floating_ip_address'), ips)
+
+    def _delete_floatingip(self, context, floating_ip):
+        port = self.get_port(context, floating_ip.get('port_id'))
+        host_id = port.get(portbindings.HOST_ID)
+        fixed_ips = port.get('fixed_ips')
+        ips = []
+        for ip in fixed_ips:
+            ips.append(ip.get('ip_address'))
+
+        # Get switch connections for this host
+        connections = self._get_switch_info(host_id)
+        for connection in connections:
+            self.driver.delete_floatingip_nat_rule(
+                connection[0], floating_ip.get('floating_ip_address'), ips)
+
     def remove_router_interface(self, context, router_id, interface_info):
         # Get vrf_id for this router
         db_router = nxdb.get_nexus_vrf(context.session, router_id)
         # Get all bindings for this vrf
         bindings = nxdb.get_nexus_vrf_bindings(context.session,
                                                db_router['vrf_id'])
-        for binding in bindings:
-            self.driver.delete_vrf(binding['vrf_id'], binding['switch_ip'])
-            nxdb.delete_nexus_vrf_binding(context.session,
-                                          binding['vrf_id'],
-                                          binding['switch_ip'])
 
+        try:
+            for binding in bindings:
+                self.driver.delete_vrf(binding['vrf_id'], binding['switch_ip'])
+                nxdb.delete_nexus_vrf_binding(context.session,
+                                              binding['vrf_id'],
+                                              binding['switch_ip'])
+        except:
+            pass
         return super(CiscoNexusL3ServicePlugin, self).remove_router_interface(
             context, router_id, interface_info)
+
+    def update_floatingip(self, context, id, floatingip):
+        port_id = floatingip.get('floatingip').get('port_id')
+        floating_ip = self.get_floatingip(context, id)
+        if port_id:
+            port = self.get_port(context, port_id)
+            self._create_floatingip(context, port, floating_ip)
+        else:
+            self._delete_floatingip(context, floating_ip)
+        return super(CiscoNexusL3ServicePlugin, self).update_floatingip(
+            context, id, floatingip)
+
+    def create_floatingip(self, context, floatingip):
+        return super(CiscoNexusL3ServicePlugin, self).create_floatingip(
+            context, floatingip)
+
+    def update_floatingip_status(self, context, floatingip_id, status):
+        return super(CiscoNexusL3ServicePlugin, self).update_floatingip_status(
+            context, floatingip_id, status)
+
+    def delete_floatingip(self, context, id):
+        return super(NexusL3ServicePlugin, self).delete_floatingip(
+            context, id)
+
+    def dissassociate_floatingips(self, context, port_id):
+        return super(NexusL3ServicePlugin, self).disassociate_floatingips(
+            context, port_id)

@@ -211,3 +211,15 @@ class CiscoNexusDriver(object):
         confstr = snipp.CMD_NO_VRF_SNIPPET % (vrf_name)
         confstr = self.create_xml_snippet(confstr)
         self._edit_config(nexus_host, target='running', config=confstr)
+
+    def create_floatingip_nat_rule(self, nexus_host, floatingip, internal_ips):
+        for ip in internal_ips:
+            confstr = snipp.CMD_CREATE_NAT_RULE_SNIPPET % (ip, floatingip)
+            confstr = self.create_xml_snippet(confstr)
+            self._edit_config(nexus_host, target='running', config=confstr)
+
+    def delete_floatingip_nat_rule(self, nexus_host, floatingip, internal_ips):
+        for ip in internal_ips:
+            confstr = snipp.CMD_NO_NAT_RULE_SNIPPET % (ip, floatingip)
+            confstr = self.create_xml_snippet(confstr)
+            self._edit_config(nexus_host, target='running', config=confstr)

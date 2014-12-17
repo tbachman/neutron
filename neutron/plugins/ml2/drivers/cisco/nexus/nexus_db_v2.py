@@ -164,9 +164,11 @@ def add_nexus_vrf(session, router_id):
 def delete_nexus_vrf(session, vrf_id):
     if session is None:
         session = db.get_session()
-
-    binding = session.query(nexus_models_v2.NexusVRF).filter_by(
-        router_id=router_id).one()
+    try:
+        binding = session.query(nexus_models_v2.NexusVRF).filter_by(
+            vrf_id=vrf_id).one()
+    except:
+        pass
     session.delete(binding)
 
 
