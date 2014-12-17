@@ -33,6 +33,7 @@ NETWORK = 'network1'
 NETWORK_NAME = 'one_network'
 SUBNET_GATEWAY = '10.3.2.1'
 SUBNET_CIDR = '10.3.1.0/24'
+FLOATING_IP_ADDRESS = '172.0.0.1'
 VLAN = 100
 
 
@@ -51,11 +52,18 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
         self.router = {'router': {'name': ROUTER,
                                   'id': 'abcdef-router',
                                   'admin_state_up': True}}
-
+        self.floatingip = {'floatingip': 
+                            {'id':'abcdef',
+                             'floating_ip_address': FLOATING_IP_ADDRESS,
+                             'port_id': 'port1'}
+                          }
         self.ports = [
                         {'id': 'port1',
                          'device_owner': 'compute:None',
-                         portbindings.HOST_ID: 'host1'},
+                         portbindings.HOST_ID: 'host1',
+                         'fixed_ips': [{
+                            'ip_address': '10.0.0.1'
+                         }]},
                         {'id': 'port2',
                          'device_owner': 'compute:None',
                          portbindings.HOST_ID: 'host2'}
@@ -87,11 +95,16 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
         self.plugin.get_subnet = mock.Mock(return_value=self.interface_info)
         self.plugin.get_ports = mock.Mock(return_value=self.ports)
         self.plugin._get_vlanid = mock.Mock(return_value=VLAN)
+        self.plugin.get_port = mock.Mock(return_value=self.ports[0])
+        self.plugin.get_floatingip = mock.Mock(
+            return_value=self.floatingip.get('floatingip'))
 
         mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
                    'add_router_interface').start()
         mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
                    'remove_router_interface').start()
+        mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
+                   'update_floatingip').start()
         mock.patch('neutron.openstack.common.excutils.'
                    'save_and_reraise_exception').start()
 
@@ -143,3 +156,33 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
                                             self.interface_info)
         self.assertTrue(self._check_xml_keywords([vrf_id],
             driver._edit_config.mock_calls[0][2]['config']))
+
+    def test_update_floatingip_with_port_assoc(self):
+        driver = self.plugin.driver
+
+        with mock.patch('neutron.plugins.ml2.drivers.cisco.nexus.'
+                        'nexus_db_v2.delete_nexus_vrf'):
+            fip_id = self.floatingip['floatingip']['id']
+            pid = self.ports[0].get('fixed_ips')[0].get('ip_address')
+            self.plugin.update_floatingip(self.context,
+                                          fip_id,
+                                          self.floatingip)
+            self.assertTrue(
+                self._check_xml_keywords(
+                    [FLOATING_IP_ADDRESS, pid],
+                    driver._edit_config.mock_calls[0][2]['config']))
+
+    def test_update_floatingip_without_port_assoc(self):
+        driver = self.plugin.driver
+
+        with mock.patch('neutron.plugins.ml2.drivers.cisco.nexus.'
+                        'nexus_db_v2.delete_nexus_vrf'):
+            del self.floatingip['floatingip']['port_id']
+            fip_id = self.floatingip['floatingip']['id']
+            self.plugin.update_floatingip(self.context,
+                                          fip_id,
+                                          self.floatingip)
+            self.assertTrue(
+                self._check_xml_keywords(
+                    [FLOATING_IP_ADDRESS],
+                    driver._edit_config.mock_calls[0][2]['config']))
