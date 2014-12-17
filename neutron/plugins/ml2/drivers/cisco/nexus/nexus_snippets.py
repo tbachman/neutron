@@ -231,3 +231,39 @@ CMD_NO_VRF_SNIPPET = """
     </vrf>
 </no>
 """
+
+CMD_CREATE_NAT_RULE_SNIPPET = """
+<ip>
+    <nat>
+        <inside>
+            <source>
+                <static>
+                    <static>
+                        <__XML__PARAM_value>%s</__XML__PARAM_value>
+                        <__XML__PARAM_value>%s</__XML__PARAM_value>
+                    </static>
+                </static>
+            </source>
+        </inside>
+    </nat>
+</ip>
+"""
+
+CMD_NO_NAT_RULE_SNIPPET = """
+<no>
+<ip>
+    <nat>
+        <inside>
+            <source>
+                <static>
+                    <static>
+                        <__XML__PARAM_value>%s</__XML__PARAM_value>
+                        <__XML__PARAM_value>%s</__XML__PARAM_value>
+                    </static>
+                </static>
+            </source>
+        </inside>
+    </nat>
+</ip>
+</no>
+"""

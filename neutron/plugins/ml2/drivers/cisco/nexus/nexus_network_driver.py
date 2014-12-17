@@ -190,8 +190,14 @@ class CiscoNexusDriver(object):
         confstr = self.create_xml_snippet(confstr)
         self._edit_config(nexus_host, target='running', config=confstr)
 
-    def create_floatingip_nat_rule(self, nexus_host, floatingip, internal_ip):
-        print "\n\n\n\n%s %s\n\n\n\n" % (floatingip, internal_ip)
+    def create_floatingip_nat_rule(self, nexus_host, floatingip, internal_ips):
+        for ip in internal_ips:
+            confstr = snipp.CMD_CREATE_NAT_RULE_SNIPPET % (ip, floatingip)
+            confstr = self.create_xml_snippet(confstr)
+            self._edit_config(nexus_host, target='running', config=confstr)
 
-    def delete_floatingip_nat_rule(self, nexus_host, floatingip, internal_ip):
-        print "\n\n\n\n%s %s\n\n\n\n" % (floatingip, internal_ip)
+    def delete_floatingip_nat_rule(self, nexus_host, floatingip, internal_ips):
+        for ip in internal_ips:
+            confstr = snipp.CMD_NO_NAT_RULE_SNIPPET % (ip, floatingip)
+            confstr = self.create_xml_snippet(confstr)
+            self._edit_config(nexus_host, target='running', config=confstr)
