@@ -255,9 +255,9 @@ class N1KVMechanismDriver(api.MechanismDriver):
         """Send delete port notification to the VSM."""
         port = context.current
         session = context._plugin_context.session
-        binding = n1kv_db.get_policy_binding(port['id'], session)
+        profile_id = port[n1kv_const.N1KV_PROFILE]
         vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
-                                      binding.profile_id,
+                                      profile_id,
                                       port['network_id'])
         try:
             self.n1kvclient.delete_n1kv_port(vmnetwork_name, port['id'])
@@ -270,7 +270,7 @@ class N1KVMechanismDriver(api.MechanismDriver):
                      "profile ID: %(profile_id)s"),
                  {"network_id": port['network_id'],
                   "id": port['id'],
-                  "profile_id": binding.profile_id})
+                  "profile_id": profile_id})
 
     def bind_port(self, context):
         segments = context.network.network_segments
