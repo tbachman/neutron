@@ -33,6 +33,9 @@ from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_client
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_db
+from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_sync
+from neutron.db import db_base_plugin_v2
+import eventlet
 
 LOG = log.getLogger(__name__)
 
@@ -41,6 +44,10 @@ class N1KVMechanismDriver(api.MechanismDriver):
 
     def initialize(self):
         self.n1kvclient = n1kv_client.Client()
+
+        self.sync_obj = n1kv_sync.N1kvSyncDriver(db_base_plugin_v2.NeutronDbPluginV2())
+
+        eventlet.spawn(self.sync_obj.do_sync)
 
         # Get VLAN/VXLAN network profiles name
         self.netp_vlan_name = (cfg.CONF.ml2_cisco_n1kv.

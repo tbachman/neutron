@@ -96,13 +96,17 @@ class Client(object):
     ports_path = "/kvm/vm-network/%s/ports"
     port_path = "/kvm/vm-network/%s/ports/%s"
     network_segment_path = "/network-segment/%s"
+    network_segments_path = "/network-segment"
     network_segment_pool_path = "/network-segment-pool/%s"
+    network_segment_pools_path = "/network-segment-pool"
     ip_pool_path = "/ip-pool-template/%s"
+    ip_pools_path = "/ip-pool-template"
     vm_networks_path = "/kvm/vm-network"
     vm_network_path = "/kvm/vm-network/%s"
     bridge_domains_path = "/kvm/bridge-domain"
     bridge_domain_path = "/kvm/bridge-domain/%s"
     logical_network_path = "/logical-network/%s"
+    md5_path = "/nsm-md5-hashes"
 
     pool = eventlet.GreenPool(cfg.CONF.ml2_cisco_n1kv.http_pool_size)
 
@@ -125,6 +129,58 @@ class Client(object):
         :returns: JSON string
         """
         return self._get(self.port_profiles_path)
+
+    def list_network_profiles(self):
+        '''
+        Fetch all network profiles from VSM.
+
+        :return: JSON string
+        '''
+        return self._get(self.network_segment_pools_path)
+
+    def list_networks(self):
+        '''
+        Fetch all networks from VSM.
+
+        :return: JSON string
+        '''
+        return self._get(self.network_segments_path)
+
+    def list_subnets(self):
+        '''
+        Fetch all subnets from VSM.
+
+        :return: JSON string
+        '''
+        return self._get(self.ip_pools_path)
+
+    def list_vmnetworks(self):
+        '''
+        Fetch all VM networks from VSM.
+
+        :return: JSON string
+        '''
+        return self._get(self.vm_networks_path)
+
+    def list_md5_hashes(self):
+        '''
+        Fetch MD5 hashes for network profiles, networks, subnets,
+        ports and a consolidated hash of these hashes from the
+        VSM.
+
+        :return: JSON string
+        '''
+        return self._get(self.md5_path)
+
+    def show_network(self, network_id):
+        '''
+        Fetch details of a given network like segment type from the VSM
+
+        :param network_id: UUID of the network whose details are needed
+
+        :return: JSON string
+        '''
+        return self._get(self.network_segment_path % network_id)
 
     def _create_logical_network(self, network_profile):
         """Create a logical network on the VSM.

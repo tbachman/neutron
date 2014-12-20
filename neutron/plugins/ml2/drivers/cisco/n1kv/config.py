@@ -42,6 +42,9 @@ n1kv_opts = [
     cfg.IntOpt('http_timeout', default=15,
                help=_("HTTP timeout, in seconds, for connections to the "
                       "Nexus1000V VSM")),
+    cfg.IntOpt('sync_interval', default=300,
+               help=_("Time interval between consecutive neutron-VSM syncs ")),
+
 ]
 
 

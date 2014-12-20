@@ -18,6 +18,9 @@ import sqlalchemy.orm.exc as sa_exc
 import neutron.db.api as db
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_models
+from neutron.db import models_v2
+from neutron.db import db_base_plugin_v2
+from neutron import context as ncontext
 
 
 def add_network_binding(network_id,
@@ -121,3 +124,69 @@ def get_policy_binding(port_id, db_session=None):
                 filter_by(port_id=port_id).one())
     except sa_exc.NoResultFound:
         raise n1kv_exc.PortBindingNotFound(port_id=port_id)
+
+
+def get_network_profiles(db_base_plugin=None):
+    '''
+    Get details for all network profiles from N1kv table of the neutron database.
+
+    :return: List of network profile objects
+    '''
+    db_session = db.get_session()
+    np_objects = db_session.query(n1kv_models.NetworkProfile).all()
+    return np_objects
+
+
+def get_networks(db_base_plugin):
+    '''
+    Get details for all networks, from non-N1kv tables of the neutron database
+
+    :param db_base_plugin: Instance of the NeutronDbPluginV2 class
+
+    :return: List of network dictionaries
+    '''
+    context = ncontext.get_admin_context()
+    nets = db_base_plugin.get_networks(context)
+    return nets
+
+
+def get_subnets(db_base_plugin):
+    '''
+    Get details for all subnets, from non-N1kv tables of the neutron database
+
+    :param db_base_plugin: Instance of the NeutronDbPluginV2 class
+
+    :return: List of subnet dictionaries
+    '''
+    context = ncontext.get_admin_context()
+    subnets = db_base_plugin.get_subnets(context)
+    return subnets
+
+
+def get_ports(db_base_plugin):
+    '''
+    Get details for all ports, from non-N1kv tables of the neutron database
+
+    :param db_base_plugin:  Instance of the NeutronDbPluginV2 class
+
+    :return: List of port dictionaries
+    '''
+    context = ncontext.get_admin_context()
+    ports = db_base_plugin.get_ports(context)
+    return ports
+
+
+def get_network_profile_by_network(network_id):
+    '''
+    Given a network, get all the details of its network profile
+
+    :param network_id: UUID of the network
+
+    :return: Network profile object
+    '''
+    db_session = db.get_session()
+    network_profile_local = db_session.query(n1kv_models.N1kvNetworkBinding).filter_by(
+                                            network_id=network_id).one()
+    network_profile_global = db_session.query(n1kv_models.NetworkProfile).filter_by(
+                                            id=network_profile_local.profile_id).one()
+    return network_profile_global
