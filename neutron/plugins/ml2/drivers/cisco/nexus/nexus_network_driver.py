@@ -147,7 +147,13 @@ class CiscoNexusDriver(object):
         """Create XML snippet.
 
         Creates the Proper XML structure for the Nexus Switch Configuration.
+        and also does 'copy run start' if configured to do so.  This
+        latter command allows configuration to persist on the switch after
+        reboot.
         """
+        if conf.cfg.CONF.ml2_cisco.persistent_switch_config:
+            customized_config += (snipp.EXEC_SAVE_CONF_SNIPPET)
+
         conf_xml_snippet = snipp.EXEC_CONF_SNIPPET % (customized_config)
         return conf_xml_snippet
 

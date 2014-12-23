@@ -244,13 +244,26 @@ class CiscoML2MechanismTestCase(test_db_plugin.NeutronDbPluginV2TestCase):
         return False
 
     def _is_in_last_nexus_cfg(self, words):
-        """Confirm last config sent to Nexus contains specified keywords."""
+        """Confirm last non-preserve config sent to Nexus
+        contains specified keywords.
+
+        """
         if (self.mock_ncclient.connect.return_value.
             edit_config.call_count == 0):
             return False
+
         last_cfg = (self.mock_ncclient.connect.return_value.
                     edit_config.mock_calls[-1][2]['config'])
-        return all(word in last_cfg for word in words)
+        result = all(word in last_cfg for word in words)
+
+        # If persistent_switch_config, 'copy run start' also sent.
+        if (result is True and
+            cisco_config.cfg.CONF.ml2_cisco.persistent_switch_config):
+            last_cfg = (self.mock_ncclient.connect.return_value.
+                        edit_config.mock_calls[-1][2]['config'])
+            preserve_words = ['copy', 'running-config', 'startup-config']
+            result = all(word in last_cfg for word in preserve_words)
+        return result
 
     def _is_vlan_configured(self, vlan_creation_expected=True,
                             first_vlan_addition=False):
@@ -463,6 +476,18 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
 
                     # Return to first segment for delete port calls.
                     self.mock_top_bound_segment.return_value = BOUND_SEGMENT1
+
+    def test_nexus_enable_vlan_cmd_on_same_host_copyrs(self):
+        """Verify copy run start executed on previous test
+
+           When _is_vlan_configured is executed, it calls
+           self._is_in_last_nexus_cfg which checks that
+           other configure staggered around 'copy run start'.
+        """
+        cisco_config.cfg.CONF.set_override('persistent_switch_config',
+            True, 'ml2_cisco')
+
+        self.test_nexus_enable_vlan_cmd_on_same_host()
 
     def test_nexus_enable_vlan_cmd_on_different_hosts(self):
         """Verify the syntax of the command to enable a vlan on an intf.

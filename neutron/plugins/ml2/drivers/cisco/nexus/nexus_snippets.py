@@ -33,6 +33,10 @@ EXEC_GET_INTF_SNIPPET = """
     <cmd>show running-config interface %s %s</cmd>
 """
 
+EXEC_SAVE_CONF_SNIPPET = """
+            <cmd>copy running-config startup-config</cmd>
+"""
+
 CMD_VLAN_CONF_SNIPPET = """
             <vlan>
               <vlan-id-create-delete>

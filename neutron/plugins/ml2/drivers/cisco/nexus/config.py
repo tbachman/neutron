@@ -25,6 +25,8 @@ ml2_cisco_opts = [
                help=_("The physical network managed by the switches.")),
     cfg.StrOpt('provider_vlan_name_prefix', default='p-',
         help=_("VLAN Name prefix for provider vlans")),
+    cfg.BoolOpt('persistent_switch_config', default=False,
+                help=_("To make Nexus configuration persistent")),
     cfg.BoolOpt('provider_vlan_auto_create', default=True,
         help=_('Provider VLANs are automatically created as needed '
                'on the Nexus switch')),
