@@ -376,6 +376,7 @@ class Client(object):
                 'tenantId': port['tenant_id'],
                 'portId': port['id'],
                 'macAddress': port['mac_address'],
+                'portType': port['device_owner'],
                 }
         if port.get('fixed_ips'):
             body['ipAddress'] = port['fixed_ips'][0]['ip_address']
