@@ -44,6 +44,11 @@ FAKE_ID_2 = _uuid()
 FIP_PRI = 32768
 
 
+class FakeDev(object):
+    def __init__(self, name):
+        self.name = name
+
+
 class TestExclusiveRouterProcessor(base.BaseTestCase):
     def setUp(self):
         super(TestExclusiveRouterProcessor, self).setUp()
@@ -1034,8 +1039,11 @@ class TestBasicRouterOperations(base.BaseTestCase):
         del router['gw_port']
         agent.process_router(ri)
         self.assertEqual(self.send_arp.call_count, 1)
-        self.assertFalse(agent.process_router_floating_ip_addresses.called)
-        self.assertFalse(agent.process_router_floating_ip_nat_rules.called)
+        distributed = ri.router.get('distributed', False)
+        self.assertEqual(agent.process_router_floating_ip_addresses.called,
+                         distributed)
+        self.assertEqual(agent.process_router_floating_ip_nat_rules.called,
+                         distributed)
 
     def test_ha_router_keepalived_config(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
@@ -1660,10 +1668,6 @@ vrrp_instance VR_1 {
                         matchers.LessThan(nat_rules.index(internal_net_rule)))
 
     def test_process_router_delete_stale_internal_devices(self):
-        class FakeDev(object):
-            def __init__(self, name):
-                self.name = name
-
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         stale_devlist = [FakeDev('qr-a1b2c3d4-e5'),
                          FakeDev('qr-b2c3d4e5-f6')]
@@ -1711,10 +1715,6 @@ vrrp_instance VR_1 {
             self.mock_driver.unplug.assert_has_calls(calls, any_order=True)
 
     def test_process_router_delete_stale_external_devices(self):
-        class FakeDev(object):
-            def __init__(self, name):
-                self.name = name
-
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         stale_devlist = [FakeDev('qg-a1b2c3d4-e5')]
         stale_devnames = [dev.name for dev in stale_devlist]
@@ -1760,10 +1760,6 @@ vrrp_instance VR_1 {
         self.assertEqual(1, agent._queue.add.call_count)
 
     def test_destroy_fip_namespace(self):
-        class FakeDev(object):
-            def __init__(self, name):
-                self.name = name
-
         namespaces = ['qrouter-foo', 'qrouter-bar']
 
         self.mock_ip.get_namespaces.return_value = namespaces
@@ -1781,10 +1777,6 @@ vrrp_instance VR_1 {
         self.mock_ip.del_veth.assert_called_once_with('fpr-aaaa')
 
     def test_destroy_namespace(self):
-        class FakeDev(object):
-            def __init__(self, name):
-                self.name = name
-
         namespace = 'qrouter-bar'
 
         self.mock_ip.get_namespaces.return_value = [namespace]
