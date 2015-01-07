@@ -39,7 +39,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         tenant_id = self._get_tenant_id_for_create(context, rt)
         with context.session.begin(subtransactions=True):
             routertype_db = l3_models.RouterType(
-                id=uuidutils.generate_uuid(),
+                id=rt.get('id') or uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
                 name=rt['name'],
                 description=rt['description'],

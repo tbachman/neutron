@@ -811,11 +811,12 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             'type': {'allow_post': True, 'allow_put': True,
                      'validate': {'type:string': None}, 'is_visible': True,
                      'default': ''}}
+        self._credentials = {}
         for cred_uuid, kv_dict in cred_dict.items():
             # ensure cred_uuid is properly formatted
             cred_uuid = config.uuidify(cred_uuid)
             config.verify_resource_dict(kv_dict, True, attr_info)
-   #         self._credentials[cred_uuid] = kv_dict
+            self._credentials[cred_uuid] = kv_dict
 
     def _get_credentials(self, device_id):
         creds = self._credentials.get(device_id)
@@ -842,7 +843,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 is_create = True
             kv_dict['id'] = hdt_uuid
             kv_dict['tenant_id'] = self.l3_tenant_id()
-            config.verify_resource_dict(kv_dict, is_create, attr_info)
+            config.verify_resource_dict(kv_dict, True, attr_info)
             hdt = {ciscohostingdevicemanager.DEVICE_TEMPLATE: kv_dict}
             try:
                 if is_create:
@@ -875,7 +876,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 is_create = True
             kv_dict['id'] = hd_uuid
             kv_dict['tenant_id'] = self.l3_tenant_id()
-            config.verify_resource_dict(kv_dict, is_create, attr_info)
+            config.verify_resource_dict(kv_dict, True, attr_info)
             hd = {ciscohostingdevicemanager.DEVICE: kv_dict}
             try:
                 if is_create:

@@ -137,6 +137,9 @@ class HostingDeviceDBMixin(
                                        id, hosting_device_template):
         LOG.debug("update_hosting_device_template() called")
         hdt = hosting_device_template['hosting_device_template']
+        tenant_bound = hdt.get('tenant_bound')
+        if tenant_bound is not None:
+            hdt['tenant_bound'] = ':'.join(tenant_bound)
         with context.session.begin(subtransactions=True):
             hdt_query = context.session.query(hd_models.HostingDeviceTemplate)
             if not hdt_query.filter_by(id=id).update(hdt):

@@ -74,6 +74,13 @@ def convert_validate_port_value(port):
         raise HostingDeviceInvalidPortValue(port=port)
 
 
+def convert_empty_string_to_none(value):
+    if value == "":
+        return None
+    else:
+        return value
+
+
 def convert_validate_driver(driver):
     if driver is None:
         raise DriverNotFound(driver=driver)
@@ -110,7 +117,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                'is_visible': True,
                'primary_key': True},
         'template_id': {'allow_post': True, 'allow_put': False,
-                        'required_by_policy': True, 'is_visible': True},
+                        'required_by_policy': True,
+                        'validate': {'type:uuid': None},
+                        'is_visible': True},
         'credentials_id': {'allow_post': True, 'allow_put': True,
                            'default': None, 'is_visible': True},
         'device_id': {'allow_post': True, 'allow_put': True,
@@ -119,20 +128,26 @@ RESOURCE_ATTRIBUTE_MAP = {
         'admin_state_up': {'allow_post': True, 'allow_put': True,
                            'convert_to': attr.convert_to_boolean,
                            'default': True, 'is_visible': True},
+        'management_ip_address': {'allow_post': True, 'allow_put': False,
+                                  'required_by_policy': True,
+                                  'validate': {'type:ip_address': None},
+                                  'is_visible': True},
         'management_port_id': {'allow_post': True, 'allow_put': False,
-                               'required_by_policy': True,
-                               'validate': {'type:uuid': None},
-                               'is_visible': True},
+                               'required_by_policy': False,
+                               'validate': {'type:uuid_or_none': None},
+                               'default': None, 'is_visible': True},
         'protocol_port': {'allow_post': True, 'allow_put': False,
                           'convert_to': convert_validate_port_value,
                           'default': None, 'is_visible': True},
         'cfg_agent_id': {'allow_post': True, 'allow_put': False,
+                         'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
         'created_at': {'allow_post': False, 'allow_put': False,
                        'is_visible': True},
         'status': {'allow_post': False, 'allow_put': False,
                    'default': None, 'is_visible': True},
         'tenant_bound': {'allow_post': True, 'allow_put': True,
+                         'convert_to': convert_empty_string_to_none,
                          'validate': {'type:uuid_or_none': None},
                          'default': None, 'is_visible': True},
         'auto_delete': {'allow_post': True, 'allow_put': True,

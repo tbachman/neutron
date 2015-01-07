@@ -790,14 +790,16 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
         for rt_uuid, kv_dict in rt_dict.items():
             try:
+                # ensure hd_uuid is properly formatted
+                rt_uuid = config.uuidify(rt_uuid)
                 self.get_routertype(adm_context, rt_uuid)
                 is_create = False
             except routertype.RouterTypeNotFound:
                 is_create = True
             kv_dict['id'] = rt_uuid
-            kv_dict['tenant_id'] = self._dev_mgr.l3_tenant_id()
-            config.verify_resource_dict(kv_dict, is_create, attr_info)
-            hd = {'hosting_device': kv_dict}
+            kv_dict['tenant_id'] = self.l3_tenant_id()
+            config.verify_resource_dict(kv_dict, True, attr_info)
+            hd = {'routertype': kv_dict}
             try:
                 if is_create:
                     self.create_routertype(adm_context, hd)
@@ -808,3 +810,32 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     LOG.error(_LE('Invalid router type definition in '
                                   'configuration file for device = %s'),
                               rt_uuid)
+
+    @classmethod
+    def l3_tenant_id(cls):
+        """Returns id of tenant owning hosting device resources.
+
+        bobmel: This method is added since routertypes defined in the .ini file
+        are processed during plugin initialization when the device manager
+        cannot be accessed.
+        """
+        from keystoneclient import exceptions as k_exceptions
+        from keystoneclient.v2_0 import client as k_client
+
+        auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
+        user = cfg.CONF.keystone_authtoken.admin_user
+        pw = cfg.CONF.keystone_authtoken.admin_password
+        tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
+        keystone = k_client.Client(username=user, password=pw,
+                                   tenant_name=tenant,
+                                   auth_url=auth_url)
+        try:
+            tenant = keystone.tenants.find(
+                name=cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NotFound:
+            LOG.error(_LE('No tenant with a name or ID of %s exists.'),
+                      cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NoUniqueMatch:
+            LOG.error(_LE('Multiple tenants matches found for %s'),
+                      cfg.CONF.general.l3_admin_tenant)
+        return tenant.id

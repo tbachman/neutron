@@ -61,7 +61,7 @@ ROUTER_TYPES = ROUTERTYPE + 's'
 
 RESOURCE_ATTRIBUTE_MAP = {
     ROUTER_TYPES: {
-        'id': {'allow_post': False, 'allow_put': False,
+        'id': {'allow_post': True, 'allow_put': False,
                'validate': {'type:uuid': None}, 'is_visible': True,
                'primary_key': True},
         'name': {'allow_post': True, 'allow_put': True,
@@ -75,6 +75,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'template_id': {'allow_post': True, 'allow_put': False,
                         'validate': {'type:uuid': None}, 'is_visible': True},
         'shared': {'allow_post': True, 'allow_put': False,
+                   'convert_to': attr.convert_to_boolean,
                    'validate': {'type:boolean': None}, 'default': True,
                    'is_visible': True},
         'slot_need': {'allow_post': True, 'allow_put': True,

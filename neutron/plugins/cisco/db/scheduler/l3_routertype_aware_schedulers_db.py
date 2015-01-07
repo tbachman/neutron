@@ -49,7 +49,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
     This class can schedule Neutron routers to hosting devices
     and to L3 agents on network nodes.
     """
-    def validate_hosting_device_router_combination(context, binding_info,
+    def validate_hosting_device_router_combination(self, context, binding_info,
                                                    hosting_device_id):
         #TODO(bobmel): Perform proper hosting device validation
         if False:
@@ -64,10 +64,12 @@ class L3RouterTypeAwareSchedulerDbMixin(
         if r_hd_binding.hosting_device_id:
             raise routertypeawarescheduler.RouterHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
-        self.validate_hosting_device_router_combination(context, r_hd_binding)
+        self.validate_hosting_device_router_combination(context, r_hd_binding,
+                                                        hosting_device_id)
         result = self.schedule_router_on_hosting_device(
             e_context, r_hd_binding, hosting_device_id)
         if result:
+            self._ensure_routertype(context, r_hd_binding)
             router = self.get_router(context, router_id)
             self._add_type_and_hosting_device_info(
                 e_context, router, binding_info=r_hd_binding, schedule=False)
@@ -78,6 +80,18 @@ class L3RouterTypeAwareSchedulerDbMixin(
         else:
             raise routertypeawarescheduler.RouterSchedulingFailed(
                 router_id=router_id, hosting_device_id=hosting_device_id)
+
+    def _ensure_routertype(self, context, binding_info):
+        """Ensures that the routertype of a router corresponds to the
+        hosting device hosting the router.
+        """
+        template_id = binding_info.hosting_device.template_id
+        rt_ids = self.get_routertypes(context, fields=['id'],
+                                      filters={'template_id': [template_id]})
+        if rt_ids:
+            with context.session.begin(subtransactions=True):
+                binding_info.router_type_id = rt_ids[0]['id']
+                context.session.update(binding_info)
 
     def remove_router_from_hosting_device(self, context, hosting_device_id,
                                           router_id):
