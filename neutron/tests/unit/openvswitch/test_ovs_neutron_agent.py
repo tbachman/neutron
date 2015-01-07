@@ -14,6 +14,7 @@
 
 import contextlib
 import sys
+import time
 
 import mock
 import netaddr
@@ -59,17 +60,10 @@ class CreateAgentConfigMap(base.BaseTestCase):
         with testtools.ExpectedException(ValueError):
             ovs_neutron_agent.create_agent_config_map(cfg.CONF)
 
-    def test_create_agent_config_map_enable_tunneling(self):
-        # Verify setting only enable_tunneling will default tunnel_type to GRE
-        cfg.CONF.set_override('tunnel_types', None, group='AGENT')
-        cfg.CONF.set_override('enable_tunneling', True, group='OVS')
-        cfg.CONF.set_override('local_ip', '10.10.10.10', group='OVS')
-        cfgmap = ovs_neutron_agent.create_agent_config_map(cfg.CONF)
-        self.assertEqual(cfgmap['tunnel_types'], [p_const.TYPE_GRE])
-
     def test_create_agent_config_map_fails_no_local_ip(self):
         # An ip address is required for tunneling but there is no default
-        cfg.CONF.set_override('enable_tunneling', True, group='OVS')
+        cfg.CONF.set_override('tunnel_types', [p_const.TYPE_VXLAN],
+                              group='AGENT')
         with testtools.ExpectedException(ValueError):
             ovs_neutron_agent.create_agent_config_map(cfg.CONF)
 
@@ -1322,10 +1316,10 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                                        constants.DEFAULT_OVSDBMON_RESPAWN)
         mock_loop.assert_called_once_with(polling_manager=mock.ANY)
 
-    def test__setup_tunnel_port_error_negative(self):
+    def test_setup_tunnel_port_invalid_ofport(self):
         with contextlib.nested(
             mock.patch.object(self.agent.tun_br, 'add_tunnel_port',
-                              return_value='-1'),
+                              return_value=ovs_lib.INVALID_OFPORT),
             mock.patch.object(ovs_neutron_agent.LOG, 'error')
         ) as (add_tunnel_port_fn, log_error_fn):
             ofport = self.agent._setup_tunnel_port(
@@ -1338,27 +1332,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                 {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
             self.assertEqual(ofport, 0)
 
-    def test__setup_tunnel_port_error_not_int(self):
-        with contextlib.nested(
-            mock.patch.object(self.agent.tun_br, 'add_tunnel_port',
-                              return_value=None),
-            mock.patch.object(ovs_neutron_agent.LOG, 'exception'),
-            mock.patch.object(ovs_neutron_agent.LOG, 'error')
-        ) as (add_tunnel_port_fn, log_exc_fn, log_error_fn):
-            ofport = self.agent._setup_tunnel_port(
-                self.agent.tun_br, 'gre-1', 'remote_ip', p_const.TYPE_GRE)
-            add_tunnel_port_fn.assert_called_once_with(
-                'gre-1', 'remote_ip', self.agent.local_ip, p_const.TYPE_GRE,
-                self.agent.vxlan_udp_port, self.agent.dont_fragment)
-            log_exc_fn.assert_called_once_with(
-                _("ofport should have a value that can be "
-                  "interpreted as an integer"))
-            log_error_fn.assert_called_once_with(
-                _("Failed to set-up %(type)s tunnel port to %(ip)s"),
-                {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
-            self.assertEqual(ofport, 0)
-
-    def test__setup_tunnel_port_error_negative_df_disabled(self):
+    def test_setup_tunnel_port_error_negative_df_disabled(self):
         with contextlib.nested(
             mock.patch.object(self.agent.tun_br, 'add_tunnel_port',
                               return_value='-1'),
@@ -1429,7 +1403,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.call(self.agent.tun_br, 'gre-0a0a0a0a', '10.10.10.10', 'gre')]
         self.agent._setup_tunnel_port.assert_has_calls(expected_calls)
 
-    def test_ovs_restart(self):
+    def test_ovs_status(self):
         reply2 = {'current': set(['tap0']),
                   'added': set(['tap2']),
                   'removed': set([])}
@@ -1446,21 +1420,24 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
                               'process_network_ports'),
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
-                              'check_ovs_restart'),
+                              'check_ovs_status'),
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
                               'setup_integration_br'),
             mock.patch.object(ovs_neutron_agent.OVSNeutronAgent,
-                              'setup_physical_bridges')
+                              'setup_physical_bridges'),
+            mock.patch.object(time, 'sleep')
         ) as (spawn_fn, log_exception, scan_ports, process_network_ports,
-              check_ovs_restart, setup_int_br, setup_phys_br):
+              check_ovs_status, setup_int_br, setup_phys_br, time_sleep):
             log_exception.side_effect = Exception(
                 'Fake exception to get out of the loop')
             scan_ports.side_effect = [reply2, reply3]
             process_network_ports.side_effect = [
                 False, Exception('Fake exception to get out of the loop')]
-            check_ovs_restart.side_effect = [False, True]
+            check_ovs_status.side_effect = [constants.OVS_NORMAL,
+                                            constants.OVS_DEAD,
+                                            constants.OVS_RESTARTED]
 
-            # This will exit after the second loop
+            # This will exit after the third loop
             try:
                 self.agent.daemon_loop()
             except Exception:

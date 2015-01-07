@@ -29,6 +29,7 @@ from oslo.config import cfg
 from oslo.utils import importutils
 import testtools
 
+from neutron.agent.linux import ovs_lib
 from neutron.common import constants as n_const
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers.l2pop import rpc as l2pop_rpc
@@ -64,17 +65,10 @@ class CreateAgentConfigMap(ofa_test_base.OFAAgentTestBase):
         with testtools.ExpectedException(ValueError):
             self.mod_agent.create_agent_config_map(cfg.CONF)
 
-    def test_create_agent_config_map_enable_tunneling(self):
-        # Verify setting only enable_tunneling will default tunnel_type to GRE
-        cfg.CONF.set_override('tunnel_types', None, group='AGENT')
-        cfg.CONF.set_override('enable_tunneling', True, group='OVS')
-        cfg.CONF.set_override('local_ip', '10.10.10.10', group='OVS')
-        cfgmap = self.mod_agent.create_agent_config_map(cfg.CONF)
-        self.assertEqual(cfgmap['tunnel_types'], [p_const.TYPE_GRE])
-
     def test_create_agent_config_map_fails_no_local_ip(self):
         # An ip address is required for tunneling but there is no default
-        cfg.CONF.set_override('enable_tunneling', True, group='OVS')
+        cfg.CONF.set_override('tunnel_types', [p_const.TYPE_VXLAN],
+                              group='AGENT')
         with testtools.ExpectedException(ValueError):
             self.mod_agent.create_agent_config_map(cfg.CONF)
 
@@ -755,25 +749,13 @@ class TestOFANeutronAgent(ofa_test_base.OFAAgentTestBase):
                 {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
             self.assertEqual(ofport, 0)
 
-    def test__setup_tunnel_port_error_not_int(self):
-        with contextlib.nested(
-            mock.patch.object(self.agent.int_br, 'add_tunnel_port',
-                              return_value=None),
-            mock.patch.object(self.mod_agent.LOG, 'exception'),
-            mock.patch.object(self.mod_agent.LOG, 'error')
-        ) as (add_tunnel_port_fn, log_exc_fn, log_error_fn):
-            ofport = self.agent._setup_tunnel_port(
-                self.agent.int_br, 'gre-1', 'remote_ip', p_const.TYPE_GRE)
-            add_tunnel_port_fn.assert_called_once_with(
-                'gre-1', 'remote_ip', self.agent.local_ip, p_const.TYPE_GRE,
-                self.agent.vxlan_udp_port, self.agent.dont_fragment)
-            log_exc_fn.assert_called_once_with(
-                _("ofport should have a value that can be "
-                  "interpreted as an integer"))
-            log_error_fn.assert_called_once_with(
-                _("Failed to set-up %(type)s tunnel port to %(ip)s"),
-                {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
-            self.assertEqual(ofport, 0)
+    def test_setup_tunnel_port_returns_zero_for_failed_port_add(self):
+        with mock.patch.object(self.agent.int_br, 'add_tunnel_port',
+                               return_value=ovs_lib.INVALID_OFPORT):
+            result = self.agent._setup_tunnel_port(self.agent.int_br, 'gre-1',
+                                                  'remote_ip',
+                                                  p_const.TYPE_GRE)
+        self.assertEqual(0, result)
 
     def test_tunnel_sync(self):
         self.agent.local_ip = 'agent_ip'

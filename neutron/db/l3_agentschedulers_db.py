@@ -22,6 +22,7 @@ from oslo import messaging
 from oslo.utils import timeutils
 import sqlalchemy as sa
 from sqlalchemy import func
+from sqlalchemy import or_
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
@@ -153,20 +154,25 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
           to legacy agent, or centralized router to compute's L3 agents.
         :raises: InvalidL3Agent if attempting to assign router to an
           unsuitable agent (disabled, type != L3, incompatible configuration)
+        :raises: DVRL3CannotAssignToDvrAgent if attempting to assign DVR
+          router from one DVR Agent to another.
         """
         is_distributed = router.get('distributed')
         agent_conf = self.get_configuration_dict(agent)
         agent_mode = agent_conf.get('agent_mode', 'legacy')
-
+        router_type = ('distributed' if is_distributed else 'centralized')
         is_agent_router_types_incompatible = (
             agent_mode == 'dvr' and not is_distributed
             or agent_mode == 'legacy' and is_distributed
         )
         if is_agent_router_types_incompatible:
-            router_type = ('distributed' if is_distributed else 'centralized')
             raise l3agentscheduler.RouterL3AgentMismatch(
                 router_type=router_type, router_id=router['id'],
                 agent_mode=agent_mode, agent_id=agent['id'])
+        if agent_mode == 'dvr' and is_distributed:
+            raise l3agentscheduler.DVRL3CannotAssignToDvrAgent(
+                router_type=router_type, router_id=router['id'],
+                agent_id=agent['id'])
 
         is_wrong_type_or_unsuitable_agent = (
             agent['agent_type'] != constants.AGENT_TYPE_L3 or
@@ -376,6 +382,15 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
                 column = getattr(agents_db.Agent, key, None)
                 if column:
                     query = query.filter(column.in_(value))
+
+            agent_modes = filters.get('agent_modes', [])
+            if agent_modes:
+                agent_mode_key = '\"agent_mode\": \"'
+                configuration_filter = (
+                    [agents_db.Agent.configurations.contains('%s%s\"' %
+                     (agent_mode_key, agent_mode))
+                     for agent_mode in agent_modes])
+                query = query.filter(or_(*configuration_filter))
 
         return [l3_agent
                 for l3_agent in query

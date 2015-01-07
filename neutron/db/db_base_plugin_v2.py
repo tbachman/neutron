@@ -268,8 +268,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
 
             for pool in pool_qry.filter_by(subnet_id=subnet['id']):
                 # Create a set of all addresses in the pool
-                poolset = netaddr.IPSet(netaddr.iter_iprange(pool['first_ip'],
-                                                             pool['last_ip']))
+                poolset = netaddr.IPSet(netaddr.IPRange(pool['first_ip'],
+                                                        pool['last_ip']))
 
                 # Use set difference to find free addresses in the pool
                 available = poolset - allocations
@@ -446,8 +446,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                             'subnet') % fixed['ip_address']
                     raise n_exc.InvalidInput(error_message=msg)
                 if (ipv6_utils.is_slaac_subnet(subnet) and device_owner not in
-                    (constants.DEVICE_OWNER_ROUTER_INTF,
-                     constants.DEVICE_OWNER_DVR_INTERFACE)):
+                        constants.ROUTER_INTERFACE_OWNERS):
                     msg = (_("IPv6 address %(address)s can not be directly "
                             "assigned to a port on subnet %(id)s with "
                             "%(mode)s address mode") %

@@ -267,7 +267,7 @@ class DhcpLocalProcess(DhcpBase):
         except IOError:
             msg = _('Unable to access %s')
 
-        LOG.debug(msg % file_name)
+        LOG.debug(msg, file_name)
         return None
 
     @property
@@ -323,9 +323,9 @@ class Dnsmasq(DhcpLocalProcess):
         try:
             cmd = ['dnsmasq', '--version']
             out = utils.execute(cmd)
-            ver = re.findall("\d+.\d+", out)[0]
-            is_valid_version = float(ver) >= cls.MINIMUM_VERSION
-            if not is_valid_version:
+            m = re.search(r"version (\d+\.\d+)", out)
+            ver = float(m.group(1)) if m else 0
+            if ver < cls.MINIMUM_VERSION:
                 LOG.error(_LE('FAILED VERSION REQUIREMENT FOR DNSMASQ. '
                               'DHCP AGENT MAY NOT RUN CORRECTLY! '
                               'Please ensure that its version is %s '
@@ -336,7 +336,7 @@ class Dnsmasq(DhcpLocalProcess):
                           'Please ensure that its version is %s '
                           'or above!'), cls.MINIMUM_VERSION)
             raise SystemExit(1)
-        return float(ver)
+        return ver
 
     @classmethod
     def existing_dhcp_networks(cls, conf, root_helper):
@@ -736,8 +736,7 @@ class Dnsmasq(DhcpLocalProcess):
         subnets = dict((subnet.id, subnet) for subnet in network.subnets)
 
         for port in network.ports:
-            if port.device_owner not in (constants.DEVICE_OWNER_ROUTER_INTF,
-                                         constants.DEVICE_OWNER_DVR_INTERFACE):
+            if port.device_owner not in constants.ROUTER_INTERFACE_OWNERS:
                 continue
             for alloc in port.fixed_ips:
                 if subnets[alloc.subnet_id].gateway_ip == alloc.ip_address:

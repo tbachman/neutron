@@ -14,11 +14,14 @@
 #    under the License.
 
 import itertools
+import numbers
 import operator
 
 from oslo.config import cfg
 from oslo.serialization import jsonutils
 from oslo.utils import excutils
+import retrying
+import six
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
@@ -41,6 +44,35 @@ OPTS = [
 cfg.CONF.register_opts(OPTS)
 
 LOG = logging.getLogger(__name__)
+
+
+def _ofport_result_pending(result):
+    """Return True if ovs-vsctl indicates the result is still pending."""
+    # ovs-vsctl can return '[]' for an ofport that has not yet been assigned
+    try:
+        int(result)
+        return False
+    except (ValueError, TypeError):
+        return True
+
+
+def _ofport_retry(fn):
+    """Decorator for retrying when OVS has yet to assign an ofport.
+
+    The instance's vsctl_timeout is used as the max waiting time. This relies
+    on the fact that instance methods receive self as the first argument.
+    """
+    @six.wraps(fn)
+    def wrapped(*args, **kwargs):
+        self = args[0]
+        new_fn = retrying.retry(
+            retry_on_result=_ofport_result_pending,
+            stop_max_delay=self.vsctl_timeout * 1000,
+            wait_exponential_multiplier=10,
+            wait_exponential_max=1000,
+            retry_on_exception=lambda _: False)(fn)
+        return new_fn(*args, **kwargs)
+    return wrapped
 
 
 class VifPort:
@@ -145,10 +177,16 @@ class OVSBridge(BaseOVS):
         self.destroy()
         self.create()
 
-    def add_port(self, port_name):
-        self.run_vsctl(["--", "--may-exist", "add-port", self.br_name,
-                        port_name])
-        return self.get_port_ofport(port_name)
+    def add_port(self, port_name, *interface_options):
+        args = ["--", "--may-exist", "add-port", self.br_name, port_name]
+        if interface_options:
+            args += ['--', 'set', 'Interface', port_name]
+            args += ['%s=%s' % kv for kv in interface_options]
+        self.run_vsctl(args)
+        ofport = self.get_port_ofport(port_name)
+        if ofport == INVALID_OFPORT:
+            self.delete_port(port_name)
+        return ofport
 
     def replace_port(self, port_name, *interface_attr_tuples):
         """Replace existing port or create it, and configure port interface."""
@@ -188,15 +226,20 @@ class OVSBridge(BaseOVS):
     def remove_all_flows(self):
         self.run_ofctl("del-flows", [])
 
+    @_ofport_retry
+    def _get_port_ofport(self, port_name):
+        return self.db_get_val("Interface", port_name, "ofport")
+
     def get_port_ofport(self, port_name):
-        ofport = self.db_get_val("Interface", port_name, "ofport")
-        # This can return a non-integer string, like '[]' so ensure a
-        # common failure case
+        """Get the port's assigned ofport, retrying if not yet assigned."""
+        ofport = INVALID_OFPORT
         try:
-            int(ofport)
-            return ofport
-        except (ValueError, TypeError):
-            return INVALID_OFPORT
+            ofport = self._get_port_ofport(port_name)
+        except retrying.RetryError as e:
+            LOG.exception(_LE("Timed out retrieving ofport on port %(pname)s. "
+                              "Exception: %(exception)s"),
+                          {'pname': port_name, 'exception': e})
+        return ofport
 
     def get_datapath_id(self):
         return self.db_get_val('Bridge',
@@ -231,34 +274,25 @@ class OVSBridge(BaseOVS):
                         tunnel_type=constants.TYPE_GRE,
                         vxlan_udp_port=constants.VXLAN_UDP_PORT,
                         dont_fragment=True):
-        vsctl_command = ["--", "--may-exist", "add-port", self.br_name,
-                         port_name]
-        vsctl_command.extend(["--", "set", "Interface", port_name,
-                              "type=%s" % tunnel_type])
-        if tunnel_type == constants.TYPE_VXLAN:
-            # Only set the VXLAN UDP port if it's not the default
-            if vxlan_udp_port != constants.VXLAN_UDP_PORT:
-                vsctl_command.append("options:dst_port=%s" % vxlan_udp_port)
-        vsctl_command.append(("options:df_default=%s" %
-                             bool(dont_fragment)).lower())
-        vsctl_command.extend(["options:remote_ip=%s" % remote_ip,
-                              "options:local_ip=%s" % local_ip,
-                              "options:in_key=flow",
-                              "options:out_key=flow"])
-        self.run_vsctl(vsctl_command)
-        ofport = self.get_port_ofport(port_name)
+        options = [('type', tunnel_type)]
         if (tunnel_type == constants.TYPE_VXLAN and
-                ofport == INVALID_OFPORT):
-            LOG.error(_LE('Unable to create VXLAN tunnel port. Please ensure '
-                          'that an openvswitch version that supports VXLAN is '
-                          'installed.'))
-        return ofport
+                vxlan_udp_port != constants.VXLAN_UDP_PORT):
+            # Only set the VXLAN UDP port if it's not the default
+            options.append(("options:dst_port", vxlan_udp_port))
+        options.extend([
+            ("options:df_default", str(bool(dont_fragment)).lower()),
+            ("options:remote_ip", remote_ip),
+            ("options:local_ip", local_ip),
+            ("options:in_key", "flow"),
+            ("options:out_key", "flow")])
+        return self.add_port(port_name, *options)
 
     def add_patch_port(self, local_name, remote_name):
-        self.run_vsctl(["add-port", self.br_name, local_name,
-                        "--", "set", "Interface", local_name,
-                        "type=patch", "options:peer=%s" % remote_name])
-        return self.get_port_ofport(local_name)
+        options = [
+            ('type', 'patch'),
+            ('options:peer', remote_name)
+        ]
+        return self.add_port(local_name, *options)
 
     def db_get_map(self, table, record, column, check_error=False):
         output = self.run_vsctl(["get", table, record, column], check_error)
@@ -327,41 +361,33 @@ class OVSBridge(BaseOVS):
         return edge_ports
 
     def get_vif_port_set(self):
-        port_names = self.get_port_name_list()
         edge_ports = set()
-        args = ['--format=json', '--', '--columns=name,external_ids,ofport',
-                'list', 'Interface']
+        args = ['--format=json', '--', '--columns=external_ids,ofport',
+                '--if-exists', 'list', 'Interface']
+        args += self.get_port_name_list()
         result = self.run_vsctl(args, check_error=True)
         if not result:
             return edge_ports
         for row in jsonutils.loads(result)['data']:
-            name = row[0]
-            if name not in port_names:
-                continue
-            external_ids = dict(row[1][1])
+            external_ids = dict(row[0][1])
             # Do not consider VIFs which aren't yet ready
             # This can happen when ofport values are either [] or ["set", []]
             # We will therefore consider only integer values for ofport
-            ofport = row[2]
-            try:
-                int_ofport = int(ofport)
-            except (ValueError, TypeError):
+            ofport = row[1]
+            if not isinstance(ofport, numbers.Integral):
                 LOG.warn(_LW("Found not yet ready openvswitch port: %s"), row)
-            else:
-                if int_ofport > 0:
-                    if ("iface-id" in external_ids and
-                        "attached-mac" in external_ids):
-                        edge_ports.add(external_ids['iface-id'])
-                    elif ("xs-vif-uuid" in external_ids and
-                          "attached-mac" in external_ids):
-                        # if this is a xenserver and iface-id is not
-                        # automatically synced to OVS from XAPI, we grab it
-                        # from XAPI directly
-                        iface_id = self.get_xapi_iface_id(
-                            external_ids["xs-vif-uuid"])
-                        edge_ports.add(iface_id)
-                else:
-                    LOG.warn(_LW("Found failed openvswitch port: %s"), row)
+            elif ofport < 1:
+                LOG.warn(_LW("Found failed openvswitch port: %s"), row)
+            elif 'attached-mac' in external_ids:
+                if "iface-id" in external_ids:
+                    edge_ports.add(external_ids['iface-id'])
+                elif "xs-vif-uuid" in external_ids:
+                    # if this is a xenserver and iface-id is not
+                    # automatically synced to OVS from XAPI, we grab it
+                    # from XAPI directly
+                    iface_id = self.get_xapi_iface_id(
+                        external_ids["xs-vif-uuid"])
+                    edge_ports.add(iface_id)
         return edge_ports
 
     def get_port_tag_dict(self):
@@ -379,15 +405,14 @@ class OVSBridge(BaseOVS):
         in the "Interface" table queried by the get_vif_port_set() method.
 
         """
-        port_names = self.get_port_name_list()
-        args = ['--format=json', '--', '--columns=name,tag', 'list', 'Port']
+        args = ['--format=json', '--', '--columns=name,tag', '--if-exists',
+                'list', 'Port']
+        args += self.get_port_name_list()
         result = self.run_vsctl(args, check_error=True)
         port_tag_dict = {}
         if not result:
             return port_tag_dict
         for name, tag in jsonutils.loads(result)['data']:
-            if name not in port_names:
-                continue
             # 'tag' can be [u'set', []] or an integer
             if isinstance(tag, list):
                 tag = tag[1]

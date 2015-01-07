@@ -24,15 +24,18 @@ from testtools import matchers
 
 from neutron.agent.common import config as agent_config
 from neutron.agent.l3 import agent as l3_agent
+from neutron.agent.l3 import dvr
 from neutron.agent.l3 import ha
 from neutron.agent.l3 import link_local_allocator as lla
 from neutron.agent.l3 import router_info as l3router
 from neutron.agent.linux import interface
 from neutron.agent.linux import ra
+from neutron.agent.metadata import driver as metadata_driver
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron.i18n import _LE
+from neutron.openstack.common import log
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as p_const
 from neutron.tests import base
@@ -163,6 +166,8 @@ class TestBasicRouterOperations(base.BaseTestCase):
         super(TestBasicRouterOperations, self).setUp()
         self.conf = agent_config.setup_conf()
         self.conf.register_opts(base_config.core_opts)
+        self.conf.register_cli_opts(log.common_cli_opts)
+        self.conf.register_cli_opts(log.logging_cli_opts)
         self.conf.register_opts(l3_agent.L3NATAgent.OPTS)
         self.conf.register_opts(ha.OPTS)
         agent_config.register_interface_driver_opts_helper(self.conf)
@@ -364,7 +369,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
                 sn_port['ip_cidr'],
                 sn_port['mac_address'],
                 agent.get_snat_int_device_name(sn_port['id']),
-                l3_agent.SNAT_INT_DEV_PREFIX)
+                dvr.SNAT_INT_DEV_PREFIX)
 
     def test_agent_add_internal_network(self):
         self._test_internal_network_action('add')
@@ -888,60 +893,6 @@ class TestBasicRouterOperations(base.BaseTestCase):
                          distributed)
         self.assertEqual(agent.process_router_floating_ip_nat_rules.called,
                          distributed)
-
-    def test_ha_router_keepalived_config(self):
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        router = prepare_router_data(enable_ha=True)
-        router['routes'] = [
-            {'destination': '8.8.8.8/32', 'nexthop': '35.4.0.10'},
-            {'destination': '8.8.4.4/32', 'nexthop': '35.4.0.11'}]
-        ri = l3router.RouterInfo(router['id'], self.conf.root_helper,
-                                 router=router)
-        ri.router = router
-        with contextlib.nested(mock.patch.object(agent,
-                                                 '_spawn_metadata_proxy'),
-                               mock.patch('neutron.agent.linux.'
-                                          'utils.replace_file'),
-                               mock.patch('neutron.agent.linux.'
-                                          'utils.execute'),
-                               mock.patch('os.makedirs')):
-            agent.process_ha_router_added(ri)
-            agent.process_router(ri)
-            config = ri.keepalived_manager.config
-            ha_iface = agent.get_ha_device_name(ri.ha_port['id'])
-            ex_iface = agent.get_external_device_name(ri.ex_gw_port['id'])
-            int_iface = agent.get_internal_device_name(
-                ri.internal_ports[0]['id'])
-
-            expected = """vrrp_sync_group VG_1 {
-    group {
-        VR_1
-    }
-}
-vrrp_instance VR_1 {
-    state BACKUP
-    interface %(ha_iface)s
-    virtual_router_id 1
-    priority 50
-    nopreempt
-    advert_int 2
-    track_interface {
-        %(ha_iface)s
-    }
-    virtual_ipaddress {
-        19.4.4.4/24 dev %(ex_iface)s
-    }
-    virtual_ipaddress_excluded {
-        35.4.0.4/24 dev %(int_iface)s
-    }
-    virtual_routes {
-        0.0.0.0/0 via 19.4.4.1 dev %(ex_iface)s
-        8.8.8.8/32 via 35.4.0.10
-        8.8.4.4/32 via 35.4.0.11
-    }
-}""" % {'ha_iface': ha_iface, 'ex_iface': ex_iface, 'int_iface': int_iface}
-
-            self.assertEqual(expected, config.get_config_str())
 
     @mock.patch('neutron.agent.linux.ip_lib.IPDevice')
     def _test_process_router_floating_ip_addresses_add(self, ri,
@@ -1635,22 +1586,27 @@ vrrp_instance VR_1 {
             self.conf.set_override('enable_metadata_proxy', False)
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         router_id = _uuid()
-        router = {'id': _uuid(),
+        router = {'id': router_id,
                   'external_gateway_info': {},
                   'routes': [],
                   'distributed': False}
+        driver = metadata_driver.MetadataDriver
         with mock.patch.object(
-            agent, '_destroy_metadata_proxy') as destroy_proxy:
+            driver, '_destroy_metadata_proxy') as destroy_proxy:
             with mock.patch.object(
-                agent, '_spawn_metadata_proxy') as spawn_proxy:
-                agent._router_added(router_id, router)
+                driver, '_spawn_metadata_proxy') as spawn_proxy:
+                agent._process_added_router(router)
                 if enableflag:
-                    spawn_proxy.assert_called_with(router_id, mock.ANY)
+                    spawn_proxy.assert_called_with(router_id,
+                                                   mock.ANY,
+                                                   mock.ANY)
                 else:
                     self.assertFalse(spawn_proxy.call_count)
                 agent._router_removed(router_id)
                 if enableflag:
-                    destroy_proxy.assert_called_with(mock.ANY, mock.ANY)
+                    destroy_proxy.assert_called_with(router_id,
+                                                     mock.ANY,
+                                                     mock.ANY)
                 else:
                     self.assertFalse(destroy_proxy.call_count)
 
@@ -1659,18 +1615,6 @@ vrrp_instance VR_1 {
 
     def test_disable_metadata_proxy_spawn(self):
         self._configure_metadata_proxy(enableflag=False)
-
-    def test_metadata_nat_rules(self):
-        self.conf.set_override('enable_metadata_proxy', False)
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        self.assertEqual([], agent.metadata_nat_rules())
-
-        self.conf.set_override('metadata_port', '8775')
-        self.conf.set_override('enable_metadata_proxy', True)
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        rules = ('PREROUTING', '-s 0.0.0.0/0 -d 169.254.169.254/32 '
-                 '-p tcp -m tcp --dport 80 -j REDIRECT --to-port 8775')
-        self.assertEqual([rules], agent.metadata_nat_rules())
 
     def test_router_id_specified_in_conf(self):
         self.conf.set_override('use_namespaces', False)
@@ -1787,18 +1731,6 @@ vrrp_instance VR_1 {
             msg = _LE("Error importing interface driver '%s'")
             log.error.assert_called_once_with(msg, 'wrong_driver')
 
-    def test_metadata_filter_rules(self):
-        self.conf.set_override('enable_metadata_proxy', False)
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        self.assertEqual([], agent.metadata_filter_rules())
-
-        self.conf.set_override('metadata_port', '8775')
-        self.conf.set_override('enable_metadata_proxy', True)
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        rules = ('INPUT', '-s 0.0.0.0/0 -d 127.0.0.1 '
-                 '-p tcp -m tcp --dport 8775 -j ACCEPT')
-        self.assertEqual([rules], agent.metadata_filter_rules())
-
     def _cleanup_namespace_test(self,
                                 stale_namespace_list,
                                 router_list,
@@ -1807,7 +1739,7 @@ vrrp_instance VR_1 {
 
         good_namespace_list = [l3_agent.NS_PREFIX + r['id']
                                for r in router_list]
-        good_namespace_list += [l3_agent.SNAT_NS_PREFIX + r['id']
+        good_namespace_list += [dvr.SNAT_NS_PREFIX + r['id']
                                 for r in router_list]
         self.mock_ip.get_namespaces.return_value = (stale_namespace_list +
                                                     good_namespace_list +
@@ -1842,7 +1774,7 @@ vrrp_instance VR_1 {
         self.conf.set_override('router_id', None)
         stale_namespaces = [l3_agent.NS_PREFIX + 'foo',
                             l3_agent.NS_PREFIX + 'bar',
-                            l3_agent.SNAT_NS_PREFIX + 'foo']
+                            dvr.SNAT_NS_PREFIX + 'foo']
         other_namespaces = ['unknown']
 
         self._cleanup_namespace_test(stale_namespaces,
@@ -1853,7 +1785,7 @@ vrrp_instance VR_1 {
         self.conf.set_override('router_id', None)
         stale_namespaces = [l3_agent.NS_PREFIX + 'cccc',
                             l3_agent.NS_PREFIX + 'eeeee',
-                            l3_agent.SNAT_NS_PREFIX + 'fffff']
+                            dvr.SNAT_NS_PREFIX + 'fffff']
         router_list = [{'id': 'foo', 'distributed': False},
                        {'id': 'aaaa', 'distributed': False}]
         other_namespaces = ['qdhcp-aabbcc', 'unknown']
@@ -1989,7 +1921,9 @@ vrrp_instance VR_1 {
                'port_id': _uuid()}
         agent.agent_gateway_port = agent_gw_port
         ri.rtr_fip_subnet = lla.LinkLocalAddressPair('169.254.30.42/31')
-        agent.floating_ip_added_dist(ri, fip)
+        ip_cidr = str(fip['floating_ip_address']) + (
+            l3_agent.FLOATING_IP_CIDR_SUFFIX)
+        agent.floating_ip_added_dist(ri, fip, ip_cidr)
         self.mock_rule.add_rule_from.assert_called_with('192.168.0.1',
                                                         16, FIP_PRI)
         # TODO(mrsmith): add more asserts
@@ -2152,7 +2086,7 @@ vrrp_instance VR_1 {
         self.mock_ip.del_veth.assert_called_once_with(
             agent.get_fip_int_device_name(ri.router['id']))
         self.mock_ip_dev.route.delete_gateway.assert_called_once_with(
-            str(fip_to_rtr.ip), table=l3_agent.FIP_RT_TBL)
+            str(fip_to_rtr.ip), table=dvr.FIP_RT_TBL)
 
         self.assertEqual(ri.dist_fip_count, 0)
         self.assertEqual(len(agent.fip_ns_subscribers), 0)
@@ -2195,75 +2129,20 @@ vrrp_instance VR_1 {
         self.assertIn(_join('-p', pidfile), cmd)
         self.assertIn(_join('-m', 'syslog'), cmd)
 
+    def test_generate_radvd_conf_other_flag(self):
+        # we don't check other flag for stateful since it's redundant
+        # for this mode and can be ignored by clients, as per RFC4861
+        expected = {l3_constants.IPV6_SLAAC: False,
+                    l3_constants.DHCPV6_STATELESS: True}
 
-class TestL3AgentEventHandler(base.BaseTestCase):
+        for ra_mode, flag_set in expected.iteritems():
+            router = prepare_router_data()
+            ri = self._process_router_ipv6_interface_added(router,
+                                                           ra_mode=ra_mode)
 
-    def setUp(self):
-        super(TestL3AgentEventHandler, self).setUp()
-        cfg.CONF.register_opts(l3_agent.L3NATAgent.OPTS)
-        cfg.CONF.register_opts(ha.OPTS)
-        agent_config.register_interface_driver_opts_helper(cfg.CONF)
-        agent_config.register_use_namespaces_opts_helper(cfg.CONF)
-        cfg.CONF.set_override(
-            'interface_driver', 'neutron.agent.linux.interface.NullDriver'
-        )
-        cfg.CONF.set_override('use_namespaces', True)
-        cfg.CONF.set_override('verbose', False)
-        agent_config.register_root_helper(cfg.CONF)
-
-        device_exists_p = mock.patch(
-            'neutron.agent.linux.ip_lib.device_exists')
-        device_exists_p.start()
-
-        utils_exec_p = mock.patch(
-            'neutron.agent.linux.utils.execute')
-        utils_exec_p.start()
-
-        drv_cls_p = mock.patch('neutron.agent.linux.interface.NullDriver')
-        driver_cls = drv_cls_p.start()
-        mock_driver = mock.MagicMock()
-        mock_driver.DEV_NAME_LEN = (
-            interface.LinuxInterfaceDriver.DEV_NAME_LEN)
-        driver_cls.return_value = mock_driver
-
-        l3_plugin_p = mock.patch(
-            'neutron.agent.l3.agent.L3PluginApi')
-        l3_plugin_cls = l3_plugin_p.start()
-        l3_plugin_cls.return_value = mock.MagicMock()
-
-        self.external_process_p = mock.patch(
-            'neutron.agent.linux.external_process.ProcessManager'
-        )
-        self.external_process_p.start()
-        looping_call_p = mock.patch(
-            'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
-        looping_call_p.start()
-        self.agent = l3_agent.L3NATAgent(HOSTNAME)
-
-    def test_spawn_metadata_proxy(self):
-        router_id = _uuid()
-        metadata_port = 8080
-        ip_class_path = 'neutron.agent.linux.ip_lib.IPWrapper'
-
-        cfg.CONF.set_override('metadata_port', metadata_port)
-        cfg.CONF.set_override('log_file', 'test.log')
-        cfg.CONF.set_override('debug', True)
-
-        self.external_process_p.stop()
-        ri = l3router.RouterInfo(router_id, None, None)
-        with mock.patch(ip_class_path) as ip_mock:
-            self.agent._spawn_metadata_proxy(ri.router_id, ri.ns_name)
-            ip_mock.assert_has_calls([
-                mock.call('sudo', ri.ns_name),
-                mock.call().netns.execute([
-                    'neutron-ns-metadata-proxy',
-                    mock.ANY,
-                    mock.ANY,
-                    '--router_id=%s' % router_id,
-                    mock.ANY,
-                    '--metadata_port=%s' % metadata_port,
-                    '--debug',
-                    '--log-file=neutron-ns-metadata-proxy-%s.log' %
-                    router_id
-                ], addl_env=None)
-            ])
+            ra._generate_radvd_conf(ri.router['id'],
+                                    router[l3_constants.INTERFACE_KEY],
+                                    mock.Mock())
+            asserter = self.assertIn if flag_set else self.assertNotIn
+            asserter('AdvOtherConfigFlag on;',
+                     self.utils_replace_file.call_args[0][1])

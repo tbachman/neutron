@@ -259,6 +259,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self.iter_num = 0
         self.run_daemon_loop = True
 
+        # The initialization is complete; we can start receiving messages
+        self.connection.consume_in_threads()
+
     def _report_state(self):
         # How many devices are likely used by a VM
         self.agent_state.get('configurations')['devices'] = (
@@ -296,7 +299,8 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                               topics.UPDATE, cfg.CONF.host])
         self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
-                                                     consumers)
+                                                     consumers,
+                                                     start_listening=False)
 
     def get_net_uuid(self, vif_id):
         for network_id, vlan_mapping in self.local_vlan_map.iteritems():
@@ -759,11 +763,12 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             cfg.CONF.OVS.int_peer_patch_port, cfg.CONF.OVS.tun_peer_patch_port)
         self.patch_int_ofport = self.tun_br.add_patch_port(
             cfg.CONF.OVS.tun_peer_patch_port, cfg.CONF.OVS.int_peer_patch_port)
-        if int(self.patch_tun_ofport) < 0 or int(self.patch_int_ofport) < 0:
+        if ovs_lib.INVALID_OFPORT in (self.patch_tun_ofport,
+                                      self.patch_int_ofport):
             LOG.error(_LE("Failed to create OVS patch port. Cannot have "
                           "tunneling enabled on this agent, since this "
-                          "version of OVS does not support tunnels or "
-                          "patch ports. Agent terminated!"))
+                          "version of OVS does not support tunnels or patch "
+                          "ports. Agent terminated!"))
             exit(1)
         self.tun_br.remove_all_flows()
 
@@ -1038,13 +1043,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                     tunnel_type,
                                     self.vxlan_udp_port,
                                     self.dont_fragment)
-        ofport_int = -1
-        try:
-            ofport_int = int(ofport)
-        except (TypeError, ValueError):
-            LOG.exception(_LE("ofport should have a value that can be "
-                              "interpreted as an integer"))
-        if ofport_int < 0:
+        if ofport == ovs_lib.INVALID_OFPORT:
             LOG.error(_LE("Failed to set-up %(type)s tunnel port to %(ip)s"),
                       {'type': tunnel_type, 'ip': remote_ip})
             return 0
@@ -1341,10 +1340,38 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 port_info.get('removed') or
                 port_info.get('updated'))
 
-    def check_ovs_restart(self):
+    def check_ovs_status(self):
         # Check for the canary flow
         canary_flow = self.int_br.dump_flows_for_table(constants.CANARY_TABLE)
-        return not canary_flow
+        if canary_flow == '':
+            LOG.warn(_LW("OVS is restarted. OVSNeutronAgent will reset "
+                         "bridges and recover ports."))
+            return constants.OVS_RESTARTED
+        elif canary_flow is None:
+            LOG.warn(_LW("OVS is dead. OVSNeutronAgent will keep running "
+                         "and checking OVS status periodically."))
+            return constants.OVS_DEAD
+        else:
+            # OVS is in normal status
+            return constants.OVS_NORMAL
+
+    def loop_count_and_wait(self, start_time, port_stats):
+        # sleep till end of polling interval
+        elapsed = time.time() - start_time
+        LOG.debug("Agent rpc_loop - iteration:%(iter_num)d "
+                  "completed. Processed ports statistics: "
+                  "%(port_stats)s. Elapsed:%(elapsed).3f",
+                  {'iter_num': self.iter_num,
+                   'port_stats': port_stats,
+                   'elapsed': elapsed})
+        if elapsed < self.polling_interval:
+            time.sleep(self.polling_interval - elapsed)
+        else:
+            LOG.debug("Loop iteration exceeded interval "
+                      "(%(polling_interval)s vs. %(elapsed)s)!",
+                      {'polling_interval': self.polling_interval,
+                       'elapsed': elapsed})
+        self.iter_num = self.iter_num + 1
 
     def rpc_loop(self, polling_manager=None):
         if not polling_manager:
@@ -1355,7 +1382,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         updated_ports_copy = set()
         ancillary_ports = set()
         tunnel_sync = True
-        ovs_restarted = False
+        ovs_status = constants.OVS_NORMAL
         while self.run_daemon_loop:
             start = time.time()
             port_stats = {'regular': {'added': 0,
@@ -1371,8 +1398,8 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 ancillary_ports.clear()
                 sync = False
                 polling_manager.force_polling()
-            ovs_restarted = self.check_ovs_restart()
-            if ovs_restarted:
+            ovs_status = self.check_ovs_status()
+            if ovs_status == constants.OVS_RESTARTED:
                 self.setup_integration_br()
                 self.setup_physical_bridges(self.bridge_mappings)
                 if self.enable_tunneling:
@@ -1386,6 +1413,12 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                                      self.patch_tun_ofport)
                         self.dvr_agent.reset_dvr_parameters()
                         self.dvr_agent.setup_dvr_flows_on_integ_tun_br()
+            elif ovs_status == constants.OVS_DEAD:
+                # Agent doesn't apply any operations when ovs is dead, to
+                # prevent unexpected failure or crash. Sleep and continue
+                # loop in which ovs status will be checked periodically.
+                self.loop_count_and_wait(start, port_stats)
+                continue
             # Notify the plugin of tunnel IP
             if self.enable_tunneling and tunnel_sync:
                 LOG.info(_LI("Agent tunnel out of sync with plugin!"))
@@ -1394,6 +1427,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 except Exception:
                     LOG.exception(_LE("Error while synchronizing tunnels"))
                     tunnel_sync = True
+            ovs_restarted = (ovs_status == constants.OVS_RESTARTED)
             if self._agent_has_updates(polling_manager) or ovs_restarted:
                 try:
                     LOG.debug("Agent rpc_loop - iteration:%(iter_num)d - "
@@ -1466,22 +1500,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                     self.updated_ports |= updated_ports_copy
                     sync = True
 
-            # sleep till end of polling interval
-            elapsed = (time.time() - start)
-            LOG.debug("Agent rpc_loop - iteration:%(iter_num)d "
-                      "completed. Processed ports statistics: "
-                      "%(port_stats)s. Elapsed:%(elapsed).3f",
-                      {'iter_num': self.iter_num,
-                       'port_stats': port_stats,
-                       'elapsed': elapsed})
-            if (elapsed < self.polling_interval):
-                time.sleep(self.polling_interval - elapsed)
-            else:
-                LOG.debug("Loop iteration exceeded interval "
-                          "(%(polling_interval)s vs. %(elapsed)s)!",
-                          {'polling_interval': self.polling_interval,
-                           'elapsed': elapsed})
-            self.iter_num = self.iter_num + 1
+            self.loop_count_and_wait(start, port_stats)
 
     def daemon_loop(self):
         with polling.get_polling_manager(
@@ -1522,10 +1541,6 @@ def create_agent_config_map(config):
         arp_responder=config.AGENT.arp_responder,
         use_veth_interconnection=config.OVS.use_veth_interconnection,
     )
-
-    # If enable_tunneling is TRUE, set tunnel_type to default to GRE
-    if config.OVS.enable_tunneling and not kwargs['tunnel_types']:
-        kwargs['tunnel_types'] = [p_const.TYPE_GRE]
 
     # Verify the tunnel_types specified are valid
     for tun in kwargs['tunnel_types']:
