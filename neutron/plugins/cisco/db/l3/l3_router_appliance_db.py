@@ -795,7 +795,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             except routertype.RouterTypeNotFound:
                 is_create = True
             kv_dict['id'] = rt_uuid
-            kv_dict['tenant_id'] = self.l3_tenant_id()
+            kv_dict['tenant_id'] = self._dev_mgr.l3_tenant_id()
             config.verify_resource_dict(kv_dict, is_create, attr_info)
             hd = {'hosting_device': kv_dict}
             try:

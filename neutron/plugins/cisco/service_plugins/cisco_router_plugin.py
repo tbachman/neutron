@@ -16,13 +16,13 @@ from oslo.config import cfg
 from oslo.utils import importutils
 
 from neutron.api.rpc.handlers import l3_rpc
-from neutron.common import constants as q_const
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
 from neutron import manager
 import neutron.plugins
+from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
@@ -79,7 +79,7 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = n_rpc.create_connection(new=True)
-        self.agent_notifiers[q_const.AGENT_TYPE_L3_CFG] = (
+        self.agent_notifiers[c_constants.AGENT_TYPE_L3_CFG] = (
             l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self))
         self.endpoints = [l3_rpc.L3RpcCallback(),
                           l3cfg_rpc.L3RouterCfgRpcCallback(self)]

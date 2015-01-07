@@ -796,29 +796,26 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         cred_dict = config.get_specific_config(
             'cisco_hosting_device_credential')
         attr_info = {
-            'credentials': {
-                'name': {'allow_post': True, 'allow_put': True,
-                         'validate': {'type:string': None}, 'is_visible': True,
-                         'default': ''},
-                'description': {'allow_post': True, 'allow_put': True,
-                                'validate': {'type:string': None},
-                                'is_visible': True, 'default': ''},
-                'user_name': {'allow_post': True, 'allow_put': True,
-                              'validate': {'type:string': None},
-                              'is_visible': True, 'default': ''},
-                'password': {'allow_post': True, 'allow_put': True,
-                             'validate': {'type:string': None},
-                             'is_visible': True, 'default': ''},
-                'type': {'allow_post': True, 'allow_put': True,
-                         'validate': {'type:string': None}, 'is_visible': True,
-                         'default': ''},
-            },
-        }
+            'name': {'allow_post': True, 'allow_put': True,
+                     'validate': {'type:string': None}, 'is_visible': True,
+                     'default': ''},
+            'description': {'allow_post': True, 'allow_put': True,
+                            'validate': {'type:string': None},
+                            'is_visible': True, 'default': ''},
+            'user_name': {'allow_post': True, 'allow_put': True,
+                          'validate': {'type:string': None},
+                          'is_visible': True, 'default': ''},
+            'password': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:string': None},
+                         'is_visible': True, 'default': ''},
+            'type': {'allow_post': True, 'allow_put': True,
+                     'validate': {'type:string': None}, 'is_visible': True,
+                     'default': ''}}
         for cred_uuid, kv_dict in cred_dict.items():
             # ensure cred_uuid is properly formatted
             cred_uuid = config.uuidify(cred_uuid)
             config.verify_resource_dict(kv_dict, True, attr_info)
-            self._credentials[cred_uuid] = kv_dict
+   #         self._credentials[cred_uuid] = kv_dict
 
     def _get_credentials(self, device_id):
         creds = self._credentials.get(device_id)
