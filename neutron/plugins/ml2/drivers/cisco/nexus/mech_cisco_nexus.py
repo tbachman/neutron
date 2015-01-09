@@ -316,7 +316,8 @@ class CiscoNexusMechanismDriver(api.MechanismDriver):
         if not missing_fields:
             func(vlan_id, device_id, host_id, vni, is_provider)
         else:
-            raise ValueError(fields=' '.join(missing_fields))
+            raise excep.NexusMissingRequiredFields(
+                fields=' '.join(missing_fields))
 
     def _port_action_vxlan(self, port, segment, func):
         """Verify configuration and then process event."""
