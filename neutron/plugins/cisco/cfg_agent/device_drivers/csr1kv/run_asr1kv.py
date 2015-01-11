@@ -2,8 +2,8 @@ __author__ = 'hareesh'
 
 import logging
 
-from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    asr1kv_routing_driver as asr_driver)
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
+    asr1k_routing_driver as asr_driver)
 from neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper \
     import RouterInfo
 

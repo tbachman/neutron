@@ -24,7 +24,7 @@ LOG = logging.getLogger(__name__)
 class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def __init__(self, **device_params):
-        super(ASR1kRoutingDriver,self).__init__(**device_params)
+        super(ASR1kRoutingDriver, self).__init__(**device_params)
 
     def _get_interface_name_from_hosting_port(self, port):
         try:
