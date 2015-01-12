@@ -126,7 +126,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         with context.session.begin(subtransactions=True):
             router_type_id = self.get_router_type(context,
                                                   router_type_name)['id']
-            auto_schedule = cfg.CONF.routing.router_auto_schedule
+            #TODO(bobmel): Fix autoschedule setting
+            auto_schedule = True
             if (router_type_id != self.get_namespace_router_type_id(context)
                     and self._dev_mgr.mgmt_nw_id() is None):
                 raise RouterCreateInternalError()
