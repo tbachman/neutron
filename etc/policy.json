@@ -66,6 +66,7 @@
     "create_router:ha": "rule:admin_only",
     "get_router": "rule:admin_or_owner",
     "get_router:distributed": "rule:admin_only",
+    "get_router:routerhost:hosting_device": "rule:admin_only",
     "update_router:external_gateway_info:enable_snat": "rule:admin_only",
     "update_router:distributed": "rule:admin_only",
     "update_router:ha": "rule:admin_only",
@@ -142,24 +143,29 @@
     "create_lsn": "rule:admin_only",
 
     "create_hosting_device": "rule:admin_only",
-    "get_hosting_device": "rule:admin",
-    "update_hosting_device": "rule:admin",
-    "delete_hosting_device": "rule:admin",
+    "get_hosting_device": "rule:admin_only",
+    "get_hosting_devices": "rule:admin_only",
+    "update_hosting_device": "rule:admin_only",
+    "delete_hosting_device": "rule:admin_only",
+
     "create_hosting_device_template": "rule:admin_only",
-    "get_hosting_device_template": "rule:admin",
-    "update_hosting_device_template": "rule:admin",
-    "delete_hosting_device_template": "rule:admin",
+    "get_hosting_device_template": "rule:admin_only",
+    "get_hosting_device_templates": "rule:admin_only",
+    "update_hosting_device_template": "rule:admin_only",
+    "delete_hosting_device_template": "rule:admin_only",
+
     "create_routertype": "rule:admin_only",
     "get_routertype": "",
-    "update_routertype": "rule:admin",
-    "delete_routertype": "rule:admin",
+    "update_routertype": "rule:admin_only",
+    "delete_routertype": "rule:admin_only",
+
     "create_l3-router-device": "rule:admin_only",
     "delete_l3-router-device": "rule:admin_only",
     "get_l3-router-devices": "rule:admin_only",
     "get_l3-hosting-devices": "rule:admin_only",
 
-    "create_hosting-device": "rule:admin_only",
-    "delete_hosting-device": "rule:admin_only",
-    "get_hosting-devices": "rule:admin_only",
+    "create_hosting_device": "rule:admin_only",
+    "delete_hosting_device": "rule:admin_only",
+    "get_hosting_devices": "rule:admin_only",
     "get_cfg-agents": "rule:admin_only"
 }
