@@ -642,6 +642,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 dev_data.update(
                     {'id': vm_instance['id'],
                      'complementary_id': complementary_id,
+                     'management_ip_address': res['mgmt_port'][
+                         'fixed_ips'][0]['ip_address'],
                      'management_port_id': res['mgmt_port']['id']})
                 self.create_hosting_device(context,
                                            {'hosting_device': dev_data})

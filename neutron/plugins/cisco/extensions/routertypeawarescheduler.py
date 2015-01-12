@@ -126,6 +126,7 @@ class HostingDevicesHostingRouterController(wsgi.Controller):
         return plugin.list_hosting_devices_hosting_router(request.context,
                                                           kwargs['router_id'])
 
+
 class Routertypeawarescheduler(extensions.ExtensionDescriptor):
     """Extension class supporting l3 agent scheduler."""
     @classmethod
