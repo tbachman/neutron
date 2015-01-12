@@ -101,7 +101,7 @@ class CiscoRoutingPluginApi(object):
         :param hd_ids : hosting device ids, only routers assigned to these
                         hosting devices will be returned.
         """
-        cctxt = self.client.prepare(version='1.1')
+        cctxt = self.client.prepare()
         return cctxt.call(context, 'cfg_sync_routers', host=self.host,
                           router_ids=router_ids, hosting_device_ids=hd_ids)
 
