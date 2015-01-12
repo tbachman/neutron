@@ -52,7 +52,7 @@ class HostingDeviceNotHandledByCfgAgent(exceptions.Conflict):
 
 
 CFG_AGENT_SCHEDULER_ALIAS = 'cisco-cfg-agent-scheduler'
-HOSTING_DEVICE = 'hosting-device'
+HOSTING_DEVICE = 'hosting_device'
 HOSTING_DEVICES = HOSTING_DEVICE + 's'
 CFG_AGENT = 'cfg-agent'
 CFG_AGENTS = CFG_AGENT + 's'
