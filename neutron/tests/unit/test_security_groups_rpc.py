@@ -287,6 +287,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id2)
 
     def test_security_group_rules_for_devices_ipv6_ingress(self):
+        self.skipTest("Do not support IPv6")
         fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,
@@ -346,6 +347,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id1)
 
     def test_security_group_rules_for_devices_ipv6_egress(self):
+        self.skipTest("Do not support IPv6")
         fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,
@@ -407,6 +409,7 @@ class SGServerRpcCallBackMixinTestCase(test_sg.SecurityGroupDBTestCase):
                 self._delete('ports', port_id1)
 
     def test_security_group_rules_for_devices_ipv6_source_group(self):
+        self.skipTest("Do not support IPv6")
         fake_prefix = test_fw.FAKE_PREFIX[const.IPv6]
         with self.network() as n:
             with nested(self.subnet(n,

@@ -711,19 +711,11 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                            'subnet_id': subnet.id,
                            'cidr': subnet.cidr})
                 raise q_exc.InvalidInput(error_message=err_msg)
-        new_ip = netaddr.IPNetwork(new_subnet_cidr)
-        if new_ip.size < 8:
-            err_msg = (_("%s has size %d") % (new_subnet_cidr, new_ip.size))
-            LOG.error(err_msg)
-            raise q_exc.InvalidInput(error_message=err_msg)
-        if new_ip.prefixlen < 8:
-            err_msg = (_("%s has prefix length < 8") % new_subnet_cidr)
-            LOG.error(err_msg)
-            raise q_exc.InvalidInput(error_message=err_msg)
 
     def _validate_subnet_reserved(self, new_subnet_cidr):
         """Validate CIDR is not using reserved IP for a subnet.
 
+        Do not support IPv6.  Verifies network size.
         Verifies the specified CIDR is not in iana-ipv4-special-registry
         except Private-Use network and Documentation TEST-NET.
         """
@@ -736,12 +728,22 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             netaddr.IPNetwork('240.0.0.0/4'),       # Reserved
         ])
         new_ip = netaddr.IPNetwork(new_subnet_cidr)
-        if (new_ip.version == 4 and
-           (new_ip.is_link_local() or new_ip.is_loopback() or
-            new_ip.is_multicast() or new_ip in ipv4_reserved)):
-            err_msg = (_("%s is a special-purpose address") % new_subnet_cidr)
+        if new_ip.version == 6:
+            err_msg = (_("%s is IPv6") % new_subnet_cidr)
             LOG.error(err_msg)
             raise q_exc.InvalidInput(error_message=err_msg)
+        if new_ip.version == 4:
+            if new_ip.prefixlen < 8 or new_ip.prefixlen > 29:
+                err_msg = (_("%s has prefix length %s") % (
+                             new_subnet_cidr, new_ip.prefixlen))
+                LOG.error(err_msg)
+                raise q_exc.InvalidInput(error_message=err_msg)
+            if (new_ip.is_link_local() or new_ip.is_loopback() or
+                new_ip.is_multicast() or new_ip in ipv4_reserved):
+                err_msg = (_("%s is a special-purpose address") %
+                    new_subnet_cidr)
+                LOG.error(err_msg)
+                raise q_exc.InvalidInput(error_message=err_msg)
 
     def _validate_allocation_pools(self, ip_pools, subnet_cidr):
         """Validate IP allocation pools.
