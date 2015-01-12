@@ -26,22 +26,6 @@ from neutron.plugins.common import constants
 LOG = logging.getLogger(__name__)
 
 
-class RouterTypeInUse(exceptions.InUse):
-    message = _("Router type %(id)s in use.")
-
-
-class RouterTypeNotFound(exceptions.NotFound):
-    message = _("Router type %(id)s does not exist")
-
-
-class DriverNotFound(exceptions.NetworkNotFound):
-    message = _("Driver %(driver)s does not exist")
-
-
-class SchedulerNotFound(exceptions.NetworkNotFound):
-    message = _("Scheduler %(scheduler)s does not exist")
-
-
 def convert_validate_import(import_obj):
     if import_obj is None:
         raise DriverNotFound(driver=import_obj)
@@ -135,7 +119,7 @@ class Routertype(extensions.ExtensionDescriptor):
 
     @classmethod
     def get_namespace(cls):
-        return "http://docs.openstack.org/ext/" + ROUTERTYPE + "/api/v1.0"
+        return "http://docs.openstack.org/ext/" + ROUTERTYPE + "/api/v2.0"
 
     @classmethod
     def get_updated(cls):
@@ -159,8 +143,20 @@ class Routertype(extensions.ExtensionDescriptor):
 
 
 # router_type exceptions
-class UndefinedRouterType(exceptions.NeutronException):
-    message = _("Router type %(type) does not exist")
+class RouterTypeInUse(exceptions.InUse):
+    message = _("Router type %(id)s in use.")
+
+
+class RouterTypeNotFound(exceptions.NotFound):
+    message = _("Router type %(id)s does not exist")
+
+
+class DriverNotFound(exceptions.NetworkNotFound):
+    message = _("Driver %(driver)s does not exist")
+
+
+class SchedulerNotFound(exceptions.NetworkNotFound):
+    message = _("Scheduler %(scheduler)s does not exist")
 
 
 class RouterTypeAlreadyDefined(exceptions.NeutronException):
@@ -179,10 +175,6 @@ class HostingDeviceTemplateUsedByRouterType(exceptions.NeutronException):
 class RouterTypeHasRouters(exceptions.NeutronException):
     message = _("Router type %(type) cannot be deleted since routers "
                 "of that type exists")
-
-
-class RouterTypeNotFound(exceptions.NotFound):
-    message = _("RouterType %(router_type_id)s could not be found.")
 
 
 class RoutertypePluginBase(object):
