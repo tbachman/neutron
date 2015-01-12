@@ -119,7 +119,8 @@ class CiscoCfgAgent(manager.Manager):
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
 
     def _initialize_rpc(self, host):
-        self.devmgr_rpc = CiscoDeviceManagementApi(topics.L3PLUGIN, host)
+        self.devmgr_rpc = CiscoDeviceManagementApi(
+            topics.DEVICE_MANAGER_PLUGIN, host)
 
     def _initialize_service_helpers(self, host):
         svc_helper_class = self.conf.cfg_agent.routing_svc_helper_class
