@@ -121,7 +121,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_type_name = r[routertype.TYPE_ATTR]
         if router_type_name is attributes.ATTR_NOT_SPECIFIED:
             router_type_name = cfg.CONF.routing.default_router_type
-        # bobmel: Hard coding to shared host for now
+        # TODO(bobmel): Hard coding to shared host for now
         share_host = True
         with context.session.begin(subtransactions=True):
             router_type_id = self.get_router_type(context,
