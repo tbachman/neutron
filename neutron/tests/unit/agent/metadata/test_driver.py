@@ -20,7 +20,7 @@ import mock
 from oslo.config import cfg
 
 from neutron.agent.common import config as agent_config
-from neutron.agent.l3 import agent as l3_agent
+from neutron.agent.l3 import config as l3_config
 from neutron.agent.metadata import driver as metadata_driver
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
@@ -36,7 +36,7 @@ class TestMetadataDriver(base.BaseTestCase):
 
     def setUp(self):
         super(TestMetadataDriver, self).setUp()
-        cfg.CONF.register_opts(l3_agent.L3NATAgent.OPTS)
+        cfg.CONF.register_opts(l3_config.OPTS)
         agent_config.register_root_helper(cfg.CONF)
 
     def test_metadata_nat_rules(self):
@@ -47,8 +47,7 @@ class TestMetadataDriver(base.BaseTestCase):
             metadata_driver.MetadataDriver.metadata_nat_rules(8775))
 
     def test_metadata_filter_rules(self):
-        rules = ('INPUT', '-s 0.0.0.0/0 -d 127.0.0.1 '
-                 '-p tcp -m tcp --dport 8775 -j ACCEPT')
+        rules = ('INPUT', '-s 0.0.0.0/0 -p tcp -m tcp --dport 8775 -j ACCEPT')
         self.assertEqual(
             [rules],
             metadata_driver.MetadataDriver.metadata_filter_rules(8775))

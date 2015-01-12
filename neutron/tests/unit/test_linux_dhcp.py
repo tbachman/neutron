@@ -89,7 +89,9 @@ class FakePort4:
     admin_state_up = False
     device_owner = 'foo3'
     fixed_ips = [FakeIPAllocation('192.168.0.4',
-                                  'ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
+                                  'dddddddd-dddd-dddd-dddd-dddddddddddd'),
+                 FakeIPAllocation('ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d',
+                                  'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')]
     mac_address = '00:16:3E:C2:77:1D'
 
     def __init__(self):
@@ -1311,16 +1313,16 @@ class TestDnsmasq(TestBase):
     def test_check_find_version(self):
         # Dnsmasq output currently gives the version number before the
         # copyright year, but just in case ...
-        self._check_version('Copyright 2000-2014. Dnsmasq version 2.65 ...',
-                            float(2.65))
+        self._check_version('Copyright 2000-2014. Dnsmasq version 3.33 ...',
+                            float(3.33))
 
     def test_check_minimum_version(self):
-        self._check_version('Dnsmasq version 2.63 Copyright (c)...',
+        self._check_version('Dnsmasq version 2.67 Copyright (c)...',
                             dhcp.Dnsmasq.MINIMUM_VERSION)
 
     def test_check_future_version(self):
-        self._check_version('Dnsmasq version 2.65 Copyright (c)...',
-                            float(2.65))
+        self._check_version('Dnsmasq version 2.99 Copyright (c)...',
+                            float(2.99))
 
     def test_check_fail_version(self):
         with testtools.ExpectedException(SystemExit):
@@ -1339,6 +1341,22 @@ class TestDnsmasq(TestBase):
                          '00:00:0f:rr:rr:rr,host-192-168-0-1.openstacklocal,'
                          '192.168.0.1\n').lstrip()
         dm = dhcp.Dnsmasq(self.conf, FakeDualStackNetworkSingleDHCP(),
+                          version=dhcp.Dnsmasq.MINIMUM_VERSION)
+        dm._output_hosts_file()
+        self.safe.assert_has_calls([mock.call(exp_host_name,
+                                              exp_host_data)])
+
+    def test_only_populates_dhcp_enabled_subnet_on_a_network(self):
+        exp_host_name = '/dhcp/cccccccc-cccc-cccc-cccc-cccccccccccc/host'
+        exp_host_data = ('00:00:80:aa:bb:cc,host-192-168-0-2.openstacklocal,'
+                         '192.168.0.2\n'
+                         '00:00:f3:aa:bb:cc,host-192-168-0-3.openstacklocal,'
+                         '192.168.0.3\n'
+                         '00:00:0f:aa:bb:cc,host-192-168-0-4.openstacklocal,'
+                         '192.168.0.4\n'
+                         '00:00:0f:rr:rr:rr,host-192-168-0-1.openstacklocal,'
+                         '192.168.0.1\n').lstrip()
+        dm = dhcp.Dnsmasq(self.conf, FakeDualNetworkSingleDHCP(),
                           version=dhcp.Dnsmasq.MINIMUM_VERSION)
         dm._output_hosts_file()
         self.safe.assert_has_calls([mock.call(exp_host_name,

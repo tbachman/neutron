@@ -315,7 +315,7 @@ class Dnsmasq(DhcpLocalProcess):
 
     NEUTRON_NETWORK_ID_KEY = 'NEUTRON_NETWORK_ID'
     NEUTRON_RELAY_SOCKET_PATH_KEY = 'NEUTRON_RELAY_SOCKET_PATH'
-    MINIMUM_VERSION = 2.63
+    MINIMUM_VERSION = 2.67
 
     @classmethod
     def check_version(cls):
@@ -327,7 +327,6 @@ class Dnsmasq(DhcpLocalProcess):
             ver = float(m.group(1)) if m else 0
             if ver < cls.MINIMUM_VERSION:
                 LOG.error(_LE('FAILED VERSION REQUIREMENT FOR DNSMASQ. '
-                              'DHCP AGENT MAY NOT RUN CORRECTLY! '
                               'Please ensure that its version is %s '
                               'or above!'), cls.MINIMUM_VERSION)
                 raise SystemExit(1)
@@ -502,7 +501,13 @@ class Dnsmasq(DhcpLocalProcess):
         filename = self.get_conf_file_name('host')
 
         LOG.debug('Building host file: %s', filename)
+        dhcp_enabled_subnet_ids = [s.id for s in self.network.subnets
+                                   if s.enable_dhcp]
         for (port, alloc, hostname, name) in self._iter_hosts():
+            # don't write ip address which belongs to a dhcp disabled subnet.
+            if alloc.subnet_id not in dhcp_enabled_subnet_ids:
+                continue
+
             # (dzyu) Check if it is legal ipv6 address, if so, need wrap
             # it with '[]' to let dnsmasq to distinguish MAC address from
             # IPv6 address.
