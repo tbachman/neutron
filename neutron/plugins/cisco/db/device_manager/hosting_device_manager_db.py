@@ -621,7 +621,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     'admin_state_up': True,
                     'protocol_port': template['protocol_port'],
                     'created_at': timeutils.utcnow(),
-                    'tenant_bound': template['tenant_bound'],
+                    'tenant_bound': template['tenant_bound'] or None,
                     'auto_delete': True}
         #TODO(bobmel): Determine value for max_hosted properly
         max_hosted = 1  # template['slot_capacity']
