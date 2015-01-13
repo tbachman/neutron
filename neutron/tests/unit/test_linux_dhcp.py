@@ -669,7 +669,7 @@ class TestDnsmasq(TestBase):
             'exec',
             'qdhcp-ns',
             'env',
-            'NEUTRON_NETWORK_ID=%s' % network.id,
+            'HOSTS_FILE=/dhcp/%s/host' % network.id,
             'dnsmasq',
             '--no-hosts',
             '--no-resolv',
@@ -681,7 +681,9 @@ class TestDnsmasq(TestBase):
             '--dhcp-hostsfile=/dhcp/%s/host' % network.id,
             '--addn-hosts=/dhcp/%s/addn_hosts' % network.id,
             '--dhcp-optsfile=/dhcp/%s/opts' % network.id,
-            '--dhcp-leasefile=/dhcp/%s/lease' % network.id]
+            '--dhcp-script=/usr/local/bin/'
+            'neutron-dhcp-agent-dnsmasq-lease-init',
+            '--leasefile-ro']
 
         expected.extend(
             '--dhcp-range=set:tag%d,%s,static,86400s' %

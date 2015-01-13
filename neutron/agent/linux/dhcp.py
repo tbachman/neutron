@@ -20,7 +20,6 @@ import collections
 import os
 import re
 import shutil
-import socket
 import StringIO
 import sys
 
@@ -278,8 +277,8 @@ class Dnsmasq(DhcpLocalProcess):
 
     _TAG_PREFIX = 'tag%d'
 
-    NEUTRON_NETWORK_ID_KEY = 'NEUTRON_NETWORK_ID'
-    NEUTRON_RELAY_SOCKET_PATH_KEY = 'NEUTRON_RELAY_SOCKET_PATH'
+    HOSTS_FILE_ID_KEY = 'HOSTS_FILE'
+    LEASE_EXP_MAX = (2100 - 1970) * 365 * 24 * 3600
     MINIMUM_VERSION = 2.63
 
     @classmethod
@@ -314,8 +313,9 @@ class Dnsmasq(DhcpLocalProcess):
 
     def spawn_process(self):
         """Spawns a Dnsmasq process for the network."""
+        hosts_file = self._output_hosts_file()
         env = {
-            self.NEUTRON_NETWORK_ID_KEY: self.network.id,
+            self.HOSTS_FILE_ID_KEY: hosts_file,
         }
 
         cmd = [
@@ -328,10 +328,11 @@ class Dnsmasq(DhcpLocalProcess):
             '--except-interface=lo',
             '--pid-file=%s' % self.get_conf_file_name(
                 'pid', ensure_conf_dir=True),
-            '--dhcp-hostsfile=%s' % self._output_hosts_file(),
+            '--dhcp-hostsfile=%s' % hosts_file,
             '--addn-hosts=%s' % self._output_addn_hosts_file(),
             '--dhcp-optsfile=%s' % self._output_opts_file(),
-            '--dhcp-leasefile=%s' % self.get_conf_file_name('lease'),
+            '--dhcp-script=%s' % self._lease_script_path(),
+            '--leasefile-ro',
         ]
 
         possible_leases = 0
@@ -415,6 +416,11 @@ class Dnsmasq(DhcpLocalProcess):
         LOG.debug(_('Reloading allocations for network: %s'), self.network.id)
         self.device_manager.update(self.network)
 
+    @staticmethod
+    def _ip2host(ip_address):
+        return 'host-%s' % ip_address.replace(
+            '.', '-').replace(':', '-')
+
     def _iter_hosts(self):
         """Iterate over hosts.
 
@@ -429,7 +435,8 @@ class Dnsmasq(DhcpLocalProcess):
         r = re.compile('[:.]')
         for port in self.network.ports:
             for alloc in port.fixed_ips:
-                hostname = 'host-%s' % r.sub('-', alloc.ip_address)
+                # hostname = 'host-%s' % r.sub('-', alloc.ip_address)
+                hostname = self._ip2host(alloc.ip_address)
                 fqdn = '%s.%s' % (hostname, self.conf.dhcp_domain)
                 yield (port, alloc, hostname, fqdn)
 
@@ -642,31 +649,32 @@ class Dnsmasq(DhcpLocalProcess):
         else:
             return False
 
-    @classmethod
-    def lease_update(cls):
-        network_id = os.environ.get(cls.NEUTRON_NETWORK_ID_KEY)
-        dhcp_relay_socket = os.environ.get(cls.NEUTRON_RELAY_SOCKET_PATH_KEY)
+    def _lease_script_path(self):
+        return os.path.join(os.path.dirname(sys.argv[0]),
+                            'neutron-dhcp-agent-dnsmasq-lease-init')
 
+    @classmethod
+    def lease_init(cls):
         action = sys.argv[1]
-        if action not in ('add', 'del', 'old'):
+        if action != 'init':
             sys.exit()
 
-        mac_address = sys.argv[2]
-        ip_address = sys.argv[3]
+        hostsfile = os.environ.get(cls.HOSTS_FILE_ID_KEY)
 
-        if action == 'del':
-            lease_remaining = 0
-        else:
-            lease_remaining = int(os.environ.get('DNSMASQ_TIME_REMAINING', 0))
+        if hostsfile is None:
+            sys.exit()
 
-        data = dict(network_id=network_id, mac_address=mac_address,
-                    ip_address=ip_address, lease_remaining=lease_remaining)
-
-        if os.path.exists(dhcp_relay_socket):
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.connect(dhcp_relay_socket)
-            sock.send(jsonutils.dumps(data))
-            sock.close()
+        if os.path.exists(hostsfile):
+            with open(hostsfile) as f:
+                for l in f.readlines():
+                    host = l.strip().split(',')
+                    mac = host[0]
+                    ip_address = host[2]
+                    hostname = cls._ip2host(ip_address)
+                    client_id = '*'
+                    print('%u %s %s %s %s' %
+                          (cls.LEASE_EXP_MAX, mac, ip_address,
+                           hostname, client_id))
 
 
 class DeviceManager(object):
