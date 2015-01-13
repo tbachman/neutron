@@ -129,7 +129,8 @@ class L3RouterTypeAwareSchedulerDbMixin(
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             hosting_device_id)
         router_ids = [item[0] for item in query]
-        return self.get_sync_data_ext(context, router_ids=router_ids)
+        return {'routers': self.get_sync_data_ext(context,
+                                                  router_ids=router_ids)}
 
     def list_hosting_devices_hosting_router(self, context, router_id):
         query = context.session.query(
@@ -138,7 +139,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
                              router_id)
         hd_ids = [item[0] for item in query]
         if hd_ids:
-            return {'hosting devices':
+            return {'hosting_devices':
                     self._dev_mgr.get_hosting_devices(context,
                                                       filters={'id': hd_ids})}
         else:

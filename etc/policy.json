@@ -155,7 +155,11 @@
     "delete_hosting_device_template": "rule:admin_only",
 
     "create_routertype": "rule:admin_only",
-    "get_routertype": "",
+    "get_routertype:cfg_agent_driver": "rule:admin_only",
+    "get_routertype:scheduler": "rule:admin_only",
+    "get_routertype:shared": "rule:admin_only",
+    "get_routertype:slot_need": "rule:admin_only",
+    "get_routertype:template_id": "rule:admin_only",
     "update_routertype": "rule:admin_only",
     "delete_routertype": "rule:admin_only",
 

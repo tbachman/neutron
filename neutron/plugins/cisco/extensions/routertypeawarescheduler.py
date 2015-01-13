@@ -158,8 +158,10 @@ class Routertypeawarescheduler(extensions.ExtensionDescriptor):
                       collection_name=ciscohostingdevicemanager.DEVICES)
         controller = resource.Resource(
             RouterHostingDeviceSchedulerController(), base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(L3_ROUTER_DEVICES, controller,
-                                                 parent))
+        exts.append(extensions.ResourceExtension(
+            L3_ROUTER_DEVICES, controller, parent,
+            path_prefix=svc_constants.COMMON_PREFIXES[
+                svc_constants.DEVICE_MANAGER]))
         parent = dict(member_name="router",
                       collection_name=l3.ROUTERS)
         controller = resource.Resource(
