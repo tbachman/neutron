@@ -7,6 +7,7 @@
     "regular_user": "",
     "shared": "field:networks:shared=True",
     "shared_firewalls": "field:firewalls:shared=True",
+    "shared_routertypes": "field:routertypes:shared=True",
     "external": "field:networks:router:external=True",
     "default": "rule:admin_or_owner",
 
@@ -155,6 +156,7 @@
     "delete_hosting_device_template": "rule:admin_only",
 
     "create_routertype": "rule:admin_only",
+    "get_routertype": "rule:admin_or_owner or rule:shared_routertypes",
     "get_routertype:cfg_agent_driver": "rule:admin_only",
     "get_routertype:scheduler": "rule:admin_only",
     "get_routertype:shared": "rule:admin_only",

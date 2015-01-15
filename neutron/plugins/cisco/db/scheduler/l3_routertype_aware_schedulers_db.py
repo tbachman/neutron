@@ -120,7 +120,6 @@ class L3RouterTypeAwareSchedulerDbMixin(
         # now unbind the router from the hosting device
         with context.session.begin(subtransactions=True):
             r_hd_binding.hosting_device = None
-            context.session.update(r_hd_binding)
 
     def list_routers_on_hosting_device(self, context, hosting_device_id):
         query = context.session.query(

@@ -340,7 +340,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             if l3_cfg_notifier:
                 l3_cfg_notifier.routers_updated(context, routers,
                                                 'disassociate_floatingips')
-                     # since caller assumes that we handled notifications on its
+            # since caller assumes that we handled notifications on its
             # behalf, return nothing
             return
         return router_ids
@@ -420,7 +420,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                       {'r_id': r_hd_binding['router']['id'],
                        'type': r_hd_binding['router_type_id']})
             return False
-#        with context.session.begin(subtransactions=True):
         if hosting_device_id is None:
             result = scheduler.schedule_router(self, context, r_hd_binding)
         else:
@@ -464,13 +463,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                         # attempt later.
                         self.backlog_router(context, r_hd_binding)
                     return False
-  #      if r_hd_binding.hosting_device_id is not None:
-  #          LOG.info(_LI('Successfully scheduled router %(r_id)s to '
-  #                       'hosting device %(d_id)s'),
-  #                   {'r_id': r_hd_binding['router']['id'],
-  #                    'd_id': r_hd_binding.hosting_device_id})
-  #          context.session.add(r_hd_binding)
-  #      return True
 
     def unschedule_router_from_hosting_device(self, context, r_hd_binding):
         LOG.info(_LI('Attempting to un-schedule router %s.'),

@@ -68,6 +68,26 @@ class L3RouterCfgRpcCallback(object):
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
+    def report_status(self, context, host, status_list):
+        """Report status of a particular Neutron router by Cisco cfg agent.
+
+        This is called by Cisco cfg agent when it has performed an operation
+        on a Neutron router. Note that the agent may include status updates
+        for multiple routers in one message.
+
+        @param context: contains user information
+        @param host - originator of callback
+        @param status_list: list of status dicts for routers
+                            Each list item is
+                            {'router_id': <router_id>,
+                             'operation': <attempted operation>
+                             'status': <'SUCCESS'|'FAILURE'>,
+                             'details': <optional explaining details>}
+        """
+        #TODO(bobmel): Update router status
+        LOG.debug("Config agent %(host)s reported status for Neutron"
+                  "routers: %(routers)s", {'host': host, 'routers': []})
+
     def _ensure_host_set_on_ports(self, context, host, routers):
         for router in routers:
             LOG.debug("Checking router: %(id)s for host: %(host)s",

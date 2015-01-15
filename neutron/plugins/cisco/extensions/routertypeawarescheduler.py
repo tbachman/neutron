@@ -98,9 +98,10 @@ class RouterHostingDeviceSchedulerController(wsgi.Controller):
                hosting_device_id)
         return result
 
-    def delete(self, request, router_id, **kwargs):
+    def delete(self, request, **kwargs):
         plugin = self.get_plugin()
         policy.enforce(request.context, "delete_%s" % L3_ROUTER_DEVICE, {})
+        router_id = kwargs['id']
         hosting_device_id = kwargs['hosting_device_id']
         result = plugin.remove_router_from_hosting_device(
             request.context, hosting_device_id, router_id)

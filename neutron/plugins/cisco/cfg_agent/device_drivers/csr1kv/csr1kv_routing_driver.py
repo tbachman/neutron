@@ -52,11 +52,10 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         try:
             self._csr_host = device_params['management_ip_address']
             self._csr_ssh_port = device_params['protocol_port']
-            credentials = device_params['credentials']
-            if credentials:
-                self._csr_user = credentials['username']
-                self._csr_password = credentials['password']
-            self._timeout = (device_params['timeout'] or
+            credentials = device_params.get('credentials', {})
+            self._csr_user = credentials.get('username')
+            self._csr_password = credentials.get('password')
+            self._timeout = (device_params.get('timeout') or
                              cfg.CONF.cfg_agent.device_connection_timeout)
             self._csr_conn = None
             self._intfs_enabled = False

@@ -389,7 +389,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def delete_all_hosting_devices_by_template(self, context, template,
                                                force_delete=False):
         """Deletes all hosting devices based on <template>."""
-#        with context.session.begin(subtransactions=True):
         plugging_drv = self.get_hosting_device_plugging_driver(
             context, template['id'])
         hosting_device_drv = self.get_hosting_device_driver(context,
@@ -420,7 +419,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     def handle_non_responding_hosting_devices(self, context, cfg_agent,
                                               hosting_device_ids):
-#        with context.session.begin(subtransactions=True):
         e_context = context.elevated()
         hosting_devices = self.get_hosting_devices_qry(
             e_context, hosting_device_ids).all()
@@ -458,9 +456,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             logical resource.
         """
         template = hosting_device.template
-#        credentials = (None if hosting_device.credentials is None
-#                       else {'username': hosting_device.credentials.user_name,
-#                             'password': hosting_device.credentials.password})
         if hosting_device.management_port is None:
             # This can happen for hardware hosting devices which may have been
             # registered via .ini file before the management network exists.
@@ -472,8 +467,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         return {'id': hosting_device.id,
                 'name': template.name,
                 'template_id': template.id,
-#                'credentials': credentials,
-                'credentials': self._get_credentials(hosting_device.id),
+                'credentials': self._get_credentials(hosting_device),
                 'host_category': template.host_category,
                 'service_types': template.service_types,
                 'management_ip_address': mgmt_ip,
@@ -637,7 +631,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 context, template['name'] + '_nrouter', template['image'],
                 template['flavor'], hosting_device_drv, res['mgmt_port'],
                 res.get('ports'))
-#            with context.session.begin(subtransactions=True):
             if vm_instance is not None:
                 dev_data.update(
                     {'id': vm_instance['id'],
@@ -693,7 +686,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             func.count(hd_models.SlotAllocation.logical_resource_id))
         hd_candidates = query.all()
         num_possible_to_delete = min(len(hd_candidates), num)
-#        with context.session.begin(subtransactions=True):
         for i in xrange(num_possible_to_delete):
             res = plugging_drv.get_hosting_device_resources(
                 context, hd_candidates[i]['id'],
@@ -820,8 +812,11 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             config.verify_resource_dict(kv_dict, True, attr_info)
             self._credentials[cred_uuid] = kv_dict
 
-    def _get_credentials(self, device_id):
-        creds = self._credentials.get(device_id)
+    def _get_credentials(self, hosting_device):
+        creds = self._credentials.get(
+            hosting_device.credentials_id,
+            self._credentials.get(
+                hosting_device.template.default_credentials_id))
         return {'user_name': creds['user_name'],
                 'password': creds['password']} if creds else None
 
