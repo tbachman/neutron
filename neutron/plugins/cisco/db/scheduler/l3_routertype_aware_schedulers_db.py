@@ -52,25 +52,39 @@ class L3RouterTypeAwareSchedulerDbMixin(
     def validate_hosting_device_router_combination(self, context, binding_info,
                                                    hosting_device_id):
         #TODO(bobmel): Perform proper hosting device validation
-        if False:
+        target_hd =  self._dev_mgr._get_hosting_device(context,
+                                                       hosting_device_id)
+        rt_info = self.get_routertypes(
+            context, fields=['id', 'slot_need'],
+            filters={'template_id': [target_hd.template_id]})
+        if not rt_info:
             raise routertypeawarescheduler.RouterHostingDeviceMismatch(
+                router_type=binding_info.routertype_id,
+                router_id=binding_info.router_id,
                 hosting_device_id=hosting_device_id)
+        return rt_info[0]
 
     def add_router_to_hosting_device(self, context, hosting_device_id,
                                      router_id):
         """Add a (non-hosted) router to a hosting device."""
         e_context = context.elevated()
         r_hd_binding = self._get_router_binding_info(e_context, router_id)
+        old_rt = r_hd_binding.router_type_id
         if r_hd_binding.hosting_device_id:
             raise routertypeawarescheduler.RouterHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
-        self.validate_hosting_device_router_combination(context, r_hd_binding,
-                                                        hosting_device_id)
+        rt_info = self.validate_hosting_device_router_combination(
+            context, r_hd_binding, hosting_device_id)
         result = self.schedule_router_on_hosting_device(
-            e_context, r_hd_binding, hosting_device_id)
+            e_context, r_hd_binding, hosting_device_id, rt_info['slot_need'])
         if result:
-            self._ensure_routertype(context, r_hd_binding)
-            router = self.get_router(context, router_id)
+            if old_rt != rt_info['id']:
+                with context.session.begin(subtransactions=True):
+                    r_hd_binding.router_type_id = rt_info['id']
+                    context.session.add(r_hd_binding)
+            # refresh so that we get latest contents from DB
+            e_context.session.expire(r_hd_binding)
+            router = self.get_router(e_context, router_id)
             self._add_type_and_hosting_device_info(
                 e_context, router, binding_info=r_hd_binding, schedule=False)
             l3_cfg_notifier = self.agent_notifiers.get(
@@ -80,18 +94,6 @@ class L3RouterTypeAwareSchedulerDbMixin(
         else:
             raise routertypeawarescheduler.RouterSchedulingFailed(
                 router_id=router_id, hosting_device_id=hosting_device_id)
-
-    def _ensure_routertype(self, context, binding_info):
-        """Ensures that the routertype of a router corresponds to the
-        hosting device hosting the router.
-        """
-        template_id = binding_info.hosting_device.template_id
-        rt_ids = self.get_routertypes(context, fields=['id'],
-                                      filters={'template_id': [template_id]})
-        if rt_ids:
-            with context.session.begin(subtransactions=True):
-                binding_info.router_type_id = rt_ids[0]['id']
-                context.session.update(binding_info)
 
     def remove_router_from_hosting_device(self, context, hosting_device_id,
                                           router_id):
@@ -118,8 +120,9 @@ class L3RouterTypeAwareSchedulerDbMixin(
         LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
         self.unschedule_router_from_hosting_device(context, r_hd_binding)
         # now unbind the router from the hosting device
-        with context.session.begin(subtransactions=True):
-            r_hd_binding.hosting_device = None
+        with e_context.session.begin(subtransactions=True):
+            r_hd_binding.hosting_device_id = None
+            e_context.session.add(r_hd_binding)
 
     def list_routers_on_hosting_device(self, context, hosting_device_id):
         query = context.session.query(
@@ -163,8 +166,11 @@ class L3RouterTypeAwareSchedulerDbMixin(
                 l3_models.RouterHostingDeviceBinding.hosting_device_id.in_(
                     hosting_device_ids))
         router_ids = [item[0] for item in query]
-        return self.get_sync_data_ext(context, router_ids=router_ids,
-                                      active=True)
+        if router_ids:
+            return self.get_sync_data_ext(context, router_ids=router_ids,
+                                          active=True)
+        else:
+            return []
 
     def get_active_routers_for_host(self, context, host):
         query = context.session.query(

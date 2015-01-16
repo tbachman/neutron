@@ -21,8 +21,7 @@ class NoopPluggingDriver(plug.PluginSidePluggingDriver):
     """This class defines a no-op plugging driver."""
 
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         return {'mgmt_port': None, 'ports': []}
 
     def get_hosting_device_resources(self, context, id, complementary_id,

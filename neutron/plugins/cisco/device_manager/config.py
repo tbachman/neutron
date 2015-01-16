@@ -38,9 +38,10 @@ def get_specific_config(prefix):
 
     for parsed_file in multi_parser.parsed:
         for parsed_item in parsed_file.keys():
-            if parsed_item.startswith(prefix):
-                section_type, uuid = parsed_item.split(':')
-                if section_type.lower() == prefix:
+            p_i = parsed_item.lower()
+            if p_i.startswith(prefix):
+                section_type, uuid = p_i.split(':')
+                if section_type == prefix:
                     conf_dict[uuid] = {k: v[0] for (k, v) in parsed_file[
                         parsed_item].items()}
     return conf_dict

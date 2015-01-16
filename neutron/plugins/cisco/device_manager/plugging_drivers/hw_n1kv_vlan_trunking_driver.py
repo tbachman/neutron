@@ -14,7 +14,6 @@
 
 import eventlet
 
-from oslo.config import cfg
 from oslo.utils import excutils
 from sqlalchemy.sql import expression as expr
 
@@ -24,10 +23,10 @@ from neutron.common import constants as l3_constants
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI, _LW
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager import config
-import neutron.plugins.cisco.device_manager.plugging_drivers as plug
+from neutron.plugins.cisco.device_manager.plugging_drivers import (
+    n1kv_trunking_driver)
 
 LOG = logging.getLogger(__name__)
 
@@ -36,44 +35,26 @@ DELETION_ATTEMPTS = 5
 SECONDS_BETWEEN_DELETION_ATTEMPTS = 3
 
 
-class HwVLANTrunkingPlugDriver(plug.PluginSidePluggingDriver):
+class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
     """Driver class for Cisco hardware-based devices.
 
     The driver works with VLAN segmented Neutron networks.
     """
-    _mgmt_port_profile_id = None
     # once initialized _device_network_interface_map is dictionary
     _device_network_interface_map = None
 
-    @property
-    def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin
-
-    @classmethod
-    def mgmt_port_profile_id(cls):
-        if cls._mgmt_port_profile_id is None:
-            cls._mgmt_port_profile_id = cls._get_profile_id(
-                'port_profile', 'N1kv port profile',
-                cfg.CONF.n1kv.management_port_profile)
-        return cls._mgmt_port_profile_id
-
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         mgmt_port = None
-        if mgmt_nw_id is not None and tenant_id is not None:
+        if mgmt_context and mgmt_context.get('mgmt_nw_id') and tenant_id:
             # Create port for mgmt interface
             p_spec = {'port': {
                 'tenant_id': tenant_id,
                 'admin_state_up': True,
                 'name': 'mgmt',
-                'network_id': mgmt_nw_id,
+                'network_id': mgmt_context['mgmt_nw_id'],
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
+                'fixed_ips': self._mgmt_subnet_spec(context, mgmt_context),
                 'n1kv:profile_id': self.mgmt_port_profile_id(),
                 'device_id': "",
                 # Use device_owner attribute to ensure we can query for these
@@ -184,12 +165,12 @@ class HwVLANTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         try:
             dev_info = cls._device_network_interface_map[device_id]
             if external:
-                return dev_info['internal'].get(network_id,
-                                                dev_info['internal']['*'])
-            else:
                 return dev_info['external'].get(network_id,
                                                 dev_info['external']['*'])
-        except KeyError:
+            else:
+                return dev_info['internal'].get(network_id,
+                                                dev_info['internal']['*'])
+        except (TypeError, KeyError):
             LOG.error(_LE('Failed to lookup interface on device %(dev)s'
                           'for network %(net)s'), {'dev': device_id,
                                                    'net': network_id})
@@ -197,7 +178,8 @@ class HwVLANTrunkingPlugDriver(plug.PluginSidePluggingDriver):
 
     @classmethod
     def _get_network_interface_map_from_config(cls):
-        dni_dict = config.get_specific_config('HwVLANTrunkingPlugDriver')
+        dni_dict = config.get_specific_config(
+            'HwVLANTrunkingPlugDriver'.lower())
         temp = {}
         for hd_uuid, kv_dict in dni_dict.items():
             # ensure hd_uuid is properly formatted

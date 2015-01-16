@@ -159,19 +159,18 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         return cls._t2_network_profile_id
 
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         mgmt_port = None
         t1_n, t1_sn, t2_n, t2_sn, t_p = [], [], [], [], []
-        if mgmt_nw_id is not None and tenant_id is not None:
+        if mgmt_context and mgmt_context.get('mgmt_nw_id') and tenant_id:
             # Create port for mgmt interface
             p_spec = {'port': {
                 'tenant_id': tenant_id,
                 'admin_state_up': True,
                 'name': 'mgmt',
-                'network_id': mgmt_nw_id,
+                'network_id': mgmt_context['mgmt_nw_id'],
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
+                'fixed_ips': self._mgmt_subnet_spec(context, mgmt_context),
                 'n1kv:profile_id': self.mgmt_port_profile_id(),
                 'device_id': "",
                 # Use device_owner attribute to ensure we can query for these
@@ -400,6 +399,17 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             return
         return {'allocated_port_id': id_allocated_port,
                 'allocated_vlan': allocated_vlan}
+
+    def _mgmt_subnet_spec(self, context, mgmt_context):
+        ip_addr = mgmt_context.get('mgmt_ip_address',
+                                   attributes.ATTR_NOT_SPECIFIED)
+        if ip_addr and ip_addr != attributes.ATTR_NOT_SPECIFIED:
+            nw = self._core_plugin.get_network(context,
+                                               mgmt_context['mgmt_nw_id'])
+            ips = [{'ip_address': ip_addr, 'subnet_id': nw['subnets'][0]}]
+        else:
+            ips = attributes.ATTR_NOT_SPECIFIED
+        return ips
 
     def _perform_logical_port_connectivity_action(self, context, port_db,
                                                   action_str, action):

@@ -133,27 +133,36 @@ class RoutingServiceHelper():
 
     ### Notifications from Plugin ####
 
-    def router_deleted(self, context, routers):
+    def router_deleted(self, context, routers, log_it=True):
         """Deal with router deletion RPC message."""
-        LOG.debug('Got router deleted notification for %s', routers)
-        self.removed_routers.update(routers)
+        if log_it:
+            LOG.debug('Got router deleted notification for %s', routers)
+        # This is needed for backward compatibility
+        if isinstance(routers[0], dict):
+            r_ids = [router['id'] for router in routers]
+        else:
+            r_ids = routers
+        self.removed_routers.update(r_ids)
 
-    def routers_updated(self, context, routers):
+    def routers_updated(self, context, routers, log_it=True):
         """Deal with routers modification and creation RPC message."""
-        LOG.debug('Got routers updated notification :%s', routers)
+        if log_it:
+            LOG.debug('Got routers updated notification :%s', routers)
         if routers:
             # This is needed for backward compatibility
             if isinstance(routers[0], dict):
-                routers = [router['id'] for router in routers]
-            self.updated_routers.update(routers)
+                r_ids = [router['id'] for router in routers]
+            else:
+                r_ids = routers
+            self.updated_routers.update(r_ids)
 
-    def router_removed_from_agent(self, context, payload):
-        LOG.debug('Got router removed from agent :%r', payload)
-        self.removed_routers.add(payload['router_id'])
+    def router_removed_from_hosting_device(self, context, routers):
+        LOG.debug('Got router removed from hosting device: %s', routers)
+        self.router_deleted(context, routers, log_it=False)
 
-    def router_added_to_agent(self, context, payload):
-        LOG.debug('Got router added to agent :%r', payload)
-        self.routers_updated(context, payload)
+    def router_added_to_hosting_device(self, context, routers):
+        LOG.debug('Got router added to hosting device :%s', routers)
+        self.routers_updated(context, routers, log_it=False)
 
     # Routing service helper public methods
 
@@ -325,6 +334,8 @@ class RoutingServiceHelper():
         hosting_devices = {}
         for key in resources.keys():
             for r in resources.get(key) or []:
+                if r.get('hosting_device') is None:
+                    continue
                 hd_id = r['hosting_device']['id']
                 hosting_devices.setdefault(hd_id, {})
                 hosting_devices[hd_id].setdefault(key, []).append(r)

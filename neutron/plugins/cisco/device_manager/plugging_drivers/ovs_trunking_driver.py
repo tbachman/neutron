@@ -34,20 +34,20 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
     supports VLAN trunking.
     """
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         mgmt_port = None
         t1_n, t1_sn, t2_n, t2_sn, t_p = [], [], [], [], []
-        if mgmt_nw_id is not None and tenant_id is not None:
+        if (mgmt_context and mgmt_context.get('mgmt_nw_id') and
+                mgmt_context.get('mgmt_sec_grp_id') and tenant_id):
             # Create port for mgmt interface
             p_spec = {'port': {
                 'tenant_id': tenant_id,
                 'admin_state_up': True,
                 'name': 'mgmt',
-                'network_id': mgmt_nw_id,
+                'network_id':  mgmt_context['mgmt_nw_id'],
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
-                'security_groups': [mgmt_sec_grp_id],
+                'fixed_ips': self._mgmt_subnet_spec(context, mgmt_context),
+                'security_groups': [mgmt_context['mgmt_sec_grp_id']],
                 'device_id': "",
                 # Use device_owner attribute to ensure we can query for these
                 # ports even before Nova has set device_id attribute.

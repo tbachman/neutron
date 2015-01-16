@@ -43,8 +43,6 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # UUID of default credentials (if any) for devices created from this
     # template
     default_credentials_id = sa.Column(sa.String(36))
-#,
-#        sa.ForeignKey('cisco_device_credentials.id'))
     #TODO(bobmel): Evolve to support multiple mechanisms and protocol ports
     # 'configuration_mechanism' indicates how configurations are made
     configuration_mechanism = sa.Column(sa.String(255))
@@ -71,18 +69,6 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     plugging_driver = sa.Column(sa.String(255), nullable=False)
 
 
-#class DeviceCredential(model_base.BASEV2, models_v2.HasId,
-#                       models_v2.HasTenant):
-#    """Represents credentials to control Cisco devices."""
-#
-#    __tablename__ = 'cisco_device_credentials'
-#    name = sa.Column(sa.String(255))
-#    description = sa.Column(sa.String(255))
-#    user_name = sa.Column(sa.String(255))
-#    password = sa.Column(sa.String(255))
-#    type = sa.Column(sa.String(255))
-
-
 class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an appliance hosting Neutron router(s).
 
@@ -99,9 +85,7 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     template = orm.relationship(HostingDeviceTemplate)
     # UUID of credentials for this hosting device
     credentials_id = sa.Column(sa.String(36))
-#,
-#                               sa.ForeignKey('cisco_device_credentials.id'))
-#    credentials = orm.relationship(DeviceCredential)
+    #TODO(bobmel): Add description[sa.String(255)]
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
     # version 4 or 6 IP address of management interface
@@ -145,6 +129,8 @@ class SlotAllocation(model_base.BASEV2):
                                   sa.ForeignKey('cisco_hosting_devices.id'),
 #                                                ondelete='CASCADE'),
                                   nullable=False)
+    #TODO(bobmel): Add logical_resource_name[sa.String(255)]
+    #TODO(bobmel): Add logical_resource_service[sa.String(255)]
     logical_resource_id = sa.Column(sa.String(36), primary_key=True,
                                     nullable=False)
     # UUID of tenant owning logical resource

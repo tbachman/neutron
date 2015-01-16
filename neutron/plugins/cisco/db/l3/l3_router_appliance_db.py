@@ -409,18 +409,19 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         return sync_data
 
     def schedule_router_on_hosting_device(self, context, r_hd_binding,
-                                          hosting_device_id=None):
+                                          hosting_device_id=None,
+                                          slot_need=None):
         LOG.info(_LI('Attempting to schedule router %s.'),
                  r_hd_binding['router']['id'])
-        scheduler = self._get_router_type_scheduler(
-            context, r_hd_binding['router_type_id'])
-        if scheduler is None:
-            LOG.debug('Aborting scheduling of router %(r_id)s as no '
-                      'scheduler was found for its router type %(type)s.',
-                      {'r_id': r_hd_binding['router']['id'],
-                       'type': r_hd_binding['router_type_id']})
-            return False
         if hosting_device_id is None:
+            scheduler = self._get_router_type_scheduler(
+                context, r_hd_binding['router_type_id'])
+            if scheduler is None:
+                LOG.debug('Aborting scheduling of router %(r_id)s as no '
+                          'scheduler was found for its router type %(type)s.',
+                          {'r_id': r_hd_binding['router']['id'],
+                           'type': r_hd_binding['router_type_id']})
+                return False
             result = scheduler.schedule_router(self, context, r_hd_binding)
         else:
             result = [hosting_device_id]
@@ -440,9 +441,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             selected_hd = self._dev_mgr.get_hosting_devices_qry(
                 e_context, [result[0]], load_agent=False).one()
             with context.session.begin(subtransactions=True):
+                # use slot_need if specified (for router migration cases
+                # where router type will change as a result of migration.
                 acquired = self._dev_mgr.acquire_hosting_device_slots(
                     e_context, selected_hd, router,
-                    r_hd_binding['router_type']['slot_need'],
+                    slot_need or r_hd_binding['router_type']['slot_need'],
                     exclusive=not r_hd_binding['share_hosting_device'])
                 if acquired:
                     r_hd_binding.hosting_device_id = selected_hd['id']

@@ -485,11 +485,17 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                                           hosting_device.id)
         if not plg_drv:
             return
+        mgmt_context = {
+            'mgmt_ip_address': hosting_device.management_ip_address,
+            'mgmt_nw_id': mgmt_nw_id,
+            'mgmt_sec_grp_id': self.mgmt_sec_grp_id}
         res = plg_drv.create_hosting_device_resources(
             adm_context, uuidutils.generate_uuid(), self.l3_tenant_id,
-            mgmt_nw_id, self.mgmt_sec_grp_id, 1)
+            mgmt_context, 1)
         if not res['mgmt_port']:
             return
+        with context.session.begin(subtransactions=True):
+            hosting_device.management_port_id = res['mgmt_port']['id']
         # refresh so that we get latest contents from DB
         context.session.expire(hosting_device)
 
@@ -619,11 +625,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     'auto_delete': True}
         #TODO(bobmel): Determine value for max_hosted properly
         max_hosted = 1  # template['slot_capacity']
+        mgmt_context = {
+            'mgmt_ip_address': None,
+            'mgmt_nw_id': self.mgmt_nw_id(),
+            'mgmt_sec_grp_id': self.mgmt_sec_grp_id}
         for i in xrange(num):
             complementary_id = uuidutils.generate_uuid()
             res = plugging_drv.create_hosting_device_resources(
-                context, complementary_id, self.l3_tenant_id(),
-                self.mgmt_nw_id(), self.mgmt_sec_grp_id(), max_hosted)
+                context, complementary_id, self.l3_tenant_id(), mgmt_context,
+                max_hosted)
             if res.get('mgmt_port') is None:
                 # Required ports could not be created
                 return hosting_devices
@@ -867,12 +877,15 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             # ensure hd_uuid is properly formatted
             hd_uuid = config.uuidify(hd_uuid)
             try:
-                self.get_hosting_device(adm_context, hd_uuid)
+                old_hd = self.get_hosting_device(adm_context, hd_uuid)
                 is_create = False
             except ciscohostingdevicemanager.HostingDeviceNotFound:
+                old_hd = {}
                 is_create = True
             kv_dict['id'] = hd_uuid
             kv_dict['tenant_id'] = self.l3_tenant_id()
+            # make sure we keep using management port if it exists
+            kv_dict['management_port_id'] = old_hd.get('management_port_id')
             config.verify_resource_dict(kv_dict, True, attr_info)
             hd = {ciscohostingdevicemanager.DEVICE: kv_dict}
             try:

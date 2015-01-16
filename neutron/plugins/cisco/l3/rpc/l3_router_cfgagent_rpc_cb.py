@@ -85,6 +85,12 @@ class L3RouterCfgRpcCallback(object):
                              'details': <optional explaining details>}
         """
         #TODO(bobmel): Update router status
+        # State machine: CREATE: SCHEDULING -> PENDING_CREATE -> ACTIVE/ERROR
+        #                UPDATE: PENDING_UPDATE -> ACTIVE/ERROR
+        #                DELETE: PENDING_DELETE -> DELETED/ERROR
+        # While in SCHEDULING|PENDING_* states, no operations on the router
+        # are allowed. Need to handle lost ACKs by either periodic refreshes
+        # or by maintaining timers on routers in SCHEDULING|PENDING_* states.
         LOG.debug("Config agent %(host)s reported status for Neutron"
                   "routers: %(routers)s", {'host': host, 'routers': []})
 

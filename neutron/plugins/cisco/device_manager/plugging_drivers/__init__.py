@@ -29,8 +29,7 @@ class PluginSidePluggingDriver(object):
 
     @abc.abstractmethod
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id, mgmt_nw_id,
-                                        mgmt_sec_grp_id, max_hosted):
+                                        tenant_id,  mgmt_context, max_hosted):
         """Create resources for a hosting device in a plugin specific way.
 
         Called when a hosting device is to be created so resources like
@@ -43,9 +42,11 @@ class PluginSidePluggingDriver(object):
 
         :param context: Neutron api request context.
         :param complementary_id: complementary id of hosting device
-        :param tenant_id: id of tenant owning the hosting device resources.
-        :param mgmt_nw_id: id of management network for hosting devices.
-        :param mgmt_sec_grp_id: id of security group for management network.
+        :param tenant_id: id of tenant owning the hosting device resources
+        :param mgmt_context: dict with members:
+             mgmt_ip_address: ip address of hosting device's management port
+             mgmt_nw_id: id of management network for hosting devices
+             mgmt_sec_grp_id: id of security group for management network
         :param max_hosted: maximum number of logical resources.
         """
         pass
