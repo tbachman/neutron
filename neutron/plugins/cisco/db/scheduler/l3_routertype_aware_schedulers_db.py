@@ -79,9 +79,9 @@ class L3RouterTypeAwareSchedulerDbMixin(
             e_context, r_hd_binding, hosting_device_id, rt_info['slot_need'])
         if result:
             if old_rt != rt_info['id']:
-                with context.session.begin(subtransactions=True):
+                with e_context.session.begin(subtransactions=True):
                     r_hd_binding.router_type_id = rt_info['id']
-                    context.session.add(r_hd_binding)
+                    e_context.session.add(r_hd_binding)
             # refresh so that we get latest contents from DB
             e_context.session.expire(r_hd_binding)
             router = self.get_router(e_context, router_id)
