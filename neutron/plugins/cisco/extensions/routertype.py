@@ -81,7 +81,7 @@ RESOURCE_ATTRIBUTE_MAP = {
 EXTENDED_ATTRIBUTES_2_0 = {
     'routers': {
         TYPE_ATTR: {'allow_post': True, 'allow_put': True,
-                    'validate': {'type:string': None},
+                    'validate': {'type:uuid': None},
                     'default': attr.ATTR_NOT_SPECIFIED,
                     'is_visible': True},
     }
@@ -149,6 +149,11 @@ class RouterTypeInUse(exceptions.InUse):
 
 class RouterTypeNotFound(exceptions.NotFound):
     message = _("Router type %(id)s does not exist")
+
+
+class MultipleRouterTypes(exceptions.NeutronException):
+    message = _("Multiple router type with same name %(name)s exist. Id "
+                "must be used to specify router type.")
 
 
 class DriverNotFound(exceptions.NetworkNotFound):

@@ -18,6 +18,7 @@ from oslo.utils import excutils
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import l3_models
@@ -88,6 +89,33 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker,
                                     page_reverse=page_reverse)
+
+    def get_routertype_by_id_name(self, context, id_or_name):
+        query = context.session.query(l3_models.RouterType)
+        query = query.filter(l3_models.RouterType.id == id_or_name)
+        try:
+            return query.one()
+        except exc.MultipleResultsFound:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_LE('Database inconsistency: Multiple router types '
+                              'with same id %s'), id_or_name)
+                raise routertype.RouterTypeNotFound(router_type=id_or_name)
+        except exc.NoResultFound:
+            query = context.session.query(l3_models.RouterType)
+            query = query.filter(l3_models.RouterType.name == id_or_name)
+            try:
+                return query.one()
+            except exc.MultipleResultsFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.debug('Multiple router types with name %s found. '
+                              'Id must be specified to allow arbitration.',
+                              id_or_name)
+                    raise routertype.MultipleRouterTypes(name=id_or_name)
+            except exc.NoResultFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE('No router type with name %s found.'),
+                              id_or_name)
+                    raise routertype.RouterTypeNotFound(id=id_or_name)
 
     def _get_routertype(self, context, id):
         try:

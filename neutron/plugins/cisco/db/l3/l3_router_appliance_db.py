@@ -79,15 +79,6 @@ class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
 
-class RouterTypeNotFound(n_exc.NeutronException):
-    message = _("Could not find router type %(router_type)s.")
-
-
-class MultipleRouterTypes(n_exc.NeutronException):
-    message = _("Multiple router type with same name %(name)s exist. Id "
-                "must be used to specify router type.")
-
-
 class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     """Mixin class implementing Neutron's routing service using appliances."""
 
@@ -124,8 +115,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # TODO(bobmel): Hard coding to shared host for now
         share_host = True
         with context.session.begin(subtransactions=True):
-            router_type_id = self.get_router_type(context,
-                                                  router_type_name)['id']
+            router_type_id = self.get_routertype_by_id_name(
+                context, router_type_name)['id']
             #TODO(bobmel): Fix autoschedule setting
             auto_schedule = True
             if (router_type_id != self.get_namespace_router_type_id(context)
@@ -442,7 +433,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 e_context, [result[0]], load_agent=False).one()
             with context.session.begin(subtransactions=True):
                 # use slot_need if specified (for router migration cases
-                # where router type will change as a result of migration.
+                # where effective router type is different than router's
+                # normal router type).
                 acquired = self._dev_mgr.acquire_hosting_device_slots(
                     e_context, selected_hd, router,
                     slot_need or r_hd_binding['router_type']['slot_need'],
@@ -478,10 +470,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             return False
         result = scheduler.unschedule_router(self, context, r_hd_binding)
         if result:
+            # must use slot need for effective (i.e., current) router type
+            slot_need = self._get_effective_slot_need(context, r_hd_binding)
             self._dev_mgr.release_hosting_device_slots(
                 context, r_hd_binding['hosting_device'],
-                r_hd_binding['router'],
-                r_hd_binding['router_type']['slot_need'])
+                r_hd_binding['router'], slot_need)
             LOG.info(_LI('Successfully un-scheduled router %(r_id)s from '
                          'hosting device %(d_id)s'),
                      {'r_id': r_hd_binding['router']['id'],
@@ -492,38 +485,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                load_hd_info=False)
         return r_hd_b['router_type_id']
 
-    def get_router_type(self, context, id_or_name):
-        query = context.session.query(l3_models.RouterType)
-        query = query.filter(l3_models.RouterType.id == id_or_name)
-        try:
-            return query.one()
-        except exc.MultipleResultsFound:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_LE('Database inconsistency: Multiple router types '
-                              'with same id %s'), id_or_name)
-                raise RouterTypeNotFound(router_type=id_or_name)
-        except exc.NoResultFound:
-            query = context.session.query(l3_models.RouterType)
-            query = query.filter(l3_models.RouterType.name == id_or_name)
-            try:
-                return query.one()
-            except exc.MultipleResultsFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.debug('Multiple router types with name %s found. '
-                              'Id must be specified to allow arbitration.',
-                              id_or_name)
-                    raise MultipleRouterTypes(name=id_or_name)
-            except exc.NoResultFound:
-                with excutils.save_and_reraise_exception():
-                    LOG.error(_LE('No router type with name %s found.'),
-                              id_or_name)
-                    raise RouterTypeNotFound(router_type=id_or_name)
-
     def get_namespace_router_type_id(self, context):
         if self._namespace_router_type_id is None:
             try:
-                self._namespace_router_type_id = self.get_router_type(
-                    context, cfg.CONF.routing.namespace_router_type_name)['id']
+                self._namespace_router_type_id = (
+                    self.get_routertype_by_id_name(
+                        context,
+                        cfg.CONF.routing.namespace_router_type_name)['id'])
             except n_exc.NeutronException:
                 return
         return self._namespace_router_type_id
@@ -596,9 +564,65 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
+    def _get_effective_and_normal_routertypes(self, context, hosting_info):
+        if hosting_info:
+            hosting_device = hosting_info.hosting_device
+            normal = self._make_routertype_dict(hosting_info.router_type_id)
+            if hosting_device:
+                rt_info = self.get_routertypes(
+                    context, filters={'template_id':
+                                          [hosting_device.template_id]})
+                if (not rt_info or rt_info[0]['id'] ==
+                        hosting_info.router_type_id):
+                    effective = normal
+                else:
+                    # Neutron router relocated to hosting device of different
+                    # type so effective router type is not its normal one
+                    effective = rt_info[0]
+            else:
+                effective = normal
+        else:
+            # should not happen but just in case...
+            LOG.debug('Could not determine effective router type since '
+                      'router db record had no binding information')
+            normal = None
+            effective = None
+        return effective, normal
+
+    def _get_effective_slot_need(self, context, hosting_info):
+        (eff_rt, norm_rt) = self._get_effective_and_normal_routertypes(
+            context, hosting_info)
+        return eff_rt['slot_need'] if eff_rt else 0
+
     def _extend_router_dict_routertype(self, router_res, router_db):
-        router_res[routertype.TYPE_ATTR] = (
-            (router_db.hosting_info or {}).get('router_type_id'))
+        adm_context = n_context.get_admin_context()
+        (eff_rt, norm_rt) = self._get_effective_and_normal_routertypes(
+            adm_context, router_db.hosting_info)
+        # Show both current (temporary) and normal types if Neutron router is
+        # relocated to a device of different type
+        if eff_rt and norm_rt:
+            router_type = (eff_rt['id'] + " (normal: " + norm_rt['id'] + ")"
+                           if eff_rt['id'] != norm_rt['id'] else eff_rt['id'])
+        else:
+            router_type = None
+        router_res[routertype.TYPE_ATTR] = router_type
+
+    def _update_routertype(self, context, r, binding_info):
+        if routertype.TYPE_ATTR not in r:
+            return
+        router_type_name = r[routertype.TYPE_ATTR]
+        if router_type_name is attributes.ATTR_NOT_SPECIFIED:
+            router_type_name = cfg.CONF.routing.default_router_type
+        router_type_id = self.get_routertype_by_id_name(
+                context, router_type_name)['id']
+        if router_type_id == binding_info.router_type_id:
+            return
+        LOG.debug("Unscheduling router %s", binding_info.router_id)
+        self.unschedule_router_from_hosting_device(context, binding_info)
+        with context.session.begin(subtransactions=True):
+            binding_info.hosting_device_id = None
+            context.session.add(binding_info)
+        # put in backlog for rescheduling
 
     def _extend_router_dict_routerhostingdevice(self, router_res, router_db):
         router_res[routerhostingdevice.HOSTING_DEVICE_ATTR] = (
@@ -768,7 +792,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             return self._router_schedulers[id]
         except KeyError:
             try:
-                router_type = self.get_router_type(context, id)
+                router_type = self.get_routertype_by_id_name(context, id)
                 self._router_schedulers[id] = importutils.import_object(
                     router_type['scheduler'])
             except (ImportError, TypeError, n_exc.NeutronException):

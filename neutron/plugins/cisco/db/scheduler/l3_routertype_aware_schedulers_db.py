@@ -69,7 +69,6 @@ class L3RouterTypeAwareSchedulerDbMixin(
         """Add a (non-hosted) router to a hosting device."""
         e_context = context.elevated()
         r_hd_binding = self._get_router_binding_info(e_context, router_id)
-        old_rt = r_hd_binding.router_type_id
         if r_hd_binding.hosting_device_id:
             raise routertypeawarescheduler.RouterHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
@@ -78,10 +77,6 @@ class L3RouterTypeAwareSchedulerDbMixin(
         result = self.schedule_router_on_hosting_device(
             e_context, r_hd_binding, hosting_device_id, rt_info['slot_need'])
         if result:
-            if old_rt != rt_info['id']:
-                with e_context.session.begin(subtransactions=True):
-                    r_hd_binding.router_type_id = rt_info['id']
-                    e_context.session.add(r_hd_binding)
             # refresh so that we get latest contents from DB
             e_context.session.expire(r_hd_binding)
             router = self.get_router(e_context, router_id)
