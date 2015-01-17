@@ -18,6 +18,7 @@ import uuid
 from oslo.config import cfg
 from oslo.db import exception as db_exc
 from oslo.utils import excutils
+from oslo_concurrency import lockutils
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc as sa_exc
 import webob.exc
@@ -52,7 +53,6 @@ from neutron.extensions import portsecurity as psec
 from neutron.extensions import providernet as pnet
 from neutron.extensions import securitygroup as ext_sg
 from neutron.i18n import _LE, _LI, _LW
-from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as plugin_const
 from neutron.plugins import vmware
@@ -180,6 +180,7 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
             self.nsx_sync_opts.min_sync_req_delay,
             self.nsx_sync_opts.min_chunk_size,
             self.nsx_sync_opts.max_random_sync_delay)
+        self.start_periodic_dhcp_agent_status_check()
 
     def _ensure_default_network_gateway(self):
         if self._is_default_net_gw_in_sync:
@@ -645,10 +646,10 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
 
     @lockutils.synchronized('vmware', 'neutron-')
     def _nsx_delete_ext_gw_port(self, context, port_data):
-        lr_port = self._find_router_gw_port(context, port_data)
         # TODO(salvatore-orlando): Handle NSX resource
         # rollback when something goes not quite as expected
         try:
+            lr_port = self._find_router_gw_port(context, port_data)
             # Delete is actually never a real delete, otherwise the NSX
             # logical router will stop working
             router_id = port_data['device_id']
@@ -668,19 +669,19 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                 lr_port['uuid'],
                 "L3GatewayAttachment",
                 self.cluster.default_l3_gw_service_uuid)
-
-        except api_exc.ResourceNotFound:
-            raise nsx_exc.NsxPluginException(
-                err_msg=_("Logical router resource %s not found "
-                          "on NSX platform") % router_id)
+            LOG.debug("_nsx_delete_ext_gw_port completed on external network "
+                      "%(ext_net_id)s, attached to NSX router:%(router_id)s",
+                      {'ext_net_id': port_data['network_id'],
+                       'router_id': nsx_router_id})
+        except n_exc.NotFound:
+            LOG.debug("Logical router resource %s not found "
+                      "on NSX platform : the router may have "
+                      "already been deleted",
+                      port_data['device_id'])
         except api_exc.NsxApiException:
             raise nsx_exc.NsxPluginException(
                 err_msg=_("Unable to update logical router"
                           "on NSX Platform"))
-        LOG.debug("_nsx_delete_ext_gw_port completed on external network "
-                  "%(ext_net_id)s, attached to NSX router:%(router_id)s",
-                  {'ext_net_id': port_data['network_id'],
-                   'router_id': nsx_router_id})
 
     def _nsx_create_l2_gw_port(self, context, port_data):
         """Create a switch port, and attach it to a L2 gateway attachment."""
@@ -1823,12 +1824,11 @@ class NsxPluginV2(addr_pair_db.AllowedAddressPairsMixin,
                                           ips_to_remove=nsx_floating_ips)
 
     def _get_fip_assoc_data(self, context, fip, floatingip_db):
-        if (('fixed_ip_address' in fip and fip['fixed_ip_address']) and
-            not ('port_id' in fip and fip['port_id'])):
+        if fip.get('fixed_ip_address') and not fip.get('port_id'):
             msg = _("fixed_ip_address cannot be specified without a port_id")
             raise n_exc.BadRequest(resource='floatingip', msg=msg)
         port_id = internal_ip = router_id = None
-        if 'port_id' in fip and fip['port_id']:
+        if fip.get('port_id'):
             fip_qry = context.session.query(l3_db.FloatingIP)
             port_id, internal_ip, router_id = self.get_assoc_data(
                 context,

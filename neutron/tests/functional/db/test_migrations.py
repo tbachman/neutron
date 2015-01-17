@@ -18,15 +18,16 @@ import pprint
 import alembic
 import alembic.autogenerate
 import alembic.migration
+from alembic import script as alembic_script
 import mock
 from oslo.config import cfg
+from oslo.config import fixture as config_fixture
 from oslo.db.sqlalchemy import test_base
 from oslo.db.sqlalchemy import test_migrations
 import sqlalchemy
 
 from neutron.db.migration import cli as migration
 from neutron.db.migration.models import head as head_models
-from neutron.openstack.common.fixture import config
 
 LOG = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class _TestModelsMigrations(test_migrations.ModelsMigrationsSync):
         patch.start()
         self.addCleanup(patch.stop)
         super(_TestModelsMigrations, self).setUp()
-        self.cfg = self.useFixture(config.Config())
+        self.cfg = self.useFixture(config_fixture.Config())
         self.cfg.config(core_plugin=CORE_PLUGIN)
         self.alembic_config = migration.get_alembic_config()
         self.alembic_config.neutron_config = cfg.CONF
@@ -170,16 +171,14 @@ class _TestModelsMigrations(test_migrations.ModelsMigrationsSync):
             mc = alembic.migration.MigrationContext.configure(conn, opts=opts)
 
             # compare schemas and fail with diff, if it's not empty
-            diff1 = alembic.autogenerate.compare_metadata(mc,
-                                                          self.get_metadata())
+            diff = alembic.autogenerate.compare_metadata(mc,
+                                                         self.get_metadata())
             insp = sqlalchemy.engine.reflection.Inspector.from_engine(
                 self.get_engine())
             dialect = self.get_engine().dialect.name
             self.check_mysql_engine(dialect, insp)
-            diff2 = self.check_foreign_keys(self.get_metadata(),
-                                            self.get_engine())
 
-        result = filter(self.remove_unrelated_errors, diff1 + diff2)
+        result = filter(self.remove_unrelated_errors, diff)
         if result:
             msg = pprint.pformat(result, indent=2, width=20)
 
@@ -233,3 +232,31 @@ class TestModelsMigrationsMysql(_TestModelsMigrations,
 class TestModelsMigrationsPsql(_TestModelsMigrations,
                                test_base.PostgreSQLOpportunisticTestCase):
     pass
+
+
+class TestSanityCheck(test_base.DbTestCase):
+
+    def setUp(self):
+        super(TestSanityCheck, self).setUp()
+        self.alembic_config = migration.get_alembic_config()
+        self.alembic_config.neutron_config = cfg.CONF
+
+    def test_check_sanity_14be42f3d0a5(self):
+        SecurityGroup = sqlalchemy.Table(
+            'securitygroups', sqlalchemy.MetaData(),
+            sqlalchemy.Column('id', sqlalchemy.String(length=36),
+                              nullable=False),
+            sqlalchemy.Column('name', sqlalchemy.String(255)),
+            sqlalchemy.Column('tenant_id', sqlalchemy.String(255)))
+
+        with self.engine.connect() as conn:
+            SecurityGroup.create(conn)
+            conn.execute(SecurityGroup.insert(), [
+                {'id': '123d4s', 'tenant_id': 'sssda1', 'name': 'default'},
+                {'id': '123d4', 'tenant_id': 'sssda1', 'name': 'default'}
+            ])
+            script_dir = alembic_script.ScriptDirectory.from_config(
+                self.alembic_config)
+            script = script_dir.get_revision("14be42f3d0a5").module
+            self.assertRaises(script.DuplicateSecurityGroupsNamedDefault,
+                              script.check_sanity, conn)

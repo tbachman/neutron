@@ -96,13 +96,13 @@ class CiscoML2MechanismTestCase(test_ml2_plugin.Ml2PluginV2TestCase):
         # Mock port context values for bound_segments and 'status'.
         self.mock_bound_segment = mock.patch.object(
             driver_context.PortContext,
-            'bound_segment',
+            'bottom_bound_segment',
             new_callable=mock.PropertyMock).start()
         self.mock_bound_segment.return_value = BOUND_SEGMENT1
 
         self.mock_original_bound_segment = mock.patch.object(
             driver_context.PortContext,
-            'original_bound_segment',
+            'original_bottom_bound_segment',
             new_callable=mock.PropertyMock).start()
         self.mock_original_bound_segment.return_value = None
 
@@ -309,7 +309,7 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
             plugin_obj = manager.NeutronManager.get_plugin()
             orig = plugin_obj.create_port
             with mock.patch.object(plugin_obj,
-                                   'create_port') as patched_plugin:
+                                   '_create_port_db') as patched_plugin:
 
                 def side_effect(*args, **kwargs):
                     return self._fail_second_call(patched_plugin, orig,
@@ -343,7 +343,7 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
             plugin_obj = manager.NeutronManager.get_plugin()
             orig = plugin_obj.create_port
             with mock.patch.object(plugin_obj,
-                                   'create_port') as patched_plugin:
+                                   '_create_port_db') as patched_plugin:
 
                 def side_effect(*args, **kwargs):
                     return self._fail_second_call(patched_plugin, orig,
@@ -559,16 +559,16 @@ class TestCiscoPortsV2(CiscoML2MechanismTestCase,
         The first one should only change the current host_id and remove the
         binding resulting in the mechanism drivers receiving:
           PortContext.original['binding:host_id']: previous value
-          PortContext.original_bound_segment: previous value
+          PortContext.original_bottom_bound_segment: previous value
           PortContext.current['binding:host_id']: current (new) value
-          PortContext.bound_segment: None
+          PortContext.bottom_bound_segment: None
 
         The second one binds the new host resulting in the mechanism
         drivers receiving:
           PortContext.original['binding:host_id']: previous value
-          PortContext.original_bound_segment: None
+          PortContext.original_bottom_bound_segment: None
           PortContext.current['binding:host_id']: previous value
-          PortContext.bound_segment: new value
+          PortContext.bottom_bound_segment: new value
         """
 
         # Create network, subnet and port.
@@ -718,7 +718,7 @@ class TestCiscoNetworksV2(CiscoML2MechanismTestCase,
         with mock.patch('__builtin__.hasattr',
                         new=fakehasattr):
             with mock.patch.object(plugin_obj,
-                                   'create_network') as patched_plugin:
+                                   '_create_network_db') as patched_plugin:
                 def side_effect(*args, **kwargs):
                     return self._fail_second_call(patched_plugin, orig,
                                                   *args, **kwargs)
@@ -737,7 +737,7 @@ class TestCiscoNetworksV2(CiscoML2MechanismTestCase,
         plugin_obj = manager.NeutronManager.get_plugin()
         orig = plugin_obj.create_network
         with mock.patch.object(plugin_obj,
-                               'create_network') as patched_plugin:
+                               '_create_network_db') as patched_plugin:
 
             def side_effect(*args, **kwargs):
                 return self._fail_second_call(patched_plugin, orig,
@@ -769,7 +769,7 @@ class TestCiscoSubnetsV2(CiscoML2MechanismTestCase,
             plugin_obj = manager.NeutronManager.get_plugin()
             orig = plugin_obj.create_subnet
             with mock.patch.object(plugin_obj,
-                                   'create_subnet') as patched_plugin:
+                                   '_create_subnet_db') as patched_plugin:
 
                 def side_effect(*args, **kwargs):
                     self._fail_second_call(patched_plugin, orig,
@@ -792,7 +792,7 @@ class TestCiscoSubnetsV2(CiscoML2MechanismTestCase,
         plugin_obj = manager.NeutronManager.get_plugin()
         orig = plugin_obj.create_subnet
         with mock.patch.object(plugin_obj,
-                               'create_subnet') as patched_plugin:
+                               '_create_subnet_db') as patched_plugin:
             def side_effect(*args, **kwargs):
                 return self._fail_second_call(patched_plugin, orig,
                                               *args, **kwargs)

@@ -53,7 +53,7 @@ class VxlanAllocation(model_base.BASEV2):
     vxlan_vni = sa.Column(sa.Integer, nullable=False, primary_key=True,
                           autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False, default=False,
-                          server_default=sql.false())
+                          server_default=sql.false(), index=True)
 
 
 class VxlanEndpoints(model_base.BASEV2):
@@ -63,6 +63,7 @@ class VxlanEndpoints(model_base.BASEV2):
     __table_args__ = (
         sa.UniqueConstraint('host',
                             name='unique_ml2_vxlan_endpoints0host'),
+        model_base.BASEV2.__table_args__
     )
     ip_address = sa.Column(sa.String(64), primary_key=True)
     udp_port = sa.Column(sa.Integer, nullable=False)
@@ -146,18 +147,14 @@ class VxlanTypeDriver(type_tunnel.TunnelTypeDriver):
     def get_endpoint_by_host(self, host):
         LOG.debug("get_endpoint_by_host() called for host %s", host)
         session = db_api.get_session()
-
-        host_endpoint = (session.query(VxlanEndpoints).
-                         filter_by(host=host).first())
-        return host_endpoint
+        return (session.query(VxlanEndpoints).
+                filter_by(host=host).first())
 
     def get_endpoint_by_ip(self, ip):
         LOG.debug("get_endpoint_by_ip() called for ip %s", ip)
         session = db_api.get_session()
-
-        ip_endpoint = (session.query(VxlanEndpoints).
-                       filter_by(ip_address=ip).first())
-        return ip_endpoint
+        return (session.query(VxlanEndpoints).
+                filter_by(ip_address=ip).first())
 
     def add_endpoint(self, ip, host, udp_port=VXLAN_UDP_PORT):
         LOG.debug("add_vxlan_endpoint() called for ip %s", ip)

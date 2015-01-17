@@ -395,11 +395,10 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         return ip_address_change
 
     def _ensure_router_not_in_use(self, context, router_id):
-        admin_ctx = context.elevated()
+        """Ensure that no internal network interface is attached
+        to the router.
+        """
         router = self._get_router(context, router_id)
-        if self.get_floatingips_count(
-            admin_ctx, filters={'router_id': [router_id]}):
-            raise l3.RouterInUse(router_id=router_id)
         device_owner = self._get_device_owner(context, router)
         if any(rp.port_type == device_owner
                for rp in router.attached_ports.all()):
@@ -407,20 +406,17 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         return router
 
     def delete_router(self, context, id):
+
+        #TODO(nati) Refactor here when we have router insertion model
+        router = self._ensure_router_not_in_use(context, id)
+        self._delete_current_gw_port(context, id, router, None, False)
+
+        router_ports = router.attached_ports.all()
+        for rp in router_ports:
+            self._core_plugin.delete_port(context.elevated(),
+                                          rp.port.id,
+                                          l3_port_check=False)
         with context.session.begin(subtransactions=True):
-            router = self._ensure_router_not_in_use(context, id)
-
-            #TODO(nati) Refactor here when we have router insertion model
-            vpnservice = manager.NeutronManager.get_service_plugins().get(
-                constants.VPN)
-            if vpnservice:
-                vpnservice.check_router_in_use(context, id)
-
-            router_ports = router.attached_ports.all()
-            # Set the router's gw_port to None to avoid a constraint violation.
-            router.gw_port = None
-            for rp in router_ports:
-                self._core_plugin._delete_port(context.elevated(), rp.port.id)
             context.session.delete(router)
 
     def get_router(self, context, id, fields=None):
@@ -730,7 +726,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             raise n_exc.BadRequest(resource='floatingip', msg=msg)
 
         internal_subnet_id = None
-        if 'fixed_ip_address' in fip and fip['fixed_ip_address']:
+        if fip.get('fixed_ip_address'):
             internal_ip_address = fip['fixed_ip_address']
             for ip in internal_port['fixed_ips']:
                 if ip['ip_address'] == internal_ip_address:
@@ -743,7 +739,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         else:
             ips = [ip['ip_address'] for ip in internal_port['fixed_ips']]
             if not ips:
-                msg = (_('Cannot add floating IP to port %s that has'
+                msg = (_('Cannot add floating IP to port %s that has '
                          'no fixed IP addresses') % internal_port['id'])
                 raise n_exc.BadRequest(resource='floatingip', msg=msg)
             if len(ips) > 1:
@@ -775,11 +771,10 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
     def _check_and_get_fip_assoc(self, context, fip, floatingip_db):
         port_id = internal_ip_address = router_id = None
-        if (('fixed_ip_address' in fip and fip['fixed_ip_address']) and
-            not ('port_id' in fip and fip['port_id'])):
+        if fip.get('fixed_ip_address') and not fip.get('port_id'):
             msg = _("fixed_ip_address cannot be specified without a port_id")
             raise n_exc.BadRequest(resource='floatingip', msg=msg)
-        if 'port_id' in fip and fip['port_id']:
+        if fip.get('port_id'):
             port_id, internal_ip_address, router_id = self.get_assoc_data(
                 context,
                 fip,

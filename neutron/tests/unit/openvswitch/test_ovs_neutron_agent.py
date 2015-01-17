@@ -125,8 +125,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                        return_value='00:00:00:00:00:01'),
             mock.patch('neutron.agent.linux.utils.get_interface_mac',
                        return_value='00:00:00:00:00:01'),
-            mock.patch('neutron.agent.linux.ovs_lib.'
-                       'get_bridges'),
+            mock.patch('neutron.agent.linux.ovs_lib.BaseOVS.get_bridges'),
             mock.patch('neutron.openstack.common.loopingcall.'
                        'FixedIntervalLoopingCall',
                        new=MockFixedIntervalLoopingCall)):
@@ -152,7 +151,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                        'set_db_attribute', return_value=True),
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
-                       'db_get_val', return_value=str(old_local_vlan)),
+                       'db_get_val', return_value=old_local_vlan),
             mock.patch.object(self.agent.int_br, 'delete_flows')
         ) as (set_ovs_db_func, get_ovs_db_func, delete_flows_func):
             self.agent.port_bound(port, net_uuid, 'local', None, None,
@@ -160,7 +159,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
         get_ovs_db_func.assert_called_once_with("Port", mock.ANY, "tag")
         if new_local_vlan != old_local_vlan:
             set_ovs_db_func.assert_called_once_with(
-                "Port", mock.ANY, "tag", str(new_local_vlan))
+                "Port", mock.ANY, "tag", new_local_vlan)
             if ofport != -1:
                 delete_flows_func.assert_called_once_with(in_port=port.ofport)
             else:
@@ -214,7 +213,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(
                     self.agent.dvr_agent.plugin_rpc, 'get_subnet_for_dvr',
                     return_value={'gateway_ip': '1.1.1.1',
@@ -256,7 +255,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(self.agent.dvr_agent.plugin_rpc,
                                   'get_subnet_for_dvr',
                                   return_value={
@@ -381,7 +380,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(
                     self.agent.dvr_agent.plugin_rpc, 'get_subnet_for_dvr',
                     return_value={'gateway_ip': '1.1.1.1',
@@ -429,7 +428,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(
                     self.agent.dvr_agent.plugin_rpc, 'get_subnet_for_dvr',
                     return_value={'gateway_ip': gateway_ip,
@@ -526,7 +525,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(
                     self.agent.dvr_agent.plugin_rpc, 'get_subnet_for_dvr',
                     return_value={'gateway_ip': gateway_ip,
@@ -617,7 +616,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             with contextlib.nested(
                 mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(
                     self.agent.dvr_agent.plugin_rpc, 'get_subnet_for_dvr',
                     return_value={'gateway_ip': '1.1.1.1',
@@ -758,7 +757,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             self.assertFalse(add_flow_func.called)
         else:
             set_ovs_db_func.assert_called_once_with(
-                "Port", mock.ANY, "tag", str(ovs_neutron_agent.DEAD_VLAN_TAG))
+                "Port", mock.ANY, "tag", ovs_neutron_agent.DEAD_VLAN_TAG)
             add_flow_func.assert_called_once_with(
                 priority=2, in_port=port.ofport, actions="drop")
 
@@ -1130,7 +1129,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
             mock.patch.object(ip_lib.IpLinkCommand, "delete"),
             mock.patch.object(ip_lib.IpLinkCommand, "set_up"),
             mock.patch.object(ip_lib.IpLinkCommand, "set_mtu"),
-            mock.patch.object(ovs_lib, "get_bridges")
+            mock.patch.object(ovs_lib.BaseOVS, "get_bridges")
         ) as (devex_fn, sysexit_fn, utilsexec_fn, remflows_fn, ovs_addfl_fn,
               ovs_addport_fn, ovs_delport_fn, br_addport_fn, br_delport_fn,
               addveth_fn, linkdel_fn, linkset_fn, linkmtu_fn, get_br_fn):
@@ -1505,7 +1504,7 @@ class TestOvsNeutronAgent(base.BaseTestCase):
     def test_setup_tunnel_port_error_negative_df_disabled(self):
         with contextlib.nested(
             mock.patch.object(self.agent.tun_br, 'add_tunnel_port',
-                              return_value='-1'),
+                              return_value=ovs_lib.INVALID_OFPORT),
             mock.patch.object(ovs_neutron_agent.LOG, 'error')
         ) as (add_tunnel_port_fn, log_error_fn):
             self.agent.dont_fragment = False
@@ -1518,20 +1517,6 @@ class TestOvsNeutronAgent(base.BaseTestCase):
                 _("Failed to set-up %(type)s tunnel port to %(ip)s"),
                 {'type': p_const.TYPE_GRE, 'ip': 'remote_ip'})
             self.assertEqual(ofport, 0)
-
-    def test_tunnel_sync_with_ovs_plugin(self):
-        fake_tunnel_details = {'tunnels': [{'id': '42',
-                                            'ip_address': '100.101.102.103'}]}
-        with contextlib.nested(
-            mock.patch.object(self.agent.plugin_rpc, 'tunnel_sync',
-                              return_value=fake_tunnel_details),
-            mock.patch.object(self.agent, '_setup_tunnel_port')
-        ) as (tunnel_sync_rpc_fn, _setup_tunnel_port_fn):
-            self.agent.tunnel_types = ['gre']
-            self.agent.tunnel_sync()
-            expected_calls = [mock.call(self.agent.tun_br, 'gre-42',
-                                        '100.101.102.103', 'gre')]
-            _setup_tunnel_port_fn.assert_has_calls(expected_calls)
 
     def test_tunnel_sync_with_ml2_plugin(self):
         fake_tunnel_details = {'tunnels': [{'ip_address': '100.101.31.15'}]}
@@ -1649,7 +1634,7 @@ class AncillaryBridgesTest(base.BaseTestCase):
     def _test_ancillary_bridges(self, bridges, ancillary):
         device_ids = ancillary[:]
 
-        def pullup_side_effect(self, *args):
+        def pullup_side_effect(*args):
             # Check that the device_id exists, if it does return it
             # if it does not return None
             try:
@@ -1669,11 +1654,11 @@ class AncillaryBridgesTest(base.BaseTestCase):
                        return_value='00:00:00:00:00:01'),
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
                        'set_secure_mode'),
-            mock.patch('neutron.agent.linux.ovs_lib.get_bridges',
+            mock.patch('neutron.agent.linux.ovs_lib.BaseOVS.get_bridges',
                        return_value=bridges),
-            mock.patch(
-                'neutron.agent.linux.ovs_lib.get_bridge_external_bridge_id',
-                side_effect=pullup_side_effect)):
+            mock.patch('neutron.agent.linux.ovs_lib.BaseOVS.'
+                       'get_bridge_external_bridge_id',
+                       side_effect=pullup_side_effect)):
             self.agent = ovs_neutron_agent.OVSNeutronAgent(**self.kwargs)
             self.assertEqual(len(ancillary), len(self.agent.ancillary_brs))
             if ancillary:

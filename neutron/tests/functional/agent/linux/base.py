@@ -28,6 +28,11 @@ from neutron.tests import sub_base
 
 BR_PREFIX = 'test-br'
 PORT_PREFIX = 'test-port'
+MARK_VALUE = '0x1'
+MARK_MASK = '0xffffffff'
+ICMP_MARK_RULE = ('-j MARK --set-xmark %(value)s/%(mask)s'
+                  % {'value': MARK_VALUE, 'mask': MARK_MASK})
+MARKED_BLOCK_RULE = '-m mark --mark %s -j DROP' % MARK_VALUE
 ICMP_BLOCK_RULE = '-p icmp -j DROP'
 VETH_PREFIX = 'tst-vth'
 
@@ -39,6 +44,11 @@ get_rand_name = sub_base.get_rand_name
 def get_rand_veth_name():
     return get_rand_name(max_length=n_const.DEVICE_NAME_MAX_LEN,
                          prefix=VETH_PREFIX)
+
+
+def get_rand_port_name():
+    return get_rand_name(prefix=PORT_PREFIX,
+                         max_length=n_const.DEVICE_NAME_MAX_LEN)
 
 
 class BaseLinuxTestCase(functional_base.BaseSudoTestCase):

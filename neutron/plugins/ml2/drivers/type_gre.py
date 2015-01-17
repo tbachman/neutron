@@ -47,7 +47,7 @@ class GreAllocation(model_base.BASEV2):
     gre_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
                        autoincrement=False)
     allocated = sa.Column(sa.Boolean, nullable=False, default=False,
-                          server_default=sql.false())
+                          server_default=sql.false(), index=True)
 
 
 class GreEndpoints(model_base.BASEV2):
@@ -57,6 +57,7 @@ class GreEndpoints(model_base.BASEV2):
     __table_args__ = (
         sa.UniqueConstraint('host',
                             name='unique_ml2_gre_endpoints0host'),
+        model_base.BASEV2.__table_args__
     )
     ip_address = sa.Column(sa.String(64), primary_key=True)
     host = sa.Column(sa.String(255), nullable=True)
@@ -128,18 +129,14 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
     def get_endpoint_by_host(self, host):
         LOG.debug("get_endpoint_by_host() called for host %s", host)
         session = db_api.get_session()
-
-        host_endpoint = (session.query(GreEndpoints).
-                         filter_by(host=host).first())
-        return host_endpoint
+        return (session.query(GreEndpoints).
+                filter_by(host=host).first())
 
     def get_endpoint_by_ip(self, ip):
         LOG.debug("get_endpoint_by_ip() called for ip %s", ip)
         session = db_api.get_session()
-
-        ip_endpoint = (session.query(GreEndpoints).
-                       filter_by(ip_address=ip).first())
-        return ip_endpoint
+        return (session.query(GreEndpoints).
+                filter_by(ip_address=ip).first())
 
     def add_endpoint(self, ip, host):
         LOG.debug("add_gre_endpoint() called for ip %s", ip)

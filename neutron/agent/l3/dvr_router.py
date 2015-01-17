@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# Copyright (c) 2012 OpenStack Foundation.
-# All Rights Reserved.
+# Copyright (c) 2015 Openstack Foundation
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,6 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.rootwrap import cmd
+from neutron.agent.l3 import router_info as router
 
-cmd.main()
+
+class DvrRouter(router.RouterInfo):
+    def __init__(self, *args, **kwargs):
+        super(DvrRouter, self).__init__(*args, **kwargs)
+
+        self.floating_ips_dict = {}
+        self.snat_iptables_manager = None
+        # Linklocal subnet for router and floating IP namespace link
+        self.rtr_fip_subnet = None
+        self.dist_fip_count = None

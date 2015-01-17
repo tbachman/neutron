@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import binascii
 import netaddr
 import os
 
@@ -19,6 +20,7 @@ from neutron.agent.l3 import link_local_allocator as lla
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import iptables_manager
 from neutron.common import constants as l3_constants
+from neutron.common import utils as common_utils
 from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 
@@ -36,18 +38,8 @@ FIP_PR_START = 32768
 FIP_PR_END = FIP_PR_START + 40000
 # Route Table index for FIPs
 FIP_RT_TBL = 16
-
-
-class RouterMixin(object):
-    def __init__(self):
-        self.snat_ports = []
-        self.floating_ips_dict = {}
-
-        self.snat_iptables_manager = None
-        # DVR Data
-        # Linklocal subnet for router and floating IP namespace link
-        self.rtr_fip_subnet = None
-        self.dist_fip_count = 0
+# xor-folding mask used for IPv6 rule index
+MASK_30 = 0x3fffffff
 
 
 class AgentMixin(object):
@@ -131,6 +123,24 @@ class AgentMixin(object):
                 if f['subnet_id'] == subnet_id:
                     return port
 
+    def scan_fip_ports(self, ri):
+        # don't scan if not dvr or count is not None
+        if not ri.router.get('distributed') or ri.dist_fip_count is not None:
+            return
+
+        # scan system for any existing fip ports
+        ri.dist_fip_count = 0
+        rtr_2_fip_interface = self.get_rtr_int_device_name(ri.router_id)
+        if ip_lib.device_exists(rtr_2_fip_interface,
+                                root_helper=self.root_helper,
+                                namespace=ri.ns_name):
+            device = ip_lib.IPDevice(rtr_2_fip_interface, self.root_helper,
+                                     namespace=ri.ns_name)
+            existing_cidrs = [addr['cidr'] for addr in device.addr.list()]
+            fip_cidrs = [c for c in existing_cidrs if
+                         common_utils.is_cidr_host(c)]
+            ri.dist_fip_count = len(fip_cidrs)
+
     def get_fip_ext_device_name(self, port_id):
         return (FIP_EXT_DEV_PREFIX +
                 port_id)[:self.driver.DEV_NAME_LEN]
@@ -162,6 +172,27 @@ class AgentMixin(object):
             LOG.debug("gw_port_host missing from router: %s",
                       router['id'])
         return host
+
+    def _get_snat_idx(self, ip_cidr):
+        """Generate index for DVR snat rules and route tables.
+
+        The index value has to be 32 bits or less but more than the system
+        generated entries i.e. 32768. For IPv4 use the numeric value of the
+        cidr. For IPv6 generate a crc32 bit hash and xor-fold to 30 bits.
+        Use the freed range to extend smaller values so that they become
+        greater than system generated entries.
+        """
+        net = netaddr.IPNetwork(ip_cidr)
+        if net.version == 6:
+            # the crc32 & 0xffffffff is for Python 2.6 and 3.0 compatibility
+            snat_idx = binascii.crc32(ip_cidr) & 0xffffffff
+            # xor-fold the hash to reserve upper range to extend smaller values
+            snat_idx = (snat_idx >> 30) ^ (snat_idx & MASK_30)
+            if snat_idx < 32768:
+                snat_idx = snat_idx + MASK_30
+        else:
+            snat_idx = net.value
+        return snat_idx
 
     def _map_internal_interfaces(self, ri, int_port, snat_ports):
         """Return the SNAT port for the given internal interface port."""
@@ -242,7 +273,11 @@ class AgentMixin(object):
         self.driver.init_l3(interface_name, [ex_gw_port['ip_cidr']],
                             namespace=ns_name)
         ip_address = ex_gw_port['ip_cidr'].split('/')[0]
-        self._send_gratuitous_arp_packet(ns_name, interface_name, ip_address)
+        ip_lib.send_gratuitous_arp(ns_name,
+                                   interface_name,
+                                   ip_address,
+                                   self.conf.send_arp_for_ha,
+                                   self.root_helper)
 
         gw_ip = ex_gw_port['subnet']['gateway_ip']
         if gw_ip:
@@ -323,7 +358,7 @@ class AgentMixin(object):
         ri.floating_ips_dict[floating_ip] = rule_pr
         fip_2_rtr_name = self.get_fip_int_device_name(ri.router_id)
         ip_rule = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
-        ip_rule.add_rule_from(fixed_ip, FIP_RT_TBL, rule_pr)
+        ip_rule.add(fixed_ip, FIP_RT_TBL, rule_pr)
         #Add routing rule in fip namespace
         fip_ns_name = self.get_fip_ns_name(str(fip['floating_network_id']))
         rtr_2_fip, _ = ri.rtr_fip_subnet.get_pair()
@@ -332,9 +367,11 @@ class AgentMixin(object):
         device.route.add_route(fip_cidr, str(rtr_2_fip.ip))
         interface_name = (
             self.get_fip_ext_device_name(self.agent_gateway_port['id']))
-        self._send_gratuitous_arp_packet(fip_ns_name,
-                                         interface_name, floating_ip,
-                                         distributed=True)
+        ip_lib.send_garp_for_proxyarp(fip_ns_name,
+                                      interface_name,
+                                      floating_ip,
+                                      self.conf.send_arp_for_ha,
+                                      self.root_helper)
         # update internal structures
         ri.dist_fip_count = ri.dist_fip_count + 1
 
@@ -343,17 +380,17 @@ class AgentMixin(object):
         floating_ip = fip_cidr.split('/')[0]
         rtr_2_fip_name = self.get_rtr_int_device_name(ri.router_id)
         fip_2_rtr_name = self.get_fip_int_device_name(ri.router_id)
+        if ri.rtr_fip_subnet is None:
+            ri.rtr_fip_subnet = self.local_subnets.allocate(ri.router_id)
         rtr_2_fip, fip_2_rtr = ri.rtr_fip_subnet.get_pair()
         fip_ns_name = self.get_fip_ns_name(str(self._fetch_external_net_id()))
-        ip_rule_rtr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
         if floating_ip in ri.floating_ips_dict:
             rule_pr = ri.floating_ips_dict[floating_ip]
+            ip_rule = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
+            ip_rule.delete(floating_ip, FIP_RT_TBL, rule_pr)
+            self.fip_priorities.add(rule_pr)
             #TODO(rajeev): Handle else case - exception/log?
-        else:
-            rule_pr = None
 
-        ip_rule_rtr.delete_rule_priority(rule_pr)
-        self.fip_priorities.add(rule_pr)
         device = ip_lib.IPDevice(fip_2_rtr_name, self.root_helper,
                                  namespace=fip_ns_name)
 
@@ -378,12 +415,13 @@ class AgentMixin(object):
     def _snat_redirect_add(self, ri, gateway, sn_port, sn_int):
         """Adds rules and routes for SNAT redirection."""
         try:
-            snat_idx = netaddr.IPNetwork(sn_port['ip_cidr']).value
+            ip_cidr = sn_port['ip_cidr']
+            snat_idx = self._get_snat_idx(ip_cidr)
             ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
             ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
                                      namespace=ri.ns_name)
             ns_ipd.route.add_gateway(gateway, table=snat_idx)
-            ns_ipr.add_rule_from(sn_port['ip_cidr'], snat_idx, snat_idx)
+            ns_ipr.add(ip_cidr, snat_idx, snat_idx)
             ns_ipr.netns.execute(['sysctl', '-w', 'net.ipv4.conf.%s.'
                                  'send_redirects=0' % sn_int])
         except Exception:
@@ -392,12 +430,13 @@ class AgentMixin(object):
     def _snat_redirect_remove(self, ri, sn_port, sn_int):
         """Removes rules and routes for SNAT redirection."""
         try:
-            snat_idx = netaddr.IPNetwork(sn_port['ip_cidr']).value
+            ip_cidr = sn_port['ip_cidr']
+            snat_idx = self._get_snat_idx(ip_cidr)
             ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
             ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
                                      namespace=ri.ns_name)
             ns_ipd.route.delete_gateway(table=snat_idx)
-            ns_ipr.delete_rule_priority(snat_idx)
+            ns_ipr.delete(ip_cidr, snat_idx, snat_idx)
         except Exception:
             LOG.exception(_LE('DVR: removed snat failed'))
 

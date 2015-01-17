@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 from oslo.utils import importutils
+from oslo_concurrency import lockutils
 import sqlalchemy.orm.exc as db_exc
 
 from neutron import context as ncontext
@@ -42,6 +43,7 @@ class SyncManager(db_base_plugin_v2.NeutronDbPluginV2,
         self.context = ncontext.get_admin_context()
         self.nuageclient = nuageclient
 
+    @lockutils.synchronized('synchronize', 'nuage-sync', external=True)
     def synchronize(self, fipquota):
         LOG.info(_LI("Starting the sync between Neutron and VSD"))
         try:

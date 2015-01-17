@@ -14,8 +14,6 @@
 #
 
 import eventlet
-eventlet.monkey_patch()
-
 import netaddr
 from oslo.config import cfg
 from oslo import messaging
@@ -25,9 +23,11 @@ from oslo.utils import timeutils
 
 from neutron.agent.common import config
 from neutron.agent.l3 import dvr
+from neutron.agent.l3 import dvr_router
 from neutron.agent.l3 import event_observers
 from neutron.agent.l3 import ha
-from neutron.agent.l3 import router_info
+from neutron.agent.l3 import ha_router
+from neutron.agent.l3 import legacy_router
 from neutron.agent.l3 import router_processing_queue as queue
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ra
@@ -57,8 +57,6 @@ LOG = logging.getLogger(__name__)
 NS_PREFIX = 'qrouter-'
 INTERNAL_DEV_PREFIX = 'qr-'
 EXTERNAL_DEV_PREFIX = 'qg-'
-RPC_LOOP_INTERVAL = 1
-FLOATING_IP_CIDR_SUFFIX = '/32'
 
 
 class L3PluginApi(object):
@@ -163,7 +161,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         self.context = n_context.get_admin_context_without_session()
         self.plugin_rpc = L3PluginApi(topics.L3PLUGIN, host)
         self.fullsync = True
-        self.sync_progress = False
 
         # Get the list of service plugins from Neutron Server
         # This is the first place where we contact neutron-server on startup
@@ -341,14 +338,35 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                         "one external network.")
                     raise Exception(msg)
 
-    def _router_added(self, router_id, router):
+    def _create_router(self, router_id, router):
+        # TODO(Carl) We need to support a router that is both HA and DVR.  The
+        # patch that enables it will replace these lines.  See bug #1365473.
+        if router.get('distributed') and router.get('ha'):
+            raise n_exc.DvrHaRouterNotSupported(router_id=router_id)
+
         ns_name = (self.get_ns_name(router_id)
                    if self.conf.use_namespaces else None)
-        ri = router_info.RouterInfo(router_id=router_id,
-                                    root_helper=self.root_helper,
-                                    router=router,
-                                    use_ipv6=self.use_ipv6,
-                                    ns_name=ns_name)
+        args = []
+        kwargs = {
+            'router_id': router_id,
+            'root_helper': self.root_helper,
+            'router': router,
+            'use_ipv6': self.use_ipv6,
+            'ns_name': ns_name,
+            'agent_conf': self.conf,
+            'interface_driver': self.driver,
+        }
+
+        if router.get('distributed'):
+            return dvr_router.DvrRouter(*args, **kwargs)
+
+        if router.get('ha'):
+            return ha_router.HaRouter(*args, **kwargs)
+
+        return legacy_router.LegacyRouter(*args, **kwargs)
+
+    def _router_added(self, router_id, router):
+        ri = self._create_router(router_id, router)
         self.event_observers.notify(
             adv_svc.AdvancedService.before_router_added, ri)
 
@@ -494,25 +512,30 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             ri.perform_snat_action(self._handle_router_snat_rules,
                                    interface_name)
 
-    def _process_snat_dnat_for_fip(self, ri):
-        ex_gw_port = self._get_ex_gw_port(ri)
-        if not ex_gw_port:
-            return
+    def _put_fips_in_error_state(self, ri):
         fip_statuses = {}
+        for fip in ri.router.get(l3_constants.FLOATINGIP_KEY, []):
+            fip_statuses[fip['id']] = l3_constants.FLOATINGIP_STATUS_ERROR
+        return fip_statuses
+
+    def _process_snat_dnat_for_fip(self, ri):
         try:
-            existing_floating_ips = ri.floating_ips
             self.process_router_floating_ip_nat_rules(ri)
-            ri.iptables_manager.defer_apply_off()
-            # Once NAT rules for floating IPs are safely in place
-            # configure their addresses on the external gateway port
-            fip_statuses = self.process_router_floating_ip_addresses(
+        except Exception:
+            # TODO(salv-orlando): Less broad catching
+            raise n_exc.FloatingIpSetupException('L3 agent failure to setup '
+                'NAT for floating IPs')
+
+    def _configure_fip_addresses(self, ri, ex_gw_port):
+        try:
+            return self.process_router_floating_ip_addresses(
                 ri, ex_gw_port)
         except Exception:
             # TODO(salv-orlando): Less broad catching
-            # All floating IPs must be put in error state
-            for fip in ri.router.get(l3_constants.FLOATINGIP_KEY, []):
-                fip_statuses[fip['id']] = l3_constants.FLOATINGIP_STATUS_ERROR
+            raise n_exc.FloatingIpSetupException('L3 agent failure to setup '
+                'floating IPs')
 
+    def _update_fip_statuses(self, ri, existing_floating_ips, fip_statuses):
         # Identify floating IPs which were disabled
         ri.floating_ips = set(fip_statuses.keys())
         for fip_id in existing_floating_ips - ri.floating_ips:
@@ -528,21 +551,42 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             else:
                 ri.disable_keepalived()
 
+    def _process_external(self, ri):
+        try:
+            with ri.iptables_manager.defer_apply():
+                self._process_external_gateway(ri)
+                ex_gw_port = self._get_ex_gw_port(ri)
+                # TODO(Carl) Return after setting existing_floating_ips and
+                # still call _update_fip_statuses?
+                if not ex_gw_port:
+                    return
+
+                # Process SNAT/DNAT rules and addresses for floating IPs
+                existing_floating_ips = ri.floating_ips
+                if ri.router['distributed']:
+                    self.create_dvr_fip_interfaces(ri, ex_gw_port)
+                self._process_snat_dnat_for_fip(ri)
+
+            # Once NAT rules for floating IPs are safely in place
+            # configure their addresses on the external gateway port
+            fip_statuses = self._configure_fip_addresses(ri, ex_gw_port)
+
+        except (n_exc.FloatingIpSetupException, n_exc.IpTablesApplyException):
+                # All floating IPs must be put in error state
+                fip_statuses = self._put_fips_in_error_state(ri)
+
+        self._update_fip_statuses(ri, existing_floating_ips, fip_statuses)
+
     @common_utils.exception_logger()
     def process_router(self, ri):
         # TODO(mrsmith) - we shouldn't need to check here
         if 'distributed' not in ri.router:
             ri.router['distributed'] = False
-
-        ri.iptables_manager.defer_apply_on()
+        self.scan_fip_ports(ri)
         self._process_internal_ports(ri)
-        self._process_external_gateway(ri)
-
+        self._process_external(ri)
         # Process static routes for router
         self.routes_updated(ri)
-
-        # Process SNAT/DNAT rules for floating IPs
-        self._process_snat_dnat_for_fip(ri)
 
         # Enable or disable keepalived for ha routers
         self._process_ha_router(ri)
@@ -607,31 +651,34 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         ri.iptables_manager.apply()
 
-    def _get_external_device_interface_name(self, ri, ex_gw_port,
-                                            floating_ips):
+    def create_dvr_fip_interfaces(self, ri, ex_gw_port):
+        floating_ips = self.get_floating_ips(ri)
+        if floating_ips:
+            is_first = self._fip_ns_subscribe(ri.router_id)
+            if is_first:
+                self._create_agent_gateway_port(ri, floating_ips[0]
+                                                ['floating_network_id'])
+
+        if self.agent_gateway_port and floating_ips:
+            fip_net_id = floating_ips[0]['floating_network_id']
+            self.create_rtr_2_fip_link(ri, fip_net_id)
+
+    def _get_external_device_interface_name(self, ri, ex_gw_port):
         if ri.router['distributed']:
-            # filter out only FIPs for this host/agent
-            floating_ips = [i for i in floating_ips if i['host'] == self.host]
-            if floating_ips:
-                is_first = self._fip_ns_subscribe(ri.router_id)
-                if is_first:
-                    self._create_agent_gateway_port(ri, floating_ips[0]
-                                                    ['floating_network_id'])
+            fip_int = self.get_fip_int_device_name(ri.router_id)
+            # TODO(mrsmith) refactor for multiple ext nets
+            fip_ns = self.get_fip_ns_name(str(self._fetch_external_net_id()))
 
-            if self.agent_gateway_port:
-                if floating_ips and ri.dist_fip_count == 0:
-                    self.create_rtr_2_fip_link(ri, floating_ips[0]
-                                               ['floating_network_id'])
+            if ip_lib.device_exists(fip_int,
+                                    root_helper=self.root_helper,
+                                    namespace=fip_ns):
                 return self.get_rtr_int_device_name(ri.router_id)
-            else:
-                # there are no fips or agent port, no work to do
-                return None
-
-        return self.get_external_device_name(ex_gw_port['id'])
+        else:
+            return self.get_external_device_name(ex_gw_port['id'])
 
     def _add_floating_ip(self, ri, fip, interface_name, device):
         fip_ip = fip['floating_ip_address']
-        ip_cidr = str(fip_ip) + FLOATING_IP_CIDR_SUFFIX
+        ip_cidr = common_utils.ip_to_cidr(fip_ip)
 
         if ri.is_ha:
             self._add_vip(ri, ip_cidr, interface_name)
@@ -652,8 +699,11 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             else:
                 # As GARP is processed in a distinct thread the call below
                 # won't raise an exception to be handled.
-                self._send_gratuitous_arp_packet(
-                    ri.ns_name, interface_name, fip_ip)
+                ip_lib.send_gratuitous_arp(ri.ns_name,
+                                           interface_name,
+                                           fip_ip,
+                                           self.conf.send_arp_for_ha,
+                                           self.root_helper)
             return l3_constants.FLOATINGIP_STATUS_ACTIVE
 
     def _remove_floating_ip(self, ri, device, ip_cidr):
@@ -668,6 +718,12 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             if ri.router['distributed']:
                 self.floating_ip_removed_dist(ri, ip_cidr)
 
+    def _get_router_cidrs(self, ri, device):
+        if ri.is_ha:
+            return set(self._ha_get_existing_cidrs(ri, device.name))
+        else:
+            return set([addr['cidr'] for addr in device.addr.list()])
+
     def process_router_floating_ip_addresses(self, ri, ex_gw_port):
         """Configure IP addresses on router's external gateway interface.
 
@@ -676,21 +732,21 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         """
 
         fip_statuses = {}
-        floating_ips = self.get_floating_ips(ri)
         interface_name = self._get_external_device_interface_name(
-            ri, ex_gw_port, floating_ips)
+            ri, ex_gw_port)
         if interface_name is None:
             return fip_statuses
 
         device = ip_lib.IPDevice(interface_name, self.root_helper,
                                  namespace=ri.ns_name)
-        existing_cidrs = set([addr['cidr'] for addr in device.addr.list()])
+        existing_cidrs = self._get_router_cidrs(ri, device)
         new_cidrs = set()
 
+        floating_ips = self.get_floating_ips(ri)
         # Loop once to ensure that floating ips are configured.
         for fip in floating_ips:
             fip_ip = fip['floating_ip_address']
-            ip_cidr = str(fip_ip) + FLOATING_IP_CIDR_SUFFIX
+            ip_cidr = common_utils.ip_to_cidr(fip_ip)
             new_cidrs.add(ip_cidr)
             fip_statuses[fip['id']] = l3_constants.FLOATINGIP_STATUS_ACTIVE
             if ip_cidr not in existing_cidrs:
@@ -698,8 +754,8 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                     ri, fip, interface_name, device)
 
         fips_to_remove = (
-            ip_cidr for ip_cidr in existing_cidrs - new_cidrs if
-            ip_cidr.endswith(FLOATING_IP_CIDR_SUFFIX))
+            ip_cidr for ip_cidr in existing_cidrs - new_cidrs
+            if common_utils.is_cidr_host(ip_cidr))
         for ip_cidr in fips_to_remove:
             self._remove_floating_ip(ri, device, ip_cidr)
 
@@ -707,33 +763,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
     def _get_ex_gw_port(self, ri):
         return ri.router.get('gw_port')
-
-    def _arping(self, ns_name, interface_name, ip_address, distributed=False):
-        if distributed:
-            device = ip_lib.IPDevice(interface_name, self.root_helper,
-                                     namespace=ns_name)
-            ip_cidr = str(ip_address) + FLOATING_IP_CIDR_SUFFIX
-            net = netaddr.IPNetwork(ip_cidr)
-            device.addr.add(net.version, ip_cidr, str(net.broadcast))
-
-        arping_cmd = ['arping', '-A',
-                      '-I', interface_name,
-                      '-c', self.conf.send_arp_for_ha,
-                      ip_address]
-        try:
-            ip_wrapper = ip_lib.IPWrapper(self.root_helper,
-                                          namespace=ns_name)
-            ip_wrapper.netns.execute(arping_cmd, check_exit_code=True)
-        except Exception:
-            LOG.exception(_LE("Failed sending gratuitous ARP."))
-        if distributed:
-            device.addr.delete(net.version, ip_cidr)
-
-    def _send_gratuitous_arp_packet(self, ns_name, interface_name, ip_address,
-                                    distributed=False):
-        if self.conf.send_arp_for_ha > 0:
-            eventlet.spawn_n(self._arping, ns_name, interface_name, ip_address,
-                             distributed)
 
     def get_internal_device_name(self, port_id):
         return (INTERNAL_DEV_PREFIX + port_id)[:self.driver.DEV_NAME_LEN]
@@ -782,7 +811,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         # This avoids unnecessarily removing those addresses and
         # causing a momentarily network outage.
         floating_ips = self.get_floating_ips(ri)
-        preserve_ips = [ip['floating_ip_address'] + FLOATING_IP_CIDR_SUFFIX
+        preserve_ips = [common_utils.ip_to_cidr(ip['floating_ip_address'])
                         for ip in floating_ips]
 
         self._external_gateway_added(ri, ex_gw_port, interface_name,
@@ -790,6 +819,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         if ri.is_ha:
             self._ha_external_gateway_added(ri, ex_gw_port, interface_name)
+            self._ha_disable_addressing_on_interface(ri, interface_name)
 
     def external_gateway_updated(self, ri, ex_gw_port, interface_name):
         preserve_ips = []
@@ -804,7 +834,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         else:
             ns_name = ri.ns_name
             floating_ips = self.get_floating_ips(ri)
-            preserve_ips = [ip['floating_ip_address'] + FLOATING_IP_CIDR_SUFFIX
+            preserve_ips = [common_utils.ip_to_cidr(ip['floating_ip_address'])
                             for ip in floating_ips]
 
         self._external_gateway_added(ri, ex_gw_port, interface_name,
@@ -832,8 +862,11 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 extra_subnets=ex_gw_port.get('extra_subnets', []),
                 preserve_ips=preserve_ips)
             ip_address = ex_gw_port['ip_cidr'].split('/')[0]
-            self._send_gratuitous_arp_packet(ns_name,
-                                             interface_name, ip_address)
+            ip_lib.send_gratuitous_arp(ns_name,
+                                       interface_name,
+                                       ip_address,
+                                       self.conf.send_arp_for_ha,
+                                       self.root_helper)
 
     def external_gateway_removed(self, ri, ex_gw_port, interface_name):
         if ri.router['distributed']:
@@ -886,8 +919,11 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             self.driver.init_l3(interface_name, [internal_cidr],
                                 namespace=ns_name)
             ip_address = internal_cidr.split('/')[0]
-            self._send_gratuitous_arp_packet(ns_name, interface_name,
-                                             ip_address)
+            ip_lib.send_gratuitous_arp(ns_name,
+                                       interface_name,
+                                       ip_address,
+                                       self.conf.send_arp_for_ha,
+                                       self.root_helper)
 
     def internal_network_added(self, ri, port):
         network_id = port['network_id']
@@ -903,6 +939,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                                      ri.is_ha)
 
         if ri.is_ha:
+            self._ha_disable_addressing_on_interface(ri, interface_name)
             self._add_vip(ri, internal_cidr, interface_name)
 
         ex_gw_port = self._get_ex_gw_port(ri)
@@ -1148,6 +1185,8 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
     def after_start(self):
         eventlet.spawn_n(self._process_routers_loop)
         LOG.info(_LI("L3 agent started"))
+        # When L3 agent is ready, we immediately do a full sync
+        self.periodic_sync_routers_task(self.context)
 
     def _update_routing_table(self, ri, operation, route):
         cmd = ['ip', 'route', operation, 'to', route['destination'],
@@ -1246,8 +1285,3 @@ class L3NATAgentWithStateReport(L3NATAgent):
         """Handle the agent_updated notification event."""
         self.fullsync = True
         LOG.info(_LI("agent_updated by server side %s!"), payload)
-
-
-# TODO(armax): drop as soon as dependent services are updated
-from neutron.agent import l3_agent
-main = l3_agent.main

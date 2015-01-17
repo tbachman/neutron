@@ -14,11 +14,12 @@
 #    under the License.
 
 import os
-import shutil
 import signal
 
+import netaddr
 from oslo.config import cfg
 
+from neutron.agent.linux import ip_lib
 from neutron.agent.linux import keepalived
 from neutron.agent.metadata import driver as metadata_driver
 from neutron.common import constants as l3_constants
@@ -47,52 +48,6 @@ OPTS = [
 ]
 
 
-class RouterMixin(object):
-    def __init__(self):
-        self.ha_port = None
-        self.keepalived_manager = None
-
-    def _verify_ha(self):
-        if not self.is_ha:
-            raise ValueError(_('Router %s is not a HA router') %
-                             self.router_id)
-
-    @property
-    def is_ha(self):
-        return self.router is not None and self.router.get('ha')
-
-    @property
-    def ha_priority(self):
-        self._verify_ha()
-        return self.router is not None and self.router.get(
-            'priority', keepalived.HA_DEFAULT_PRIORITY)
-
-    @property
-    def ha_vr_id(self):
-        self._verify_ha()
-        return self.router is not None and self.router.get('ha_vr_id')
-
-    @property
-    def ha_state(self):
-        self._verify_ha()
-        ha_state_path = self.keepalived_manager._get_full_config_file_path(
-            'state')
-        try:
-            with open(ha_state_path, 'r') as f:
-                return f.read()
-        except (OSError, IOError):
-            LOG.debug('Error while reading HA state for %s', self.router_id)
-            return None
-
-    def spawn_keepalived(self):
-        self.keepalived_manager.spawn_or_restart()
-
-    def disable_keepalived(self):
-        self.keepalived_manager.disable()
-        conf_dir = self.keepalived_manager.get_conf_dir()
-        shutil.rmtree(conf_dir)
-
-
 class AgentMixin(object):
     def __init__(self, host):
         self._init_ha_conf_path()
@@ -103,20 +58,25 @@ class AgentMixin(object):
         if not os.path.isdir(ha_full_path):
             os.makedirs(ha_full_path, 0o755)
 
-    def _init_keepalived_manager(self, ri):
-        ri.keepalived_manager = keepalived.KeepalivedManager(
+    def get_keepalived_manager(self, ri):
+        return keepalived.KeepalivedManager(
             ri.router['id'],
             keepalived.KeepalivedConf(),
             conf_path=self.conf.ha_confs_path,
             namespace=ri.ns_name,
             root_helper=self.root_helper)
 
+    def _init_keepalived_manager(self, ri):
+        ri.keepalived_manager = self.get_keepalived_manager(ri)
+
         config = ri.keepalived_manager.config
 
         interface_name = self.get_ha_device_name(ri.ha_port['id'])
+        ha_port_cidr = ri.ha_port['subnet']['cidr']
         instance = keepalived.KeepalivedInstance(
-            'BACKUP', interface_name, ri.ha_vr_id, nopreempt=True,
-            advert_int=self.conf.ha_vrrp_advert_int, priority=ri.ha_priority)
+            'BACKUP', interface_name, ri.ha_vr_id, ha_port_cidr,
+            nopreempt=True, advert_int=self.conf.ha_vrrp_advert_int,
+            priority=ri.ha_priority)
         instance.track_interfaces.append(interface_name)
 
         if self.conf.ha_vrrp_auth_password:
@@ -167,9 +127,9 @@ class AgentMixin(object):
                            prefix=HA_DEV_PREFIX)
         ri.ha_port = None
 
-    def _add_vip(self, ri, ip_cidr, interface):
+    def _add_vip(self, ri, ip_cidr, interface, scope=None):
         instance = ri.keepalived_manager.config.get_instance(ri.ha_vr_id)
-        instance.add_vip(ip_cidr, interface)
+        instance.add_vip(ip_cidr, interface, scope)
 
     def _remove_vip(self, ri, ip_cidr):
         instance = ri.keepalived_manager.config.get_instance(ri.ha_vr_id)
@@ -178,6 +138,10 @@ class AgentMixin(object):
     def _clear_vips(self, ri, interface):
         instance = ri.keepalived_manager.config.get_instance(ri.ha_vr_id)
         instance.remove_vips_vroutes_by_interface(interface)
+
+    def _ha_get_existing_cidrs(self, ri, interface_name):
+        instance = ri.keepalived_manager.config.get_instance(ri.ha_vr_id)
+        return instance.get_existing_vip_ip_addresses(interface_name)
 
     def _add_keepalived_notifiers(self, ri):
         callback = (
@@ -215,6 +179,43 @@ class AgentMixin(object):
     def _ha_external_gateway_added(self, ri, ex_gw_port, interface_name):
         self._add_vip(ri, ex_gw_port['ip_cidr'], interface_name)
         self._add_default_gw_virtual_route(ri, ex_gw_port, interface_name)
+
+    def _should_delete_ipv6_lladdr(self, ri, ipv6_lladdr):
+        """Only the master should have any IP addresses configured.
+        Let keepalived manage IPv6 link local addresses, the same way we let
+        it manage IPv4 addresses. In order to do that, we must delete
+        the address first as it is autoconfigured by the kernel.
+        """
+        process = keepalived.KeepalivedManager.get_process(
+            self.conf,
+            ri.router_id,
+            self.root_helper,
+            ri.ns_name,
+            self.conf.ha_confs_path)
+        if process.active:
+            manager = self.get_keepalived_manager(ri)
+            conf = manager.get_conf_on_disk()
+            managed_by_keepalived = conf and ipv6_lladdr in conf
+            if managed_by_keepalived:
+                return False
+        return True
+
+    def _ha_disable_addressing_on_interface(self, ri, interface_name):
+        """Disable IPv6 link local addressing on the device and add it as
+        a VIP to keepalived. This means that the IPv6 link local address
+        will only be present on the master.
+        """
+        device = ip_lib.IPDevice(interface_name, self.root_helper, ri.ns_name)
+        ipv6_lladdr = self._get_ipv6_lladdr(device.link.address)
+
+        if self._should_delete_ipv6_lladdr(ri, ipv6_lladdr):
+            device.addr.flush()
+
+        self._remove_vip(ri, ipv6_lladdr)
+        self._add_vip(ri, ipv6_lladdr, interface_name, scope='link')
+
+    def _get_ipv6_lladdr(self, mac_addr):
+        return '%s/64' % netaddr.EUI(mac_addr).ipv6_link_local()
 
     def _ha_external_gateway_removed(self, ri, interface_name):
         self._clear_vips(ri, interface_name)

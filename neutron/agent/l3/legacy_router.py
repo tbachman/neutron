@@ -1,5 +1,4 @@
-# Copyright (c) 2014 OpenStack Foundation
-# All Rights Reserved.
+# Copyright (c) 2015 Openstack Foundation
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,11 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.plugins.ml2 import driver_api as api
+from neutron.agent.l3 import router_info as router
 
 
-class BulklessMechanismDriver(api.MechanismDriver):
-    """Test mechanism driver for testing bulk emulation."""
-
-    def initialize(self):
-        self.native_bulk_support = False
+class LegacyRouter(router.RouterInfo):
+    pass

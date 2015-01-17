@@ -19,7 +19,7 @@ import mock
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ovs_lib
-from neutron.agent import ovs_cleanup_util as util
+from neutron.cmd import ovs_cleanup as util
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
@@ -47,9 +47,9 @@ class TestOVSCleanup(base.BaseTestCase):
         conf.external_network_bridge = 'br-ex'
         with contextlib.nested(
             mock.patch('neutron.common.config.setup_logging'),
-            mock.patch('neutron.agent.ovs_cleanup_util.setup_conf',
+            mock.patch('neutron.cmd.ovs_cleanup.setup_conf',
                        return_value=conf),
-            mock.patch('neutron.agent.linux.ovs_lib.get_bridges',
+            mock.patch('neutron.agent.linux.ovs_lib.BaseOVS.get_bridges',
                        return_value=bridges),
             mock.patch('neutron.agent.linux.ovs_lib.OVSBridge'),
             mock.patch.object(util, 'collect_neutron_ports',
