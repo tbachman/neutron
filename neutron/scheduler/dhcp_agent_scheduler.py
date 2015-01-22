@@ -22,7 +22,6 @@ from oslo.config import cfg
 from neutron.common import constants
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
-from neutron.openstack.common.db import exception as db_exc
 from neutron.openstack.common import log as logging
 
 
@@ -36,17 +35,10 @@ class ChanceScheduler(object):
     """
 
     def _schedule_bind_network(self, context, agent, network_id):
-        try:
-            binding = agentschedulers_db.NetworkDhcpAgentBinding()
-            binding.dhcp_agent = agent
-            binding.network_id = network_id
-            context.session.add(binding)
-            # try to actually write the changes and catch integrity
-            # DBDuplicateEntry
-            context.session.flush()
-        except db_exc.DBDuplicateEntry:
-            # it's totally ok, someone just did our job!
-            pass
+        binding = agentschedulers_db.NetworkDhcpAgentBinding()
+        binding.dhcp_agent = agent
+        binding.network_id = network_id
+        context.session.add(binding)
         LOG.debug(_('Network %(network_id)s is scheduled to be hosted by '
                     'DHCP agent %(agent_id)s'),
                   {'network_id': network_id,
@@ -96,16 +88,7 @@ class ChanceScheduler(object):
         the specified host.
         """
         agents_per_network = cfg.CONF.dhcp_agents_per_network
-        # a list of (agent, net_ids) tuples
-        bindings_to_add = []
         with context.session.begin(subtransactions=True):
-            fields = ['network_id', 'enable_dhcp']
-            subnets = plugin.get_subnets(context, fields=fields)
-            net_ids = set(s['network_id'] for s in subnets
-                          if s['enable_dhcp'])
-            if not net_ids:
-                LOG.debug(_('No non-hosted networks'))
-                return False
             query = context.session.query(agents_db.Agent)
             query = query.filter(agents_db.Agent.agent_type ==
                                  constants.AGENT_TYPE_DHCP,
@@ -117,6 +100,13 @@ class ChanceScheduler(object):
                     dhcp_agent.heartbeat_timestamp):
                     LOG.warn(_('DHCP agent %s is not active'), dhcp_agent.id)
                     continue
+                fields = ['network_id', 'enable_dhcp']
+                subnets = plugin.get_subnets(context, fields=fields)
+                net_ids = set(s['network_id'] for s in subnets
+                              if s['enable_dhcp'])
+                if not net_ids:
+                    LOG.debug(_('No non-hosted networks'))
+                    return False
                 for net_id in net_ids:
                     agents = plugin.get_dhcp_agents_hosting_networks(
                         context, [net_id], active=True)
@@ -124,9 +114,8 @@ class ChanceScheduler(object):
                         continue
                     if any(dhcp_agent.id == agent.id for agent in agents):
                         continue
-                    bindings_to_add.append((dhcp_agent, net_id))
-        # do it outside transaction so particular scheduling results don't
-        # make other to fail
-        for agent, net_id in bindings_to_add:
-            self._schedule_bind_network(context, [agent], net_id)
+                    binding = agentschedulers_db.NetworkDhcpAgentBinding()
+                    binding.dhcp_agent = dhcp_agent
+                    binding.network_id = net_id
+                    context.session.add(binding)
         return True
