@@ -35,10 +35,9 @@ from neutron.db import portbindings_db as p_binding
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI
 from neutron.openstack.common import loopingcall
+from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.l3 import l3_models
-
-from networking_cisco.plugins.cisco.common import cisco_constants as c_const
-from networking_cisco.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
 
 LOG = logging.getLogger(__name__)
 
