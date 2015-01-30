@@ -23,7 +23,7 @@ from neutron.common import constants as n_const
 from neutron.common import exceptions as n_exc
 from neutron.extensions import portbindings
 from neutron.openstack.common import excutils
-from neutron.openstack.common.gettextutils import _LI, _LW
+from neutron.openstack.common.gettextutils import _LE, _LI, _LW
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -55,7 +55,10 @@ class N1KVMechanismDriver(api.MechanismDriver):
         self.netp_vxlan_name = (cfg.CONF.ml2_cisco_n1kv.
                                 default_vxlan_network_profile)
         # Ensure network profiles are created on the VSM
-        self._ensure_network_profiles_created_on_vsm()
+        try:
+            self._ensure_network_profiles_created_on_vsm()
+        except (n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
+            LOG.error(_LE("VSM Failed to create default network profiles."))
         self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True,
                             portbindings.OVS_HYBRID_PLUG: True}
