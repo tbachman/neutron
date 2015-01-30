@@ -110,6 +110,9 @@ class Client(object):
 
     pool = eventlet.GreenPool(cfg.CONF.ml2_cisco_n1kv.http_pool_size)
 
+    # Nexus interop
+    vxlan_types = [p_const.TYPE_VXLAN, p_const.TYPE_NEXUS_VXLAN]
+
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
         self.format = 'json'
@@ -242,7 +245,7 @@ class Client(object):
                 'networkSegmentPool': network_profile.id}
         if network[providernet.NETWORK_TYPE] == p_const.TYPE_VLAN:
             body['vlan'] = network[providernet.SEGMENTATION_ID]
-        elif network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+        elif network[providernet.NETWORK_TYPE] in self.vxlan_types:
             # Create a bridge domain on VSM
             bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             self._create_bridge_domain(network)
@@ -255,7 +258,7 @@ class Client(object):
                 # Clean up the bridge domain from the VSM for VXLAN networks.
                 # Reraise the exception so that caller method executes further
                 # clean up.
-                if network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+                if network[providernet.NETWORK_TYPE] in self.vxlan_types:
                     self._delete_bridge_domain(bd_name)
 
     def update_network_segment(self, updated_network):
@@ -273,7 +276,7 @@ class Client(object):
         :param network_segment_id: UUID representing the network segment
         :param network_type: type of network to be deleted
         """
-        if network_type == p_const.TYPE_VXLAN:
+        if network_type in self.vxlan_types:
             bd_name = network_segment_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             self._delete_bridge_domain(bd_name)
         return self._delete(self.network_segment_path % network_segment_id)
@@ -283,7 +286,10 @@ class Client(object):
 
         :param network: network dict
         """
-        groupIp = cfg.CONF.ml2_type_vxlan.vxlan_group
+        if network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
+            groupIp = cfg.CONF.ml2_type_vxlan.vxlan_group
+        elif network[providernet.NETWORK_TYPE] == p_const.TYPE_NEXUS_VXLAN:
+            groupIp = network[providernet.PHYSICAL_NETWORK]
         if groupIp:
             vxlan_subtype = n1kv_const.MODE_NATIVE_VXLAN
         else:

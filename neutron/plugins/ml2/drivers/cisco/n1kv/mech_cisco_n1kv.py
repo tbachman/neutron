@@ -62,7 +62,9 @@ class N1KVMechanismDriver(api.MechanismDriver):
         self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True,
                             portbindings.OVS_HYBRID_PLUG: True}
-        self.supported_network_types = [p_const.TYPE_VLAN, p_const.TYPE_VXLAN]
+        # Nexus interop
+        self.supported_network_types = [p_const.TYPE_VLAN, p_const.TYPE_VXLAN,
+                                        p_const.TYPE_NEXUS_VXLAN]
 
     def _ensure_network_profiles_created_on_vsm(self, db_session=None):
         # Make sure logical networks and network profiles exist
@@ -127,6 +129,9 @@ class N1KVMechanismDriver(api.MechanismDriver):
                      "type: %s. Network type VLAN and VXLAN "
                      "supported.") % network_type)
             raise n_exc.InvalidInput(error_message=msg)
+        # Nexus interop: map Nexus VXLAN type to standard type
+        if network_type == p_const.TYPE_NEXUS_VXLAN:
+            network_type = p_const.TYPE_VXLAN
         # Try to find the network profile
         try:
             netp = n1kv_db.get_network_profile_by_type(network_type, session)
@@ -154,7 +159,11 @@ class N1KVMechanismDriver(api.MechanismDriver):
         segment = context.network_segments[0]
         network_type = segment['network_type']
         session = context._plugin_context.session
-        netp = n1kv_db.get_network_profile_by_type(network_type, session)
+        n1k_network_type = network_type
+        # Nexus interop: map Nexus VXLAN type to standard type
+        if network_type == p_const.TYPE_NEXUS_VXLAN:
+            n1k_network_type = p_const.TYPE_VXLAN
+        netp = n1kv_db.get_network_profile_by_type(n1k_network_type, session)
         try:
             self.n1kvclient.create_network_segment(network, netp)
         except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed) as e:
