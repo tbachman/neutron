@@ -68,6 +68,12 @@ class TestOpenvswitchSGServerRpcCallBackXML(
 class TestOpenvswitchSecurityGroups(OpenvswitchSecurityGroupsTestCase,
                                     test_sg.TestSecurityGroups,
                                     test_sg_rpc.SGNotificationTestMixin):
+
+    def setUp(self):
+        super(TestOpenvswitchSecurityGroups, self).setUp()
+        plugin = manager.NeutronManager.get_plugin()
+        plugin.start_rpc_listener()
+
     def test_security_group_get_port_from_device(self):
         with self.network() as n:
             with self.subnet(n):
