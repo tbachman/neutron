@@ -24,7 +24,7 @@ from neutron.agent.linux import utils
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
-
+from oslo.config import cfg
 
 class TestBaseOVS(base.BaseTestCase):
 
@@ -596,7 +596,8 @@ class OVS_Lib_Test(base.BaseTestCase):
         iface = 'tap0'
         br = 'br-int'
         root_helper = 'sudo'
-        utils.execute(["ovs-vsctl", self.TO, "iface-to-br", iface],
+        exp_timeout_str = self._build_timeout_opt(exp_timeout)
+        utils.execute(["ovs-vsctl", exp_timeout_str, "iface-to-br", iface],
                       root_helper=root_helper).AndReturn('br-int')
 
         self.mox.ReplayAll()
@@ -647,7 +648,8 @@ class OVS_Lib_Test(base.BaseTestCase):
     def _test_get_bridges(self, exp_timeout=None):
         bridges = ['br-int', 'br-ex']
         root_helper = 'sudo'
-        utils.execute(["ovs-vsctl", self.TO, "list-br"],
+        timeout_str = self._build_timeout_opt(exp_timeout)
+        utils.execute(["ovs-vsctl", timeout_str, "list-br"],
                       root_helper=root_helper).AndReturn('br-int\nbr-ex\n')
 
         self.mox.ReplayAll()
