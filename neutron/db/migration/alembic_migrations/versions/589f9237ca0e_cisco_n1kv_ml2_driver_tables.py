@@ -33,13 +33,15 @@ network_profile_type = sa.Enum('vlan', 'vxlan', 'trunk',
                                name='network_profile_type')
 profile_type = sa.Enum('network', 'policy', name='profile_type')
 
+
 def upgrade(active_plugins=None, options=None):
 
     op.create_table(
         'cisco_ml2_n1kv_policy_profiles',
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('name', sa.String(length=255), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
+        sa.Column('vsm_ip', sa.String(length=16), nullable=False),
+        sa.PrimaryKeyConstraint('id', 'vsm_ip'),
     )
 
     op.create_table(
@@ -94,7 +96,7 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('allocated', sa.Boolean(), autoincrement=False,
                   nullable=False),
         sa.PrimaryKeyConstraint('physical_network', 'vlan_id')
-     )
+    )
 
     op.create_table(
         'cisco_ml2_n1kv_profile_bindings',

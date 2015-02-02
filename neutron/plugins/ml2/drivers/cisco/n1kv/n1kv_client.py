@@ -116,22 +116,18 @@ class Client(object):
     def __init__(self, **kwargs):
         """Initialize a new client for the plugin."""
         self.format = 'json'
-        self.n1kv_vsm_ip = cfg.CONF.ml2_cisco_n1kv.n1kv_vsm_ip
-        self.username = cfg.CONF.ml2_cisco_n1kv.username
-        self.password = cfg.CONF.ml2_cisco_n1kv.password
-        self.action_prefix = 'http://%s/api/n1k' % self.n1kv_vsm_ip
-        self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
-        required_opts = ('n1kv_vsm_ip', 'username', 'password')
-        for opt in required_opts:
-            if not getattr(self, opt):
-                raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')
 
-    def list_port_profiles(self):
+        # Extract configuration parameters from the configuration file.
+        self.n1kv_vsm = (config.ML2CiscoN1kvConfig()).get_n1kv_dict()
+        self.action_prefix = 'http://%s/api/n1k'
+        self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
+
+    def list_port_profiles(self, vsm_ip=None):
         """Fetch all policy profiles from the VSM.
 
         :returns: JSON string
         """
-        return self._get(self.port_profiles_path)
+        return self._get(self.port_profiles_path, vsm_ip=vsm_ip)
 
     def list_network_profiles(self):
         '''
@@ -399,7 +395,7 @@ class Client(object):
         return self._delete(self.port_path % (vmnetwork_name, port_id))
 
     def _do_request(self, method, action, body=None,
-                    headers=None):
+                    headers=None, vsm_ip=None):
         """Perform the HTTP request.
 
         The response is in either JSON format or plain text. A GET method will
@@ -413,57 +409,73 @@ class Client(object):
         :param action: path to which the client makes request
         :param body: dict for arguments which are sent as part of the request
         :param headers: header for the HTTP request
+        :param vsm_ip: vsm_ip for the HTTP request. If not provided then
+                       request will be sent to all VSMs.
         :returns: JSON or plain text in HTTP response
         """
+
         action = self.action_prefix + action
-        if not headers:
-            headers = self._get_auth_header()
-        headers['Content-Type'] = headers['Accept'] = "application/json"
         if body:
             body = json.dumps(body)
             LOG.debug("req: %s", body)
-        try:
-            resp = self.pool.spawn(requests.request,
-                                   method,
-                                   url=action,
-                                   data=body,
-                                   headers=headers,
-                                   timeout=self.timeout).wait()
-        except Exception as e:
-            raise n1kv_exc.VSMConnectionFailed(reason=e)
-        LOG.debug("status_code %s", resp.status_code)
-        if resp.status_code == requests.codes.OK:
-            if 'application/json' in resp.headers['content-type']:
-                try:
-                    return resp.json()
-                except ValueError:
-                    return {}
-            elif 'text/plain' in resp.headers['content-type']:
-                LOG.info(_LI("VSM: %s"), resp.text)
+        hosts = []
+        if vsm_ip:
+            hosts.append(vsm_ip)
         else:
-            raise n1kv_exc.VSMError(reason=resp.text)
+            hosts = self._get_vsm_hosts()
+        for vsm_ip in hosts:
+            vsm_action = action % vsm_ip
+            headers = self._get_auth_header(vsm_ip)
+            headers['Content-Type'] = headers['Accept'] = "application/json"
+            try:
+                resp = self.pool.spawn(requests.request,
+                                       method,
+                                       url=vsm_action,
+                                       data=body,
+                                       headers=headers,
+                                       timeout=self.timeout).wait()
+            except Exception as e:
+                raise n1kv_exc.VSMConnectionFailed(reason=e)
+            if resp.status_code != requests.codes.OK:
+                raise n1kv_exc.VSMError(reason=resp.text)
+        if 'application/json' in resp.headers['content-type']:
+            try:
+                return resp.json()
+            except ValueError:
+                return {}
+        elif 'text/plain' in resp.headers['content-type']:
+            LOG.info(_LI("VSM: %s"), resp.text)
 
-    def _delete(self, action, body=None, headers=None):
+    def _delete(self, action, body=None, headers=None, vsm_ip=None):
         return self._do_request("DELETE", action, body=body,
-                                headers=headers)
+                                headers=headers, vsm_ip=vsm_ip)
 
-    def _get(self, action, body=None, headers=None):
+    def _get(self, action, body=None, headers=None, vsm_ip=None):
         return self._do_request("GET", action, body=body,
-                                headers=headers)
+                                headers=headers, vsm_ip=vsm_ip)
 
-    def _post(self, action, body=None, headers=None):
+    def _post(self, action, body=None, headers=None, vsm_ip=None):
         return self._do_request("POST", action, body=body,
-                                headers=headers)
+                                headers=headers, vsm_ip=vsm_ip)
 
-    def _put(self, action, body=None, headers=None):
+    def _put(self, action, body=None, headers=None, vsm_ip=None):
         return self._do_request("PUT", action, body=body,
-                                headers=headers)
+                                headers=headers, vsm_ip=vsm_ip)
 
-    def _get_auth_header(self):
+    def _get_vsm_hosts(self):
+        """
+        Retrieve a list of VSM ip addresses.
+
+        :return: list of host ip addresses
+        """
+        return self.n1kv_vsm.keys()
+
+    def _get_auth_header(self, vsm_ip):
         """Retrieve header with auth info for the VSM.
 
         :return: authorization header dict
         """
-        auth = base64.encodestring("%s:%s" % (self.username,
-                                              self.password)).rstrip()
+        auth = base64.encodestring("%s:%s" % 
+                                   (self.n1kv_vsm[vsm_ip]['username'],
+                                   self.n1kv_vsm[vsm_ip]['password'])).rstrip()
         return {"Authorization": "Basic %s" % auth}

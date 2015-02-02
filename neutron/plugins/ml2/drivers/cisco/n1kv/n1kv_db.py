@@ -83,7 +83,7 @@ def get_policy_profile_by_name(name, db_session=None):
     db_session = db_session or db.get_session()
     try:
         return (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(name=name).one())
+                filter_by(name=name).first())
     except sa_exc.NoResultFound:
         raise n1kv_exc.PolicyProfileNotFound(profile=name)
 
@@ -92,9 +92,33 @@ def get_policy_profile_by_uuid(db_session, id):
     """Retrieve policy profile by its UUID."""
     try:
         return (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(id=id).one())
+                filter_by(id=id).first())
     except sa_exc.NoResultFound:
         raise n1kv_exc.PolicyProfileNotFound(profile=id)
+
+
+def get_policy_profiles_by_host(vsm_ip, db_session=None):
+    """Retrieve policy profile by host."""
+    db_session = db_session or db.get_session()
+    try:
+        return (db_session.query(n1kv_models.PolicyProfile).
+                filter_by(vsm_ip=vsm_ip))
+    except sa_exc.NoResultFound:
+        raise n1kv_exc.PolicyProfileNotFound(profile=vsm_ip)
+
+
+def policy_profile_in_use(profile_id):
+    """
+    Checks if a policy profile is being used in a port binding.
+
+    :param segment_id: UUID of the policy profile to be checked
+    :returns: boolean
+    """
+    db_session = db.get_session()
+    ret = (db_session.query(n1kv_models.N1kvPortBinding).
+           filter_by(profile_id=profile_id).first())
+    return bool(ret)
+
 
 def get_network_binding(network_id):
     """Retrieve network binding."""

@@ -32,7 +32,7 @@ class PolicyProfile(model_base.BASEV2):
 
     id = sa.Column(sa.String(36), nullable=False, primary_key=True)
     name = sa.Column(sa.String(255), nullable=False)
-
+    vsm_ip = sa.Column(sa.String(16), nullable=False, primary_key=True)
 
 class NetworkProfile(model_base.BASEV2, models_v2.HasId):
 
