@@ -45,3 +45,11 @@ N1KV_PROFILE = 'n1kv:profile'
 POLICY = 'policy'
 
 TENANT_ID_NOT_SET = 'TENANT_ID_NOT_SET'
+
+#Values for MD5 hashes
+MD5_HASHES = 'md5_hashes'
+NETWORK_PROFILE_MD5 = 'network_profile_md5'
+NETWORK_MD5 = 'network_md5'
+SUBNET_MD5 = 'subnet_md5'
+PORT_MD5 = 'port_md5'
+CONSOLIDATED_MD5 = 'consolidated_md5'

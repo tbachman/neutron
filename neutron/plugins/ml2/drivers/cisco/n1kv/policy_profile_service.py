@@ -22,6 +22,7 @@ from neutron.api import extensions
 import neutron.db.api as db
 from neutron.db import common_db_mixin as base_db
 from neutron.openstack.common import excutils
+from neutron.openstack.common.gettextutils import _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.drivers.cisco import n1kv
 from neutron.plugins.ml2.drivers.cisco.n1kv import config  # noqa
@@ -122,7 +123,8 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
             return self._get_profile_binding(db_session, tenant_id, profile_id)
 
         with db_session.begin(subtransactions=True):
-            binding = n1kv_models.ProfileBinding(profile_type=n1kv_const.POLICY,
+            binding = n1kv_models.ProfileBinding(profile_type=n1kv_const.
+                                                 POLICY,
                                                  profile_id=profile_id,
                                                  tenant_id=tenant_id)
             db_session.add(binding)
@@ -164,7 +166,8 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
             a_set = set(i.profile_id for i in a_set_q)
             b_set_q = (db_session.query(n1kv_models.ProfileBinding).
                        filter(sql.and_(n1kv_models.ProfileBinding.
-                                       tenant_id != n1kv_const.TENANT_ID_NOT_SET,
+                                       tenant_id != n1kv_const.
+                                       TENANT_ID_NOT_SET,
                                        n1kv_models.ProfileBinding.
                                        profile_type == n1kv_const.POLICY)))
             b_set = set(i.profile_id for i in b_set_q)
@@ -316,10 +319,10 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
                         if not n1kv_db.policy_profile_in_use(pid):
                             self._remove_policy_profile(pid, vsm_ip)
                         else:
-                            LOG.warning('Policy profile %s in use', pid)
+                            LOG.warning(_LW('Policy profile %s in use'), pid)
             except (n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
                 with excutils.save_and_reraise_exception(reraise=False):
-                    LOG.warning('No policy profile populated from VSM')
+                    LOG.warning(_LW('No policy profile populated from VSM'))
 
     def get_policy_profiles(self, context, filters=None, fields=None):
         """Return Cisco N1KV policy profiles."""

@@ -106,7 +106,7 @@ class Client(object):
     bridge_domains_path = "/kvm/bridge-domain"
     bridge_domain_path = "/kvm/bridge-domain/%s"
     logical_network_path = "/logical-network/%s"
-    md5_path = "/nsm-md5-hashes"
+    md5_path = "/kvm/config-md5-hashes"
 
     pool = eventlet.GreenPool(cfg.CONF.ml2_cisco_n1kv.http_pool_size)
 
@@ -475,7 +475,7 @@ class Client(object):
 
         :return: authorization header dict
         """
-        auth = base64.encodestring("%s:%s" % 
+        auth = base64.encodestring("%s:%s" %
                                    (self.n1kv_vsm[vsm_ip]['username'],
                                    self.n1kv_vsm[vsm_ip]['password'])).rstrip()
         return {"Authorization": "Basic %s" % auth}

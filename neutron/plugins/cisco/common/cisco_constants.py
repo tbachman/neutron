@@ -116,11 +116,3 @@ CFG_AGENT_L3_ROUTING = 'cisco_cfg_agent_l3_routing'
 # Values for network profile fields
 ADD_TENANTS = 'add_tenants'
 REMOVE_TENANTS = 'remove_tenants'
-
-#Values for MD5 hashes
-MD5_HASHES = 'md5_hashes'
-NETWORK_PROFILE_MD5 = 'network_profile_md5'
-NETWORK_MD5 = 'network_md5'
-SUBNET_MD5 = 'subnet_md5'
-PORT_MD5 = 'port_md5'
-CONSOLIDATED_MD5 = 'consolidated_md5'

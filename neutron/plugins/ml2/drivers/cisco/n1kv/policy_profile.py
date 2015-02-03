@@ -108,7 +108,7 @@ class PolicyProfilePluginBase(sb.ServicePluginBase):
 
     @abc.abstractmethod
     def get_policy_profile(self, context, profile_id, fields=None):
-        pass 
+        pass
 
     @abc.abstractmethod
     def get_policy_profile_bindings(self, context, filters=None, fields=None):

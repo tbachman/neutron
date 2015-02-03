@@ -17,13 +17,16 @@
 ML2 Mechanism Driver for Cisco Nexus1000V distributed virtual switches.
 """
 
+import eventlet
+
 from oslo.config import cfg
 
 from neutron.common import constants as n_const
 from neutron.common import exceptions as n_exc
+from neutron.db import db_base_plugin_v2
 from neutron.extensions import portbindings
 from neutron.openstack.common import excutils
-from neutron.openstack.common.gettextutils import _LE, _LI, _LW
+from neutron.openstack.common.gettextutils import _LE, _LI
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -34,8 +37,6 @@ from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_client
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_db
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_sync
-from neutron.db import db_base_plugin_v2
-import eventlet
 
 LOG = log.getLogger(__name__)
 
@@ -45,7 +46,8 @@ class N1KVMechanismDriver(api.MechanismDriver):
     def initialize(self):
         self.n1kvclient = n1kv_client.Client()
 
-        self.sync_obj = n1kv_sync.N1kvSyncDriver(db_base_plugin_v2.NeutronDbPluginV2())
+        self.sync_obj = n1kv_sync.N1kvSyncDriver(db_base_plugin_v2.
+                                                 NeutronDbPluginV2())
 
         eventlet.spawn(self.sync_obj.do_sync)
 
@@ -273,7 +275,6 @@ class N1KVMechanismDriver(api.MechanismDriver):
     def delete_port_postcommit(self, context):
         """Send delete port notification to the VSM."""
         port = context.current
-        session = context._plugin_context.session
         profile_id = port[n1kv_const.N1KV_PROFILE]
         vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
                                       profile_id,
