@@ -24,6 +24,7 @@ import netaddr
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron.common import exceptions
+from neutron.common import utils as n_utils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services.loadbalancer import constants as lb_const
@@ -73,9 +74,12 @@ class HaproxyNSDriver(object):
         # remember the pool<>port mapping
         self.pool_to_port_id[pool_id] = logical_config['vip']['port']['id']
 
-    def destroy(self, pool_id):
+    # fix git conflict
+    # def destroy(self, pool_id):
+    @n_utils.synchronized('haproxy-driver')
+    def destroy(self, pool_id, cleanup_namespace=False,
+                          delete_namespace=False):
         namespace = get_ns_name(pool_id)
-        ns = ip_lib.IPWrapper(self.root_helper, namespace)
         pid_path = self._get_state_file_path(pool_id, 'pid')
 
         # kill the process
@@ -85,11 +89,21 @@ class HaproxyNSDriver(object):
         if pool_id in self.pool_to_port_id:
             self._unplug(namespace, self.pool_to_port_id[pool_id])
 
+        # delete all devices from namespace;
+        # used when deleting orphans and port_id is not known for pool_id
+        if cleanup_namespace:
+            ns = ip_lib.IPWrapper(self.root_helper, namespace)
+            for device in ns.get_devices(exclude_loopback=True):
+                self.vif_driver.unplug(device.name, namespace=namespace)
+
         # remove the configuration directory
         conf_dir = os.path.dirname(self._get_state_file_path(pool_id, ''))
         if os.path.isdir(conf_dir):
             shutil.rmtree(conf_dir)
-        ns.garbage_collect_namespace()
+
+        if delete_namespace:
+            ns = ip_lib.IPWrapper(self.root_helper, namespace)
+            ns.garbage_collect_namespace()
 
     def exists(self, pool_id):
         namespace = get_ns_name(pool_id)
@@ -225,6 +239,95 @@ class HaproxyNSDriver(object):
         self.vip_plug_callback('unplug', port_stub)
         interface_name = self.vif_driver.get_device_name(Wrap(port_stub))
         self.vif_driver.unplug(interface_name, namespace=namespace)
+
+    def _is_active(self, logical_config):
+        # haproxy wil be unable to start without any active vip
+        if ('vip' not in logical_config or
+                (logical_config['vip']['status'] not in
+                 constants.ACTIVE_PENDING_STATUSES) or
+                not logical_config['vip']['admin_state_up']):
+            return False
+
+        # not checking pool's admin_state_up to utilize haproxy ability to
+        # turn backend off instead of doing undeploy.
+        # in this case "ERROR 503: Service Unavailable" will be returned
+        if (logical_config['pool']['status'] not in
+                constants.ACTIVE_PENDING_STATUSES):
+            return False
+
+        return True
+
+    @n_utils.synchronized('haproxy-driver')
+    def deploy_instance(self, logical_config):
+        """Deploys loadbalancer if necessary
+
+        :return: True if loadbalancer was deployed, False otherwise
+        """
+        # do actual deploy only if vip and pool are configured and active
+        if not logical_config or not self._is_active(logical_config):
+            return False
+
+        if self.exists(logical_config['pool']['id']):
+            self.update(logical_config)
+        else:
+            self.create(logical_config)
+        return True
+
+    def _refresh_device(self, pool_id):
+        logical_config = self.plugin_rpc.get_logical_device(pool_id)
+        # cleanup if the loadbalancer wasn't deployed (in case nothing to
+        # deploy or any errors)
+        if not self.deploy_instance(logical_config) and self.exists(pool_id):
+            self.undeploy_instance(pool_id)
+
+    def create_vip(self, vip):
+        self._refresh_device(vip['pool_id'])
+
+    def update_vip(self, old_vip, vip):
+        self._refresh_device(vip['pool_id'])
+
+    def delete_vip(self, vip):
+        self.undeploy_instance(vip['pool_id'])
+
+    def create_pool(self, pool):
+        # nothing to do here because a pool needs a vip to be useful
+        pass
+
+    def update_pool(self, old_pool, pool):
+        self._refresh_device(pool['id'])
+
+    def delete_pool(self, pool):
+        if self.exists(pool['id']):
+            self.undeploy_instance(pool['id'], delete_namespace=True)
+
+    def create_member(self, member):
+        self._refresh_device(member['pool_id'])
+
+    def update_member(self, old_member, member):
+        self._refresh_device(member['pool_id'])
+
+    def delete_member(self, member):
+        self._refresh_device(member['pool_id'])
+
+    def create_pool_health_monitor(self, health_monitor, pool_id):
+        self._refresh_device(pool_id)
+
+    def update_pool_health_monitor(self, old_health_monitor, health_monitor,
+                                   pool_id):
+        self._refresh_device(pool_id)
+
+    def delete_pool_health_monitor(self, health_monitor, pool_id):
+        self._refresh_device(pool_id)
+
+    def remove_orphans(self, known_pool_ids):
+        if not os.path.exists(self.state_path):
+            return
+
+        orphans = (pool_id for pool_id in os.listdir(self.state_path)
+                   if pool_id not in known_pool_ids)
+        for pool_id in orphans:
+            if self.exists(pool_id):
+                self.undeploy_instance(pool_id, cleanup_namespace=True)
 
 
 # NOTE (markmcclain) For compliance with interface.py which expects objects

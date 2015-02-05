@@ -241,7 +241,7 @@ class LbaasAgentManager(periodic_task.PeriodicTasks):
         if not device:
             return
         try:
-            self.driver.destroy(pool_id)
+            self.driver.destroy(pool_id, delete_namespace=True)
             self.plugin_rpc.pool_destroyed(pool_id)
         except Exception:
             LOG.exception(_('Unable to destroy device for pool: %s'), pool_id)
