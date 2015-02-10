@@ -223,3 +223,14 @@ class CiscoNexusDriver(object):
             confstr = snipp.CMD_NO_NAT_RULE_SNIPPET % (ip, floatingip)
             confstr = self.create_xml_snippet(confstr)
             self._edit_config(nexus_host, target='running', config=confstr)
+
+    def add_vrf_gateway(self, nexus_host, vrf_id, gateway_ip):
+        confstr = snipp.CMD_VRF_DEFAULT_GATEWAY_SNIPPET % (vrf_id, gateway_ip)
+        confstr = self.create_xml_snippet(confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)
+
+    def del_vrf_gateway(self, nexus_host, vrf_id, gateway_ip):
+        confstr = snipp.CMD_NO_VRF_DEFAULT_GATEWAY_SNIPPET % (vrf_id,
+                                                              gateway_ip)
+        confstr = self.create_xml_snippet(confstr)
+        self._edit_config(nexus_host, target='running', config=confstr)

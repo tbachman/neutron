@@ -15,6 +15,7 @@
 #
 
 import mock
+from collections import namedtuple
 
 from neutron import context
 from neutron.extensions import portbindings
@@ -31,8 +32,10 @@ ROUTER = 'router1'
 SUBNET = 'subnet1'
 NETWORK = 'network1'
 NETWORK_NAME = 'one_network'
+EXTERNAL_NETWORK = 'extnet'
 SUBNET_GATEWAY = '10.3.2.1'
 SUBNET_CIDR = '10.3.1.0/24'
+ROUTER_EXTERNAL_GATEWAYS = ('192.168.1.1',)
 FLOATING_IP_ADDRESS = '172.0.0.1'
 VLAN = 100
 
@@ -50,8 +53,9 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
                                'gateway_ip': SUBNET_GATEWAY,
                                'cidr': SUBNET_CIDR}
         self.router = {'router': {'name': ROUTER,
-                                  'id': 'abcdef-router',
-                                  'admin_state_up': True}}
+                                  'admin_state_up': True,
+                                 }
+                      }
         self.floatingip = {'floatingip': 
                             {'id':'abcdef',
                              'floating_ip_address': FLOATING_IP_ADDRESS,
@@ -98,6 +102,16 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
         self.plugin.get_port = mock.Mock(return_value=self.ports[0])
         self.plugin.get_floatingip = mock.Mock(
             return_value=self.floatingip.get('floatingip'))
+        self.plugin._get_router_gateways = mock.Mock(
+            return_value=ROUTER_EXTERNAL_GATEWAYS)
+
+        testclass = namedtuple('testclass', 'switch_ip gateway_ip')
+        testobj = testclass(switch_ip=ROUTER_EXTERNAL_GATEWAYS[0], 
+                            gateway_ip='1.1.1.1')
+
+        mock.patch.object(nxdb,
+                          'get_nexus_vrf_bindings',
+                          return_value = (testobj,)).start()
 
         mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
                    'add_router_interface').start()
@@ -105,6 +119,8 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
                    'remove_router_interface').start()
         mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
                    'update_floatingip').start()
+        mock.patch('neutron.db.l3_gwmode_db.L3_NAT_db_mixin.'
+                   'update_router').start()
         mock.patch('neutron.openstack.common.excutils.'
                    'save_and_reraise_exception').start()
 
@@ -185,4 +201,33 @@ class TestCiscoNexusL3Plugin(test_db_plugin.NeutronDbPluginV2TestCase,
             self.assertTrue(
                 self._check_xml_keywords(
                     [FLOATING_IP_ADDRESS],
+                    driver._edit_config.mock_calls[0][2]['config']))
+
+    def test_update_router_with_external_gateway(self):
+        driver = self.plugin.driver
+
+        db_router = self.plugin.create_router(self.context, self.router)
+        router_id = db_router.get('id')
+        vrf_id = nxdb.get_nexus_vrf(self.context.session,
+                                    router_id).get('vrf_id')
+        self.router['router']['external_gateway_info'] = {
+            'network_id': EXTERNAL_NETWORK
+        }
+        self.plugin.update_router(self.context, router_id, self.router)
+        self.assertTrue(
+                self._check_xml_keywords(
+                    [vrf_id, ROUTER_EXTERNAL_GATEWAYS[0]],
+                    driver._edit_config.mock_calls[0][2]['config']))
+
+    def test_update_router_without_external_gateway(self):
+        driver = self.plugin.driver
+
+        db_router = self.plugin.create_router(self.context, self.router)
+        router_id = db_router.get('id')
+        vrf_id = nxdb.get_nexus_vrf(self.context.session,
+                                    router_id).get('vrf_id')
+        self.plugin.update_router(self.context, router_id, self.router)
+        self.assertTrue(
+                self._check_xml_keywords(
+                    [vrf_id, ROUTER_EXTERNAL_GATEWAYS[0]],
                     driver._edit_config.mock_calls[0][2]['config']))

@@ -64,3 +64,4 @@ class NexusVRFBinding(model_base.BASEV2):
                                      ondelete='CASCADE'),
                         nullable=False, primary_key=True)
     switch_ip = sa.Column(sa.String(255), nullable=False, primary_key=True)
+    gateway_ip = sa.Column(sa.String(255), nullable=False, default=False)

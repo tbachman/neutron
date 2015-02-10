@@ -181,12 +181,13 @@ def get_nexus_vrf(session, router_id):
 
     return binding
 
-def add_nexus_vrf_binding(session, vrf_id, switch_ip):
+def add_nexus_vrf_binding(session, vrf_id, switch_ip, gateway_ip=None):
     if session is None:
         session = db.get_session()
 
     binding = nexus_models_v2.NexusVRFBinding(vrf_id=vrf_id,
-                                              switch_ip = switch_ip)
+                                              switch_ip=switch_ip,
+                                              gateway_ip=gateway_ip)
     session.add(binding)
     session.flush()
 
@@ -214,3 +215,19 @@ def get_nexus_vrf_binding(session, vrf_id, switch_ip):
 
     return session.query(nexus_models_v2.NexusVRFBinding).filter_by(
         vrf_id=vrf_id, switch_ip=switch_ip).first()
+
+def add_nexus_vrf_binding_gateway(session, vrf_id, switch_ip, gateway_ip):
+    if session is None:
+        session = db.get_session()
+    binding = get_nexus_vrf_binding(session, vrf_id, switch_ip)
+    binding.gateway_ip = gateway_ip
+    session.merge(binding)
+    session.flush()
+
+def del_nexus_vrf_binding_gateway(session, vrf_id, switch_ip):
+    if session is None:
+        session = db.get_session()
+    binding = get_nexus_vrf_binding(session, vrf_id, switch_ip)
+    binding.gateway_ip = None
+    session.merge(binding)
+    session.flush()

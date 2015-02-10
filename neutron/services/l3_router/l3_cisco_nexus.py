@@ -76,8 +76,26 @@ class CiscoNexusL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return db_router
 
     def update_router(self, context, id, router):
-        return super(CiscoNexusL3ServicePlugin, self).update_router(context,
-                                                               id, router)
+        # Get the vrf corresponding to this router
+        db_router = nxdb.get_nexus_vrf(context.session, id)
+        vrf_id = db_router.vrf_id
+        # Get all bindings for this VRF
+        bindings = nxdb.get_nexus_vrf_bindings(context.session, vrf_id)
+        gateways = self._get_router_gateways(context, router['router'])
+        if gateways:
+            for gateway in gateways:
+                for binding in bindings:
+                    self.driver.add_vrf_gateway(binding.switch_ip,
+                                                vrf_id, gateway)
+        else:
+            for binding in bindings:
+                self.driver.del_vrf_gateway(binding.switch_ip, vrf_id,
+                                            binding.gateway_ip)
+                nxdb.del_nexus_vrf_binding_gateway(
+                    context.session, vrf_id, binding.switch_ip)
+        return super(CiscoNexusL3ServicePlugin, self).update_router(
+            context, id, router)
+
 
     def delete_router(self, context, id):
         # Get VRF associated
@@ -85,7 +103,8 @@ class CiscoNexusL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Delete on switches
         
         nxdb.delete_nexus_vrf(context.session, nx_db_vrf['vrf_id'])
-        return super(CiscoNexusL3ServicePlugin, self).delete_router(context, id)
+        return super(CiscoNexusL3ServicePlugin, self).delete_router(
+            context, id)
 
     def add_router_interface(self, context, router_id, interface_info):
         result = super(CiscoNexusL3ServicePlugin, self).add_router_interface(
@@ -101,11 +120,28 @@ class CiscoNexusL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return result
 
+    def _get_router_gateways(self, context, router):
+        ext_gw = router['external_gateway_info']
+        gateways = []
+        if ext_gw:
+            net_id = ext_gw['network_id']
+            net = self.get_network(context, net_id)
+            for subnet in net['subnets']:
+                subnet = self.get_subnet(context, subnet)
+                gateways.append(subnet.get('gateway_ip'))
+            return gateways
+        else:
+            return []
+
     def _create_vrf(self, context, router_id, port):
         db_router = nxdb.get_nexus_vrf(context.session, router_id)
+        router = self.get_router(context, router_id)
+        gateways = self._get_router_gateways(context, router)
         vrf_id = db_router.vrf_id
         host_id = port.get(portbindings.HOST_ID)
         owner = port.get('device_owner')
+        router = self.get_router(context, router_id)
+
         if host_id and owner=='compute:None':
             # Get switch connections for this host
             connections = self._get_switch_info(host_id)
@@ -116,6 +152,11 @@ class CiscoNexusL3ServicePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     self.driver.create_vrf(connection[0], vrf_id)
                     nxdb.add_nexus_vrf_binding(context.session, vrf_id,
                                                connection[0])
+                    for gateway in gateways:
+                        self.driver.add_vrf_gateway(connection[0],
+                                                    vrf_id, gateway)
+                        nxdb.add_nexus_vrf_binding_gateway(
+                            context.session, vrf_id, connection[0], gateway)
 
     def _create_floatingip(self, context, port, floating_ip):
         host_id = port.get(portbindings.HOST_ID)
