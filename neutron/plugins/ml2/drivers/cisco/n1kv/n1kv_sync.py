@@ -23,6 +23,7 @@ import neutron.db.api as db
 from neutron.extensions import providernet
 from neutron.openstack.common.gettextutils import _LW
 from neutron.openstack.common import log
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import constants as n1kv_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
 from neutron.plugins.ml2.drivers.cisco.n1kv import n1kv_client
@@ -58,31 +59,36 @@ class N1kvSyncDriver():
         '''
         while True:
             try:
-                self._md5_hash_comparison()
-                create_res_order = [NETWORK_PROFILES, NETWORKS, SUBNETS, PORTS]
-                vsm_neutron_res_info_combined = {}
-                for res in create_res_order:
-                    if self.sync_resource[res]:
-                        if res == PORTS:
-                            vsm_res_uuids = self._get_vsm_resource(VMNETWORKS)
-                        else:
-                            vsm_res_uuids = set(self._get_vsm_resource(res))
-                        neutron_res_info = self._get_neutron_resource(res)
-                        vsm_neutron_res_info_combined[res] = (vsm_res_uuids,
-                                                              neutron_res_info)
-                for res in create_res_order:
-                    if self.sync_resource[res]:
-                        getattr(self, '_sync_create_%s' % res)(
-                            vsm_neutron_res_info_combined[res])
-                for res in reversed(create_res_order):
-                    if self.sync_resource[res]:
-                        getattr(self, '_sync_delete_%s' % res)(
-                            vsm_neutron_res_info_combined[res])
-            except n1kv_exc.VSMConnectionFailed:
+                vsm_hosts = self.n1kvclient.get_vsm_hosts()
+                for vsm_ip in vsm_hosts:
+                    self._md5_hash_comparison(vsm_ip)
+                    create_res_order = [NETWORK_PROFILES, NETWORKS, SUBNETS,
+                                        PORTS]
+                    vsm_neutron_res_info_combined = {}
+                    for res in create_res_order:
+                        if self.sync_resource[res]:
+                            if res == PORTS:
+                                vsm_res_uuids = self._get_vsm_resource(
+                                    VMNETWORKS, vsm_ip)
+                            else:
+                                vsm_res_uuids = set(self._get_vsm_resource(
+                                    res, vsm_ip))
+                            neutron_res_info = self._get_neutron_resource(res)
+                            vsm_neutron_res_info_combined[res] = (
+                                vsm_res_uuids, neutron_res_info)
+                    for res in create_res_order:
+                        if self.sync_resource[res]:
+                            getattr(self, '_sync_create_%s' % res)(
+                                vsm_neutron_res_info_combined[res], vsm_ip)
+                    for res in reversed(create_res_order):
+                        if self.sync_resource[res]:
+                            getattr(self, '_sync_delete_%s' % res)(
+                                vsm_neutron_res_info_combined[res], vsm_ip)
+            except n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError:
                 LOG.warning(_LW('Sync thread exception: VSM unreachable'))
             eventlet.sleep(seconds=self.sync_sleep_duration)
 
-    def _md5_hash_comparison(self):
+    def _md5_hash_comparison(self, vsm_ip):
         '''
         Fetches, computes and compares md5 hashes for VSM and neutron;
         then decides for which object the sync should be triggered
@@ -91,7 +97,7 @@ class N1kvSyncDriver():
         '''
         # get md5 hashes from VSM here
         vsm_md5_dict = {}
-        vsm_md5 = self._get_vsm_resource('md5_hashes')
+        vsm_md5 = self._get_vsm_resource('md5_hashes', vsm_ip)
         vsm_md5_properties = vsm_md5[n1kv_const.MD5_HASHES][
             n1kv_const.PROPERTIES]
         vsm_md5_dict[NETWORK_PROFILES] = vsm_md5_properties[
@@ -123,7 +129,7 @@ class N1kvSyncDriver():
                     self.sync_resource[res] = False
         else:
             self.sync_resource = {res: False for res in resources}
-            LOG.debug(_("State in sync."))
+            LOG.debug(("State in sync for vsm_ip: %s") % vsm_ip)
 
     def _compute_resource_md5(self, uuids):
         '''
@@ -161,7 +167,7 @@ class N1kvSyncDriver():
         '''
         return getattr(n1kv_db, 'get_%s' % res)(self.db_base_plugin)
 
-    def _get_vsm_resource(self, res):
+    def _get_vsm_resource(self, res, vsm_ip):
         '''
         Fetches the UUIDs for the specified resource from VSM
 
@@ -170,9 +176,9 @@ class N1kvSyncDriver():
 
         :return: list of UUIDs for res
         '''
-        return getattr(self.n1kvclient, 'list_%s' % res)()
+        return getattr(self.n1kvclient, 'list_%s' % res)(vsm_ip)
 
-    def _sync_create_network_profiles(self, combined_res_info):
+    def _sync_create_network_profiles(self, combined_res_info, vsm_ip):
         '''
         Sync network profiles by creating missing ones on VSM
 
@@ -183,12 +189,12 @@ class N1kvSyncDriver():
             if np_obj.id not in vsm_net_profile_uuids:
                 # create these network profiles on VSM
                 try:
-                    self.n1kvclient.create_network_segment_pool(np_obj)
+                    self.n1kvclient.create_network_segment_pool(np_obj, vsm_ip)
                 except n1kv_exc.VSMError as e:
                     LOG.warning(_LW('Sync Exception: Network profile creation '
                                 'on VSM failed: %s'), e.message)
 
-    def _sync_delete_network_profiles(self, combined_res_info):
+    def _sync_delete_network_profiles(self, combined_res_info, vsm_ip):
         '''
         Sync network profiles by deleting extraneous ones from VSM
 
@@ -200,12 +206,13 @@ class N1kvSyncDriver():
         for np_id in vsm_net_profile_uuids - neutron_net_profile_uuids:
             # delete these network profiles from VSM
             try:
-                self.n1kvclient.delete_network_segment_pool(np_id)
+                self.n1kvclient.delete_network_segment_pool(np_id,
+                                                            vsm_ip=vsm_ip)
             except n1kv_exc.VSMError as e:
                 LOG.warning(_LW('Sync Exception: Network profile deletion on '
                             'VSM failed: %s'), e.message)
 
-    def _sync_create_networks(self, combined_res_info):
+    def _sync_create_networks(self, combined_res_info, vsm_ip):
         '''
         Sync networks by creating missing ones on VSM
 
@@ -222,12 +229,13 @@ class N1kvSyncDriver():
                 # create these networks on VSM
                 try:
                     self.n1kvclient.create_network_segment(network,
-                                                           network_profile)
+                                                           network_profile,
+                                                           vsm_ip)
                 except n1kv_exc.VSMError as e:
                     LOG.warning(_LW('Sync Exception: Network creation on VSM '
                                 'failed: %s'), e.message)
 
-    def _sync_delete_networks(self, combined_res_info):
+    def _sync_delete_networks(self, combined_res_info, vsm_ip):
         '''
         Sync networks by deleting extraneous ones from VSM
 
@@ -237,15 +245,20 @@ class N1kvSyncDriver():
         neutron_net_uuids = set(self._get_uuids(NETWORKS, neutron_nets))
         for net_id in vsm_net_uuids - neutron_net_uuids:
             # delete these networks from VSM
-            vsm_net = self.n1kvclient.show_network(net_id)
+            vsm_net = self.n1kvclient.show_network(net_id, vsm_ip=vsm_ip)
             try:
+                if (vsm_net[net_id][n1kv_const.PROPERTIES]
+                    ['segmentType']) == "BridgeDomain":
+                    (vsm_net[net_id][n1kv_const.PROPERTIES]
+                    ['segmentType']) = p_const.TYPE_VXLAN
                 self.n1kvclient.delete_network_segment(net_id,
-                        vsm_net[net_id][n1kv_const.PROPERTIES]['segmentType'])
+                        vsm_net[net_id][n1kv_const.PROPERTIES][
+                            'segmentType'], vsm_ip=vsm_ip)
             except n1kv_exc.VSMError as e:
                 LOG.warning(_LW('Sync Exception: Network deletion on VSM '
                             'failed: %s'), e.message)
 
-    def _sync_create_subnets(self, combined_res_info):
+    def _sync_create_subnets(self, combined_res_info, vsm_ip):
         '''
         Sync subnets by creating missing ones on VSM
 
@@ -255,12 +268,12 @@ class N1kvSyncDriver():
         for subnet in neutron_subnets:
             if subnet['id'] not in vsm_subnet_uuids:
                 try:
-                    self.n1kvclient.create_ip_pool(subnet)
+                    self.n1kvclient.create_ip_pool(subnet, vsm_ip=vsm_ip)
                 except n1kv_exc.VSMError as e:
                     LOG.warning(_LW('Sync Exception: Subnet creation on VSM '
                                 'failed: %s'), e.message)
 
-    def _sync_delete_subnets(self, combined_res_info):
+    def _sync_delete_subnets(self, combined_res_info, vsm_ip):
         '''
         Sync subnets by deleting extraneous ones from VSM
 
@@ -271,12 +284,12 @@ class N1kvSyncDriver():
         for sub_id in vsm_subnet_uuids - neutron_subnet_uuids:
             # delete these subnets from the VSM
             try:
-                self.n1kvclient.delete_ip_pool(sub_id)
+                self.n1kvclient.delete_ip_pool(sub_id, vsm_ip=vsm_ip)
             except n1kv_exc.VSMError as e:
                 LOG.warning(_LW('Sync Exception: Subnet deletion on VSM '
                             'failed: %s'), e.message)
 
-    def _sync_create_ports(self, combined_res_info):
+    def _sync_create_ports(self, combined_res_info, vsm_ip):
         '''
         Sync ports by creating missing ones on VSM
 
@@ -301,12 +314,13 @@ class N1kvSyncDriver():
                                               network_uuid)
                 try:
                     self.n1kvclient.create_n1kv_port(port, vmnetwork_name,
-                                                     policy_profile)
+                                                     policy_profile,
+                                                     vsm_ip=vsm_ip)
                 except n1kv_exc.VSMError as e:
                     LOG.warning(_LW('Sync Exception: Port creation on VSM '
                                 'failed: %s'), e.message)
 
-    def _sync_delete_ports(self, combined_res_info):
+    def _sync_delete_ports(self, combined_res_info, vsm_ip):
         '''
         Sync ports by deleting extraneous ones from VSM
 
@@ -327,7 +341,8 @@ class N1kvSyncDriver():
                     # delete these ports from VSM
                     try:
                         self.n1kvclient.delete_n1kv_port(vmnetwork_name,
-                                                         port_id)
+                                                         port_id,
+                                                         vsm_ip=vsm_ip)
                     except n1kv_exc.VSMError as e:
                         LOG.warning(_LW('Sync Exception: Port deletion on VSM '
                                     'failed: %s'), e.message)

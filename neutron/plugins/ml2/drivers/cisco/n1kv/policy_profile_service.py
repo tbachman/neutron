@@ -80,9 +80,6 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         tenant_id = tenant_id or n1kv_const.TENANT_ID_NOT_SET
         if not self._policy_profile_exists(policy_profile_id, vsm_ip):
             self._create_policy_profile(policy_profile_id, name, vsm_ip)
-        self._create_profile_binding(None,
-                                     tenant_id,
-                                     policy_profile_id)
 
     def _get_policy_profiles(self):
         """Retrieve all policy profiles."""
@@ -113,6 +110,8 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         if pprofile:
             db_session.delete(pprofile)
             db_session.flush()
+        if not self._check_policy_profile_on_any_vsm(pprofile_id, db_session):
+            self._delete_profile_binding(db_session, pprofile_id)
 
     def _create_profile_binding(self, db_session, tenant_id, profile_id):
         """Create Policy Profile association with a tenant."""
@@ -149,6 +148,22 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
         """Get all Policy Profile - Tenant bindings."""
         return (db_session.query(n1kv_models.ProfileBinding).
                 filter_by(profile_type=n1kv_const.POLICY))
+
+    def _delete_profile_binding(self, db_session, profile_id, tenant_id=None):
+        """Delete Profile Binding."""
+        db_session = db_session or db.get_session()
+        try:
+            with db_session.begin(subtransactions=True):
+                if tenant_id:
+                    bindings = self._get_profile_binding(db_session, tenant_id,
+                                                         profile_id)
+                else:
+                    bindings = (db_session.query(n1kv_models.ProfileBinding).
+                                filter_by(profile_id=profile_id).all())
+                if bindings:
+                    db_session.delete(bindings)
+        except exc.NoResultFound:
+            raise n1kv_exc.ProfileTenantBindingNotFound(profile_id=profile_id)
 
     def _remove_all_fake_policy_profiles(self):
         """
@@ -247,9 +262,15 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
     def _check_policy_profile_on_all_vsm(self, id, db_session=None):
         """Checks if port profile is present on all VSM"""
         db_session = db_session or db.get_session()
-        vsm_count = len(self.n1kvclient._get_vsm_hosts())
+        vsm_count = len(self.n1kvclient.get_vsm_hosts())
         return (db_session.query(n1kv_models.PolicyProfile).
                 filter_by(id=id).count() == vsm_count)
+
+    def _check_policy_profile_on_any_vsm(self, profile_id, db_session=None):
+        """Checks if policy profile is present on any VSM"""
+        db_session = db_session or db.get_session()
+        return (db_session.query(n1kv_models.PolicyProfile).
+                filter_by(id=profile_id).count())
 
     def get_policy_profile_bindings(self, context, filters=None, fields=None):
         """
@@ -291,7 +312,7 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
 
     def _populate_policy_profiles(self):
         """Populate all the policy profiles from VSM."""
-        hosts = self.n1kvclient._get_vsm_hosts()
+        hosts = self.n1kvclient.get_vsm_hosts()
         for vsm_ip in hosts:
             try:
                 policy_profiles = self.n1kvclient.list_port_profiles(vsm_ip)

@@ -118,9 +118,15 @@ class Client(object):
         self.format = 'json'
 
         # Extract configuration parameters from the configuration file.
-        self.n1kv_vsm = (config.ML2CiscoN1kvConfig()).get_n1kv_dict()
+        self.n1kv_vsm_ips = cfg.CONF.ml2_cisco_n1kv.n1kv_vsm_ips
+        self.username = cfg.CONF.ml2_cisco_n1kv.username
+        self.password = cfg.CONF.ml2_cisco_n1kv.password
         self.action_prefix = 'http://%s/api/n1k'
         self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
+        required_opts = ('n1kv_vsm_ips', 'username', 'password')
+        for opt in required_opts:
+            if not getattr(self, opt):
+                raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')
 
     def list_port_profiles(self, vsm_ip=None):
         """Fetch all policy profiles from the VSM.
@@ -129,39 +135,39 @@ class Client(object):
         """
         return self._get(self.port_profiles_path, vsm_ip=vsm_ip)
 
-    def list_network_profiles(self):
+    def list_network_profiles(self, vsm_ip=None):
         '''
         Fetch all network profiles from VSM.
 
         :return: JSON string
         '''
-        return self._get(self.network_segment_pools_path)
+        return self._get(self.network_segment_pools_path, vsm_ip=vsm_ip)
 
-    def list_networks(self):
+    def list_networks(self, vsm_ip=None):
         '''
         Fetch all networks from VSM.
 
         :return: JSON string
         '''
-        return self._get(self.network_segments_path)
+        return self._get(self.network_segments_path, vsm_ip=vsm_ip)
 
-    def list_subnets(self):
+    def list_subnets(self, vsm_ip=None):
         '''
         Fetch all subnets from VSM.
 
         :return: JSON string
         '''
-        return self._get(self.ip_pools_path)
+        return self._get(self.ip_pools_path, vsm_ip=vsm_ip)
 
-    def list_vmnetworks(self):
+    def list_vmnetworks(self, vsm_ip=None):
         '''
         Fetch all VM networks from VSM.
 
         :return: JSON string
         '''
-        return self._get(self.vm_networks_path)
+        return self._get(self.vm_networks_path, vsm_ip=vsm_ip)
 
-    def list_md5_hashes(self):
+    def list_md5_hashes(self, vsm_ip=None):
         '''
         Fetch MD5 hashes for network profiles, networks, subnets,
         ports and a consolidated hash of these hashes from the
@@ -169,9 +175,9 @@ class Client(object):
 
         :return: JSON string
         '''
-        return self._get(self.md5_path)
+        return self._get(self.md5_path, vsm_ip=vsm_ip)
 
-    def show_network(self, network_id):
+    def show_network(self, network_id, vsm_ip=None):
         '''
         Fetch details of a given network like segment type from the VSM
 
@@ -179,9 +185,9 @@ class Client(object):
 
         :return: JSON string
         '''
-        return self._get(self.network_segment_path % network_id)
+        return self._get(self.network_segment_path % network_id, vsm_ip=vsm_ip)
 
-    def _create_logical_network(self, network_profile):
+    def _create_logical_network(self, network_profile, vsm_ip=None):
         """Create a logical network on the VSM.
 
         :param network_profile: network profile dict
@@ -190,7 +196,7 @@ class Client(object):
         logical_network_name = (network_profile.id +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
         return self._post(self.logical_network_path % logical_network_name,
-                          body=body)
+                          body=body, vsm_ip=vsm_ip)
 
     def _delete_logical_network(self, logical_network_name):
         """Delete a logical network on VSM.
@@ -201,12 +207,12 @@ class Client(object):
         return self._delete(
             self.logical_network_path % logical_network_name)
 
-    def create_network_segment_pool(self, network_profile):
+    def create_network_segment_pool(self, network_profile, vsm_ip=None):
         """Create a network segment pool on the VSM.
 
         :param network_profile: network profile dict
         """
-        self._create_logical_network(network_profile)
+        self._create_logical_network(network_profile, vsm_ip=vsm_ip)
         logical_network_name = (network_profile.id +
                                 n1kv_const.LOGICAL_NETWORK_SUFFIX)
         body = {'name': network_profile.name,
@@ -215,18 +221,19 @@ class Client(object):
                 'logicalNetwork': logical_network_name}
         return self._post(
             self.network_segment_pool_path % network_profile.id,
-            body=body)
+            body=body, vsm_ip=vsm_ip)
 
-    def delete_network_segment_pool(self, network_segment_pool_id):
+    def delete_network_segment_pool(self, network_segment_pool_id,
+                                    vsm_ip=None):
         """Delete a network segment pool on the VSM.
 
         :param network_segment_pool_id: UUID representing the network
                                         segment pool
         """
         return self._delete(self.network_segment_pool_path %
-                            network_segment_pool_id)
+                            network_segment_pool_id, vsm_ip=vsm_ip)
 
-    def create_network_segment(self, network, network_profile):
+    def create_network_segment(self, network, network_profile, vsm_ip=None):
         """Create a network segment on the VSM.
 
         :param network: network dict
@@ -244,18 +251,18 @@ class Client(object):
         elif network[providernet.NETWORK_TYPE] in self.vxlan_types:
             # Create a bridge domain on VSM
             bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
-            self._create_bridge_domain(network)
+            self._create_bridge_domain(network, vsm_ip)
             body['bridgeDomain'] = bd_name
         try:
             return self._post(self.network_segment_path % network['id'],
-                              body=body)
+                              body=body, vsm_ip=vsm_ip)
         except(n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
             with excutils.save_and_reraise_exception():
                 # Clean up the bridge domain from the VSM for VXLAN networks.
                 # Reraise the exception so that caller method executes further
                 # clean up.
                 if network[providernet.NETWORK_TYPE] in self.vxlan_types:
-                    self._delete_bridge_domain(bd_name)
+                    self._delete_bridge_domain(bd_name, vsm_ip)
 
     def update_network_segment(self, updated_network):
         """Update a network segment on the VSM.
@@ -266,7 +273,8 @@ class Client(object):
         return self._post(self.network_segment_path % updated_network['id'],
                           body=body)
 
-    def delete_network_segment(self, network_segment_id, network_type):
+    def delete_network_segment(self, network_segment_id, network_type,
+                               vsm_ip=None):
         """Delete a network segment on the VSM.
 
         :param network_segment_id: UUID representing the network segment
@@ -274,10 +282,11 @@ class Client(object):
         """
         if network_type in self.vxlan_types:
             bd_name = network_segment_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
-            self._delete_bridge_domain(bd_name)
-        return self._delete(self.network_segment_path % network_segment_id)
+            self._delete_bridge_domain(bd_name, vsm_ip=vsm_ip)
+        return self._delete(self.network_segment_path % network_segment_id,
+                            vsm_ip)
 
-    def _create_bridge_domain(self, network):
+    def _create_bridge_domain(self, network, vsm_ip=None):
         """Create a bridge domain on VSM.
 
         :param network: network dict
@@ -297,16 +306,16 @@ class Client(object):
         if groupIp:
             body['groupIp'] = groupIp
         return self._post(self.bridge_domains_path,
-                          body=body)
+                          body=body, vsm_ip=vsm_ip)
 
-    def _delete_bridge_domain(self, name):
+    def _delete_bridge_domain(self, name, vsm_ip=None):
         """Delete a bridge domain on VSM.
 
         :param name: name of the bridge domain to be deleted
         """
-        return self._delete(self.bridge_domain_path % name)
+        return self._delete(self.bridge_domain_path % name, vsm_ip=vsm_ip)
 
-    def create_ip_pool(self, subnet):
+    def create_ip_pool(self, subnet, vsm_ip=None):
         """Create a subnet on VSM.
 
         :param subnet: subnet dict
@@ -341,7 +350,7 @@ class Client(object):
                 'id': subnet['id'],
                 'tenantId': subnet['tenant_id']}
         return self._post(self.ip_pool_path % subnet['id'],
-                          body=body)
+                          body=body, vsm_ip=vsm_ip)
 
     def update_ip_pool(self, subnet):
         """
@@ -355,15 +364,16 @@ class Client(object):
         return self._post(self.ip_pool_path % subnet['id'],
                           body=body)
 
-    def delete_ip_pool(self, subnet_id):
+    def delete_ip_pool(self, subnet_id, vsm_ip=None):
         """
         Delete an ip-pool on the VSM.
 
         :param subnet_id: UUID representing the subnet
         """
-        return self._delete(self.ip_pool_path % subnet_id)
+        return self._delete(self.ip_pool_path % subnet_id, vsm_ip=vsm_ip)
 
-    def create_n1kv_port(self, port, vmnetwork_name, policy_profile):
+    def create_n1kv_port(self, port, vmnetwork_name, policy_profile,
+                         vsm_ip=None):
         """Create a port on the VSM.
 
         :param port: port dict
@@ -384,15 +394,16 @@ class Client(object):
             body['ipAddress'] = port['fixed_ips'][0]['ip_address']
             body['subnetId'] = port['fixed_ips'][0]['subnet_id']
         return self._post(self.vm_networks_path,
-                          body=body)
+                          body=body, vsm_ip=vsm_ip)
 
-    def delete_n1kv_port(self, vmnetwork_name, port_id):
+    def delete_n1kv_port(self, vmnetwork_name, port_id, vsm_ip=None):
         """Delete a port on the VSM.
 
         :param vmnetwork_name: name of the VM network which imports this port
         :param port_id: UUID of the port
         """
-        return self._delete(self.port_path % (vmnetwork_name, port_id))
+        return self._delete(self.port_path % (vmnetwork_name, port_id),
+                            vsm_ip=vsm_ip)
 
     def _do_request(self, method, action, body=None,
                     headers=None, vsm_ip=None):
@@ -422,7 +433,7 @@ class Client(object):
         if vsm_ip:
             hosts.append(vsm_ip)
         else:
-            hosts = self._get_vsm_hosts()
+            hosts = self.get_vsm_hosts()
         for vsm_ip in hosts:
             vsm_action = action % vsm_ip
             headers = self._get_auth_header(vsm_ip)
@@ -450,7 +461,7 @@ class Client(object):
         return self._do_request("DELETE", action, body=body,
                                 headers=headers, vsm_ip=vsm_ip)
 
-    def _get(self, action, body=None, headers=None, vsm_ip=None):
+    def _get(self, action, vsm_ip, body=None, headers=None):
         return self._do_request("GET", action, body=body,
                                 headers=headers, vsm_ip=vsm_ip)
 
@@ -462,13 +473,13 @@ class Client(object):
         return self._do_request("PUT", action, body=body,
                                 headers=headers, vsm_ip=vsm_ip)
 
-    def _get_vsm_hosts(self):
+    def get_vsm_hosts(self):
         """
         Retrieve a list of VSM ip addresses.
 
         :return: list of host ip addresses
         """
-        return self.n1kv_vsm.keys()
+        return self.n1kv_vsm_ips
 
     def _get_auth_header(self, vsm_ip):
         """Retrieve header with auth info for the VSM.
@@ -476,6 +487,6 @@ class Client(object):
         :return: authorization header dict
         """
         auth = base64.encodestring("%s:%s" %
-                                   (self.n1kv_vsm[vsm_ip]['username'],
-                                   self.n1kv_vsm[vsm_ip]['password'])).rstrip()
+                                   (self.username,
+                                    self.password)).rstrip()
         return {"Authorization": "Basic %s" % auth}
