@@ -37,6 +37,7 @@ NETWORKS = 'networks'
 SUBNETS = 'subnets'
 PORTS = 'ports'
 VMNETWORKS = 'vmnetworks'
+BRIDGE_DOMAINS = 'bridge_domains'
 
 
 class N1kvSyncDriver():
@@ -49,6 +50,7 @@ class N1kvSyncDriver():
                               SUBNETS: False,
                               PORTS: False}
         self.sync_sleep_duration = cfg.CONF.ml2_cisco_n1kv.sync_interval
+        self.bd_names = []
 
     def do_sync(self):
         '''
@@ -73,6 +75,10 @@ class N1kvSyncDriver():
                             else:
                                 vsm_res_uuids = set(self._get_vsm_resource(
                                     res, vsm_ip))
+                                if res == NETWORKS:
+                                    bd_info = self._get_vsm_resource(
+                                    BRIDGE_DOMAINS, vsm_ip=vsm_ip)
+                                    self.bd_names = bd_info.keys()
                             neutron_res_info = self._get_neutron_resource(res)
                             vsm_neutron_res_info_combined[res] = (
                                 vsm_res_uuids, neutron_res_info)
@@ -245,15 +251,14 @@ class N1kvSyncDriver():
         neutron_net_uuids = set(self._get_uuids(NETWORKS, neutron_nets))
         for net_id in vsm_net_uuids - neutron_net_uuids:
             # delete these networks from VSM
-            vsm_net = self.n1kvclient.show_network(net_id, vsm_ip=vsm_ip)
             try:
-                if (vsm_net[net_id][n1kv_const.PROPERTIES]
-                    ['segmentType']) == "BridgeDomain":
-                    (vsm_net[net_id][n1kv_const.PROPERTIES]
-                    ['segmentType']) = p_const.TYPE_VXLAN
-                self.n1kvclient.delete_network_segment(net_id,
-                        vsm_net[net_id][n1kv_const.PROPERTIES][
-                            'segmentType'], vsm_ip=vsm_ip)
+                bd_name = net_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
+                if bd_name in self.bd_names:
+                    segment_type = p_const.TYPE_VXLAN
+                else:
+                    segment_type = p_const.TYPE_VLAN
+                self.n1kvclient.delete_network_segment(net_id, segment_type,
+                                                       vsm_ip=vsm_ip)
             except n1kv_exc.VSMError as e:
                 LOG.warning(_LW('Sync Exception: Network deletion on VSM '
                             'failed: %s'), e.message)

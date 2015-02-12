@@ -177,6 +177,14 @@ class Client(object):
         '''
         return self._get(self.md5_path, vsm_ip=vsm_ip)
 
+    def list_bridge_domains(self, vsm_ip=None):
+        '''
+        Fetch the list of all bridge domains on the VSM
+
+        :return: JSON string
+        '''
+        return self._get(self.bridge_domains_path, vsm_ip=vsm_ip)
+
     def show_network(self, network_id, vsm_ip=None):
         '''
         Fetch details of a given network like segment type from the VSM
