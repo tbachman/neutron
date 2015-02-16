@@ -77,15 +77,17 @@ class DaemonMonitor(object):
                                               True)
         buf = six.StringIO()
         for p in router_ports:
-            prefix = p['subnet']['cidr']
-            if netaddr.IPNetwork(prefix).version == 6:
-                interface_name = self._dev_name_helper(p['id'])
-                ra_mode = p['subnet']['ipv6_ra_mode']
-                buf.write('%s' % CONFIG_TEMPLATE.render(
-                    ra_mode=ra_mode,
-                    interface_name=interface_name,
-                    prefix=prefix,
-                    constants=constants))
+            subnets = p.get('subnets', [])
+            for subnet in subnets:
+                prefix = subnet['cidr']
+                if netaddr.IPNetwork(prefix).version == 6:
+                    interface_name = self._dev_name_helper(p['id'])
+                    ra_mode = subnet['ipv6_ra_mode']
+                    buf.write('%s' % CONFIG_TEMPLATE.render(
+                        ra_mode=ra_mode,
+                        interface_name=interface_name,
+                        prefix=prefix,
+                        constants=constants))
 
         utils.replace_file(radvd_conf, buf.getvalue())
         return radvd_conf
@@ -112,8 +114,12 @@ class DaemonMonitor(object):
 
     def enable(self, router_ports):
         for p in router_ports:
-            if netaddr.IPNetwork(p['subnet']['cidr']).version == 6:
-                break
+            for subnet in p['subnets']:
+                if netaddr.IPNetwork(subnet['cidr']).version == 6:
+                    break
+            else:
+                continue
+            break
         else:
             # Kill the daemon if it's running
             self.disable()

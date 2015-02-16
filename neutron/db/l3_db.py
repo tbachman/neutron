@@ -1037,7 +1037,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         filters = {'id': gw_port_ids}
         gw_ports = self._core_plugin.get_ports(context, filters)
         if gw_ports:
-            self._populate_subnet_for_ports(context, gw_ports)
+            self._populate_subnets_for_ports(context, gw_ports)
         return gw_ports
 
     def get_sync_interfaces(self, context, router_ids, device_owners=None):
@@ -1056,11 +1056,11 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         ports = [rp.port.id for rp in qry]
         interfaces = self._core_plugin.get_ports(context, {'id': ports})
         if interfaces:
-            self._populate_subnet_for_ports(context, interfaces)
+            self._populate_subnets_for_ports(context, interfaces)
         return interfaces
 
-    def _populate_subnet_for_ports(self, context, ports):
-        """Populate ports with subnet.
+    def _populate_subnets_for_ports(self, context, ports):
+        """Populate ports with subnets.
 
         These ports already have fixed_ips populated.
         """
@@ -1069,10 +1069,11 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
         def each_port_with_ip():
             for port in ports:
+                dev_owner = port.get('device_owner')
                 fixed_ips = port.get('fixed_ips', [])
-                if len(fixed_ips) > 1:
-                    LOG.info(_LI("Ignoring multiple IPs on router port %s"),
-                             port['id'])
+                if len(fixed_ips) > 1 and dev_owner != DEVICE_OWNER_ROUTER_GW:
+                    LOG.info(_LI("Ignoring multiple IPs on "
+                                 "internal router port %s"), port['id'])
                     continue
                 elif not fixed_ips:
                     # Skip ports without IPs, which can occur if a subnet
@@ -1081,7 +1082,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                                  "it"),
                              port['id'])
                     continue
-                yield (port, fixed_ips[0])
+                yield (port, fixed_ips)
 
         network_ids = set(p['network_id'] for p, _ in each_port_with_ip())
         filters = {'network_id': [id for id in network_ids]}
@@ -1092,16 +1093,22 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         for subnet in self._core_plugin.get_subnets(context, filters, fields):
             subnets_by_network[subnet['network_id']].append(subnet)
 
-        for port, fixed_ip in each_port_with_ip():
+        for port, fixed_ips in each_port_with_ip():
             port['extra_subnets'] = []
+            port['subnets'] = []
             for subnet in subnets_by_network[port['network_id']]:
                 subnet_info = {'id': subnet['id'],
                                'cidr': subnet['cidr'],
                                'gateway_ip': subnet['gateway_ip'],
                                'ipv6_ra_mode': subnet['ipv6_ra_mode']}
 
-                if subnet['id'] == fixed_ip['subnet_id']:
-                    port['subnet'] = subnet_info
+                for fixed_ip in fixed_ips:
+                    if fixed_ip['subnet_id'] == subnet['id']:
+                        port['subnets'].append(subnet_info)
+                        prefixlen = netaddr.IPNetwork(
+                            subnet['cidr']).prefixlen
+                        fixed_ip['prefixlen'] = prefixlen
+                        break
                 else:
                     port['extra_subnets'].append(subnet_info)
 

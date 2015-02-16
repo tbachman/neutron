@@ -83,7 +83,7 @@ class TestABCDriver(TestBase):
 
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
-        bc.init_l3('tap0', ['192.168.1.2/24'], namespace=ns,
+        bc.init_l3('tap0', [{'cidr': '192.168.1.2/24'}], namespace=ns,
                    extra_subnets=[{'cidr': '172.20.0.0/24'}])
         self.ip_dev.assert_has_calls(
             [mock.call('tap0', 'sudo', namespace=ns),
@@ -101,7 +101,7 @@ class TestABCDriver(TestBase):
 
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
-        bc.init_l3('tap0', ['192.168.1.2/24'], namespace=ns)
+        bc.init_l3('tap0', [{'cidr': '192.168.1.2/24'}], namespace=ns)
         self.ip_dev.assert_has_calls(
             [mock.call().route.list_onlink_routes(),
              mock.call().route.delete_onlink_route('172.20.0.0/24')])
@@ -113,7 +113,7 @@ class TestABCDriver(TestBase):
 
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
-        bc.init_l3('tap0', ['192.168.1.2/24'], namespace=ns,
+        bc.init_l3('tap0', [{'cidr': '192.168.1.2/24'}], namespace=ns,
                    preserve_ips=['192.168.1.3/32'])
         self.ip_dev.assert_has_calls(
             [mock.call('tap0', 'sudo', namespace=ns),
@@ -121,7 +121,14 @@ class TestABCDriver(TestBase):
              mock.call().addr.add(4, '192.168.1.2/24', '192.168.1.255')])
         self.assertFalse(self.ip_dev().addr.delete.called)
 
-    def test_l3_init_with_ipv6(self):
+    @staticmethod
+    def expected_sysctl_calls(ns, ctl_strings):
+        return ([mock.call('sudo', namespace=ns)] +
+                [mock.call().netns.execute(['sysctl', ctl_string],
+                                           check_exit_code=True)
+                 for ctl_string in ctl_strings])
+
+    def _test_l3_init_with_ipv6(self, is_ext_gateway, include_gw_ip):
         addresses = [dict(ip_version=6,
                           scope='global',
                           dynamic=False,
@@ -131,16 +138,86 @@ class TestABCDriver(TestBase):
 
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
-        bc.init_l3('tap0', ['2001:db8:a::124/64'], namespace=ns,
-                   extra_subnets=[{'cidr': '2001:db8:b::/64'}])
-        self.ip_dev.assert_has_calls(
+        new_addr = {'cidr': '2001:db8:a::124/64'}
+        if include_gw_ip:
+            new_addr['gateway_ip'] = '2001:db8:a::1'
+        bc.init_l3('tap0', [new_addr], namespace=ns,
+                   extra_subnets=[{'cidr': '2001:db8:b::/64'}],
+                   is_ext_gateway=is_ext_gateway)
+        expected_calls = (
             [mock.call('tap0', 'sudo', namespace=ns),
              mock.call().addr.list(scope='global', filters=['permanent']),
              mock.call().addr.add(6, '2001:db8:a::124/64',
+                                  '2001:db8:a:0:ffff:ffff:ffff:ffff')])
+        if include_gw_ip:
+            expected_calls += (
+                [mock.call().route.add_gateway('2001:db8:a::1')])
+        expected_calls += (
+             [mock.call().addr.delete(6, '2001:db8:a::123/64'),
+              mock.call().route.list_onlink_routes(),
+              mock.call().route.add_onlink_route('2001:db8:b::/64')])
+        self.ip_dev.assert_has_calls(expected_calls)
+
+        ip_calls = self.expected_sysctl_calls(
+            ns, ['net.ipv6.conf.tap0.forwarding=1'])
+        if is_ext_gateway:
+            if include_gw_ip:
+                ip_calls += self.expected_sysctl_calls(
+                    ns, ['net.ipv6.conf.tap0.accept_ra_defrtr=0'])
+            else:
+                ip_calls += self.expected_sysctl_calls(
+                    ns, ['net.ipv6.conf.tap0.accept_ra=2',
+                         'net.ipv6.conf.tap0.accept_ra_defrtr=1'])
+        self.ip.assert_has_calls(ip_calls)
+
+    def test_l3_init_internal_with_ipv6_with_gw_ip(self):
+        self._test_l3_init_with_ipv6(is_ext_gateway=False,
+                                     include_gw_ip=True)
+
+    def test_l3_init_internal_with_ipv6_without_gw_ip(self):
+        self._test_l3_init_with_ipv6(is_ext_gateway=False,
+                                     include_gw_ip=False)
+
+    def test_l3_init_ext_gw_with_ipv6_with_gw_ip(self):
+        self._test_l3_init_with_ipv6(is_ext_gateway=True,
+                                     include_gw_ip=True)
+
+    def test_l3_init_ext_gw_with_ipv6_without_gw_ip(self):
+        self._test_l3_init_with_ipv6(is_ext_gateway=True,
+                                     include_gw_ip=False)
+
+    def test_l3_init_ext_gw_with_dual_stack(self):
+        old_addrs = [dict(ip_version=4, scope='global',
+                          dynamic=False, cidr='172.16.77.240/24'),
+                     dict(ip_version=6, scope='global',
+                          dynamic=False, cidr='2001:db8:a::123/64')]
+        self.ip_dev().addr.list = mock.Mock(return_value=old_addrs)
+        self.ip_dev().route.list_onlink_routes.return_value = []
+        bc = BaseChild(self.conf)
+        ns = '12345678-1234-5678-90ab-ba0987654321'
+        new_addrs = [dict(ip_version=4, scope='global',
+                          dynamic=False, cidr='192.168.1.2/24'),
+                     dict(ip_version=6, scope='global',
+                          dynamic=False, cidr='2001:db8:a::124/64')]
+        bc.init_l3('tap0', new_addrs, namespace=ns,
+                   extra_subnets=[{'cidr': '172.20.0.0/24'}],
+                   is_ext_gateway=True)
+        self.ip_dev.assert_has_calls(
+            [mock.call('tap0', 'sudo', namespace=ns),
+             mock.call().addr.list(scope='global', filters=['permanent']),
+             mock.call().addr.add(4, '192.168.1.2/24', '192.168.1.255'),
+             mock.call().addr.add(6, '2001:db8:a::124/64',
                                   '2001:db8:a:0:ffff:ffff:ffff:ffff'),
+             mock.call().addr.delete(4, '172.16.77.240/24'),
              mock.call().addr.delete(6, '2001:db8:a::123/64'),
              mock.call().route.list_onlink_routes(),
-             mock.call().route.add_onlink_route('2001:db8:b::/64')])
+             mock.call().route.add_onlink_route('172.20.0.0/24')])
+        self.ip.assert_has_calls(
+            self.expected_sysctl_calls(
+                ns, ['net.ipv6.conf.tap0.forwarding=1']) +
+            self.expected_sysctl_calls(
+                ns, ['net.ipv6.conf.tap0.accept_ra=2',
+                     'net.ipv6.conf.tap0.accept_ra_defrtr=1']))
 
     def test_l3_init_with_duplicated_ipv6(self):
         addresses = [dict(ip_version=6,
@@ -150,7 +227,7 @@ class TestABCDriver(TestBase):
         self.ip_dev().addr.list = mock.Mock(return_value=addresses)
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
-        bc.init_l3('tap0', ['2001:db8:a::123/64'], namespace=ns)
+        bc.init_l3('tap0', [{'cidr': '2001:db8:a::123/64'}], namespace=ns)
         self.assertFalse(self.ip_dev().addr.add.called)
 
     def test_l3_init_with_duplicated_ipv6_uncompact(self):
@@ -162,7 +239,7 @@ class TestABCDriver(TestBase):
         bc = BaseChild(self.conf)
         ns = '12345678-1234-5678-90ab-ba0987654321'
         bc.init_l3('tap0',
-                   ['2001:db8:a:0000:0000:0000:0000:0123/64'],
+                   [{'cidr': '2001:db8:a:0000:0000:0000:0000:0123/64'}],
                    namespace=ns)
         self.assertFalse(self.ip_dev().addr.add.called)
 

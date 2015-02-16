@@ -76,19 +76,27 @@ class AgentMixin(object):
 
     def _set_subnet_arp_info(self, ri, port):
         """Set ARP info retrieved from Plugin for existing ports."""
-        if 'id' not in port['subnet'] or not ri.router['distributed']:
+        if not ri.router['distributed']:
             return
-        subnet_id = port['subnet']['id']
-        subnet_ports = (
-            self.plugin_rpc.get_ports_by_subnet(self.context,
-                                                subnet_id))
 
-        for p in subnet_ports:
-            if p['device_owner'] not in l3_constants.ROUTER_INTERFACE_OWNERS:
-                for fixed_ip in p['fixed_ips']:
-                    self._update_arp_entry(ri, fixed_ip['ip_address'],
-                                           p['mac_address'],
-                                           subnet_id, 'add')
+        for subnet in port['subnets']:
+            subnet_cidr = subnet['cidr']
+            ip_vers = netaddr.IPNetwork(subnet_cidr).version
+            if ip_vers != 4:
+                continue
+            subnet_id = subnet['id']
+            subnet_ports = (
+                self.plugin_rpc.get_ports_by_subnet(self.context,
+                                                    subnet_id))
+            for p in subnet_ports:
+                if p['device_owner'] not in (
+                        l3_constants.ROUTER_INTERFACE_OWNERS):
+                    for fixed_ip in p['fixed_ips']:
+                        if fixed_ip['subnet_id'] == subnet_id:
+                            self._update_arp_entry(ri,
+                                                   fixed_ip['ip_address'],
+                                                   p['mac_address'],
+                                                   subnet_id, 'add')
 
     def get_internal_port(self, ri, subnet_id):
         """Return internal router port based on subnet_id."""
@@ -156,10 +164,9 @@ class AgentMixin(object):
         # connect snat_ports to br_int from SNAT namespace
         for port in snat_ports:
             # create interface_name
-            self._set_subnet_info(port)
             interface_name = self.get_snat_int_device_name(port['id'])
             self._internal_network_added(snat_ns_name, port['network_id'],
-                                         port['id'], port['ip_cidr'],
+                                         port['id'], port['fixed_ips'],
                                          port['mac_address'], interface_name,
                                          SNAT_INT_DEV_PREFIX)
         self._external_gateway_added(ri, ex_gw_port, gw_interface_name,
@@ -173,31 +180,37 @@ class AgentMixin(object):
 
     def _snat_redirect_add(self, ri, gateway, sn_port, sn_int):
         """Adds rules and routes for SNAT redirection."""
-        try:
-            ip_cidr = sn_port['ip_cidr']
-            snat_idx = self._get_snat_idx(ip_cidr)
-            ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
-            ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
-                                     namespace=ri.ns_name)
-            ns_ipd.route.add_gateway(gateway, table=snat_idx)
-            ns_ipr.add(ip_cidr, snat_idx, snat_idx)
-            ns_ipr.netns.execute(['sysctl', '-w', 'net.ipv4.conf.%s.'
-                                 'send_redirects=0' % sn_int])
-        except Exception:
-            LOG.exception(_LE('DVR: error adding redirection logic'))
+        for fixed_ip in sn_port['fixed_ips']:
+            try:
+                ip_cidr = "%s/%s" % (fixed_ip['ip_address'],
+                                     fixed_ip['prefixlen'])
+                snat_idx = self._get_snat_idx(ip_cidr)
+                ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
+                ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
+                                         namespace=ri.ns_name)
+                ns_ipd.route.add_gateway(gateway, table=snat_idx)
+                ns_ipr.add(ip_cidr, snat_idx, snat_idx)
+                ns_ipr.netns.execute(['sysctl', '-w', 'net.ipv4.conf.%s.'
+                                      'send_redirects=0' % sn_int])
+            except Exception:
+                LOG.exception(_LE('DVR: error adding redirection logic'))
 
     def _snat_redirect_remove(self, ri, sn_port, sn_int):
         """Removes rules and routes for SNAT redirection."""
-        try:
-            ip_cidr = sn_port['ip_cidr']
-            snat_idx = self._get_snat_idx(ip_cidr)
-            ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
-            ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
-                                     namespace=ri.ns_name)
-            ns_ipd.route.delete_gateway(table=snat_idx)
-            ns_ipr.delete(ip_cidr, snat_idx, snat_idx)
-        except Exception:
-            LOG.exception(_LE('DVR: removed snat failed'))
+        for fixed_ip in sn_port['fixed_ips']:
+            try:
+                ip_cidr = "%s/%s" % (fixed_ip['ip_address'],
+                                     fixed_ip['prefixlen'])
+                ip_version = netaddr.IPNetwork(ip_cidr).version
+                snat_idx = self._get_snat_idx(ip_cidr)
+                ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
+                ns_ipd = ip_lib.IPDevice(sn_int, self.root_helper,
+                                         namespace=ri.ns_name)
+                ns_ipd.route.delete_gateway(table=snat_idx,
+                                            ip_version=ip_version)
+                ns_ipr.delete(ip_cidr, snat_idx, snat_idx)
+            except Exception:
+                LOG.exception(_LE('DVR: removed snat failed'))
 
     def _update_arp_entry(self, ri, ip, mac, subnet_id, operation):
         """Add or delete arp entry into router namespace for the subnet."""

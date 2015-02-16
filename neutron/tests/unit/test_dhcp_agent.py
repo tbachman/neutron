@@ -1205,14 +1205,15 @@ class TestDeviceManager(base.BaseTestCase):
                           'device_id': mock.ANY}})])
 
         if port == fake_ipv6_port:
-            expected_ips = ['169.254.169.254/16']
+            expected_cidrs = [{'cidr': '169.254.169.254/16'}]
         else:
-            expected_ips = ['172.9.9.9/24', '169.254.169.254/16']
+            expected_cidrs = [{'cidr': '172.9.9.9/24'},
+                              {'cidr': '169.254.169.254/16'}]
         expected = [
             mock.call.get_device_name(port),
             mock.call.init_l3(
                 'tap12345678-12',
-                expected_ips,
+                expected_cidrs,
                 namespace=net.namespace)]
 
         if not device_is_ready:

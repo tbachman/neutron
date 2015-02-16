@@ -413,16 +413,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         self.event_observers.notify(
             adv_svc.AdvancedService.after_router_removed, ri)
 
-    def _set_subnet_info(self, port):
-        ips = port['fixed_ips']
-        if not ips:
-            raise Exception(_("Router port %s has no IP address") % port['id'])
-        if len(ips) > 1:
-            LOG.error(_LE("Ignoring multiple IPs on router port %s"),
-                      port['id'])
-        prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
-        port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
-
     def _get_existing_devices(self, ri):
         ip_wrapper = ip_lib.IPWrapper(root_helper=self.root_helper,
                                       namespace=ri.ns_name)
@@ -443,20 +433,21 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         new_ipv6_port = False
         old_ipv6_port = False
         for p in new_ports:
-            self._set_subnet_info(p)
             self.internal_network_added(ri, p)
             ri.internal_ports.append(p)
             self._set_subnet_arp_info(ri, p)
-            if (not new_ipv6_port and
-                    netaddr.IPNetwork(p['subnet']['cidr']).version == 6):
-                new_ipv6_port = True
+            for subnet in p['subnets']:
+                if (not new_ipv6_port and
+                    netaddr.IPNetwork(subnet['cidr']).version == 6):
+                    new_ipv6_port = True
 
         for p in old_ports:
             self.internal_network_removed(ri, p)
             ri.internal_ports.remove(p)
-            if (not old_ipv6_port and
-                    netaddr.IPNetwork(p['subnet']['cidr']).version == 6):
-                old_ipv6_port = True
+            for subnet in p['subnets']:
+                if (not old_ipv6_port and
+                    netaddr.IPNetwork(subnet['cidr']).version == 6):
+                    old_ipv6_port = True
 
         # Enable RA
         if new_ipv6_port or old_ipv6_port:
@@ -494,7 +485,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 port2_filtered = _get_filtered_dict(port2, keys_to_ignore)
                 return port1_filtered == port2_filtered
 
-            self._set_subnet_info(ex_gw_port)
             if not ri.ex_gw_port:
                 self.external_gateway_added(ri, ex_gw_port, interface_name)
             elif not _gateway_ports_equal(ex_gw_port, ri.ex_gw_port):
@@ -672,10 +662,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 agent_gateway_port = (
                     self.plugin_rpc.get_agent_gateway_port(
                         self.context, ex_gw_port['network_id']))
-                if 'subnet' not in agent_gateway_port:
+                if 'subnets' not in agent_gateway_port:
                     LOG.error(_LE('Missing subnet/agent_gateway_port'))
                 else:
-                    self._set_subnet_info(agent_gateway_port)
                     ri.fip_ns.create_gateway_port(agent_gateway_port)
 
         if ri.fip_ns.agent_gateway_port and floating_ips:
@@ -863,6 +852,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         if ri.is_ha:
             ri._ha_external_gateway_updated(ex_gw_port, interface_name)
 
+    @staticmethod
+    def _get_fixed_ip_gateway_ip(fixed_ip, subnets):
+        subnet_id = fixed_ip['subnet_id']
+        for subnet in subnets:
+            if subnet['id'] == subnet_id:
+                return subnet.get('gateway_ip')
+
     def _external_gateway_added(self, ri, ex_gw_port, interface_name,
                                 ns_name, preserve_ips):
         if not ip_lib.device_exists(interface_name,
@@ -876,17 +872,32 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                              prefix=EXTERNAL_DEV_PREFIX)
 
         if not ri.is_ha:
+            # Build up the IP addresses that will be added to the interface.
+            ip_addrs = []
+            fixed_ips = ex_gw_port['fixed_ips']
+            for fixed_ip in fixed_ips:
+                ip_addr = {}
+                ip_cidr = "%s/%s" % (fixed_ip['ip_address'],
+                                     fixed_ip['prefixlen'])
+                ip_addr['cidr'] = ip_cidr
+                ip_addr['gateway_ip'] = self._get_fixed_ip_gateway_ip(
+                    fixed_ip, ex_gw_port['subnets'])
+                ip_addrs.append(ip_addr)
             self.driver.init_l3(
-                interface_name, [ex_gw_port['ip_cidr']], namespace=ns_name,
-                gateway=ex_gw_port['subnet'].get('gateway_ip'),
+                interface_name, ip_addrs, namespace=ns_name,
                 extra_subnets=ex_gw_port.get('extra_subnets', []),
-                preserve_ips=preserve_ips)
-            ip_address = ex_gw_port['ip_cidr'].split('/')[0]
-            ip_lib.send_gratuitous_arp(ns_name,
-                                       interface_name,
-                                       ip_address,
-                                       self.conf.send_arp_for_ha,
-                                       self.root_helper)
+                preserve_ips=preserve_ips, is_ext_gateway=True)
+
+            for ip_addr in ip_addrs:
+                ip_cidr = ip_addr['cidr']
+                ip_vers = netaddr.IPNetwork(ip_cidr).version
+                if ip_vers == 4:
+                    ip_address = ip_cidr.split('/')[0]
+                    ip_lib.send_gratuitous_arp(ns_name,
+                                               interface_name,
+                                               ip_address,
+                                               self.conf.send_arp_for_ha,
+                                               self.root_helper)
 
     def external_gateway_removed(self, ri, ex_gw_port, interface_name):
         if ri.router['distributed']:
@@ -928,7 +939,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         return rules
 
     def _internal_network_added(self, ns_name, network_id, port_id,
-                                internal_cidr, mac_address,
+                                fixed_ips, mac_address,
                                 interface_name, prefix, is_ha=False):
         if not ip_lib.device_exists(interface_name,
                                     root_helper=self.root_helper,
@@ -938,31 +949,43 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                              prefix=prefix)
 
         if not is_ha:
-            self.driver.init_l3(interface_name, [internal_cidr],
+            ip_addrs = []
+            for fixed_ip in fixed_ips:
+                ip_cidr = "%s/%s" % (fixed_ip['ip_address'],
+                                     fixed_ip['prefixlen'])
+                ip_addrs.append({'cidr': ip_cidr})
+            self.driver.init_l3(interface_name, ip_addrs,
                                 namespace=ns_name)
-            ip_address = internal_cidr.split('/')[0]
-            ip_lib.send_gratuitous_arp(ns_name,
-                                       interface_name,
-                                       ip_address,
-                                       self.conf.send_arp_for_ha,
-                                       self.root_helper)
+            for ip_addr in ip_addrs:
+                ip_cidr = ip_addr['cidr']
+                ip_vers = netaddr.IPNetwork(ip_cidr).version
+                if ip_vers == 4:
+                    ip_address = ip_cidr.split('/')[0]
+                    ip_lib.send_gratuitous_arp(ns_name,
+                                               interface_name,
+                                               ip_address,
+                                               self.conf.send_arp_for_ha,
+                                               self.root_helper)
 
     def internal_network_added(self, ri, port):
         network_id = port['network_id']
         port_id = port['id']
-        internal_cidr = port['ip_cidr']
+        fixed_ips = port['fixed_ips']
         mac_address = port['mac_address']
 
         interface_name = self.get_internal_device_name(port_id)
 
         self._internal_network_added(ri.ns_name, network_id, port_id,
-                                     internal_cidr, mac_address,
+                                     fixed_ips, mac_address,
                                      interface_name, INTERNAL_DEV_PREFIX,
                                      ri.is_ha)
 
         if ri.is_ha:
             ri._ha_disable_addressing_on_interface(interface_name)
-            ri._add_vip(internal_cidr, interface_name)
+            for fixed_ip in fixed_ips:
+                ip_cidr = "%s/%s" % (fixed_ip['ip_address'],
+                                     fixed_ip['prefixlen'])
+                ri._add_vip(ip_cidr, interface_name)
 
         ex_gw_port = self._get_ex_gw_port(ri)
         if ri.router['distributed'] and ex_gw_port:
@@ -974,13 +997,12 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 if (self.conf.agent_mode == 'dvr_snat' and
                     self.get_gw_port_host(ri.router) == self.host):
                     ns_name = self.get_snat_ns_name(ri.router['id'])
-                    self._set_subnet_info(sn_port)
                     interface_name = (
                           self.get_snat_int_device_name(sn_port['id']))
                     self._internal_network_added(ns_name,
                                                  sn_port['network_id'],
                                                  sn_port['id'],
-                                                 sn_port['ip_cidr'],
+                                                 sn_port['fixed_ips'],
                                                  sn_port['mac_address'],
                                                  interface_name,
                                                  dvr.SNAT_INT_DEV_PREFIX)

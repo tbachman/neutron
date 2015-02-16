@@ -920,6 +920,26 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             context.session.add(network)
         return self._make_network_dict(network, process_extensions=False)
 
+    def _check_ext_network_subnets(self, context, net):
+        """Check external network.
+
+        Check external networks for no more than two subnets,
+        and if so, the subnets are not the same version.
+        """
+        if len(net['subnets']) > 2:
+            msg = (_("More than 2 subnets disallowed on "
+                   "external network: %s") % net['id'])
+            raise n_exc.InvalidInput(error_message=msg)
+        elif len(net['subnets']) == 2:
+            subnet0 = self._get_subnet(context, net['subnets'][0])
+            subnet1 = self._get_subnet(context, net['subnets'][1])
+            if subnet0.ip_version == subnet1.ip_version:
+                data = {'vers': subnet0.ip_version,
+                        'netid': net['id']}
+                msg = _("Two IPv%(vers)s subnets disallowed "
+                        "for external network: %(netid)s") % data
+                raise n_exc.InvalidInput(error_message=msg)
+
     def update_network(self, context, id, network):
         n = network['network']
         with context.session.begin(subtransactions=True):
@@ -927,6 +947,9 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             # validate 'shared' parameter
             if 'shared' in n:
                 self._validate_shared_update(context, id, network, n)
+            # validate the subnets on the ext net
+            if network.external:
+                self._check_ext_network_subnets(context, network)
             network.update(n)
             # also update shared in all the subnets for this network
             subnets = self._get_subnets_by_network(context, id)
@@ -989,6 +1012,31 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             msg = _("%(name)s '%(addr)s' does not match "
                     "the ip_version '%(ip_version)s'") % data
             raise n_exc.InvalidInput(error_message=msg)
+
+    def _validate_subnet_on_ext_network(self, context, s):
+        """Validate external networks when creating a subnet.
+
+        Check external networks for no more than two subnets,
+        and if so, the subnets are not the same version.
+        """
+        fields = ['subnets', 'router:external']
+        net = self.get_network(context, s['network_id'], fields)
+        if ('router:external' in net) and (net['router:external']):
+            if len(net['subnets']) > 1:
+                # Already 2 subnets on external network. Disallow more.
+                error_message = (_("More than 2 subnets disallowed on "
+                                 "external network: %s") % s['network_id'])
+                raise n_exc.InvalidInput(error_message=error_message)
+            elif len(net['subnets']) == 1:
+                # Check that 2nd subnet being added is not the same IP
+                # version as the existing one.
+                cur_subnet = self._get_subnet(context, net['subnets'][0])
+                if s['ip_version'] == cur_subnet.ip_version:
+                    data = {'vers': s['ip_version'],
+                            'netid': s['network_id']}
+                    msg = _("Two IPv%(vers)s subnets disallowed "
+                            "for external network: %(netid)s") % data
+                    raise n_exc.InvalidInput(error_message=msg)
 
     def _validate_subnet(self, context, s, cur_subnet=None):
         """Validate a subnet spec."""
@@ -1092,6 +1140,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                                                s['allocation_pools'])
 
         self._validate_subnet(context, s)
+        self._validate_subnet_on_ext_network(context, s)
 
         tenant_id = self._get_tenant_id_for_create(context, s)
         with context.session.begin(subtransactions=True):

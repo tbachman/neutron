@@ -60,10 +60,9 @@ class AgentMixin(object):
                       ri.router_id)
             return
 
-        self._set_subnet_info(ha_port)
         ri.ha_network_added(ha_port['network_id'],
                             ha_port['id'],
-                            ha_port['ip_cidr'],
+                            ha_port['fixed_ips'],
                             ha_port['mac_address'])
         ri.ha_port = ha_port
 

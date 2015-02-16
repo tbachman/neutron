@@ -734,7 +734,7 @@ class TestIpRouteCommand(TestIPCmdBase):
         metric = 100
         table = 14
         self.route_cmd.add_gateway(gateway, metric, table)
-        self._assert_sudo([],
+        self._assert_sudo([4],
                           ('replace', 'default', 'via', gateway,
                            'metric', metric,
                            'dev', self.parent.name, 'table', table))
@@ -743,9 +743,17 @@ class TestIpRouteCommand(TestIPCmdBase):
         gateway = '192.168.45.100'
         table = 14
         self.route_cmd.delete_gateway(gateway, table)
-        self._assert_sudo([],
+        self._assert_sudo([4],
                           ('del', 'default', 'via', gateway,
                            'dev', self.parent.name, 'table', table))
+
+    def test_del_gateway_no_gateway_ip(self):
+        table = 14
+        ip_version = 4
+        self.route_cmd.delete_gateway(table=table, ip_version=ip_version)
+        self._assert_sudo([4],
+                          ('del', 'default', 'dev', self.parent.name,
+                           'table', table))
 
     def test_get_gateway(self):
         test_cases = [{'sample': GATEWAY_SAMPLE1,

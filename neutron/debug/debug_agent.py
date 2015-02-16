@@ -78,7 +78,7 @@ class NeutronDebugAgent(object):
             subnet = fixed_ip.subnet
             net = netaddr.IPNetwork(subnet.cidr)
             ip_cidr = '%s/%s' % (fixed_ip.ip_address, net.prefixlen)
-            ip_cidrs.append(ip_cidr)
+            ip_cidrs.append({'cidr': ip_cidr})
         self.driver.init_l3(interface_name, ip_cidrs, namespace=namespace)
         return port
 
