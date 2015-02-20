@@ -254,6 +254,9 @@ class Client(object):
                 'mode': 'access',
                 'segmentType': network_profile.segment_type,
                 'networkSegmentPool': network_profile.id}
+        # Override tenantId if network is shared
+        if network['shared']:
+            body['tenantId'] = '0'
         if network[providernet.NETWORK_TYPE] == p_const.TYPE_VLAN:
             body['vlan'] = network[providernet.SEGMENTATION_ID]
         elif network[providernet.NETWORK_TYPE] in self.vxlan_types:

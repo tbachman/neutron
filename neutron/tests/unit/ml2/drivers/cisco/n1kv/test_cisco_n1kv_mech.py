@@ -179,6 +179,13 @@ class TestN1KVMechDriverNetworksV2(test_db_plugin.TestNetworksV2,
                           n1kv_db.get_network_binding,
                           network['network']['id'])
 
+    def test_shared_network_create(self):
+        """Test shared network creation"""
+        #TODO Currently untested- revisit once UTs working
+        res = self._create_network(self.fmt, name='net', admin_state_up=True, shared=True)
+        network = self.deserialize(self.fmt, res)
+        self.assertEqual(network['network']['tenantId'], 0)
+
 
 class TestN1KVMechDriverPortsV2(test_db_plugin.TestPortsV2,
                                 TestN1KVMechanismDriver):
