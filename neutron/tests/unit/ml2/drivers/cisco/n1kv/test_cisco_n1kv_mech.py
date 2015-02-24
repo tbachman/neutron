@@ -186,6 +186,18 @@ class TestN1KVMechDriverNetworksV2(test_db_plugin.TestNetworksV2,
         network = self.deserialize(self.fmt, res)
         self.assertEqual(network['network']['tenantId'], 0)
 
+    def test_update_network_set_shared(self):
+        """Test shared network udpate"""
+        #TODO Currently untested- revisit once UTs working
+        with self.network(shared=False) as network:
+            data = {'network': {'shared': True}}
+            req = self.new_update_request('networks',
+                                          data,
+                                          network['network']['id'])
+            res = self.deserialize(self.fmt, req.get_response(self.api))
+            self.assertTrue(res['network']['shared'])
+            self.assertEqual(network['network']['tenantId'], 0)
+
 
 class TestN1KVMechDriverPortsV2(test_db_plugin.TestPortsV2,
                                 TestN1KVMechanismDriver):

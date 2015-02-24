@@ -280,7 +280,10 @@ class Client(object):
 
         :param updated_network: updated network dict
         """
-        body = {'description': updated_network['name']}
+        body = {'description': updated_network['name'],
+                'tenantId': updated_network['tenant_id']}
+        if updated_network['shared']:
+            body['tenantId'] = '0'
         return self._post(self.network_segment_path % updated_network['id'],
                           body=body)
 
