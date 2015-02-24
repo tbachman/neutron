@@ -50,7 +50,7 @@ class N1kvSyncDriver():
                               SUBNETS: False,
                               PORTS: False}
         self.sync_sleep_duration = cfg.CONF.ml2_cisco_n1kv.sync_interval
-        self.bd_names = []
+        self.bd_names = set()
 
     def do_sync(self):
         '''
@@ -78,7 +78,7 @@ class N1kvSyncDriver():
                                 if res == NETWORKS:
                                     bd_info = self._get_vsm_resource(
                                     BRIDGE_DOMAINS, vsm_ip=vsm_ip)
-                                    self.bd_names = bd_info.keys()
+                                    self.bd_names = set(bd_info.keys())
                             neutron_res_info = self._get_neutron_resource(res)
                             vsm_neutron_res_info_combined[res] = (
                                 vsm_res_uuids, neutron_res_info)
@@ -90,6 +90,8 @@ class N1kvSyncDriver():
                         if self.sync_resource[res]:
                             getattr(self, '_sync_delete_%s' % res)(
                                 vsm_neutron_res_info_combined[res], vsm_ip)
+                    if any(self.sync_resource.values()):
+                        LOG.debug('Sync completed.')
             except n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError:
                 LOG.warning(_LW('Sync thread exception: VSM unreachable'))
             eventlet.sleep(seconds=self.sync_sleep_duration)
@@ -123,19 +125,19 @@ class N1kvSyncDriver():
         for res in resources:
             neutron_consolidated_md5.update(neutron_md5_dict[res])
         if neutron_consolidated_md5.hexdigest() != vsm_consolidated_md5:
-            LOG.debug(_('State mismatch detected.'))
+            LOG.debug('State mismatch detected.')
             for (res, neutron_md5_hash) in neutron_md5_dict.items():
                 md5_match = neutron_md5_hash == vsm_md5_dict[res]
-                LOG.debug(_('MD5 %(resource)s match: %(match)s') %
+                LOG.debug('MD5 %(resource)s match: %(match)s' %
                           {'resource': res, 'match': md5_match})
                 if not md5_match:
-                    LOG.debug(_('Schedule sync for: %s'), res)
+                    LOG.debug('Schedule sync for: %s' % res)
                     self.sync_resource[res] = True
                 else:
                     self.sync_resource[res] = False
         else:
             self.sync_resource = {res: False for res in resources}
-            LOG.debug(("State in sync for vsm_ip: %s") % vsm_ip)
+            LOG.debug("State in sync for vsm_ip: %s" % vsm_ip)
 
     def _compute_resource_md5(self, uuids):
         '''
@@ -214,6 +216,9 @@ class N1kvSyncDriver():
             try:
                 self.n1kvclient.delete_network_segment_pool(np_id,
                                                             vsm_ip=vsm_ip)
+                log_net_name = np_id + n1kv_const.LOGICAL_NETWORK_SUFFIX
+                self.n1kvclient.delete_logical_network(log_net_name,
+                                                       vsm_ip=vsm_ip)
             except n1kv_exc.VSMError as e:
                 LOG.warning(_LW('Sync Exception: Network profile deletion on '
                             'VSM failed: %s'), e.message)
