@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import contextlib
 import mock
@@ -61,10 +59,12 @@ NOOP_DEVICE_DRIVER = ('neutron.plugins.cisco.device_manager.'
 NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.device_manager.'
                         'plugging_drivers.noop_plugging_driver.'
                         'NoopPluggingDriver')
-TEST_DEVICE_DRIVER = ('neutron.plugins.cisco.test.device_manager.'
-                      'hd_test_driver.TestHostingDeviceDriver')
-TEST_PLUGGING_DRIVER = ('neutron.plugins.cisco.test.device_manager.'
-                        'plugging_test_driver.TestTrunkingPlugDriver')
+
+TEST_DEVICE_DRIVER = NOOP_DEVICE_DRIVER
+#    ('neutron.plugins.cisco.test.device_manager.'
+#                      'hd_test_driver.TestHostingDeviceDriver')
+TEST_PLUGGING_DRIVER = ('neutron.tests.unit.cisco.device_manager.'
+                        'plugging_test_driver.TestPluggingDriver')
 
 DESCRIPTION = "default description"
 SHARED = True
@@ -75,6 +75,8 @@ ADMIN_STATE_UP = True
 UNBOUND = None
 REQUESTER = True
 OTHER = False
+
+DEFAULT_CREDENTIALS_ID = device_manager_test_support._uuid()
 
 
 class DeviceManagerTestCaseMixin(object):
@@ -152,6 +154,8 @@ class DeviceManagerTestCaseMixin(object):
             'credentials_id': kwargs.get('credentials_id'),
             'device_id': kwargs.get('device_id', 'mfc_device_id'),
             'admin_state_up': admin_state_up,
+            'management_ip_address': kwargs.get('management_ip_address',
+                                                '10.0.100.10'),
             'management_port_id': management_port_id,
             'protocol_port': kwargs.get('protocol_port', 22),
             'cfg_agent_id': kwargs.get('cfg_agent_id'),
@@ -172,7 +176,8 @@ class DeviceManagerTestCaseMixin(object):
                                         DEFAULT_SERVICE_TYPES),
             'image': kwargs.get('image'),
             'flavor': kwargs.get('flavor'),
-            'default_credentials_id': kwargs.get('default_credentials_id'),
+            'default_credentials_id': kwargs.get('default_credentials_id',
+                                                 DEFAULT_CREDENTIALS_ID),
             'configuration_mechanism': kwargs.get('configuration_mechanism'),
             'protocol_port': kwargs.get('protocol_port', 22),
             'booting_time': kwargs.get('booting_time', 0),
@@ -271,10 +276,10 @@ class TestDeviceManagerDBPlugin(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-        self._mock_svc_vm_create_delete()
         self._devmgr = NeutronManager.get_service_plugins()[
             constants.DEVICE_MANAGER]
         self._devmgr._svc_vm_mgr = service_vm_lib.ServiceVMManager()
+        self._mock_svc_vm_create_delete(self._devmgr)
         self._other_tenant_id = device_manager_test_support._uuid()
 
     def tearDown(self):
@@ -285,26 +290,30 @@ class TestDeviceManagerDBPlugin(
     def test_create_vm_hosting_device(self):
         with self.hosting_device_template() as hdt:
             with self.port(subnet=self._mgmt_subnet) as mgmt_port:
+                creds = device_manager_test_support._uuid()
                 attrs = self._get_test_hosting_device_attr(
                     template_id=hdt['hosting_device_template']['id'],
                     management_port_id=mgmt_port['port']['id'],
-                    auto_delete=True)
+                    auto_delete=True, credentials_id=creds)
                 with self.hosting_device(
                         template_id=hdt['hosting_device_template']['id'],
                         management_port_id=mgmt_port['port']['id'],
-                        auto_delete=True) as hd:
+                        auto_delete=True, credentials_id=creds) as hd:
                     for k, v in attrs.iteritems():
                         self.assertEqual(hd['hosting_device'][k], v)
 
     def test_create_hw_hosting_device(self):
         with self.hosting_device_template(host_category=HW_CATEGORY) as hdt:
             with self.port(subnet=self._mgmt_subnet) as mgmt_port:
+                creds = device_manager_test_support._uuid()
                 attrs = self._get_test_hosting_device_attr(
                     template_id=hdt['hosting_device_template']['id'],
-                    management_port_id=mgmt_port['port']['id'])
+                    management_port_id=mgmt_port['port']['id'],
+                    credentials_id=creds)
                 with self.hosting_device(
                         template_id=hdt['hosting_device_template']['id'],
-                        management_port_id=mgmt_port['port']['id']) as hd:
+                        management_port_id=mgmt_port['port']['id'],
+                        credentials_id=creds) as hd:
                     for k, v in attrs.iteritems():
                         self.assertEqual(hd['hosting_device'][k], v)
 
@@ -312,14 +321,17 @@ class TestDeviceManagerDBPlugin(
         device_id = "device_XYZ"
         with self.hosting_device_template() as hdt:
             with self.port(subnet=self._mgmt_subnet) as mgmt_port:
+                creds = device_manager_test_support._uuid()
                 attrs = self._get_test_hosting_device_attr(
                     device_id=device_id,
                     template_id=hdt['hosting_device_template']['id'],
-                    management_port_id=mgmt_port['port']['id'])
+                    management_port_id=mgmt_port['port']['id'],
+                    credentials_id=creds)
                 with self.hosting_device(
                         device_id=device_id,
                         template_id=hdt['hosting_device_template']['id'],
-                        management_port_id=mgmt_port['port']['id']) as hd:
+                        management_port_id=mgmt_port['port']['id'],
+                        credentials_id=creds) as hd:
                     req = self.new_show_request(
                         'hosting_devices', hd['hosting_device']['id'],
                         fmt=self.fmt)
@@ -358,13 +370,16 @@ class TestDeviceManagerDBPlugin(
             hdt_id = hdt['hosting_device_template']['id']
             with self.port(subnet=self._mgmt_subnet) as mgmt_port:
                 mgmt_port_id = mgmt_port['port']['id']
+                creds = device_manager_test_support._uuid()
                 attrs = self._get_test_hosting_device_attr(
                     device_id=new_device_id,
                     template_id=hdt['hosting_device_template']['id'],
-                    management_port_id=mgmt_port['port']['id'])
+                    management_port_id=mgmt_port['port']['id'],
+                    credentials_id=creds)
                 with self.hosting_device(
                         template_id=hdt_id,
-                        management_port_id=mgmt_port_id) as hd:
+                        management_port_id=mgmt_port_id,
+                        credentials_id=creds) as hd:
                     data = {'hosting_device': {'device_id': new_device_id}}
                     req = self.new_update_request('hosting_devices', data,
                                                   hd['hosting_device']['id'])
@@ -411,7 +426,6 @@ class TestDeviceManagerDBPlugin(
                         self.assertRaises(
                             ciscohostingdevicemanager.HostingDeviceInUse,
                             self._devmgr.delete_hosting_device, ctx, hd_id)
-                        #self._devmgr.delete_hosting_device(ctx, hd_id)
                         req = self.new_show_request('hosting_devices', hd_id,
                                                     fmt=self.fmt)
                         res = req.get_response(self.ext_api)
@@ -586,26 +600,37 @@ class TestDeviceManagerDBPlugin(
                             expected_bind, resource['tenant_id'])
                         self.assertEqual(hd_db.tenant_bound, expected_bind)
                         if pool_maintenance_expected:
-                             pm_mock.assert_called_once()
-                             num_calls = 1
+                            pm_mock.assert_called_once()
+                            num_calls = 1
                         else:
                             pm_mock.assert_not_called()
                             num_calls = 0
-                        if not test_release:
-                            return
-                        result = self._devmgr.release_hosting_device_slots(
-                            context, hd_db, resource, num_to_release)
-                        allocation = self._devmgr.get_slot_allocation(
-                            context, resource_id=resource['id'])
-                        self.assertEqual(result, expected_release_result)
-                        self.assertEqual(allocation, expected_final_allocation)
-                        expected_release_bind = self._set_ownership(
-                            expected_release_bind, resource['tenant_id'])
-                        self.assertEqual(hd_db.tenant_bound,
-                                         expected_release_bind)
-                        if release_pool_maintenance_expected:
-                            num_calls += 1
-                        self.assertEqual(pm_mock.call_count, num_calls)
+                        if test_release:
+                            result = self._devmgr.release_hosting_device_slots(
+                                context, hd_db, resource, num_to_release)
+                            if not test_release:
+                                return
+                            allocation = self._devmgr.get_slot_allocation(
+                                context, resource_id=resource['id'])
+                            self.assertEqual(result, expected_release_result)
+                            self.assertEqual(allocation,
+                                             expected_final_allocation)
+                            expected_release_bind = self._set_ownership(
+                                expected_release_bind, resource['tenant_id'])
+                            self.assertEqual(hd_db.tenant_bound,
+                                             expected_release_bind)
+                            if release_pool_maintenance_expected:
+                                num_calls += 1
+                            self.assertEqual(pm_mock.call_count, num_calls)
+                        else:
+                            # ensure we clean up everything
+                            num_to_release = 0
+                        to_clean_up = num_requested - num_to_release
+                        if to_clean_up < 0:
+                            to_clean_up = num_requested
+                        if to_clean_up:
+                            self._devmgr.release_hosting_device_slots(
+                                context, hd_db, resource, to_clean_up)
 
     # slot allocation tests
     def test_acquire_with_slot_surplus_in_owned_hosting_device_succeeds(self):
@@ -825,14 +850,11 @@ class TestDeviceManagerDBPlugin(
                                 management_port_id=mgmt_port['port']['id'],
                                 auto_delete=auto_delete,
                                 no_delete=no_delete) as hd:
-                    with contextlib.nested(
-                            mock.patch(
-                                'neutron.manager.NeutronManager'
-                                '.get_service_plugins'),
-                            mock.patch(
-                                'neutron.plugins.cisco.device_manager.rpc.'
-                                'devmgr_rpc_cfgagent_api.'
-                                'DeviceMgrCfgAgentNotify')) as (m1, m2):
+                    with mock.patch('neutron.manager.NeutronManager.'
+                                    'get_service_plugins'):
+                        m2 = mock.MagicMock()
+                        self._devmgr.agent_notifiers = {
+                            c_constants.AGENT_TYPE_CFG: m2}
                         context = self._get_test_context()
                         self._devmgr.handle_non_responding_hosting_devices(
                             context, None, [hd['hosting_device']['id']])
@@ -861,7 +883,7 @@ class TestDeviceManagerDBPlugin(
 
     # hosting device pool maintenance test helper
     def _test_pool_maintenance(self, desired_slots_free=10, slot_capacity=3,
-                               host_category=VM_CATEGORY, expected=12):
+                               host_category=VM_CATEGORY, expected=15):
         with self.hosting_device_template(
                 host_category=host_category, slot_capacity=slot_capacity,
                 desired_slots_free=desired_slots_free,
@@ -910,7 +932,3 @@ class TestDeviceManagerDBPlugin(
 
     def test_hw_based_hosting_device_no_change(self):
         self._test_pool_maintenance(host_category=HW_CATEGORY, expected=6)
-
-
-class TestDeviceManagerDBPluginXML(TestDeviceManagerDBPlugin):
-    fmt = 'xml'

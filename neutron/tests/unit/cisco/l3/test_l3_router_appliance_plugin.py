@@ -17,22 +17,24 @@ from oslo.config import cfg
 
 import neutron
 from neutron.api.v2 import attributes
+from neutron.db import agents_db
 from neutron.extensions import extraroute
 from neutron.extensions import l3
 from neutron.extensions import providernet as pnet
 from neutron.openstack.common import log as logging
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
 from neutron.tests.unit.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.cisco.l3 import test_db_routertype
+from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
 from neutron.tests.unit import test_l3_plugin
-from neutron.tests.unit import test_db_plugin
-
+from neutron.tests.unit import testlib_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -44,19 +46,6 @@ L3_PLUGIN_KLASS = (
 extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
 
 
-class L3RouterApplianceTestExtensionManager(
-        test_ext_extraroute.ExtraRouteTestExtensionManager):
-
-    def get_actions(self):
-        return []
-
-    def get_request_extensions(self):
-        return []
-
-    def get_extended_resources(self, version):
-        return pnet.get_extended_resources(version)
-
-
 class TestApplianceL3RouterExtensionManager(
         test_db_routertype.L3TestRoutertypeExtensionManager):
 
@@ -65,6 +54,7 @@ class TestApplianceL3RouterExtensionManager(
             extraroute.EXTENDED_ATTRIBUTES_2_0['routers'])
         return super(TestApplianceL3RouterExtensionManager,
                      self).get_resources()
+
 
 class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
                         agents_db.AgentDbMixin):
@@ -120,6 +110,7 @@ class TestApplianceL3RouterServicePlugin(
 
 class L3RouterApplianceTestCaseBase(
     test_db_plugin.NeutronDbPluginV2TestCase,
+    testlib_plugin.NotificationSetupHelper,
     test_db_routertype.RoutertypeTestCaseMixin,
     test_db_device_manager.DeviceManagerTestCaseMixin,
     l3_router_test_support.L3RouterTestSupportMixin,
@@ -131,6 +122,10 @@ class L3RouterApplianceTestCaseBase(
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
+        # Save the global RESOURCE_ATTRIBUTE_MAP
+        self.saved_attr_map = {}
+        for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
+            self.saved_attr_map[resource] = attrs.copy()
         if not core_plugin:
             core_plugin = CORE_PLUGIN_KLASS
         if l3_plugin is None:
@@ -168,14 +163,17 @@ class L3RouterApplianceTestCaseBase(
                         help=_('Allow auto scheduling of routers to '
                                'L3 agent.')))
         if self.router_type is not None:
-            cfg.CONF.set_override('default_router_type', self.router_type)
+            cfg.CONF.set_override('default_router_type', self.router_type,
+                                  group='routing')
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
-        self._mock_svc_vm_create_delete(self.plugin)
+        self.core_plugin._svc_vm_mgr = service_vm_lib.ServiceVMManager()
+        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
+        self._mock_cfg_agent_notifier(self.plugin)
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP
@@ -191,9 +189,10 @@ class L3RouterApplianceTestCaseBase(
             TestApplianceL3RouterServicePlugin._refresh_router_backlog) = True
         (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
             TestApplianceL3RouterServicePlugin._nova_running) = False
-        plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
-        plugin._heartbeat.stop()
+        #TODO(bobmel): Investigate why the following lines need to be disabled
+#        plugin = manager.NeutronManager.get_service_plugins()[
+#            service_constants.L3_ROUTER_NAT]
+#        plugin._heartbeat.stop()
         self.restore_attribute_map()
         super(L3RouterApplianceTestCaseBase, self).tearDown()
 
@@ -205,16 +204,15 @@ class L3RouterApplianceNamespaceTestCase(
 
     router_type = c_const.NAMESPACE_ROUTER_TYPE
 
-
-#class L3RouterApplianceNamespaceTestCaseXML(
-#        L3RouterApplianceNamespaceTestCase):
-#    fmt = 'xml'
+    def test_floatingip_with_assoc_fails(self):
+        self._test_floatingip_with_assoc_fails(
+            'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
 
 
 class L3RouterApplianceVMTestCase(
-    test_l3_plugin.L3NatTestCaseBase,
-    test_ext_extraroute.ExtraRouteDBTestCaseBase,
-        L3RouterApplianceTestCaseBase):
+    L3RouterApplianceNamespaceTestCase):
+
+    router_type = c_const.CSR1KV_ROUTER_TYPE
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -222,13 +220,8 @@ class L3RouterApplianceVMTestCase(
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
-        self._mock_svc_vm_create_delete()
+        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_get_routertype_scheduler_always_none()
-
-
-    def test_floatingip_with_assoc_fails(self):
-        self._test_floatingip_with_assoc_fails(
-            'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
 
 
 class L3AgentRouterApplianceNamespaceTestCase(
@@ -248,23 +241,9 @@ class L3AgentRouterApplianceNamespaceTestCase(
             ext_mgr=ext_mgr)
 
     def _test_notify_op_agent(self, target_func, *args):
-        l3_rpc_agent_api_str = (
-            'neutron.plugins.cisco.l3.rpc.l3_router_rpc_joint_agent_api'
-            '.L3RouterJointAgentNotifyAPI')
-        plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
-        oldNotify = plugin.l3_cfg_rpc_notifier
-        try:
-            with mock.patch(l3_rpc_agent_api_str) as notifyApi:
-                plugin.l3_cfg_rpc_notifier = notifyApi
-                kargs = [item for item in args]
-                kargs.append(notifyApi)
-                target_func(*kargs)
-        except Exception:
-            plugin.l3_cfg_rpc_notifier = oldNotify
-            raise
-        else:
-            plugin.l3_cfg_rpc_notifier = oldNotify
+        kargs = [item for item in args]
+        kargs.append(self._cfg_agent_mock)
+        target_func(*kargs)
 
 
 class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
@@ -282,7 +261,7 @@ class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
-        self._mock_svc_vm_create_delete()
+        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_get_routertype_scheduler_always_none()
 
     def tearDown(self):
@@ -290,20 +269,6 @@ class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
         super(L3AgentRouterApplianceVMTestCase, self).tearDown()
 
     def _test_notify_op_agent(self, target_func, *args):
-        l3_rpc_agent_api_str = (
-            'neutron.plugins.cisco.l3.rpc.l3_router_rpc_joint_agent_api'
-            '.L3RouterJointAgentNotifyAPI')
-        plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
-        oldNotify = plugin.l3_rpc_notifier
-        try:
-            with mock.patch(l3_rpc_agent_api_str) as notifyApi:
-                plugin.l3_rpc_notifier = notifyApi
-                kargs = [item for item in args]
-                kargs.append(notifyApi)
-                target_func(*kargs)
-        except Exception:
-            plugin.l3_rpc_notifier = oldNotify
-            raise
-        else:
-            plugin.l3_rpc_notifier = oldNotify
+        kargs = [item for item in args]
+        kargs.append(self._cfg_agent_mock)
+        target_func(*kargs)

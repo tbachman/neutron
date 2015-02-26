@@ -40,7 +40,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
         tenant_id = self._get_tenant_id_for_create(context, rt)
         with context.session.begin(subtransactions=True):
             routertype_db = l3_models.RouterType(
-                id=rt.get('id') or uuidutils.generate_uuid(),
+                id=self._get_id(rt),
                 tenant_id=tenant_id,
                 name=rt['name'],
                 description=rt['description'],
@@ -134,3 +134,9 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                'scheduler': routertype['scheduler'],
                'cfg_agent_driver': routertype['cfg_agent_driver']}
         return self._fields(res, fields)
+
+    def _get_id(self, res):
+        uuid = res.get('id')
+        if uuid:
+            return uuid
+        return uuidutils.generate_uuid()

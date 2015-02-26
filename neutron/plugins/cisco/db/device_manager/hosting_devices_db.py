@@ -46,7 +46,7 @@ class HostingDeviceDBMixin(
                                                            hd['template_id'])
                 credentials_id = hdt_db['default_credentials_id']
             hd_db = hd_models.HostingDevice(
-                id=hd.get('id') or uuidutils.generate_uuid(),
+                id=self._get_id(hd),
                 complementary_id=hd.get('complementary_id'),
                 tenant_id=tenant_id,
                 template_id=hd['template_id'],
@@ -113,7 +113,7 @@ class HostingDeviceDBMixin(
         #TODO(bobmel): check service types
         with context.session.begin(subtransactions=True):
             hdt_db = hd_models.HostingDeviceTemplate(
-                id=hdt.get('id') or uuidutils.generate_uuid(),
+                id=self._get_id(hdt),
                 tenant_id=tenant_id,
                 name=hdt.get('name'),
                 enabled=hdt.get('enabled', True),
@@ -178,6 +178,12 @@ class HostingDeviceDBMixin(
                                     sorts=sorts, limit=limit,
                                     marker_obj=marker,
                                     page_reverse=page_reverse)
+
+    def _get_id(self, res):
+        uuid = res.get('id')
+        if uuid:
+            return uuid
+        return uuidutils.generate_uuid()
 
     def _get_hosting_device(self, context, id):
         try:

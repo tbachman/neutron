@@ -24,6 +24,7 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
+from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
 from neutron.tests.unit.cisco.device_manager import device_manager_test_support
@@ -51,12 +52,15 @@ class TestL3RouterServicePlugin(
 
     def __init__(self):
         self.agent_notifiers.update(
-            {constants.AGENT_TYPE_L3:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify,
+             {constants.AGENT_TYPE_L3:
+                  l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(
+                      self),
+             {c_const.AGENT_TYPE_L3_CFG:
+                  l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self),
              c_const.AGENT_TYPE_CFG:
-             l3_router_rpc_joint_agent_api.L3JointAgentNotify})
+             devmgr_rpc_cfgagent_api.DeviceMgrCfgAgentNotifyAPI})
         self.router_scheduler = importutils.import_object(
-            cfg.CONF.router_type_aware_scheduler_driver)
+            cfg.CONF.routing.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
             cfg.CONF.router_scheduler_driver)
 

@@ -94,14 +94,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     _refresh_router_backlog = True
     _heartbeat = None
 
-    @classmethod
-    def reset_all(cls):
-        cls._router_schedulers = {}
-        cls._namespace_router_type_id = None
-        cls._backlogged_routers = set()
-        cls._refresh_router_backlog = True
-        cls._heartbeat = None
-
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
         l3.ROUTERS, ['_extend_router_dict_routertype',
                      '_extend_router_dict_routerhostingdevice'])
@@ -273,7 +265,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, info['router_id'])]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
+            l3_cfg_notifier = self.agent_notifiers.get(
+                c_consts.AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
                 l3_cfg_notifier.routers_updated(context, routers,
                                                 'create_floatingip')
@@ -311,7 +304,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, router_id)]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
+            l3_cfg_notifier = self.agent_notifiers.get(
+                c_consts.AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
                 l3_cfg_notifier.routers_updated(context, routers,
                                                 'delete_floatingip')
@@ -326,13 +320,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        router)
                 routers.append(router)
-            l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
+            l3_cfg_notifier = self.agent_notifiers.get(
+                c_consts.AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
                 l3_cfg_notifier.routers_updated(context, routers,
                                                 'disassociate_floatingips')
             # since caller assumes that we handled notifications on its
             # behalf, return nothing
-            return
+            return []
         return router_ids
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
@@ -566,7 +561,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def _get_effective_and_normal_routertypes(self, context, hosting_info):
         if hosting_info:
             hosting_device = hosting_info.hosting_device
-            normal = self._make_routertype_dict(hosting_info.router_type_id)
+#            normal = self._make_routertype_dict(hosting_info.router_type_id)
+            normal = self._make_routertype_dict(hosting_info.router_type)
             if hosting_device:
                 rt_info = self.get_routertypes(
                     context, filters={'template_id':

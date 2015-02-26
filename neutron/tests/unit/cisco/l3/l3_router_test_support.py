@@ -11,21 +11,20 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import mock
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as n_exc
+from neutron.db import common_db_mixin
 from neutron.extensions import l3
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import uuidutils
 import neutron.plugins
+from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.extensions import routertype
-from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
+from neutron.plugins.common import constants as service_constants
+#from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
 from neutron.tests.unit import test_l3_plugin
 
 LOG = logging.getLogger(__name__)
@@ -46,10 +45,18 @@ class L3RouterTestSupportMixin:
             mock.Mock(return_value=None))
         self.get_routertype_scheduler_fcn_p.start()
 
+    def _mock_cfg_agent_notifier(self, plugin):
+        # Mock notifications to cisco config agent
+        self._cfg_agent_mock = mock.MagicMock()
+        plugin.agent_notifiers = {
+            c_constants.AGENT_TYPE_L3_CFG: self._cfg_agent_mock}
+
 
 class TestL3RouterBaseExtensionManager(object):
 
     def get_resources(self):
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            routertype.EXTENDED_ATTRIBUTES_2_0['routers'])
         res = l3.L3.get_resources()
         for item in routertype.Routertype.get_resources():
             res.append(item)
@@ -72,10 +79,16 @@ class TestL3RouterBaseExtensionManager(object):
 
 # A routertype capable L3 routing service plugin class
 class TestL3RouterServicePlugin(
-    test_l3_plugin.TestL3NatServicePlugin,
-    l3_router_appliance_db.L3RouterApplianceDBMixin,
-        routertype_db.RoutertypeDbMixin):
+    common_db_mixin.CommonDbMixin,
+    routertype_db.RoutertypeDbMixin,
+        l3_router_appliance_db.L3RouterApplianceDBMixin):
 
     supported_extension_aliases = ["router", routertype.ROUTERTYPE_ALIAS]
-    # Disable notifications from l3 base class to l3 agents
-    l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
+#    # Disable notifications from l3 base class to l3 agents
+#    l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
+
+    def get_plugin_type(self):
+        return service_constants.L3_ROUTER_NAT
+
+    def get_plugin_description(self):
+        return "L3 Routing Service Plugin for testing"

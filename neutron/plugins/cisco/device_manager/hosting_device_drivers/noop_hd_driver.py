@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from neutron.plugins.cisco.device_manager.hosting_device_drivers import (
     HostingDeviceDriver)
@@ -21,10 +19,7 @@ from neutron.plugins.cisco.device_manager.hosting_device_drivers import (
 class NoopHostingDeviceDriver(HostingDeviceDriver):
 
     def hosting_device_name(self):
-        return "No_Name"
+        return "Noop_hosting_driver"
 
-    def create_configdrive_files(self, context, mgmtport):
+    def create_config(self, context, mgmtport):
         return {}
-
-    def delete_configdrive_files(self, context, mgmtport):
-        pass

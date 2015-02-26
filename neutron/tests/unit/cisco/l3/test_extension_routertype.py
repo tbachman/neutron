@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import copy
 
@@ -49,10 +47,12 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
                  'noop_hd_driver.NoopHostingDeviceDriver')
         rt_id = _uuid()
         data = {'routertype': {
+            'id': None,
             'tenant_id': _uuid(),
             'name': 'Fancy router type 1',
             'description': 'Lightning fast router type',
             'template_id': _uuid(),
+            'shared': True,
             'slot_need': 200,
             'scheduler': dummy,
             'cfg_agent_driver': dummy}}
@@ -125,6 +125,3 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
     def test_routertype_delete(self):
         self._test_entity_delete('routertype')
 
-
-class RouterTypeTestCaseXML(RouterTypeTestCase):
-    fmt = 'xml'

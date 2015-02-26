@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
 
@@ -74,7 +72,7 @@ class L3RouterApplianceAgentSchedulerTestCase(
         cfg.CONF.set_override('api_extensions_path',
                               l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',
-                              c_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
         super(L3RouterApplianceAgentSchedulerTestCase, self).setUp()
 

@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import contextlib
 
@@ -147,7 +145,7 @@ class RoutertypeTestCaseMixin(object):
 
 
 class L3TestRoutertypeExtensionManager(
-    l3_router_test_support.TestL3RouterBaseExtensionManager):
+        l3_router_test_support.TestL3RouterBaseExtensionManager):
 
     def get_resources(self):
         res = super(L3TestRoutertypeExtensionManager, self).get_resources()
@@ -210,6 +208,3 @@ class TestRoutertypeDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
         #TODO
         pass
 
-
-class TestRoutertypeDBPluginXML(TestRoutertypeDBPlugin):
-    fmt = 'xml'

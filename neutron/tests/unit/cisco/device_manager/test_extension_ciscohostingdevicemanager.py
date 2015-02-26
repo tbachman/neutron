@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import copy
 
@@ -46,11 +44,13 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
     def test_create_hosting_device(self):
         hd_id = _uuid()
         data = {'hosting_device': {
+            'id': None,
             'tenant_id': _uuid(),
             'template_id': _uuid(),
             'credentials_id': None,
             'device_id': 'device_id_string1',
             'admin_state_up': True,
+            'management_ip_address': '10.0.100.10',
             'management_port_id': _uuid(),
             'protocol_port': 22,
             'cfg_agent_id': None,
@@ -136,6 +136,7 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
                            'plugging_drivers.noop_plugging_driver.'
                            'NoopPluggingDriver')
         data = {'hosting_device_template': {
+            'id': None,
             'tenant_id': _uuid(),
             'name': 'HostingDeviceTemplate1',
             'enabled': True,
@@ -223,11 +224,6 @@ class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
 
     def test_hosting_device_template_delete(self):
         self._test_entity_delete('hosting_device_template')
-
-
-#class CiscoHostingDeviceManagerTestCaseXML(
-# CiscoHostingDeviceManagerTestCase):
-#    fmt = 'xml'
 
 
 class TestCiscoHostingDeviceManagerAttributeValidators(base.BaseTestCase):

@@ -111,7 +111,7 @@ class ServiceVMManager(object):
                                  vm_flavor, hosting_device_drv, mgmt_port,
                                  ports=None):
         nics = [{'port-id': mgmt_port['id']}]
-        for port in ports:
+        for port in ports or {}:
             nics.append({'port-id': port['id']})
 
         try:
@@ -185,7 +185,7 @@ class ServiceVMManager(object):
                                'device_owner': 'nova'}}
             self._core_plugin.update_port(context, mgmt_port['id'], p_dict)
 
-        for port in ports:
+        for port in ports or {}:
             p_dict = {'port': {'device_id': vm_id,
                                'device_owner': 'nova'}}
             self._core_plugin.update_port(context, port['id'], p_dict)

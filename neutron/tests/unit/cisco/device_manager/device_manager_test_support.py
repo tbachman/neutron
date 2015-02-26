@@ -11,15 +11,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 import mock
+from novaclient import exceptions as nova_exc
 from oslo.config import cfg
+from oslo.utils import excutils
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
 from neutron import context as n_context
+from neutron.i18n import _LE
 from neutron.db import agents_db
 from neutron import manager
 from neutron.openstack.common import log as logging
@@ -57,7 +58,8 @@ class DeviceManagerTestSupportMixin:
         self.tenant_id_fcn.return_value = "L3AdminTenantId"
 
     def _create_mgmt_nw_for_tests(self, fmt):
-        self._mgmt_nw = self._make_network(fmt, cfg.CONF.management_network,
+        self._mgmt_nw = self._make_network(fmt,
+                                           cfg.CONF.general.management_network,
                                            True, tenant_id="L3AdminTenantId",
                                            shared=False)
         self._mgmt_subnet = self._make_subnet(fmt, self._mgmt_nw,
@@ -75,74 +77,121 @@ class DeviceManagerTestSupportMixin:
         hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = (
             None)
 
-    # Functions to mock service VM creation.
-    def _dispatch_service_vm_mock(self, context, instance_name, vm_image,
-                                  vm_flavor, hosting_device_drv, mgmt_port,
-                                  ports=None):
-        vm_id = uuidutils.generate_uuid()
+    # # Functions to mock service VM creation.
+    # def _dispatch_service_vm_mock(self, context, instance_name, vm_image,
+    #                               vm_flavor, hosting_device_drv, mgmt_port,
+    #                               ports=None):
+    #     vm_id = uuidutils.generate_uuid()
+    #
+    #     try:
+    #         # Assumption for now is that this does not need to be
+    #         # plugin dependent, only hosting device type dependent.
+    #         hosting_device_drv.create_config(context, mgmt_port)
+    #     except IOError:
+    #         return
+    #
+    #     if mgmt_port is not None:
+    #         p_dict = {'port': {'device_id': vm_id,
+    #                            'device_owner': 'nova'}}
+    #         self._core_plugin.update_port(context, mgmt_port['id'], p_dict)
+    #
+    #     for port in ports or {}:
+    #         p_dict = {'port': {'device_id': vm_id,
+    #                            'device_owner': 'nova'}}
+    #         self._core_plugin.update_port(context, port['id'], p_dict)
+    #
+    #     myserver = {'server': {'adminPass': "MVk5HPrazHcG",
+    #                 'id': vm_id,
+    #                 'links': [{'href': "http://openstack.example.com/v2/"
+    #                                    "openstack/servers/" + vm_id,
+    #                            'rel': "self"},
+    #                           {'href': "http://openstack.example.com/"
+    #                                    "openstack/servers/" + vm_id,
+    #                            'rel': "bookmark"}]}}
+    #
+    #     return myserver['server']
+    #
+    # def _delete_service_vm_mock(self, context, vm_id):
+    #         result = True
+    #
+    #         try:
+    #             ports = self._core_plugin.get_ports(
+    #                 context, filters={'device_id': [vm_id]})
+    #             for port in ports:
+    #                 self._core_plugin.delete_port(context, port['id'])
+    #         except n_exc.NeutronException as e:
+    #             LOG.error('Failed to delete service VM %(id)s due to '
+    #                       '%(err)s', {'id': vm_id, 'err': e})
+    #             result = False
+    #         return result
 
-        try:
-            # Assumption for now is that this does not need to be
-            # plugin dependent, only hosting device type dependent.
-            hosting_device_drv.create_configdrive_files(context, mgmt_port)
-        except IOError:
-            return
+    # def _mock_svc_vm_create_delete(self):
+    #     # Mock creation/deletion of service VMs
+    #     self.dispatch_svc_vm_fcn_p = mock.patch(
+    #         'neutron.plugins.cisco.device_manager.service_vm_lib'
+    #         '.ServiceVMManager.dispatch_service_vm',
+    #         self._dispatch_service_vm_mock)
+    #     self.dispatch_svc_vm_fcn_p.start()
+    #
+    #     self.delete_svc_vm_fcn_p = mock.patch(
+    #         'neutron.plugins.cisco.device_manager.service_vm_lib'
+    #         '.ServiceVMManager.delete_service_vm',
+    #         self._delete_service_vm_mock)
+    #     self.delete_svc_vm_fcn_p.start()
 
-        if mgmt_port is not None:
-            p_dict = {'port': {'device_id': vm_id,
+    # Function used to mock novaclient services list
+    def _novaclient_services_list(self, all=True):
+        services = set(['nova-conductor', 'nova-cert', 'nova-scheduler',
+                        'nova-compute', 'nova-consoleauth'])
+        full_list = [FakeResource(binary=res) for res in services]
+        _all = all
+
+        def response():
+            if _all:
+                return full_list
+            else:
+                return full_list[2:]
+        return response
+
+    # Function used to mock novaclient servers create
+    def _novaclient_servers_create(self, instance_name, image_id, flavor_id,
+                                   nics, files, config_drive):
+        fake_vm = FakeResource()
+        for nic in nics:
+            p_dict = {'port': {'device_id': fake_vm.id,
                                'device_owner': 'nova'}}
-            self._core_plugin.update_port(context, mgmt_port['id'], p_dict)
+            self._core_plugin.update_port(n_context.get_admin_context(),
+                                          nic['port-id'], p_dict)
+        return fake_vm
 
-        for port in ports:
-            p_dict = {'port': {'device_id': vm_id,
-                               'device_owner': 'nova'}}
-            self._core_plugin.update_port(context, port['id'], p_dict)
-
-        myserver = {'server': {'adminPass': "MVk5HPrazHcG",
-                    'id': vm_id,
-                    'links': [{'href': "http://openstack.example.com/v2/"
-                                       "openstack/servers/" + vm_id,
-                               'rel': "self"},
-                              {'href': "http://openstack.example.com/"
-                                       "openstack/servers/" + vm_id,
-                               'rel': "bookmark"}]}}
-
-        return myserver['server']
-
-    def _delete_service_vm_mock(self, context, vm_id, hosting_device_drv,
-                                mgmt_nw_id):
-            result = True
-            # Get ports on management network (should be only one)
-            ports = self._core_plugin.get_ports(
-                context, filters={'device_id': [vm_id],
-                                  'network_id': [mgmt_nw_id]})
-            if ports:
-                hosting_device_drv.delete_configdrive_files(context, ports[0])
-
+    # Function used to mock novaclient servers delete
+    def _novaclient_servers_delete(self, vm_id):
+        q_p = "device_id=%s" % vm_id
+        ports = self._list('ports', query_params=q_p)
+        for port in ports.get('ports', []):
             try:
-                ports = self._core_plugin.get_ports(
-                    context, filters={'device_id': [vm_id]})
-                for port in ports:
-                    self._core_plugin.delete_port(context, port['id'])
-            except n_exc.NeutronException as e:
-                LOG.error('Failed to delete service VM %(id)s due to '
-                          '%(err)s', {'id': vm_id, 'err': e})
-                result = False
-            return result
+                self._delete('ports', port['id'])
+            except Exception as e:
+                with excutils.save_and_reraise_exception(reraise=False):
+                    LOG.error(_LE('Failed to delete port %(p_id)s for vm '
+                                  'instance %(v_id)s due to %(err)s'),
+                              {'p_id': port['id'], 'v_id': vm_id, 'err': e})
+                    raise nova_exc.InternalServerError()
 
-    def _mock_svc_vm_create_delete(self):
-        # Mock creation/deletion of service VMs
-        self.dispatch_svc_vm_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.service_vm_lib'
-            '.ServiceVMManager.dispatch_service_vm',
-            self._dispatch_service_vm_mock)
-        self.dispatch_svc_vm_fcn_p.start()
-
-        self.delete_svc_vm_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.service_vm_lib'
-            '.ServiceVMManager.delete_service_vm',
-            self._delete_service_vm_mock)
-        self.delete_svc_vm_fcn_p.start()
+    def _mock_svc_vm_create_delete(self, plugin):
+        # Mock novaclient methods for creation/deletion of service VMs
+        mock.patch(
+            'neutron.plugins.cisco.device_manager.service_vm_lib.n_utils'
+            '.find_resource', lambda *args, **kw: FakeResource()).start()
+        self._nclient_services_mock = mock.MagicMock()
+        self._nclient_services_mock.list = self._novaclient_services_list()
+        mock.patch.object(plugin._svc_vm_mgr._nclient, 'services',
+                          self._nclient_services_mock).start()
+        nclient_servers_mock = mock.MagicMock()
+        nclient_servers_mock.create = self._novaclient_servers_create
+        nclient_servers_mock.delete = self._novaclient_servers_delete
+        mock.patch.object(plugin._svc_vm_mgr._nclient, 'servers',
+                          nclient_servers_mock).start()
 
     def _mock_dispatch_pool_maintenance(self):
         # Mock creation/deletion of service VMs
@@ -158,15 +207,9 @@ class DeviceManagerTestSupportMixin:
                                   'no shutdown'])
         m = mock.mock_open(read_data=cfg_template)
         m.return_value.__iter__.return_value = cfg_template.splitlines()
-        self.open_fcn_p = mock.patch('neutron.plugins.cisco.device_manager'
-                                     '.hosting_device_drivers.csr1kv_hd_driver'
-                                     '.open', m, create=True)
-        self.open_fcn_p.start()
-        self.remove_fcn_p = mock.patch('neutron.plugins.cisco.device_manager'
-                                       '.hosting_device_drivers'
-                                       '.csr1kv_hd_driver.os.remove',
-                                       create=True)
-        self.remove_fcn_p.start()
+        mock.patch('neutron.plugins.cisco.device_manager.'
+                   'hosting_device_drivers.csr1kv_hd_driver.open', m,
+                   create=True).start()
 
     def _test_remove_all_hosting_devices(self):
         """Removes all hosting devices created during a test."""
@@ -209,3 +252,12 @@ class TestCorePlugin(test_l3_plugin.TestNoL3NatPlugin, agents_db.AgentDbMixin,
 
     supported_extension_aliases = ["external-net",
                                    ciscodevmgr.HOSTING_DEVICE_MANAGER_ALIAS]
+
+
+# Used to fake Glance images, Nova VMs and Nova services
+class FakeResource(object):
+    def __init__(self, id=None, enabled='enabled', state='up', binary=None):
+        self.id = id or _uuid()
+        self.status = enabled
+        self.state = state
+        self.binary = binary

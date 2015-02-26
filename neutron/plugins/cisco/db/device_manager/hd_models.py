@@ -127,7 +127,6 @@ class SlotAllocation(model_base.BASEV2):
                             nullable=False)
     hosting_device_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('cisco_hosting_devices.id'),
-#                                                ondelete='CASCADE'),
                                   nullable=False)
     #TODO(bobmel): Add logical_resource_name[sa.String(255)]
     #TODO(bobmel): Add logical_resource_service[sa.String(255)]
