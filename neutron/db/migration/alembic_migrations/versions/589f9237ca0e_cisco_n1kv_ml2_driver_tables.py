@@ -85,6 +85,9 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('vxlan_id', sa.Integer(), autoincrement=False,
                   nullable=False),
         sa.Column('allocated', sa.Boolean(), nullable=False),
+        sa.Column('network_profile_id', sa.String(length=36), nullable=False),
+        sa.ForeignKeyConstraint(['network_profile_id'],
+                                ['cisco_ml2_n1kv_network_profiles.id']),
         sa.PrimaryKeyConstraint('vxlan_id')
     )
 
@@ -95,6 +98,9 @@ def upgrade(active_plugins=None, options=None):
                   nullable=False),
         sa.Column('allocated', sa.Boolean(), autoincrement=False,
                   nullable=False),
+        sa.Column('network_profile_id', sa.String(length=36), nullable=False),
+        sa.ForeignKeyConstraint(['network_profile_id'],
+                                ['cisco_ml2_n1kv_network_profiles.id']),
         sa.PrimaryKeyConstraint('physical_network', 'vlan_id')
     )
 
