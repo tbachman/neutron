@@ -135,7 +135,10 @@ class RoutertypeTestCaseMixin(object):
                                                                       rt)
         return self._routertypes
 
-    def _test_remove_routertypes(self):
+    def _test_remove_routertypes(self, delete_routers=True):
+        if delete_routers:
+            for r in self._list('routers')['routers']:
+                self._delete('routers', r['id'])
         try:
             for name, rt in self._routertypes.items():
                 if rt is not None:

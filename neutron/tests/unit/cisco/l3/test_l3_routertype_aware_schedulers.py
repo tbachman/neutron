@@ -11,22 +11,22 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Bob Melander, Cisco Systems, Inc.
 
 from oslo.config import cfg
 
+from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants
 from neutron import context as q_context
 from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants as plugin_consts
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
 from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.extensions import routertype
-from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.rpc import l3_router_rpc_cfg_agent_api
 from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
 from neutron.tests.unit.cisco.l3 import l3_router_test_support
@@ -39,11 +39,11 @@ LOG = logging.getLogger(__name__)
 CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
     "neutron.tests.unit.cisco.l3.test_l3_routertype_aware_schedulers."
-    "TestL3RouterServicePlugin")
+    "TestSchedulingCapableL3RouterServicePlugin")
 
 
 # A scheduler-enabled routertype capable L3 routing service plugin class
-class TestL3RouterServicePlugin(
+class TestSchedulingCapableL3RouterServicePlugin(
     l3_router_test_support.TestL3RouterServicePlugin,
         router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
@@ -52,11 +52,9 @@ class TestL3RouterServicePlugin(
 
     def __init__(self):
         self.agent_notifiers.update(
-             {constants.AGENT_TYPE_L3:
-                  l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(
-                      self),
-             {c_const.AGENT_TYPE_L3_CFG:
-                  l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self),
+            {constants.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotifyAPI(),
+             c_const.AGENT_TYPE_L3_CFG:
+             l3_router_rpc_cfg_agent_api.L3RouterCfgAgentNotifyAPI(self),
              c_const.AGENT_TYPE_CFG:
              devmgr_rpc_cfgagent_api.DeviceMgrCfgAgentNotifyAPI})
         self.router_scheduler = importutils.import_object(
@@ -94,10 +92,12 @@ class L3RoutertypeAwareSchedulerTestCase(
             ext_mgr=ext_mgr)
 
         cfg.CONF.set_override('default_router_type',
-                              c_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
         self.adminContext = q_context.get_admin_context()
         self.plugin = manager.NeutronManager.get_plugin()
+        self.l3_plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_consts.L3_ROUTER_NAT)
         self._register_l3_agents()
 
         self._mock_l3_admin_tenant()
@@ -113,7 +113,14 @@ class L3RoutertypeAwareSchedulerTestCase(
 class L3RoutertypeAwareChanceSchedulerTestCase(
     test_l3_schedulers.L3AgentChanceSchedulerTestCase,
         L3RoutertypeAwareSchedulerTestCase):
-    pass
+
+    def test_scheduler_auto_schedule_when_agent_added(self):
+        # in our test setup the auto_schedule_routers function is provided by
+        # the separate l3 service plugin, not the core plugin
+        self.plugin.auto_schedule_routers = (
+            self.l3_plugin.auto_schedule_routers)
+        super(L3RoutertypeAwareChanceSchedulerTestCase,
+              self).test_scheduler_auto_schedule_when_agent_added()
 
 
 class L3RoutertypeAwareLeastRoutersSchedulerTestCase(
@@ -124,4 +131,11 @@ class L3RoutertypeAwareLeastRoutersSchedulerTestCase(
         cfg.CONF.set_override('router_scheduler_driver',
                               'neutron.scheduler.l3_agent_scheduler.'
                               'LeastRoutersScheduler')
-        super(L3RoutertypeAwareLeastRoutersSchedulerTestCase, self).setUp()
+        # call grandparent's setUp() to avoid that wrong scheduler is used
+        super(test_l3_schedulers.L3AgentLeastRoutersSchedulerTestCase,
+              self).setUp()
+
+
+#TODO(bobmel): Activate unit tests for DVR
+
+#TODO(bobmel): Add unit tests for HA in Cisco devices (not Linux namespaces)

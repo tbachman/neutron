@@ -15,14 +15,16 @@
 from oslo.config import cfg
 from oslo.utils import importutils
 
+from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.rpc.handlers import l3_rpc
+from neutron.common import constants as neutron_constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import common_db_mixin
 #from neutron.db import l3_gwmode_db
 from neutron import manager
 import neutron.plugins
-from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
@@ -30,8 +32,9 @@ from neutron.plugins.cisco.db.scheduler import (
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
-from neutron.plugins.cisco.l3.rpc import l3_router_cfgagent_rpc_cb as l3cfg_rpc
-from neutron.plugins.cisco.l3.rpc import l3_router_rpc_joint_agent_api
+from neutron.plugins.cisco.l3.rpc import (l3_router_cfg_agent_rpc_cb as
+                                          l3cfg_rpc)
+from neutron.plugins.cisco.l3.rpc import l3_router_rpc_cfg_agent_api
 from neutron.plugins.common import constants
 
 
@@ -79,8 +82,10 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         # RPC support
         self.topic = topics.L3PLUGIN
         self.conn = n_rpc.create_connection(new=True)
-        self.agent_notifiers[c_constants.AGENT_TYPE_L3_CFG] = (
-            l3_router_rpc_joint_agent_api.L3RouterJointAgentNotifyAPI(self))
+        self.agent_notifiers[neutron_constants.AGENT_TYPE_L3] = (
+            l3_rpc_agent_api.L3AgentNotifyAPI())
+        self.agent_notifiers[cisco_constants.AGENT_TYPE_L3_CFG] = (
+            l3_router_rpc_cfg_agent_api.L3RouterCfgAgentNotifyAPI(self))
         self.endpoints = [l3_rpc.L3RpcCallback(),
                           l3cfg_rpc.L3RouterCfgRpcCallback(self)]
         self.conn.create_consumer(self.topic, self.endpoints,

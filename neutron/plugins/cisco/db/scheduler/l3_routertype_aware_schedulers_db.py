@@ -22,12 +22,15 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
 from neutron.openstack.common import log as logging
-from neutron.plugins.cisco.common import cisco_constants as c_consts
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 
 LOG = logging.getLogger(__name__)
+
+AGENT_TYPE_CFG = cisco_constants.AGENT_TYPE_CFG
+AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
 
 
 ROUTER_TYPE_AWARE_SCHEDULER_OPTS = [
@@ -82,8 +85,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
             router = self.get_router(e_context, router_id)
             self._add_type_and_hosting_device_info(
                 e_context, router, binding_info=r_hd_binding, schedule=False)
-            l3_cfg_notifier = self.agent_notifiers.get(
-                c_consts.AGENT_TYPE_L3_CFG)
+            l3_cfg_notifier = self.agent_notifiers.get(AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
                 l3_cfg_notifier.router_added_to_hosting_device(context, router)
         else:
@@ -109,7 +111,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
         # conditionally remove router from backlog ensure it does not get
         # scheduled automatically
         self.remove_router_from_backlog(id)
-        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
+        l3_cfg_notifier = self.agent_notifiers.get(AGENT_TYPE_L3_CFG)
         if l3_cfg_notifier:
             l3_cfg_notifier.router_removed_from_hosting_device(context, router)
         LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
@@ -145,8 +147,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
     def list_active_sync_routers_on_hosting_devices(self, context, host,
                                                     router_ids=None,
                                                     hosting_device_ids=None):
-        agent = self._get_agent_by_type_and_host(context,
-                                                 c_consts.AGENT_TYPE_CFG, host)
+        agent = self._get_agent_by_type_and_host(context, AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []
         query = context.session.query(

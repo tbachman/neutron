@@ -224,9 +224,8 @@ class L3RouterApplianceVMTestCase(
         self._mock_get_routertype_scheduler_always_none()
 
 
-class L3AgentRouterApplianceNamespaceTestCase(
-    test_l3_plugin.L3AgentDbTestCaseBase,
-        L3RouterApplianceTestCaseBase):
+class L3AgentRouterApplianceTestCase(test_l3_plugin.L3AgentDbTestCaseBase,
+                                     L3RouterApplianceTestCaseBase):
 
     router_type = c_const.NAMESPACE_ROUTER_TYPE
 
@@ -236,18 +235,18 @@ class L3AgentRouterApplianceNamespaceTestCase(
         # service plugin providing L3 routing
         self.plugin = TestApplianceL3RouterServicePlugin()
 
-        super(L3AgentRouterApplianceNamespaceTestCase, self).setUp(
+        super(L3AgentRouterApplianceTestCase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
     def _test_notify_op_agent(self, target_func, *args):
         kargs = [item for item in args]
-        kargs.append(self._cfg_agent_mock)
+        kargs.append(self._l3_agent_mock)
         target_func(*kargs)
 
 
-class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
-                                       test_l3_plugin.L3AgentDbTestCaseBase):
+class L3CfgAgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
+                                        test_l3_plugin.L3AgentDbTestCaseBase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -257,7 +256,7 @@ class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
         self.orig_get_sync_data = self.plugin.get_sync_data
         self.plugin.get_sync_data = self.plugin.get_sync_data_ext
 
-        super(L3AgentRouterApplianceVMTestCase, self).setUp(
+        super(L3CfgAgentRouterApplianceTestCase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
@@ -266,7 +265,7 @@ class L3AgentRouterApplianceVMTestCase(L3RouterApplianceTestCaseBase,
 
     def tearDown(self):
         self.plugin.get_sync_data = self.orig_get_sync_data
-        super(L3AgentRouterApplianceVMTestCase, self).tearDown()
+        super(L3CfgAgentRouterApplianceTestCase, self).tearDown()
 
     def _test_notify_op_agent(self, target_func, *args):
         kargs = [item for item in args]

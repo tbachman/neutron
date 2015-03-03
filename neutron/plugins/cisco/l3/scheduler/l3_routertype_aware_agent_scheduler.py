@@ -19,6 +19,7 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.db.l3 import l3_models
+from neutron.plugins.cisco.extensions import routertype
 from neutron.scheduler import l3_agent_scheduler
 
 LOG = logging.getLogger(__name__)
@@ -53,13 +54,23 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 context, filters={'id': unscheduled_router_ids})
         return []
 
-    def schedule(self, plugin, context, router, candidates=None):
+    def schedule(self, plugin, context, router, candidates=None,
+                 hints=None):
         # Only network namespace based routers should be scheduled here
         ns_routertype_id = plugin.get_namespace_router_type_id(context)
-        if router['router_type']['id'] == ns_routertype_id:
+        # Not very happy about these checks but since we want to work with
+        # existing l3 agent scheduler they cannot be avoided
+        if isinstance(router, dict):
+            router_type_id = router[routertype.TYPE_ATTR]
+            router_id = router['id']
+        else:
+            router_id = router
+            r = plugin.get_router(context, router_id)
+            router_type_id = r[routertype.TYPE_ATTR]
+        if router_type_id == ns_routertype_id:
             # Do the traditional Neutron router scheduling
             return plugin.l3agent_scheduler.schedule(plugin, context,
-                                                     router['id'], candidates)
+                                                     router_id, candidates)
         else:
             return
 

@@ -15,11 +15,12 @@
 import mock
 
 from neutron.api.v2 import attributes
+from neutron.common import constants
 from neutron.db import common_db_mixin
 from neutron.extensions import l3
 from neutron.openstack.common import log as logging
 import neutron.plugins
-from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.extensions import routertype
@@ -46,10 +47,12 @@ class L3RouterTestSupportMixin:
         self.get_routertype_scheduler_fcn_p.start()
 
     def _mock_cfg_agent_notifier(self, plugin):
-        # Mock notifications to cisco config agent
+        # Mock notifications to l3 agent and Cisco config agent
+        self._l3_agent_mock = mock.MagicMock()
         self._cfg_agent_mock = mock.MagicMock()
         plugin.agent_notifiers = {
-            c_constants.AGENT_TYPE_L3_CFG: self._cfg_agent_mock}
+            constants.AGENT_TYPE_L3: self._l3_agent_mock,
+            cisco_constants.AGENT_TYPE_L3_CFG: self._cfg_agent_mock}
 
 
 class TestL3RouterBaseExtensionManager(object):

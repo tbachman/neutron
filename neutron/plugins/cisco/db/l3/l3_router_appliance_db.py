@@ -37,7 +37,7 @@ from neutron.i18n import _LE, _LI
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.plugins.cisco.common import cisco_constants as c_consts
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.device_manager import config
@@ -48,12 +48,16 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
+AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
+AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
+
+
 ROUTER_APPLIANCE_OPTS = [
     cfg.StrOpt('default_router_type',
-               default=c_consts.CSR1KV_ROUTER_TYPE,
+               default=cisco_constants.CSR1KV_ROUTER_TYPE,
                help=_("Default type of router to create")),
     cfg.StrOpt('namespace_router_type_name',
-               default=c_consts.NAMESPACE_ROUTER_TYPE,
+               default=cisco_constants.NAMESPACE_ROUTER_TYPE,
                help=_("Name of router type used for Linux network namespace "
                       "routers (i.e., Neutron's legacy routers in Network "
                       "nodes).")),
@@ -152,9 +156,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 context, id, router))
         routers = [copy.deepcopy(router_updated)]
         self._add_type_and_hosting_device_info(e_context, routers[0])
-        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
-        if l3_cfg_notifier:
-            l3_cfg_notifier.routers_updated(context, routers)
+        for ni in self._get_notifiers(context, routers):
+            if ni['notifier']:
+                ni['notifier'].routers_updated(context, ni['routers'])
         return router_updated
 
     #Todo(bobmel): Move this to l3_routertype_aware_schedulers_db later
@@ -191,9 +195,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                          router_db.gw_port)
         # conditionally remove router from backlog just to be sure
         self.remove_router_from_backlog(id)
-        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
-        if l3_cfg_notifier:
-            l3_cfg_notifier.router_deleted(context, router)
+        for ni in self._get_notifiers(context, [router]):
+            if ni['notifier']:
+                ni['notifier'].router_deleted(context, ni['routers'][0])
         # TODO(bobmel): Change status to PENDING_DELETE and delay actual
         # deletion from DB until cfg agent signals that it has deleted the
         # router from the hosting device.
@@ -213,10 +217,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def notify_router_interface_action(
             self, context, router_interface_info, routers, action):
         l3_method = '%s_router_interface' % action
-        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
-        if l3_cfg_notifier:
-            l3_cfg_notifier.routers_updated(context, routers, l3_method)
-
+        for ni in self._get_notifiers(context, routers):
+            if ni['notifier']:
+                ni['notifier'].routers_updated(context, ni['routers'],
+                                               l3_method)
         mapping = {'add': 'create', 'remove': 'delete'}
         notifier = n_rpc.get_notifier('network')
         router_event = 'router.interface.%s' % mapping[action]
@@ -265,11 +269,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, info['router_id'])]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            l3_cfg_notifier = self.agent_notifiers.get(
-                c_consts.AGENT_TYPE_L3_CFG)
-            if l3_cfg_notifier:
-                l3_cfg_notifier.routers_updated(context, routers,
-                                                'create_floatingip')
+            for ni in self._get_notifiers(context, routers):
+                if ni['notifier']:
+                    ni['notifier'].routers_updated(context, ni['routers'],
+                                                   'create_floatingip')
         return info
 
     def update_floatingip(self, context, id, floatingip):
@@ -287,13 +290,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         routers = []
         for router_id in router_ids:
             router = self.get_router(context, router_id)
-            self._add_type_and_hosting_device_info(context.elevated(),
-                                                   router)
+            self._add_type_and_hosting_device_info(context.elevated(), router)
             routers.append(router)
-        l3_cfg_notifier = self.agent_notifiers.get(c_consts.AGENT_TYPE_L3_CFG)
-        if l3_cfg_notifier:
-            l3_cfg_notifier.routers_updated(context, routers,
-                                            'update_floatingip')
+        for ni in self._get_notifiers(context, routers):
+            if ni['notifier']:
+                ni['notifier'].routers_updated(context, ni['routers'],
+                                               'update_floatingip')
         return info
 
     def delete_floatingip(self, context, id):
@@ -304,11 +306,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, router_id)]
             self._add_type_and_hosting_device_info(context.elevated(),
                                                    routers[0])
-            l3_cfg_notifier = self.agent_notifiers.get(
-                c_consts.AGENT_TYPE_L3_CFG)
-            if l3_cfg_notifier:
-                l3_cfg_notifier.routers_updated(context, routers,
-                                                'delete_floatingip')
+            for ni in self._get_notifiers(context, routers):
+                if ni['notifier']:
+                    ni['notifier'].routers_updated(context, ni['routers'],
+                                                   'delete_floatingip')
 
     def disassociate_floatingips(self, context, port_id, do_notify=True):
         router_ids = super(L3RouterApplianceDBMixin,
@@ -320,11 +321,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self._add_type_and_hosting_device_info(context.elevated(),
                                                        router)
                 routers.append(router)
-            l3_cfg_notifier = self.agent_notifiers.get(
-                c_consts.AGENT_TYPE_L3_CFG)
-            if l3_cfg_notifier:
-                l3_cfg_notifier.routers_updated(context, routers,
-                                                'disassociate_floatingips')
+            for ni in self._get_notifiers(context, routers):
+                if ni['notifier']:
+                    ni['notifier'].routers_updated(context, ni['routers'],
+                                                   'disassociate_floatingips')
             # since caller assumes that we handled notifications on its
             # behalf, return nothing
             return []
@@ -369,7 +369,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     def get_sync_data(self, context, router_ids=None, active=None):
         # ensure only routers of namespace type are returned
-        r_f = {'routertype_id': [self.get_namespace_router_type_id(context)]}
+        r_f = {routertype.TYPE_ATTR: [self.get_namespace_router_type_id(
+            context)]}
         if router_ids is not None:
             r_f['id'] = router_ids
         routers = self.get_routers(context, filters=r_f, fields=['id']) or []
@@ -533,10 +534,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self._remove_router_from_backlog(r_id)
         # notify cfg agents so the scheduled routers are instantiated
         if scheduled_routers:
-            l3_cfg_notifier = self.agent_notifiers.get(
-                c_consts.AGENT_TYPE_L3_CFG)
-            if l3_cfg_notifier:
-                l3_cfg_notifier.routers_updated(context, scheduled_routers)
+            for ni in self._get_notifiers(context, scheduled_routers):
+                if ni['notifier']:
+                    ni['notifier'].routers_updated(context, ni['routers'])
 
     def _setup_backlog_handling(self):
         self._heartbeat = loopingcall.FixedIntervalLoopingCall(
@@ -558,10 +558,38 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
+    def _get_notifiers(self, context, routers):
+        """Determines notifier to use for routers.
+
+        @params: context - context
+        @params: routers - list of router dict that includes router type id
+
+        @returns: list of dicts - [{'notifier': notifier_object_1,
+                                    'routers': list_1 of router dicts or
+                                               router uuids},
+                                   {'notifier': notifier_object_2,
+                                    'routers': list_2 of router dicts or
+                                               router uuids},
+                                   ...]
+        """
+        res = {
+            AGENT_TYPE_L3: {
+                'notifier': self.agent_notifiers.get(AGENT_TYPE_L3),
+                'routers': []},
+            AGENT_TYPE_L3_CFG: {
+                'notifier': self.agent_notifiers.get(AGENT_TYPE_L3_CFG),
+                'routers': []}}
+        for router in routers:
+            if (router[routertype.TYPE_ATTR] ==
+                    self.get_namespace_router_type_id(context)):
+                res[AGENT_TYPE_L3]['routers'].append(router['id'])
+            else:
+                res[AGENT_TYPE_L3_CFG]['routers'].append(router)
+        return [v for k, v in res.items() if v['routers']]
+
     def _get_effective_and_normal_routertypes(self, context, hosting_info):
         if hosting_info:
             hosting_device = hosting_info.hosting_device
-#            normal = self._make_routertype_dict(hosting_info.router_type_id)
             normal = self._make_routertype_dict(hosting_info.router_type)
             if hosting_device:
                 rt_info = self.get_routertypes(

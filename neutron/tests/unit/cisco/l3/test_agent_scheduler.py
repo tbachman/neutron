@@ -12,16 +12,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import contextlib
+
+import mock
 from oslo.config import cfg
 
 from neutron.common import constants
 from neutron.db import agentschedulers_db
-from neutron.manager import NeutronManager
+from neutron import manager
 from neutron.openstack.common import importutils
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
-from neutron.plugins.common import constants as svc_constants
+from neutron.plugins.common import constants as service_constants
+from neutron.tests import fake_notifier
 from neutron.tests.unit.cisco.device_manager import device_manager_test_support
 from neutron.tests.unit.cisco.device_manager import test_db_device_manager
 from neutron.tests.unit.cisco.l3 import l3_router_test_support
@@ -106,7 +110,7 @@ class L3RouterApplianceL3AgentNotifierTestCase(
         cfg.CONF.set_override('api_extensions_path',
                               l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',
-                              c_const.NAMESPACE_ROUTER_TYPE)
+                              c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
         super(L3RouterApplianceL3AgentNotifierTestCase, self).setUp()
 
