@@ -277,7 +277,12 @@ class N1KVMechanismDriver(api.MechanismDriver):
     def delete_port_postcommit(self, context):
         """Send delete port notification to the VSM."""
         port = context.current
-        profile_id = port[n1kv_const.N1KV_PROFILE]
+        profile_id = port.get(n1kv_const.N1KV_PROFILE, None)
+        # If profile UUID is not present in the port object, we need
+        # not send the port delete notification to the VSM since the port
+        # does not exist on the VSM due to failure in create_port_precommit.
+        if not profile_id:
+            return
         vmnetwork_name = "%s%s_%s" % (n1kv_const.VM_NETWORK_PREFIX,
                                       profile_id,
                                       port['network_id'])
