@@ -99,7 +99,7 @@ class TestHaproxyNSDriver(base.BaseTestCase):
             self.driver.pool_to_port_id['pool_id'] = 'port_id'
             isdir.return_value = True
 
-            self.driver.destroy('pool_id')
+            self.driver.destroy('pool_id', delete_namespace=True)
 
             kill.assert_called_once_with('sudo', '/pool/pid')
             unplug.assert_called_once_with('qlbaas-pool_id', 'port_id')

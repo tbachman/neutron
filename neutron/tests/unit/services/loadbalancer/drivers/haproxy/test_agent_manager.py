@@ -292,7 +292,8 @@ class TestManager(base.BaseTestCase):
 
                 self.mgr.destroy_device('pool_id')
                 cache.get_by_pool_id.assert_called_once_with('pool_id')
-                driver.destroy.assert_called_once_with('pool_id')
+                driver.destroy.assert_called_once_with(
+                    'pool_id', delete_namespace=True)
                 self.rpc_mock.pool_destroyed.assert_called_once_with(
                     'pool_id'
                 )
