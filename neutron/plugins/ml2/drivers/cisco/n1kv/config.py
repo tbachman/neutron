@@ -35,6 +35,9 @@ n1kv_opts = [
     cfg.BoolOpt('restrict_policy_profiles', default=False,
                help=_("Restrict the visibility of policy profiles to the "
                       "tenants")),
+    cfg.BoolOpt('enable_vif_type_n1kv', default=False,
+               help=_("Set the portbinding VIF type to N1KV. "
+                      "If it is set to False, VIF type will be set to OVS.")),
     cfg.IntOpt('poll_duration', default=60,
                help=_("Cisco Nexus1000V policy profile polling duration in "
                       "seconds")),

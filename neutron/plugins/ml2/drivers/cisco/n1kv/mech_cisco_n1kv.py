@@ -61,7 +61,10 @@ class N1KVMechanismDriver(api.MechanismDriver):
             self._ensure_network_profiles_created_on_vsm()
         except (n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
             LOG.error(_LE("VSM Failed to create default network profiles."))
-        self.vif_type = portbindings.VIF_TYPE_OVS
+        if cfg.CONF.ml2_cisco_n1kv.enable_vif_type_n1kv:
+            self.vif_type = portbindings.VIF_TYPE_N1KV
+        else:
+            self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True,
                             portbindings.OVS_HYBRID_PLUG: True}
         # Nexus interop

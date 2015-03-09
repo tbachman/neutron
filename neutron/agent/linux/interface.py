@@ -286,6 +286,74 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
                       device_name)
 
 
+class N1KVInterfaceDriver(LinuxInterfaceDriver):
+    """Driver for creating an internal interface on Cisco Nexus1000V switch."""
+
+    DEV_NAME_PREFIX = n_const.TAP_DEVICE_PREFIX
+
+    def __init__(self, conf):
+        super(N1KVInterfaceDriver, self).__init__(conf)
+        self.DEV_NAME_PREFIX = 'ns-'
+
+    def _get_tap_name(self, dev_name, prefix=None):
+        dev_name = dev_name.replace(prefix or self.DEV_NAME_PREFIX,
+                                    n_const.TAP_DEVICE_PREFIX)
+        return dev_name
+
+    def _n1kv_add_port(self, device_name, port_id, mac_address):
+        cmd = ['vemctl',
+               'add-port', '--name', device_name,
+               '--type', 'virt',
+               '--id', port_id,
+               '--attached-mac', mac_address]
+        utils.execute(cmd, self.root_helper)
+
+
+    def plug(self, network_id, port_id, device_name, mac_address,
+             bridge=None, namespace=None, prefix=None):
+        """Plug in the interface."""
+        if not ip_lib.device_exists(device_name,
+                                    self.root_helper,
+                                    namespace=namespace):
+
+            ip = ip_lib.IPWrapper(self.root_helper)
+            tap_name = self._get_tap_name(device_name, prefix)
+
+            root_dev, ns_dev = ip.add_veth(tap_name,
+                                           device_name,
+                                           namespace2=namespace)
+            self._n1kv_add_port(tap_name, port_id, mac_address)
+            ns_dev.link.set_address(mac_address)
+
+            if self.conf.network_device_mtu:
+                ns_dev.link.set_mtu(self.conf.network_device_mtu)
+                root_dev.link.set_mtu(self.conf.network_device_mtu)
+
+            if namespace:
+                namespace_obj = ip.ensure_namespace(namespace)
+                namespace_obj.add_device_to_namespace(ns_dev)
+
+            ns_dev.link.set_up()
+            root_dev.link.set_up()
+        else:
+            LOG.info(_("Device %s already exists"), device_name)
+
+    def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
+        """Unplug the interface."""
+        tap_name = self._get_tap_name(device_name, prefix)
+        try:
+            cmd = ['vemctl', 'del-port', '--name', tap_name]
+            utils.execute(cmd, self.root_helper)
+            device = ip_lib.IPDevice(device_name,
+                                     self.root_helper,
+                                     namespace)
+            device.link.delete()
+            LOG.debug(_("Unplugged interface '%s'"), device_name)
+        except RuntimeError:
+            LOG.error(_("Failed unplugging interface '%s'"),
+                      device_name)
+
+
 class MidonetInterfaceDriver(LinuxInterfaceDriver):
 
     def plug(self, network_id, port_id, device_name, mac_address,
