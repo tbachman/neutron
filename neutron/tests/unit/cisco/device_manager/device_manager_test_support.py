@@ -185,12 +185,12 @@ class DeviceManagerTestSupportMixin:
             '.find_resource', lambda *args, **kw: FakeResource()).start()
         self._nclient_services_mock = mock.MagicMock()
         self._nclient_services_mock.list = self._novaclient_services_list()
-        mock.patch.object(plugin._svc_vm_mgr._nclient, 'services',
+        mock.patch.object(plugin._svc_vm_mgr_obj._nclient, 'services',
                           self._nclient_services_mock).start()
         nclient_servers_mock = mock.MagicMock()
         nclient_servers_mock.create = self._novaclient_servers_create
         nclient_servers_mock.delete = self._novaclient_servers_delete
-        mock.patch.object(plugin._svc_vm_mgr._nclient, 'servers',
+        mock.patch.object(plugin._svc_vm_mgr_obj._nclient, 'servers',
                           nclient_servers_mock).start()
 
     def _mock_dispatch_pool_maintenance(self):

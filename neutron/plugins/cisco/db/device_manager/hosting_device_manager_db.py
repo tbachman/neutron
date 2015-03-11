@@ -93,19 +93,36 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     _cfgagent_scheduler = None
 
     # Service VM manager object that interacts with Nova
-    _svc_vm_mgr = None
+    _svc_vm_mgr_obj= None
 
     # Flag indicating is needed Nova services are reported as up.
     _nova_running = False
+
+    @property
+    def _svc_vm_mgr(self):
+        if self._svc_vm_mgr_obj is None:
+            auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
+    #        u_name = cfg.CONF.keystone_authtoken.admin_user
+    #        pw = cfg.CONF.keystone_authtoken.admin_password
+            u_name = cfg.CONF.keystone_authtoken.username
+            pw = cfg.CONF.keystone_authtoken.password
+            tenant = cfg.CONF.general.l3_admin_tenant
+            self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
+                user=u_name, passwd=pw, l3_admin_tenant=tenant,
+                auth_url=auth_url)
+        return
 
     @classmethod
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-            user = cfg.CONF.keystone_authtoken.admin_user
-            pw = cfg.CONF.keystone_authtoken.admin_password
-            tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
+#            user = cfg.CONF.keystone_authtoken.admin_user
+#            pw = cfg.CONF.keystone_authtoken.admin_password
+#           tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
+            user = cfg.CONF.keystone_authtoken.username
+            pw = cfg.CONF.keystone_authtoken.password
+            tenant = cfg.CONF.keystone_authtoken.project_name
             keystone = k_client.Client(username=user, password=pw,
                                        tenant_name=tenant,
                                        auth_url=auth_url)
@@ -513,12 +530,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         return False
 
     def _setup_device_manager(self):
-        auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-        u_name = cfg.CONF.keystone_authtoken.admin_user
-        pw = cfg.CONF.keystone_authtoken.admin_password
-        tenant = cfg.CONF.general.l3_admin_tenant
-        self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
-            user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
         self._obtain_hosting_device_credentials_from_config()
         self._create_hosting_device_templates_from_config()
         self._create_hosting_devices_from_config()

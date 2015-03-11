@@ -46,13 +46,13 @@ L3_PLUGIN_KLASS = (
 extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
 
 
-class TestApplianceL3RouterExtensionManager(
+class TestL3RouterApplianceExtensionManager(
         test_db_routertype.L3TestRoutertypeExtensionManager):
 
     def get_resources(self):
         l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
             extraroute.EXTENDED_ATTRIBUTES_2_0['routers'])
-        return super(TestApplianceL3RouterExtensionManager,
+        return super(TestL3RouterApplianceExtensionManager,
                      self).get_resources()
 
 
@@ -138,7 +138,7 @@ class L3RouterApplianceTestCaseBase(
         cfg.CONF.set_default('allow_overlapping_ips', True)
         cfg.CONF.set_default('max_routes', 3)
         if ext_mgr is None:
-            ext_mgr = TestApplianceL3RouterExtensionManager()
+            ext_mgr = TestL3RouterApplianceExtensionManager()
 
         super(L3RouterApplianceTestCaseBase, self).setUp(
             plugin=core_plugin, service_plugins=service_plugins,
@@ -170,7 +170,7 @@ class L3RouterApplianceTestCaseBase(
         self._create_mgmt_nw_for_tests(self.fmt)
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
-        self.core_plugin._svc_vm_mgr = service_vm_lib.ServiceVMManager()
+        self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
         self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
         self._mock_cfg_agent_notifier(self.plugin)
@@ -224,20 +224,10 @@ class L3RouterApplianceVMTestCase(
         self._mock_get_routertype_scheduler_always_none()
 
 
-class L3AgentRouterApplianceTestCase(test_l3_plugin.L3AgentDbTestCaseBase,
-                                     L3RouterApplianceTestCaseBase):
+class L3AgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
+                                     test_l3_plugin.L3AgentDbTestCaseBase):
 
     router_type = c_const.NAMESPACE_ROUTER_TYPE
-
-    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
-              ext_mgr=None):
-        self.core_plugin = device_manager_test_support.TestCorePlugin()
-        # service plugin providing L3 routing
-        self.plugin = TestApplianceL3RouterServicePlugin()
-
-        super(L3AgentRouterApplianceTestCase, self).setUp(
-            core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
-            ext_mgr=ext_mgr)
 
     def _test_notify_op_agent(self, target_func, *args):
         kargs = [item for item in args]
@@ -250,17 +240,13 @@ class L3CfgAgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
-        self.core_plugin = device_manager_test_support.TestCorePlugin()
-        # service plugin providing L3 routing
-        self.plugin = TestApplianceL3RouterServicePlugin()
-        self.orig_get_sync_data = self.plugin.get_sync_data
-        self.plugin.get_sync_data = self.plugin.get_sync_data_ext
-
         super(L3CfgAgentRouterApplianceTestCase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
-        self._mock_svc_vm_create_delete(self.core_plugin)
+        self.orig_get_sync_data = self.plugin.get_sync_data
+        self.plugin.get_sync_data = self.plugin.get_sync_data_ext
+
         self._mock_get_routertype_scheduler_always_none()
 
     def tearDown(self):
