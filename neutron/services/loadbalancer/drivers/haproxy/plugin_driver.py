@@ -36,12 +36,6 @@ from neutron.services.loadbalancer.drivers import abstract_driver
 
 LOG = logging.getLogger(__name__)
 
-ACTIVE_PENDING = (
-    constants.ACTIVE,
-    constants.PENDING_CREATE,
-    constants.PENDING_UPDATE
-)
-
 AGENT_SCHEDULER_OPTS = [
     cfg.StrOpt('loadbalancer_pool_scheduler_driver',
                default='neutron.services.loadbalancer.agent_scheduler'
@@ -73,8 +67,10 @@ class LoadBalancerCallbacks(object):
             qry = (context.session.query(loadbalancer_db.Pool.id).
                    join(loadbalancer_db.Vip))
 
-            qry = qry.filter(loadbalancer_db.Vip.status.in_(ACTIVE_PENDING))
-            qry = qry.filter(loadbalancer_db.Pool.status.in_(ACTIVE_PENDING))
+            qry = qry.filter(
+                loadbalancer_db.Vip.status.in_(constants.ACTIVE_PENDING))
+            qry = qry.filter(
+                loadbalancer_db.Pool.status.in_(constants.ACTIVE_PENDING))
             up = True  # makes pep8 and sqlalchemy happy
             qry = qry.filter(loadbalancer_db.Vip.admin_state_up == up)
             qry = qry.filter(loadbalancer_db.Pool.admin_state_up == up)
@@ -100,18 +96,18 @@ class LoadBalancerCallbacks(object):
 
             if activate:
                 # set all resources to active
-                if pool.status in ACTIVE_PENDING:
+                if pool.status in constants.ACTIVE_PENDING:
                     pool.status = constants.ACTIVE
 
-                if pool.vip.status in ACTIVE_PENDING:
+                if pool.vip.status in constants.ACTIVE_PENDING:
                     pool.vip.status = constants.ACTIVE
 
                 for m in pool.members:
-                    if m.status in ACTIVE_PENDING:
+                    if m.status in constants.ACTIVE_PENDING:
                         m.status = constants.ACTIVE
 
                 for hm in pool.monitors:
-                    if hm.status in ACTIVE_PENDING:
+                    if hm.status in constants.ACTIVE_PENDING:
                         hm.status = constants.ACTIVE
 
             if (pool.status != constants.ACTIVE
@@ -133,13 +129,14 @@ class LoadBalancerCallbacks(object):
                 )
             retval['members'] = [
                 self.plugin._make_member_dict(m)
-                for m in pool.members if m.status in (constants.ACTIVE,
-                                                      constants.INACTIVE)
+                for m in pool.members if (
+                    m.status in constants.ACTIVE_PENDING or
+                    m.status == constants.INACTIVE)
             ]
             retval['healthmonitors'] = [
                 self.plugin._make_health_monitor_dict(hm.healthmonitor)
                 for hm in pool.monitors
-                if hm.status == constants.ACTIVE
+                if hm.status == constants.ACTIVE_PENDING
             ]
 
             return retval
@@ -285,7 +282,7 @@ class HaproxyOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
 
     def update_vip(self, context, old_vip, vip):
         agent = self.get_pool_agent(context, vip['pool_id'])
-        if vip['status'] in ACTIVE_PENDING:
+        if vip['status'] in constants.ACTIVE_PENDING:
             self.agent_rpc.reload_pool(context, vip['pool_id'], agent['host'])
         else:
             self.agent_rpc.destroy_pool(context, vip['pool_id'], agent['host'])
@@ -302,7 +299,7 @@ class HaproxyOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
 
     def update_pool(self, context, old_pool, pool):
         agent = self.get_pool_agent(context, pool['id'])
-        if pool['status'] in ACTIVE_PENDING:
+        if pool['status'] in constants.ACTIVE_PENDING:
             if pool['vip_id'] is not None:
                 self.agent_rpc.reload_pool(context, pool['id'], agent['host'])
         else:
