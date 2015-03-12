@@ -27,8 +27,8 @@ REDUNDANCY_LEVEL = 'redundancy_level'
 REDUNDANCY_ROUTERS = 'redundancy_routers'
 ROUTER_ID = 'id'
 PROBE_CONNECTIVITY = 'probe_connectivity'
-PING_TARGET = 'ping_target'
-PING_INTERVAL = 'ping_interval'
+PROBE_TARGET = 'probe_target'
+PROBE_INTERVAL = 'probe_interval'
 HA_VRRP = 'VRRP'
 HA_HSRP = 'HSRP'
 HA_GLBP = 'GLBP'
@@ -69,15 +69,15 @@ EXTENDED_ATTRIBUTES_2_0 = {
                                          'convert_to': attr.convert_to_boolean,
                                          'default': attr.ATTR_NOT_SPECIFIED,
                                          'is_visible': True},
-                    PING_TARGET: {'allow_post': True, 'allow_put': True,
-                                  'validate': {'type:ip_address': None},
-                                  'default': attr.ATTR_NOT_SPECIFIED,
-                                  'is_visible': True},
-                    PING_INTERVAL: {'allow_post': True, 'allow_put': True,
-                                    'convert_to': attr.convert_to_int,
-                                    'validate': attr._validate_non_negative,
-                                    'default': attr.ATTR_NOT_SPECIFIED,
-                                    'is_visible': True},
+                    PROBE_TARGET: {'allow_post': True, 'allow_put': True,
+                                   'validate': {'type:ip_address': None},
+                                   'default': attr.ATTR_NOT_SPECIFIED,
+                                   'is_visible': True},
+                    PROBE_INTERVAL: {'allow_post': True, 'allow_put': True,
+                                     'convert_to': attr.convert_to_int,
+                                     'validate': attr._validate_non_negative,
+                                     'default': attr.ATTR_NOT_SPECIFIED,
+                                     'is_visible': True},
                     REDUNDANCY_ROUTERS: {
                         'allow_post': False, 'allow_put': False,
                         'is_visible': True,
@@ -119,11 +119,11 @@ DISABLED_EXTENDED_ATTRIBUTES_2_0 = {
                              'convert_to': attr.convert_to_boolean,
                              'default': attr.ATTR_NOT_SPECIFIED,
                              'is_visible': True},
-        PING_TARGET: {'allow_post': True, 'allow_put': True,
+        PROBE_TARGET: {'allow_post': True, 'allow_put': True,
                       'validate': {'type:ip_address': None},
                       'default': attr.ATTR_NOT_SPECIFIED,
                       'is_visible': True},
-        PING_INTERVAL: {'allow_post': True, 'allow_put': True,
+        PROBE_INTERVAL: {'allow_post': True, 'allow_put': True,
                         'convert_to': attr.convert_to_int,
                         'validate': attr._validate_non_negative,
                         'default': attr.ATTR_NOT_SPECIFIED,
@@ -177,25 +177,25 @@ class Ha(extensions.ExtensionDescriptor):
 
 
 # HA exceptions
-class HADisabled(nexception.NeutronException):
+class HADisabled(nexception.Conflict):
     message = _("HA support is disabled")
 
 
-class HAOnlyForGatewayRouters(nexception.NeutronException):
+class HAOnlyForGatewayRouters(nexception.BadRequest):
     message = _("%(msg)s")
 
 
-class HADisabledHAType(nexception.NeutronException):
+class HADisabledHAType(nexception.Conflict):
     message = _("HA type %(ha_type)s is administratively disabled")
 
 
-class HARedundancyLevel(nexception.NeutronException):
+class HARedundancyLevel(nexception.BadRequest):
     message = _("Redundancy level for HA must be 1, 2, or 3")
 
 
-class HATypeCannotBeChanged(nexception.NeutronException):
+class HATypeCannotBeChanged(nexception.Conflict):
     message = _("HA type cannot be changed for a router with HA enabled")
 
 
-class HATypeNotCompatibleWithFloatingIP(nexception.NeutronException):
+class HATypeNotCompatibleWithFloatingIP(nexception.BadRequest):
     message = _("HA type %(ha_type) cannot be used with FloatingIP")

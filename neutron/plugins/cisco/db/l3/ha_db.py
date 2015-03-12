@@ -48,7 +48,7 @@ DEFAULT_MASTER_PRIORITY = 10
 PRIORITY_INCREASE_STEP = 10
 REDUNDANCY_ROUTER_SUFFIX = '_HA_backup_'
 DEFAULT_PING_INTERVAL = 5
-PING_TARGET_OPT_NAME = 'default_ping_target'
+PROBE_TARGET_OPT_NAME = 'default_probe_target'
 
 router_appliance_opts = [
     cfg.BoolOpt('ha_support_enabled', default=True,
@@ -68,11 +68,11 @@ router_appliance_opts = [
     cfg.BoolOpt('connectivity_probing_enabled_by_default', default=False,
                 help=_("Enables connectivity probing for high-availability "
                        "even if user does not explicitly request it")),
-    cfg.StrOpt(PING_TARGET_OPT_NAME, default=None,
-               help=_("Host that will be ping target for high-availability "
+    cfg.StrOpt('default_probe_target', default=None,
+               help=_("Host that will be probe target for high-availability "
                       "connectivity probing if user does not specify it")),
     cfg.StrOpt('default_ping_interval', default=DEFAULT_PING_INTERVAL,
-               help=_("Time (in seconds) between pings for high-availability "
+               help=_("Time (in seconds) between probes for high-availability "
                       "connectivity probing if user does not specify it")),
     ]
 
@@ -97,10 +97,10 @@ class RouterHASetting(model_base.BASEV2):
     priority = sa.Column(sa.Integer)
     # 'probe_connectivity' is True if ICMP echo pinging is enabled
     probe_connectivity = sa.Column(sa.Boolean)
-    # 'ping_target' is ip address of host that is pinged
-    ping_target = sa.Column(sa.String(64))
-    # 'ping_interval' is the time between pings
-    ping_interval = sa.Column(sa.Integer)
+    # 'probe_target' is ip address of host that is probed
+    probe_target = sa.Column(sa.String(64))
+    # 'ping_interval' is the time between probes
+    probe_interval = sa.Column(sa.Integer)
 
 
 class RouterHAGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -185,13 +185,14 @@ class HA_db_mixin(object):
         if not res[ha.ENABLED]:
             return res
         if router.get(EXTERNAL_GW_INFO) is None:
+            #TODO(bobmel): Consider removing this gateway requirement
             raise ha.HAOnlyForGatewayRouters(
-                msg="HA is only supported for routers with gateway."
+                msg="HA is only supported for routers with gateway. "
                     "Please specify %s" % EXTERNAL_GW_INFO)
         if not is_attr_set(details.get(ha.TYPE, ATTR_NOT_SPECIFIED)):
             details[ha.TYPE] = cfg.CONF.ha.default_ha_mechanism
         if details[ha.TYPE] in cfg.CONF.ha.disabled_ha_mechanisms:
-            raise ha.HADisabledHAType(ha_type=res[ha.TYPE])
+            raise ha.HADisabledHAType(ha_type=details[ha.TYPE])
         if not is_attr_set(details.get(ha.REDUNDANCY_LEVEL,
                                        ATTR_NOT_SPECIFIED)):
             details[ha.REDUNDANCY_LEVEL] = (
@@ -200,10 +201,10 @@ class HA_db_mixin(object):
                                        ATTR_NOT_SPECIFIED)):
             details[ha.PROBE_CONNECTIVITY] = (
                 cfg.CONF.ha.connectivity_probing_enabled_by_default)
-        if not is_attr_set(details.get(ha.PING_TARGET, ATTR_NOT_SPECIFIED)):
-            details[ha.PING_TARGET] = cfg.CONF.ha.default_ping_target
-        if not is_attr_set(details.get(ha.PING_INTERVAL, ATTR_NOT_SPECIFIED)):
-            details[ha.PING_INTERVAL] = cfg.CONF.ha.default_ping_interval
+        if not is_attr_set(details.get(ha.PROBE_TARGET, ATTR_NOT_SPECIFIED)):
+            details[ha.PROBE_TARGET] = cfg.CONF.ha.default_probe_target
+        if not is_attr_set(details.get(ha.PROBE_INTERVAL, ATTR_NOT_SPECIFIED)):
+            details[ha.PROBE_INTERVAL] = cfg.CONF.ha.default_ping_interval
         return res
 
     def _create_redundancy_routers(self, context, new_router, ha_settings,
@@ -216,7 +217,7 @@ class HA_db_mixin(object):
             new_router[ha.HA] = {ha.ENABLED: False}
             return
         ha_spec = ha_settings[ha.DETAILS]
-        priority = DEFAULT_MASTER_PRIORITY
+        priority = ha_spec.get(ha.PRIORITY, DEFAULT_MASTER_PRIORITY)
         with context.session.begin(subtransactions=True):
             r_ha_s = RouterHASetting(
                 router_id=new_router['id'],
@@ -224,14 +225,13 @@ class HA_db_mixin(object):
                 redundancy_level=ha_spec[ha.REDUNDANCY_LEVEL],
                 priority=priority,
                 probe_connectivity=ha_spec[ha.PROBE_CONNECTIVITY],
-                ping_target=ha_spec[ha.PING_TARGET],
-                ping_interval=ha_spec[ha.PING_INTERVAL])
+                probe_target=ha_spec[ha.PROBE_TARGET],
+                probe_interval=ha_spec[ha.PROBE_INTERVAL])
             context.session.add(r_ha_s)
-        if r_ha_s.probe_connectivity and r_ha_s.ping_target is None:
+        if r_ha_s.probe_connectivity and r_ha_s.probe_target is None:
             LOG.warning(_("Connectivity probing for high-availability is "
-                          "enabled but ping target is not specified. "
-                          "Please configure option \'%s\'."),
-                        PING_TARGET_OPT_NAME)
+                          "enabled but probe target is not specified. "
+                          "Please configure option \'default_probe_target\'."))
 
         self._add_redundancy_routers(context.elevated(), 0,
                                      ha_spec[ha.REDUNDANCY_LEVEL],
@@ -246,7 +246,10 @@ class HA_db_mixin(object):
         """
         current = self.get_router(context, router_id)
         requested_ha_details = router.pop(ha.DETAILS, {})
-        requested_ha_enabled = router.pop(ha.ENABLED, None)
+        # if ha_details are given then ha is assumed to be enabled even if
+        # it is not explicitly specified
+        requested_ha_enabled = router.pop(
+            ha.ENABLED, True if requested_ha_details else False)
         res = {}
         # Note: must check for 'is True' as None implies attribute not given
         if requested_ha_enabled is True or current.get(ha.ENABLED, False):
@@ -257,12 +260,15 @@ class HA_db_mixin(object):
             elif not has_gateway:
                 raise ha.HAOnlyForGatewayRouters(
                     msg="Cannot clear gateway when HA is enabled.")
-        if requested_ha_enabled:
             curr_ha_details = current.get(ha.DETAILS, {})
-            if (ha.TYPE in requested_ha_details and
-                ha.TYPE in curr_ha_details and
-                    requested_ha_details[ha.TYPE] != curr_ha_details[ha.TYPE]):
-                raise ha.HATypeCannotBeChanged()
+            if ha.TYPE in requested_ha_details:
+                requested_ha_type = requested_ha_details[ha.TYPE]
+                if (ha.TYPE in curr_ha_details and
+                        requested_ha_type != curr_ha_details[ha.TYPE]):
+                    raise ha.HATypeCannotBeChanged()
+                elif requested_ha_type in cfg.CONF.ha.disabled_ha_mechanisms:
+                    raise ha.HADisabledHAType(ha_type=requested_ha_type)
+        if requested_ha_enabled:
             res[ha.ENABLED] = requested_ha_enabled
             if requested_ha_details:
                 res[ha.DETAILS] = requested_ha_details
@@ -310,7 +316,7 @@ class HA_db_mixin(object):
             # HA currently enabled and HA setting update (other than
             # disable HA) requested
             old_redundancy_level = ha_settings_db.redundancy_level
-            ha_settings_db.update(requested_ha_settings[ha.DETAILS])
+            ha_settings_db.update(ha_details_update_spec)
             diff = (ha_details_update_spec.get(ha.REDUNDANCY_LEVEL,
                                                old_redundancy_level) -
                     old_redundancy_level)
@@ -328,7 +334,7 @@ class HA_db_mixin(object):
                 stop = start + diff
                 self._add_redundancy_routers(context, start, stop,
                                              updated_router, ports,
-                                             ha_settings_db)
+                                             ha_settings_db, False)
             # Notify redundancy routers about changes
             for r_id in rr_ids:
                 self.update_router(context.elevated(), r_id, {'router': {}})
@@ -338,7 +344,7 @@ class HA_db_mixin(object):
 
     def _add_redundancy_routers(self, context, start_index, stop_index,
                                 user_visible_router, ports=None,
-                                ha_settings=None):
+                                ha_settings=None, create_ha_group=True):
         """Creates a redundancy router and its interfaces on
         the specified subnets."""
         priority = (DEFAULT_MASTER_PRIORITY +
@@ -368,9 +374,9 @@ class HA_db_mixin(object):
             context.session.add(r_b_b)
             redundancy_r_ids.append(r['id'])
         for port in ports or []:
-            self._add_redundancy_router_interfaces(context, r['id'], port,
-                                                   redundancy_r_ids,
-                                                   ha_settings)
+            self._add_redundancy_router_interfaces(
+                context, r['id'], port, redundancy_r_ids, ha_settings,
+                create_ha_group)
 
     def _remove_redundancy_routers(self, context, router_ids, ports,
                                    delete_ha_groups=False):
@@ -485,8 +491,8 @@ class HA_db_mixin(object):
             router_res[ha.REDUNDANCY_LEVEL] = ha_s.redundancy_level
             router_res[ha.PROBE_CONNECTIVITY] = ha_s.probe_connectivity
             if router_res[ha.PROBE_CONNECTIVITY]:
-                router_res[ha.PING_TARGET] = ha_s.ping_target
-                router_res[ha.PING_INTERVAL] = ha_s.ping_interval
+                router_res[ha.PROBE_TARGET] = ha_s.probe_target
+                router_res[ha.PROBE_INTERVAL] = ha_s.probe_interval
         return router_res
 
     def _extend_router_dict_ha(self, router_res, router_db):
@@ -499,8 +505,8 @@ class HA_db_mixin(object):
                               ha.REDUNDANCY_LEVEL: ha_s.redundancy_level,
                               ha.PROBE_CONNECTIVITY: ha_s.probe_connectivity}
                 if ha_details[ha.PROBE_CONNECTIVITY]:
-                    ha_details.update({ha.PING_TARGET: ha_s.ping_target,
-                                       ha.PING_INTERVAL: ha_s.ping_interval})
+                    ha_details.update({ha.PROBE_TARGET: ha_s.probe_target,
+                                       ha.PROBE_INTERVAL: ha_s.probe_interval})
                 ha_details['redundancy_routers'] = (
                     [{'id': b.redundancy_router_id, 'priority': b.priority}
                      for b in router_db.redundancy_bindings])

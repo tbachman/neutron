@@ -15,6 +15,7 @@
 import copy
 
 from oslo.config import cfg
+import webob.exc
 
 import neutron
 from neutron import context
@@ -66,6 +67,8 @@ class TestApplianceHAL3RouterServicePlugin(
                                    ha.HA_ALIAS]
 
 
+#TODO(bobmel): Add tests that ensures that Cisco HA is not applied on
+#TODO(bobmel): Namespace-based routers
 class HAL3RouterApplianceNamespaceTestCase(
     test_l3_router_appliance_plugin.L3RouterApplianceNamespaceTestCase):
 
@@ -113,9 +116,9 @@ class HAL3RouterApplianceVMTestCase(
                 cfg.CONF.ha.connectivity_probing_enabled_by_default)}
         if probing_enabled:
             ha_details.update({
-                ha.PING_TARGET: (probe_target or
+                ha.PROBE_TARGET: (probe_target or
                                  cfg.CONF.ha.default_ping_target),
-                ha.PING_INTERVAL: (probe_interval or
+                ha.PROBE_INTERVAL: (probe_interval or
                                    cfg.CONF.ha.default_ping_interval)})
         return {ha.ENABLED: ha_enabled, ha.DETAILS: ha_details}
 
@@ -131,19 +134,123 @@ class HAL3RouterApplianceVMTestCase(
             else:
                 self.assertIsNone(router.get(ha.DETAILS))
 
+    def _verify_router_gw_port(self, router_id, external_net_id,
+                               external_subnet_id):
+        body = self._list('ports',
+                          query_params='device_id=%s' % router_id)
+        ports = body['ports']
+        self.assertEqual(len(ports), 1)
+        p_e = ports[0]
+        self.assertEqual(p_e['network_id'], external_net_id)
+        self.assertEqual(p_e['fixed_ips'][0]['subnet_id'], external_subnet_id)
+        self.assertEqual(p_e['device_owner'],
+                         l3_constants.DEVICE_OWNER_ROUTER_GW)
+
+    def _test_create_ha_router(self, router, subnet, ha_settings=None):
+        if ha_settings is None:
+            ha_settings = self._get_ha_defaults()
+
+        self.assertEqual(subnet['network_id'],
+                         router['external_gateway_info']['network_id'])
+        self._verify_ha_settings(router, ha_settings)
+        self._verify_router_gw_port(router['id'], subnet['network_id'],
+                                    subnet['id'])
+        ha_disabled_settings = self._get_ha_defaults(ha_enabled=False)
+        # verify redundancy routers
+        for rr_info in router[ha.DETAILS][ha.REDUNDANCY_ROUTERS]:
+            rr = self._show('routers', rr_info['id'])
+            # check that redundancy router is hidden
+            self.assertEqual(rr['router']['tenant_id'], '')
+            # redundancy router should have ha disabled
+            self._verify_ha_settings(rr['router'], ha_disabled_settings)
+            # check that redundancy router has all ports
+            self._verify_router_gw_port(rr['router']['id'],
+                                        subnet['network_id'], subnet['id'])
+
     def test_create_ha_router_with_defaults(self):
         with self.subnet() as s:
             self._set_net_external(s['subnet']['network_id'])
             with self.router(external_gateway_info={
-                'network_id': s['subnet']['network_id']}) as r:
+                    'network_id': s['subnet']['network_id']}) as r:
+                self._test_create_ha_router(r['router'], s['subnet'])
+
+    def test_create_ha_router_with_defaults_non_admin_succeeds(self):
+        tenant_id = _uuid()
+        with self.network(tenant_id=tenant_id) as n_external:
+            res = self._create_subnet(self.fmt, n_external['network']['id'],
+                                      cidr='10.0.1.0/24', tenant_id=tenant_id)
+            s = self.deserialize(self.fmt, res)
+            self._set_net_external(s['subnet']['network_id'])
+            with self.router(
+                    tenant_id=tenant_id,
+                    external_gateway_info={
+                        'network_id': s['subnet']['network_id']},
+                    set_context=True) as r:
                 self.assertEqual(
                     s['subnet']['network_id'],
                     r['router']['external_gateway_info']['network_id'])
-                self._verify_ha_settings(r['router'], self._get_ha_defaults())
+                self.assertTrue(r['router'][ha.ENABLED])
+                # non-admin users should not see ha detail
+                self.assertIsNone(r['router'].get(ha.DETAILS))
 
     def test_create_ha_router_with_ha_specification(self):
-        #TODO(bobmel): Implement this test
-        pass
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            ha_settings = self._get_ha_defaults(
+                ha_type=ha.HA_GLBP, priority=15, probing_enabled=True,
+                probe_interval=3, probe_target='10.5.5.2')
+            kwargs = {ha.DETAILS: ha_settings[ha.DETAILS],
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            with self.router(arg_list=(ha.DETAILS,), **kwargs) as r:
+                self._test_create_ha_router(r['router'], s['subnet'],
+                                            ha_settings)
+
+    def test_create_ha_router_with_ha_specification_non_admin_fails(self):
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {
+                ha.ENABLED: True,
+                ha.DETAILS: {ha.TYPE: ha.HA_VRRP},
+                l3.EXTERNAL_GW_INFO: {'network_id': s['subnet']['network_id']}}
+            res = self._create_router(
+                self.fmt, _uuid(), 'ha_router1', set_context=True,
+                arg_list=(ha.ENABLED, ha.DETAILS, l3.EXTERNAL_GW_INFO),
+                **kwargs)
+            self.assertEqual(res.status_int, webob.exc.HTTPForbidden.code)
+
+    def test_create_non_gateway_ha_router_fails(self):
+        kwargs = {ha.ENABLED: True}
+        res = self._create_router(self.fmt, _uuid(), 'ha_router1',
+                                  arg_list=(ha.ENABLED,),  **kwargs)
+        self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def test_create_ha_router_with_disabled_ha_type_fails(self):
+        cfg.CONF.set_override('disabled_ha_mechanisms', [ha.HA_VRRP],
+                              group='ha')
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {
+                ha.ENABLED: True,
+                ha.DETAILS: {ha.TYPE: ha.HA_VRRP},
+                l3.EXTERNAL_GW_INFO: {'network_id': s['subnet']['network_id']}}
+            res = self._create_router(
+                self.fmt, _uuid(), 'ha_router1',
+                arg_list=(ha.ENABLED, ha.DETAILS, l3.EXTERNAL_GW_INFO),
+                **kwargs)
+            self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
+
+    def test_create_ha_router_when_ha_support_disabled_fails(self):
+        cfg.CONF.set_override('ha_support_enabled', False, group='ha')
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {
+                ha.ENABLED: True,
+                l3.EXTERNAL_GW_INFO: {'network_id': s['subnet']['network_id']}}
+            res = self._create_router(
+                self.fmt, _uuid(), 'ha_router1',
+                arg_list=(ha.ENABLED,), **kwargs)
+            self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
 
     def test_show_ha_router_non_admin(self):
         tenant_id = _uuid()
@@ -237,11 +344,10 @@ class HAL3RouterApplianceVMTestCase(
             updated_router = self._update('routers', r['router']['id'], body)
             self._verify_ha_settings(updated_router['router'],
                                      self._get_ha_defaults(ha_enabled=False))
-            params = "|".join(["id=%s" % rr['id'] for rr in redundancy_routers])
+            # verify that the redundancy routers are indeed gone
+            params = "&".join(["id=%s" % rr['id'] for rr in
+                               redundancy_routers])
             redundancy_routers = self._list('routers', query_params=params)
- #               query_params="id=%s|id=%s" % (
- #                   redundancy_routers[0]['id'],
- #                   redundancy_routers[1]['id']))
             self.assertEqual(len(redundancy_routers['routers']), 0)
 
         with self.subnet(cidr='10.0.1.0/24') as s:
@@ -261,11 +367,10 @@ class HAL3RouterApplianceVMTestCase(
                 neutron_context=context.Context('', tenant_id))
             self._verify_ha_settings(updated_router['router'],
                                      self._get_ha_defaults(ha_enabled=False))
-            params = "|".join(["id=%s" % rr['id'] for rr in redundancy_routers])
+            # verify that the redundancy routers are indeed gone
+            params = "&".join(["id=%s" % rr['id'] for rr in
+                               redundancy_routers])
             redundancy_routers = self._list('routers', query_params=params)
-#                query_params="id=%s|id=%s" % (
-#                    redundancy_router1['router']['id'],
-#                    redundancy_router2['router']['id']))
             self.assertEqual(len(redundancy_routers['routers']), 0)
 
         tenant_id = _uuid()
@@ -283,6 +388,40 @@ class HAL3RouterApplianceVMTestCase(
                                               p['port'], None,
                                               _disable_ha_tests)
 
+    def _test_enable_ha(self, subnet, router, port, ha_spec=None,
+                        additional_tests_function=None):
+        body = self._router_interface_action('add', router['id'], None,
+                                             port['id'])
+        self.assertIn('port_id', body)
+        self.assertEqual(body['port_id'], port['id'])
+        # verify router visible to user
+        ha_disabled_settings = self._get_ha_defaults(
+            ha_enabled=False)
+        self._verify_ha_settings(router, ha_disabled_settings)
+        self._verify_router_ports(router['id'], subnet['network_id'],
+                                  subnet['id'], port['network_id'],
+                                  port['fixed_ips'][0]['subnet_id'])
+        body = {'router': {ha.ENABLED: True,
+                           ha.DETAILS: {ha.TYPE: ha.HA_VRRP}}}
+        updated_router = self._update('routers', router['id'], body)
+        self._verify_ha_settings(
+            updated_router['router'],
+            self._get_ha_defaults(ha_type=ha.HA_VRRP))
+        ha_d = updated_router['router'][ha.DETAILS]
+        redundancy_routers = self._list(
+            'routers',
+            query_params="&".join(["id=%s" % rr['id'] for rr in
+                                   ha_d[ha.REDUNDANCY_ROUTERS]]))
+        for rr in redundancy_routers['routers']:
+            # redundancy router should have ha disabled
+            self._verify_ha_settings(rr, ha_disabled_settings)
+            # check that redundancy routers have all ports
+            self._verify_router_ports(rr['id'], subnet['network_id'],
+                                      subnet['id'], port['network_id'],
+                                      port['fixed_ips'][0]['subnet_id'])
+        # clean-up
+        self._router_interface_action('remove', router['id'], None, port['id'])
+
     def test_enable_ha_on_gateway_router_succeeds(self):
         with self.subnet(cidr='10.0.1.0/24') as s:
             self._set_net_external(s['subnet']['network_id'])
@@ -291,74 +430,154 @@ class HAL3RouterApplianceVMTestCase(
                                             s['subnet']['network_id']}}
             with self.router(arg_list=(ha.ENABLED,), **kwargs) as r:
                 with self.port() as p:
-                    body = self._router_interface_action('add',
-                                                         r['router']['id'],
-                                                         None,
-                                                         p['port']['id'])
-                    self.assertIn('port_id', body)
-                    self.assertEqual(body['port_id'], p['port']['id'])
-                    self._verify_router_ports(
-                        r['router']['id'], s['subnet']['network_id'],
-                        s['subnet']['id'], p['port']['network_id'],
-                        p['port']['fixed_ips'][0]['subnet_id'])
-                    ha_disabled_settings = self._get_ha_defaults(
-                        ha_enabled=False)
-                    self._verify_ha_settings(r['router'], ha_disabled_settings)
-                    body = {'router': {ha.ENABLED: True,
-                                       ha.DETAILS: {ha.TYPE: ha.HA_VRRP}}}
-                    updated_router = self._update('routers', r['router']['id'],
-                                                  body)
-                    self._verify_ha_settings(
-                        updated_router['router'],
-                        self._get_ha_defaults(ha_type=ha.HA_VRRP))
-                    ha_d = updated_router['router'][ha.DETAILS]
-                    rr_ids = [rr['id'] for rr in ha_d[ha.REDUNDANCY_ROUTERS]]
-                    redundancy_routers = self._list(
-                        'routers',
-                        query_params="id="+",".join(["%s" % x for x in rr_ids]))
-                    self._verify_ha_settings(r['router'], ha_disabled_settings)
-                    # check that redundancy routers have all ports
-                    for rr in redundancy_routers['routers']:
-                        self._verify_router_ports(
-                            rr['id'], s['network_id'], s['id'],
-                            p['network_id'], p['fixed_ips'][0]['subnet_id'])
-                    # clean-up
-                    self._router_interface_action('remove', r['router']['id'],
-                                                  None, p['port']['id'])
+                    self._test_enable_ha(s['subnet'], r['router'], p['port'])
 
-
+    def test_enable_ha_on_gateway_router_non_admin_succeeds(self):
+        tenant_id = _uuid()
+        with self.network(tenant_id=tenant_id) as n_external:
+            res = self._create_subnet(self.fmt, n_external['network']['id'],
+                                      cidr='10.0.1.0/24', tenant_id=tenant_id)
+            s = self.deserialize(self.fmt, res)
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {ha.ENABLED: False,
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            with self.router(tenant_id=tenant_id, arg_list=(ha.ENABLED,),
+                             **kwargs) as r:
+                with self.port(tenant_id=tenant_id) as p:
+                    self._test_enable_ha(s['subnet'], r['router'], p['port'])
 
     def test_enable_ha_on_non_gateway_router_fails(self):
-        pass
+        kwargs = {ha.ENABLED: False}
+        with self.router(arg_list=(ha.ENABLED,), **kwargs) as r:
+            ha_disabled_settings = self._get_ha_defaults(ha_enabled=False)
+            self._verify_ha_settings(r['router'], ha_disabled_settings)
+            body = {'router': {ha.ENABLED: True,
+                               ha.DETAILS: {ha.TYPE: ha.HA_VRRP}}}
+            self._update('routers', r['router']['id'], body,
+                         expected_code=webob.exc.HTTPBadRequest.code)
+            r_after = self._show('routers', r['router']['id'])
+            self._verify_ha_settings(r_after['router'], ha_disabled_settings)
 
-    def test_update_ha_router_non_admin_fails(self):
-        pass
+    def test_update_router_ha_settings(self):
+        with self.subnet(cidr='10.0.1.0/24') as s:
+            self._set_net_external(s['subnet']['network_id'])
+            with self.router(external_gateway_info={
+                    'network_id': s['subnet']['network_id']}) as r:
+                self._verify_ha_settings(r['router'], self._get_ha_defaults())
+                ha_settings = self._get_ha_defaults(
+                    priority=15, probing_enabled=True, probe_interval=3,
+                    probe_target='10.5.5.2')
+                ha_spec = copy.deepcopy(ha_settings[ha.DETAILS])
+                del ha_spec[ha.TYPE]
+                del ha_spec[ha.REDUNDANCY_LEVEL]
+                body = {'router': {ha.DETAILS: ha_spec}}
+                r_after = self._update('routers', r['router']['id'], body)
+                self._verify_ha_settings(r_after['router'], ha_settings)
+                r_show = self._show('routers', r['router']['id'])
+                self._verify_ha_settings(r_show['router'], ha_settings)
+
+    def test_update_router_ha_settings_non_admin_fails(self):
+        tenant_id = _uuid()
+        with self.network(tenant_id=tenant_id) as n_external:
+            res = self._create_subnet(self.fmt, n_external['network']['id'],
+                                      cidr='10.0.1.0/24', tenant_id=tenant_id)
+            s = self.deserialize(self.fmt, res)
+            self._set_net_external(s['subnet']['network_id'])
+            with self.router(
+                    external_gateway_info={
+                        'network_id': s['subnet']['network_id']},
+                    tenant_id=tenant_id) as r:
+                ha_settings = self._get_ha_defaults()
+                self._verify_ha_settings(r['router'], ha_settings)
+                body = {'router': {ha.DETAILS: {ha.PRIORITY: 15,
+                                                ha.PROBE_CONNECTIVITY: True,
+                                                ha.PROBE_TARGET: '10.5.5.2',
+                                                ha.PROBE_INTERVAL: 3}}}
+                self._update('routers', r['router']['id'], body,
+                             expected_code=webob.exc.HTTPForbidden.code,
+                             neutron_context=context.Context('', tenant_id))
+                r_show = self._show('routers', r['router']['id'])
+                self._verify_ha_settings(r_show['router'], ha_settings)
+
+    def test_update_ha_type_on_router_with_ha_enabled_fails(self):
+        with self.subnet(cidr='10.0.1.0/24') as s:
+            self._set_net_external(s['subnet']['network_id'])
+            with self.router(external_gateway_info={
+                    'network_id': s['subnet']['network_id']}) as r:
+                ha_settings = self._get_ha_defaults()
+                self._verify_ha_settings(r['router'], ha_settings)
+                body = {'router': {ha.DETAILS: {ha.TYPE: ha.HA_GLBP}}}
+                self._update('routers', r['router']['id'], body,
+                             expected_code=webob.exc.HTTPConflict.code)
+                r_after = self._show('routers', r['router']['id'])
+                self._verify_ha_settings(r_after['router'], ha_settings)
+
+    def _test_ha_disabled_cases(self):
+        with self.subnet(cidr='10.0.1.0/24') as s:
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {ha.ENABLED: False,
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            with self.router(arg_list=(ha.ENABLED,), **kwargs) as r:
+                ha_disabled_settings = self._get_ha_defaults(ha_enabled=False)
+                self._verify_ha_settings(r['router'], ha_disabled_settings)
+                body = {'router': {ha.ENABLED: True,
+                                   ha.DETAILS: {ha.TYPE: ha.HA_VRRP}}}
+                self._update('routers', r['router']['id'], body,
+                             expected_code=webob.exc.HTTPConflict.code)
+                r_after = self._show('routers', r['router']['id'])
+                self._verify_ha_settings(r_after['router'],
+                                         ha_disabled_settings)
+
+    def test_enable_ha_when_ha_support_disabled_fails(self):
+        cfg.CONF.set_override('ha_support_enabled', False, group='ha')
+        self._test_ha_disabled_cases()
+
+    def test_enable_ha_with_disabled_ha_type_fails(self):
+        cfg.CONF.set_override('disabled_ha_mechanisms', [ha.HA_VRRP],
+                              group='ha')
+        self._test_ha_disabled_cases()
 
     def _test_change_ha_router_redundancy_level(self, new_level=1):
-        def _change_redundancy_tests(redundancy_router1, redundancy_router2):
-            body = {'router': {ha.ENABLED: True,
-                               ha.DETAILS: {ha.TYPE: ha.HA_HSRP,
-                                            ha.REDUNDANCY_LEVEL: new_level,
-                                            ha.PROBE_CONNECTIVITY: False}}}
-            updated_router = self._update('routers', r['router']['id'], body)
-            self.assertTrue(updated_router['router'][ha.ENABLED])
-            self.assertEqual(updated_router['router'][ha.ENABLED], new_level)
-            redundancy_routers = self._list(
-                'routers', query_params="id=%s|id=%s" % (
-                    redundancy_router1['router']['id'],
-                    redundancy_router2['router']['id']))
-            self.assertEqual(len(redundancy_routers['routers']), new_level)
+        def _change_redundancy_tests(redundancy_routers):
+            new_ha_settings = self._get_ha_defaults(redundancy_level=new_level,
+                                                    ha_type=ha.HA_HSRP,
+                                                    probing_enabled=False)
+            ha_spec = copy.deepcopy(new_ha_settings)
+            del ha_spec[ha.DETAILS][ha.PRIORITY]
+            updated_router = self._update('routers', r['router']['id'],
+                                          {'router': ha_spec})
             # verify router visible to user
-            self._verify_router_ports(r['id'], s['network_id'], s['id'],
-                                      p['network_id'],
-                                      p['fixed_ips'][0]['subnet_id'])
-            self._verify_ha_settings(redundancy_routers['routers'][0],
-                                     self._get_ha_defaults(ha_enabled=False))
-            # check that redundancy routers have all ports
-            for rr in redundancy_routers['routers']:
-                self._verify_router_ports(rr['id'], s['network_id'], s['id'],
-                                          p['network_id'],
-                                          p['fixed_ips'][0]['subnet_id'])
+            self._verify_ha_settings(updated_router['router'], new_ha_settings)
+            self._verify_router_ports(updated_router['router']['id'],
+                                      s['subnet']['network_id'],
+                                      s['subnet']['id'],
+                                      p['port']['network_id'],
+                                      p['port']['fixed_ips'][0]['subnet_id'])
+            ha_d = updated_router['router'][ha.DETAILS]
+            params = "&".join(["id=%s" % rr['id'] for rr in
+                               ha_d[ha.REDUNDANCY_ROUTERS]])
+            res = self._list('routers', query_params=params)
+            new_redundancy_routers = res['routers']
+            self.assertEqual(len(new_redundancy_routers), new_level)
+            ha_disabled_settings = self._get_ha_defaults(ha_enabled=False)
+            for rr in new_redundancy_routers:
+                # redundancy router should have ha disabled
+                self._verify_ha_settings(rr, ha_disabled_settings)
+                # check that redundancy router have all ports
+                self._verify_router_ports(
+                    rr['id'], s['subnet']['network_id'], s['subnet']['id'],
+                    p['port']['network_id'],
+                    p['port']['fixed_ips'][0]['subnet_id'])
+            # verify that non-deleted redundancy routers are the same
+            old_rr_ids = set(rr['id'] for rr in redundancy_routers)
+            new_rr_ids = set(rr['id'] for rr in new_redundancy_routers)
+            if len(old_rr_ids) < len(new_rr_ids):
+                self.assertTrue(old_rr_ids.issubset(new_rr_ids))
+            else:
+                self.assertTrue(new_rr_ids.issubset(old_rr_ids))
+
 
         with self.subnet(cidr='10.0.1.0/24') as s:
             self._set_net_external(s['subnet']['network_id'])
@@ -374,18 +593,6 @@ class HAL3RouterApplianceVMTestCase(
 
     def test_increase_ha_router_redundancy_level(self):
         self._test_change_ha_router_redundancy_level(new_level=3)
-
-    def test_update_ha_type_on_router_with_ha_enabled_fails(self):
-        pass
-
-    def test_update_ha_router_probing_settings(self):
-        pass
-
-    def test_update_ha_router_priority(self):
-        pass
-
-    def test_update_ha_redundancy_router_priority(self):
-        pass
 
 
 class L3AgentHARouterApplianceTestCase(
