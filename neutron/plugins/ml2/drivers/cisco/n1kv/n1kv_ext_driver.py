@@ -20,7 +20,6 @@ from oslo.config import cfg
 from neutron.api import extensions as api_extensions
 from neutron.api.v2 import attributes
 from neutron.openstack.common import excutils
-from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import log
 from neutron.openstack.common import uuidutils
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -60,21 +59,18 @@ class CiscoN1kvExtensionDriver(api.ExtensionDriver):
         try:
             n1kv_db.get_policy_binding(port_id, session)
         except n1kv_exc.PortBindingNotFound:
-            if not uuidutils.is_uuid_like(policy_profile_attr):
-                policy_profile = n1kv_db.get_policy_profile_by_name(
-                    policy_profile_attr)
-                if policy_profile:
+            try:
+                if not uuidutils.is_uuid_like(policy_profile_attr):
+                    policy_profile = n1kv_db.get_policy_profile_by_name(
+                        policy_profile_attr)
                     policy_profile_attr = policy_profile.id
                 else:
-                    LOG.error(_LE("Policy Profile %(profile)s does "
-                                  "not exist."),
-                              {"profile": policy_profile_attr})
+                    n1kv_db.get_policy_profile_by_uuid(session,
+                                                       policy_profile_attr)
+            except n1kv_exc.PolicyProfileNotFound as e:
+                with excutils.save_and_reraise_exception(reraise=False):
+                    LOG.error(e.message)
                     raise ml2_exc.MechanismDriverError()
-            elif not n1kv_db.get_policy_profile_by_uuid(session,
-                                                        policy_profile_attr):
-                LOG.error(_LE("Policy Profile %(profile)s does not exist."),
-                          {"profile": policy_profile_attr})
-                raise ml2_exc.MechanismDriverError()
             n1kv_db.add_policy_binding(port_id, policy_profile_attr, session)
         result[constants.N1KV_PROFILE] = policy_profile_attr
 

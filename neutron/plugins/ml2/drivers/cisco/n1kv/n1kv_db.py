@@ -79,19 +79,21 @@ def remove_network_profile(netp_id, db_session=None):
 def get_policy_profile_by_name(name, db_session=None):
     """Retrieve policy profile by name."""
     db_session = db_session or db.get_session()
-    try:
-        return (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(name=name).first())
-    except sa_exc.NoResultFound:
-        raise n1kv_exc.PolicyProfileNotFound(profile=name)
+    policy_profile = (db_session.query(n1kv_models.PolicyProfile).
+                      filter_by(name=name).first())
+    if policy_profile:
+        return policy_profile
+    else:
+        raise n1kv_exc.PolicyProfileNotFound(profile=id)
 
 
 def get_policy_profile_by_uuid(db_session, id):
     """Retrieve policy profile by its UUID."""
-    try:
-        return (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(id=id).first())
-    except sa_exc.NoResultFound:
+    policy_profile = (db_session.query(n1kv_models.PolicyProfile).
+                      filter_by(id=id).first())
+    if policy_profile:
+        return policy_profile
+    else:
         raise n1kv_exc.PolicyProfileNotFound(profile=id)
 
 
