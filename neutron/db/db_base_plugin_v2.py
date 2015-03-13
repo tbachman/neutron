@@ -14,9 +14,10 @@
 #    under the License.
 
 import netaddr
-from oslo.config import cfg
-from oslo.db import exception as db_exc
-from oslo.utils import excutils
+from oslo_config import cfg
+from oslo_db import exception as db_exc
+from oslo_log import log as logging
+from oslo_utils import excutils
 from sqlalchemy import and_
 from sqlalchemy import event
 from sqlalchemy import orm
@@ -35,7 +36,6 @@ from neutron.extensions import l3
 from neutron.i18n import _LE, _LI
 from neutron import manager
 from neutron import neutron_plugin_base_v2
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as service_constants
 
@@ -358,7 +358,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         IPs. Include the subnet_id in the result if only an IP address is
         configured.
 
-        :raises: InvalidInput, IpAddressInUse
+        :raises: InvalidInput, IpAddressInUse, InvalidIpForNetwork,
+                 InvalidIpForSubnet
         """
         fixed_ip_set = []
         for fixed in fixed_ips:
@@ -377,9 +378,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                         subnet_id = subnet['id']
                         break
                 if not found:
-                    msg = _('IP address %s is not a valid IP for the defined '
-                            'networks subnets') % fixed['ip_address']
-                    raise n_exc.InvalidInput(error_message=msg)
+                    raise n_exc.InvalidIpForNetwork(
+                        ip_address=fixed['ip_address'])
             else:
                 subnet = self._get_subnet(context, fixed['subnet_id'])
                 if subnet['network_id'] != network_id:
@@ -403,9 +403,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 if (not found and
                     not self._check_subnet_ip(subnet['cidr'],
                                               fixed['ip_address'])):
-                    msg = _('IP address %s is not a valid IP for the defined '
-                            'subnet') % fixed['ip_address']
-                    raise n_exc.InvalidInput(error_message=msg)
+                    raise n_exc.InvalidIpForSubnet(
+                        ip_address=fixed['ip_address'])
                 if (ipv6_utils.is_auto_address_subnet(subnet) and
                     device_owner not in
                         constants.ROUTER_INTERFACE_OWNERS):
@@ -1222,6 +1221,20 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             models_v2.IPAllocation).filter_by(
                 subnet_id=subnet_id).join(models_v2.Port).first()
 
+    def _subnet_check_ip_allocations_internal_router_ports(self, context,
+                                                           subnet_id):
+        # Do not delete the subnet if IP allocations for internal
+        # router ports still exist
+        allocs = context.session.query(models_v2.IPAllocation).filter_by(
+                subnet_id=subnet_id).join(models_v2.Port).filter(
+                        models_v2.Port.device_owner.in_(
+                            constants.ROUTER_INTERFACE_OWNERS)
+                ).first()
+        if allocs:
+            LOG.debug("Subnet %s still has internal router ports, "
+                      "cannot delete", subnet_id)
+            raise n_exc.SubnetInUse(subnet_id=id)
+
     def delete_subnet(self, context, id):
         with context.session.begin(subtransactions=True):
             subnet = self._get_subnet(context, id)
@@ -1234,7 +1247,10 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             # for IPv6 addresses which were automatically generated
             # via SLAAC
             is_auto_addr_subnet = ipv6_utils.is_auto_address_subnet(subnet)
-            if not is_auto_addr_subnet:
+            if is_auto_addr_subnet:
+                self._subnet_check_ip_allocations_internal_router_ports(
+                        context, id)
+            else:
                 qry_network_ports = (
                     qry_network_ports.filter(models_v2.Port.device_owner.
                     in_(AUTO_DELETE_PORT_OWNERS)))
@@ -1248,9 +1264,12 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             # the isolation level is set to READ COMMITTED allocations made
             # concurrently will be returned by this query
             if not is_auto_addr_subnet:
-                if self._subnet_check_ip_allocations(context, id):
-                    LOG.debug("Found IP allocations on subnet %s, "
-                              "cannot delete", id)
+                alloc = self._subnet_check_ip_allocations(context, id)
+                if alloc:
+                    LOG.info(_LI("Found IP allocation %(alloc)s on subnet "
+                                 "%(subnet)s, cannot delete"),
+                             {'alloc': alloc,
+                              'subnet': id})
                     raise n_exc.SubnetInUse(subnet_id=id)
 
             context.session.delete(subnet)
@@ -1274,6 +1293,12 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
     def get_subnets_count(self, context, filters=None):
         return self._get_collection_count(context, models_v2.Subnet,
                                           filters=filters)
+
+    def _check_mac_addr_update(self, context, port, new_mac, device_owner):
+        if (device_owner and device_owner.startswith('network:')):
+            raise n_exc.UnsupportedPortDeviceOwner(
+                op=_("mac address update"), port_id=id,
+                device_owner=device_owner)
 
     def create_port_bulk(self, context, ports):
         return self._create_bulk('port', context, ports)
@@ -1315,9 +1340,9 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         # NOTE(jkoelker) Get the tenant_id outside of the session to avoid
         #                unneeded db action if the operation raises
         tenant_id = self._get_tenant_id_for_create(context, p)
-        if p.get('device_owner') == constants.DEVICE_OWNER_ROUTER_INTF:
-            self._enforce_device_owner_not_router_intf_or_device_id(context, p,
-                                                                    tenant_id)
+        if p.get('device_owner'):
+            self._enforce_device_owner_not_router_intf_or_device_id(
+                context, p.get('device_owner'), p.get('device_id'), tenant_id)
 
         port_data = dict(tenant_id=tenant_id,
                          name=p['name'],
@@ -1355,43 +1380,45 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         p = port['port']
 
         changed_ips = False
-        changed_device_id = False
         with context.session.begin(subtransactions=True):
             port = self._get_port(context, id)
-            if 'device_owner' in p:
-                current_device_owner = p['device_owner']
-                changed_device_owner = True
-            else:
-                current_device_owner = port['device_owner']
-                changed_device_owner = False
-            if p.get('device_id') != port['device_id']:
-                changed_device_id = True
+            changed_owner = 'device_owner' in p
+            current_owner = p.get('device_owner') or port['device_owner']
+            changed_device_id = p.get('device_id') != port['device_id']
+            current_device_id = p.get('device_id') or port['device_id']
 
-            # if the current device_owner is ROUTER_INF and the device_id or
-            # device_owner changed check device_id is not another tenants
-            # router
-            if ((current_device_owner == constants.DEVICE_OWNER_ROUTER_INTF)
-                    and (changed_device_id or changed_device_owner)):
+            if current_owner and changed_device_id or changed_owner:
                 self._enforce_device_owner_not_router_intf_or_device_id(
-                    context, p, port['tenant_id'], port)
+                    context, current_owner, current_device_id,
+                    port['tenant_id'])
+
+            new_mac = p.get('mac_address')
+            if new_mac and new_mac != port['mac_address']:
+                self._check_mac_addr_update(
+                    context, port, new_mac, current_owner)
 
             # Check if the IPs need to be updated
+            network_id = port['network_id']
             if 'fixed_ips' in p:
                 changed_ips = True
                 original = self._make_port_dict(port, process_extensions=False)
                 added_ips, prev_ips = self._update_ips_for_port(
-                    context, port["network_id"], id,
+                    context, network_id, id,
                     original["fixed_ips"], p['fixed_ips'],
                     original['mac_address'], port['device_owner'])
 
                 # Update ips if necessary
                 for ip in added_ips:
                     NeutronDbPluginV2._store_ip_allocation(
-                        context, ip['ip_address'], port['network_id'],
+                        context, ip['ip_address'], network_id,
                         ip['subnet_id'], port.id)
-            # Remove all attributes in p which are not in the port DB model
-            # and then update the port
-            port.update(self._filter_non_model_columns(p, models_v2.Port))
+                # Remove all attributes in p which are not in the port DB model
+                # and then update the port
+            try:
+                port.update(self._filter_non_model_columns(p, models_v2.Port))
+                context.session.flush()
+            except db_exc.DBDuplicateEntry:
+                raise n_exc.MacAddressInUse(net_id=network_id, mac=new_mac)
 
         result = self._make_port_dict(port)
         # Keep up with fields that changed
@@ -1474,16 +1501,15 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         return self._get_ports_query(context, filters).count()
 
     def _enforce_device_owner_not_router_intf_or_device_id(self, context,
-                                                           port_request,
-                                                           tenant_id,
-                                                           db_port=None):
+                                                           device_owner,
+                                                           device_id,
+                                                           tenant_id):
+        """Prevent tenants from replacing the device id of router ports with
+        a router uuid belonging to another tenant.
+        """
+        if device_owner not in constants.ROUTER_INTERFACE_OWNERS:
+            return
         if not context.is_admin:
-            # find the device_id. If the call was update_port and the
-            # device_id was not passed in we use the device_id from the
-            # db.
-            device_id = port_request.get('device_id')
-            if not device_id and db_port:
-                device_id = db_port.get('device_id')
             # check to make sure device_id does not match another tenants
             # router.
             if device_id:

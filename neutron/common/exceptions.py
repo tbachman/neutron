@@ -17,7 +17,7 @@
 Neutron base exception handling.
 """
 
-from oslo.utils import excutils
+from oslo_utils import excutils
 
 
 class NeutronException(Exception):
@@ -124,6 +124,12 @@ class PortInUse(InUse):
                 "device %(device_id)s.")
 
 
+class PortBound(InUse):
+    message = _("Unable to complete operation on port %(port_id)s, "
+                "port is already bound, port type: %(vif_type)s, "
+                "old_mac %(old_mac)s, new_mac %(new_mac)s")
+
+
 class MacAddressInUse(InUse):
     message = _("Unable to complete operation for network %(net_id)s. "
                 "The mac address %(mac)s is in use.")
@@ -139,6 +145,16 @@ class DNSNameServersExhausted(BadRequest):
     # NOTE(xchenum): probably make sense to use quota exceeded exception?
     message = _("Unable to complete operation for %(subnet_id)s. "
                 "The number of DNS nameservers exceeds the limit %(quota)s.")
+
+
+class InvalidIpForNetwork(BadRequest):
+    message = _("IP address %(ip_address)s is not a valid IP "
+                "for any of the subnets on the specified network.")
+
+
+class InvalidIpForSubnet(BadRequest):
+    message = _("IP address %(ip_address)s is not a valid IP "
+                "for the specified subnet.")
 
 
 class IpAddressInUse(InUse):
@@ -203,6 +219,11 @@ class InvalidAllocationPool(BadRequest):
     message = _("The allocation pool %(pool)s is not valid.")
 
 
+class UnsupportedPortDeviceOwner(Conflict):
+    message = _("Operation %(op)s is not supported for device_owner "
+                "%(device_owner)s on port %(port_id)s.")
+
+
 class OverlappingAllocationPools(Conflict):
     message = _("Found overlapping allocation pools:"
                 "%(pool_1)s %(pool_2)s for subnet %(subnet_cidr)s.")
@@ -227,10 +248,6 @@ class BridgeDoesNotExist(NeutronException):
 
 class PreexistingDeviceFailure(NeutronException):
     message = _("Creation failed. %(dev_name)s already exists.")
-
-
-class SudoRequired(NeutronException):
-    message = _("Sudo privilege is required to run this command.")
 
 
 class QuotaResourceUnknown(NotFound):
@@ -360,3 +377,23 @@ class IpTablesApplyException(NeutronException):
     def __init__(self, message=None):
         self.message = message
         super(IpTablesApplyException, self).__init__()
+
+
+class NetworkIdOrRouterIdRequiredError(NeutronException):
+    message = _('network_id and router_id are None. One must be provided.')
+
+
+class AbortSyncRouters(NeutronException):
+    message = _("Aborting periodic_sync_routers_task due to an error")
+
+
+# Shared *aas exceptions, pending them being refactored out of Neutron
+# proper.
+
+class FirewallInternalDriverError(NeutronException):
+    """Fwaas exception for all driver errors.
+
+    On any failure or exception in the driver, driver should log it and
+    raise this exception to the agent
+    """
+    message = _("%(driver)s: Internal driver error.")

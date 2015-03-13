@@ -14,7 +14,8 @@
 #    under the License.
 
 import netaddr
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
 
 from neutron.agent import firewall
 from neutron.agent.linux import ipset_manager
@@ -22,8 +23,7 @@ from neutron.agent.linux import iptables_comments as ic
 from neutron.agent.linux import iptables_manager
 from neutron.common import constants
 from neutron.common import ipv6_utils
-from neutron.i18n import _LI, _LE
-from neutron.openstack.common import log as logging
+from neutron.i18n import _LI
 
 
 LOG = logging.getLogger(__name__)
@@ -48,13 +48,11 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                           EGRESS_DIRECTION: 'physdev-in'}
 
     def __init__(self):
-        self.root_helper = cfg.CONF.AGENT.root_helper
         self.iptables = iptables_manager.IptablesManager(
-            root_helper=self.root_helper,
             use_ipv6=ipv6_utils.is_enabled())
         # TODO(majopela, shihanzhang): refactor out ipset to a separate
         # driver composed over this one
-        self.ipset = ipset_manager.IpsetManager(root_helper=self.root_helper)
+        self.ipset = ipset_manager.IpsetManager()
         # list of port which has security group
         self.filtered_ports = {}
         self._add_fallback_chain_v4v6()
@@ -388,10 +386,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         ethertype = sg_rule.get('ethertype')
         ipset_name = self.ipset.get_name(remote_gid, ethertype)
         if not self.ipset.set_exists(remote_gid, ethertype):
-            LOG.error(_LE("Tried to generate an ipset iptable rule "
-                          "for a security group rule (%(rule)r) referencing "
-                          "an ipset (%(ipset)s) which doesn't exist yet."),
-                      {'rule': sg_rule, 'ipset': ipset_name})
+            #NOTE(mangelajo): ipsets for empty groups are not created
+            #                 thus we can't reference them.
             return None
         ipset_direction = IPSET_DIRECTION[sg_rule.get('direction')]
         args = self._generate_protocol_and_port_args(sg_rule)

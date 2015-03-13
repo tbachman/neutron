@@ -14,11 +14,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
+
+from neutron.common import constants
 
 
 OPTS = [
-    cfg.StrOpt('agent_mode', default='legacy',
+    cfg.StrOpt('agent_mode', default=constants.L3_AGENT_MODE_LEGACY,
+               choices=(constants.L3_AGENT_MODE_DVR,
+                        constants.L3_AGENT_MODE_DVR_SNAT,
+                        constants.L3_AGENT_MODE_LEGACY),
                help=_("The working mode for the agent. Allowed modes are: "
                       "'legacy' - this preserves the existing behavior "
                       "where the L3 agent is deployed on a centralized "
@@ -55,5 +60,9 @@ OPTS = [
     cfg.BoolOpt('enable_metadata_proxy', default=True,
                 help=_("Allow running metadata proxy.")),
     cfg.BoolOpt('router_delete_namespaces', default=False,
-                help=_("Delete namespace after removing a router."))
+                help=_("Delete namespace after removing a router.")),
+    cfg.StrOpt('metadata_access_mark',
+               default='0x1',
+               help=_('Iptables mangle mark used to mark metadata valid '
+                      'requests'))
 ]

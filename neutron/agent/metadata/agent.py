@@ -20,12 +20,15 @@ import socket
 import eventlet
 import httplib2
 from neutronclient.v2_0 import client
-from oslo.config import cfg
-from oslo import messaging
-from oslo.utils import excutils
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_log import loggers
+import oslo_messaging
+from oslo_utils import excutils
 import six.moves.urllib.parse as urlparse
 import webob
 
+from neutron.agent.linux import utils as linux_utils
 from neutron.agent import rpc as agent_rpc
 from neutron.common import constants as n_const
 from neutron.common import rpc as n_rpc
@@ -34,7 +37,6 @@ from neutron.common import utils
 from neutron import context
 from neutron.i18n import _LE, _LW
 from neutron.openstack.common.cache import cache
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
 from neutron import wsgi
 
@@ -56,9 +58,10 @@ class MetadataPluginAPI(object):
     """
 
     def __init__(self, topic):
-        target = messaging.Target(topic=topic,
-                                  namespace=n_const.RPC_NAMESPACE_METADATA,
-                                  version='1.0')
+        target = oslo_messaging.Target(
+            topic=topic,
+            namespace=n_const.RPC_NAMESPACE_METADATA,
+            version='1.0')
         self.client = n_rpc.get_client(target)
 
     def get_ports(self, context, filters):
@@ -121,7 +124,7 @@ class MetadataProxyHandler(object):
         if self.use_rpc:
             try:
                 return self.plugin_rpc.get_ports(self.context, filters)
-            except (messaging.MessagingException, AttributeError):
+            except (oslo_messaging.MessagingException, AttributeError):
                 # TODO(obondarev): remove fallback once RPC is proven
                 # to work fine with metadata agent (K or L release at most)
                 LOG.warning(_LW('Server does not support metadata RPC, '
@@ -272,13 +275,6 @@ class UnixDomainHttpProtocol(eventlet.wsgi.HttpProtocol):
                                             server)
 
 
-class WorkerService(wsgi.WorkerService):
-    def start(self):
-        self._server = self._service.pool.spawn(self._service._run,
-                                                self._application,
-                                                self._service._socket)
-
-
 class UnixDomainWSGIServer(wsgi.Server):
     def __init__(self, name):
         self._socket = None
@@ -298,9 +294,9 @@ class UnixDomainWSGIServer(wsgi.Server):
         logger = logging.getLogger('eventlet.wsgi.server')
         eventlet.wsgi.server(socket,
                              application,
-                             custom_pool=self.pool,
+                             max_size=self.num_threads,
                              protocol=UnixDomainHttpProtocol,
-                             log=logging.WritableLogger(logger))
+                             log=loggers.WritableLogger(logger))
 
 
 class UnixDomainMetadataProxy(object):
@@ -317,7 +313,7 @@ class UnixDomainMetadataProxy(object):
                     if not os.path.exists(cfg.CONF.metadata_proxy_socket):
                         ctxt.reraise = False
         else:
-            os.makedirs(dirname, 0o755)
+            linux_utils.ensure_dir(dirname)
 
         self._init_state_reporting()
 

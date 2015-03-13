@@ -21,27 +21,31 @@ import socket
 import struct
 import tempfile
 
+import eventlet
 from eventlet.green import subprocess
 from eventlet import greenthread
-from oslo.utils import excutils
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_utils import excutils
 
+from neutron.agent.common import config
 from neutron.common import constants
 from neutron.common import utils
 from neutron.i18n import _LE
-from neutron.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
+config.register_root_helper(cfg.CONF)
 
 
-def create_process(cmd, root_helper=None, addl_env=None):
+def create_process(cmd, run_as_root=False, addl_env=None):
     """Create a process object for the given command.
 
     The return value will be a tuple of the process object and the
     list of command arguments used to create it.
     """
-    if root_helper:
-        cmd = shlex.split(root_helper) + cmd
+    if run_as_root:
+        cmd = shlex.split(config.get_root_helper(cfg.CONF)) + cmd
     cmd = map(str, cmd)
 
     LOG.debug("Running command: %s", cmd)
@@ -58,17 +62,21 @@ def create_process(cmd, root_helper=None, addl_env=None):
     return obj, cmd
 
 
-def execute(cmd, root_helper=None, process_input=None, addl_env=None,
+def execute(cmd, process_input=None, addl_env=None,
             check_exit_code=True, return_stderr=False, log_fail_as_error=True,
-            extra_ok_codes=None):
+            extra_ok_codes=None, run_as_root=False):
     try:
-        obj, cmd = create_process(cmd, root_helper=root_helper,
+        obj, cmd = create_process(cmd, run_as_root=run_as_root,
                                   addl_env=addl_env)
         _stdout, _stderr = obj.communicate(process_input)
         obj.stdin.close()
-        m = _("\nCommand: %(cmd)s\nExit code: %(code)s\nStdout: %(stdout)s\n"
-              "Stderr: %(stderr)s") % {'cmd': cmd, 'code': obj.returncode,
-                                       'stdout': _stdout, 'stderr': _stderr}
+        m = _("\nCommand: %(cmd)s\nExit code: %(code)s\nStdin: %(stdin)s\n"
+              "Stdout: %(stdout)s\nStderr: %(stderr)s") % \
+            {'cmd': cmd,
+             'code': obj.returncode,
+             'stdin': process_input or '',
+             'stdout': _stdout,
+             'stderr': _stderr}
 
         extra_ok_codes = extra_ok_codes or []
         if obj.returncode and obj.returncode in extra_ok_codes:
@@ -141,6 +149,8 @@ def ensure_dir(dir_path):
 
 
 def _get_conf_base(cfg_root, uuid, ensure_conf_dir):
+    #TODO(mangelajo): separate responsibilities here, ensure_conf_dir
+    #                 should be a separate function
     conf_dir = os.path.abspath(os.path.normpath(cfg_root))
     conf_base = os.path.join(conf_dir, uuid)
     if ensure_conf_dir:
@@ -178,7 +188,7 @@ def remove_conf_files(cfg_root, uuid):
         os.unlink(file_path)
 
 
-def get_root_helper_child_pid(pid, root_helper=None):
+def get_root_helper_child_pid(pid, run_as_root=False):
     """
     Get the lowest child pid in the process hierarchy
 
@@ -193,7 +203,7 @@ def get_root_helper_child_pid(pid, root_helper=None):
     die is to target the child process directly.
     """
     pid = str(pid)
-    if root_helper:
+    if run_as_root:
         try:
             pid = find_child_pids(pid)[0]
         except IndexError:
@@ -208,3 +218,60 @@ def get_root_helper_child_pid(pid, root_helper=None):
                 # Last process in the tree, return it
                 break
     return pid
+
+
+def remove_abs_path(cmd):
+    """Remove absolute path of executable in cmd
+
+    Note: New instance of list is returned
+
+    :param cmd: parsed shlex command (e.g. ['/bin/foo', 'param1', 'param two'])
+
+    """
+    if cmd and os.path.isabs(cmd[0]):
+        cmd = list(cmd)
+        cmd[0] = os.path.basename(cmd[0])
+
+    return cmd
+
+
+def get_cmdline_from_pid(pid):
+    if pid is None or not os.path.exists('/proc/%s' % pid):
+        return []
+    with open('/proc/%s/cmdline' % pid, 'r') as f:
+        return f.readline().split('\0')[:-1]
+
+
+def cmdlines_are_equal(cmd1, cmd2):
+    """Validate provided lists containing output of /proc/cmdline are equal
+
+    This function ignores absolute paths of executables in order to have
+    correct results in case one list uses absolute path and the other does not.
+    """
+    cmd1 = remove_abs_path(cmd1)
+    cmd2 = remove_abs_path(cmd2)
+    return cmd1 == cmd2
+
+
+def pid_invoked_with_cmdline(pid, expected_cmd):
+    """Validate process with given pid is running with provided parameters
+
+    """
+    cmdline = get_cmdline_from_pid(pid)
+    return cmdlines_are_equal(expected_cmd, cmdline)
+
+
+def wait_until_true(predicate, timeout=60, sleep=1, exception=None):
+    """
+    Wait until callable predicate is evaluated as True
+
+    :param predicate: Callable deciding whether waiting should continue.
+    Best practice is to instantiate predicate with functools.partial()
+    :param timeout: Timeout in seconds how long should function wait.
+    :param sleep: Polling interval for results in seconds.
+    :param exception: Exception class for eventlet.Timeout.
+    (see doc for eventlet.Timeout for more information)
+    """
+    with eventlet.timeout.Timeout(timeout, exception):
+        while not predicate():
+            eventlet.sleep(sleep)

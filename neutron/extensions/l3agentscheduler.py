@@ -15,6 +15,7 @@
 
 import abc
 
+from oslo_log import log as logging
 import webob.exc
 
 from neutron.api import extensions
@@ -26,7 +27,6 @@ from neutron.common import rpc as n_rpc
 from neutron.extensions import agent
 from neutron.i18n import _LE
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
 from neutron import policy
 from neutron import wsgi
@@ -96,8 +96,7 @@ class L3AgentsHostingRouterController(wsgi.Controller):
         return plugin
 
     def index(self, request, **kwargs):
-        plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
+        plugin = self.get_plugin()
         policy.enforce(request.context,
                        "get_%s" % L3_AGENTS,
                        {})
@@ -171,11 +170,6 @@ class RouterSchedulingFailed(exceptions.Conflict):
 class RouterReschedulingFailed(exceptions.Conflict):
     message = _("Failed rescheduling router %(router_id)s: "
                 "no eligible l3 agent found.")
-
-
-class RouterNotHostedByL3Agent(exceptions.Conflict):
-    message = _("The router %(router_id)s is not hosted"
-                " by L3 agent %(agent_id)s.")
 
 
 class RouterL3AgentMismatch(exceptions.Conflict):

@@ -20,15 +20,15 @@ from alembic import config as alembic_config
 from alembic import environment
 from alembic import script as alembic_script
 from alembic import util as alembic_util
-from oslo.config import cfg
-from oslo.utils import importutils
+from oslo_config import cfg
+from oslo_utils import importutils
 
+from neutron.common import repos
 
 HEAD_FILENAME = 'HEAD'
-LBAAS_SERVICE = 'lbaas'
-FWAAS_SERVICE = 'fwaas'
-VPNAAS_SERVICE = 'vpnaas'
-VALID_SERVICES = (LBAAS_SERVICE, FWAAS_SERVICE, VPNAAS_SERVICE)
+
+mods = repos.NeutronModules()
+VALID_SERVICES = map(mods.alembic_name, mods.installed_list())
 
 
 _core_opts = [

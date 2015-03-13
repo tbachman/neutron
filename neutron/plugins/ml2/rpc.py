@@ -13,21 +13,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo import messaging
+from oslo_log import log
+import oslo_messaging
 from sqlalchemy.orm import exc
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.handlers import dvr_rpc
+from neutron.callbacks import events
+from neutron.callbacks import registry
+from neutron.callbacks import resources
 from neutron.common import constants as q_const
 from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-from neutron.common import utils
 from neutron.extensions import portbindings
 from neutron.i18n import _LW
 from neutron import manager
-from neutron.openstack.common import log
-from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_tunnel
 # REVISIT(kmestery): Allow the type and mechanism drivers to supply the
@@ -45,7 +46,8 @@ class RpcCallbacks(type_tunnel.TunnelRpcCallbackMixin):
     #   1.3 get_device_details rpc signature upgrade to obtain 'host' and
     #       return value to include fixed_ips and device_owner for
     #       the device port
-    target = messaging.Target(version='1.3')
+    #   1.4 tunnel_sync rpc signature upgrade to obtain 'host'
+    target = oslo_messaging.Target(version='1.4')
 
     def __init__(self, notifier, type_manager):
         self.setup_tunnel_callback_mixin(notifier, type_manager)
@@ -166,16 +168,21 @@ class RpcCallbacks(type_tunnel.TunnelRpcCallbackMixin):
         port_id = plugin.update_port_status(rpc_context, port_id,
                                             q_const.PORT_STATUS_ACTIVE,
                                             host)
-        l3plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
-        if (l3plugin and
-            utils.is_extension_supported(l3plugin,
-                                         q_const.L3_DISTRIBUTED_EXT_ALIAS)):
-            try:
-                port = plugin._get_port(rpc_context, port_id)
-                l3plugin.dvr_vmarp_table_update(rpc_context, port, "add")
-            except exceptions.PortNotFound:
-                LOG.debug('Port %s not found during ARP update', port_id)
+        try:
+            # NOTE(armax): it's best to remove all objects from the
+            # session, before we try to retrieve the new port object
+            rpc_context.session.expunge_all()
+            port = plugin._get_port(rpc_context, port_id)
+        except exceptions.PortNotFound:
+            LOG.debug('Port %s not found during update', port_id)
+        else:
+            kwargs = {
+                'context': rpc_context,
+                'port': port,
+                'update_device_up': True
+            }
+            registry.notify(
+                resources.PORT, events.AFTER_UPDATE, plugin, **kwargs)
 
 
 class AgentNotifierApi(dvr_rpc.DVRAgentRpcApiMixin,
@@ -198,7 +205,11 @@ class AgentNotifierApi(dvr_rpc.DVRAgentRpcApiMixin,
         self.topic_port_update = topics.get_topic_name(topic,
                                                        topics.PORT,
                                                        topics.UPDATE)
-        target = messaging.Target(topic=topic, version='1.0')
+        self.topic_port_delete = topics.get_topic_name(topic,
+                                                       topics.PORT,
+                                                       topics.DELETE)
+
+        target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
     def network_delete(self, context, network_id):
@@ -213,3 +224,8 @@ class AgentNotifierApi(dvr_rpc.DVRAgentRpcApiMixin,
         cctxt.cast(context, 'port_update', port=port,
                    network_type=network_type, segmentation_id=segmentation_id,
                    physical_network=physical_network)
+
+    def port_delete(self, context, port_id):
+        cctxt = self.client.prepare(topic=self.topic_port_delete,
+                                    fanout=True)
+        cctxt.cast(context, 'port_delete', port_id=port_id)

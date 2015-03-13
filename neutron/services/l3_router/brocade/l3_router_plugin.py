@@ -17,12 +17,12 @@
 
 """Implentation of Brocade SVI service Plugin."""
 
-from oslo.config import cfg
-from oslo.utils import excutils
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_utils import excutils
 
 from neutron.common import constants as l3_constants
 from neutron.i18n import _LE, _LI
-from neutron.openstack.common import log as logging
 from neutron.plugins.ml2 import db
 from neutron.plugins.ml2.drivers.brocade.db import models as brocade_db
 from neutron.plugins.ml2.drivers.brocade.nos import nosdriver as driver
@@ -111,7 +111,7 @@ class BrocadeSVIPlugin(router.L3RouterPlugin):
                                    str(router['id']))
 
     def add_router_interface(self, context, router_id, interface_info):
-        """creates svi on NOS device and assigns ip addres to SVI."""
+        """creates svi on NOS device and assigns ip address to SVI."""
         LOG.debug("BrocadeSVIPlugin.add_router_interface on VDX: "
                   "router_id=%(router_id)s "
                   "interface_info=%(interface_info)r",

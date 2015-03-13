@@ -13,12 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
 import re
+
+import netaddr
+from oslo_log import log as logging
 
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
 
@@ -44,6 +45,7 @@ def _verify_dict_keys(expected_keys, target_dict, strict=True):
         msg = (_("Invalid input. '%(target_dict)s' must be a dictionary "
                  "with keys: %(expected_keys)s") %
                {'target_dict': target_dict, 'expected_keys': expected_keys})
+        LOG.debug(msg)
         return msg
 
     expected_keys = set(expected_keys)
@@ -57,6 +59,7 @@ def _verify_dict_keys(expected_keys, target_dict, strict=True):
                  "Provided keys: %(provided_keys)s") %
                {'expected_keys': expected_keys,
                 'provided_keys': provided_keys})
+        LOG.debug(msg)
         return msg
 
 
@@ -82,7 +85,9 @@ def _validate_not_empty_string(data, max_len=None):
     if msg:
         return msg
     if not data.strip():
-        return _("'%s' Blank strings are not permitted") % data
+        msg = _("'%s' Blank strings are not permitted") % data
+        LOG.debug(msg)
+        return msg
 
 
 def _validate_string_or_none(data, max_len=None):
@@ -208,12 +213,10 @@ def _validate_ip_pools(data, valid_values=None):
     for ip_pool in data:
         msg = _verify_dict_keys(expected_keys, ip_pool)
         if msg:
-            LOG.debug(msg)
             return msg
         for k in expected_keys:
             msg = _validate_ip_address(ip_pool[k])
             if msg:
-                LOG.debug(msg)
                 return msg
 
 
@@ -235,16 +238,15 @@ def _validate_fixed_ips(data, valid_values=None):
             fixed_ip_address = fixed_ip['ip_address']
             if fixed_ip_address in ips:
                 msg = _("Duplicate IP address '%s'") % fixed_ip_address
+                LOG.debug(msg)
             else:
                 msg = _validate_ip_address(fixed_ip_address)
             if msg:
-                LOG.debug(msg)
                 return msg
             ips.append(fixed_ip_address)
         if 'subnet_id' in fixed_ip:
             msg = _validate_uuid(fixed_ip['subnet_id'])
             if msg:
-                LOG.debug(msg)
                 return msg
 
 
@@ -258,6 +260,7 @@ def _validate_ip_or_hostname(host):
     msg = _("%(host)s is not a valid IP or hostname. Details: "
             "%(ip_err)s, %(name_err)s") % {'ip_err': ip_err, 'host': host,
                                            'name_err': name_err}
+    LOG.debug(msg)
     return msg
 
 
@@ -274,6 +277,7 @@ def _validate_nameservers(data, valid_values=None):
         if msg:
             msg = _("'%(host)s' is not a valid nameserver. %(msg)s") % {
                 'host': host, 'msg': msg}
+            LOG.debug(msg)
             return msg
         if host in hosts:
             msg = _("Duplicate nameserver '%s'") % host
@@ -293,15 +297,12 @@ def _validate_hostroutes(data, valid_values=None):
     for hostroute in data:
         msg = _verify_dict_keys(expected_keys, hostroute)
         if msg:
-            LOG.debug(msg)
             return msg
         msg = _validate_subnet(hostroute['destination'])
         if msg:
-            LOG.debug(msg)
             return msg
         msg = _validate_ip_address(hostroute['nexthop'])
         if msg:
-            LOG.debug(msg)
             return msg
         if hostroute in hostroutes:
             msg = _("Duplicate hostroute '%s'") % hostroute
@@ -430,7 +431,6 @@ def _validate_uuid_list(data, valid_values=None):
     for item in data:
         msg = _validate_uuid(item)
         if msg:
-            LOG.debug(msg)
             return msg
 
     if len(set(data)) != len(data):
@@ -454,7 +454,9 @@ def _validate_dict_item(key, key_validator, data):
             try:
                 val_func = validators[k]
             except KeyError:
-                return _("Validator '%s' does not exist.") % k
+                msg = _("Validator '%s' does not exist.") % k
+                LOG.debug(msg)
+                return msg
             val_params = v
             break
     # Process validation
@@ -478,7 +480,6 @@ def _validate_dict(data, key_specs=None):
     if required_keys:
         msg = _verify_dict_keys(required_keys, data, False)
         if msg:
-            LOG.debug(msg)
             return msg
 
     # Perform validation and conversion of all values
@@ -487,7 +488,6 @@ def _validate_dict(data, key_specs=None):
                                if k in data]:
         msg = _validate_dict_item(key, key_validator, data)
         if msg:
-            LOG.debug(msg)
             return msg
 
 
@@ -720,7 +720,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'default': True,
                            'convert_to': convert_to_boolean,
                            'is_visible': True},
-        'mac_address': {'allow_post': True, 'allow_put': False,
+        'mac_address': {'allow_post': True, 'allow_put': True,
                         'default': ATTR_NOT_SPECIFIED,
                         'validate': {'type:mac_address': None},
                         'enforce_policy': True,
