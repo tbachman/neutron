@@ -25,10 +25,12 @@ from neutron.db import common_db_mixin
 from neutron import manager
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
+from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
@@ -42,7 +44,8 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
                         routertype_db.RoutertypeDbMixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,
-                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
+                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin,
+                        ha_db.HA_db_mixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
@@ -57,7 +60,8 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         "extraroute", "l3_agent_scheduler",
         routerhostingdevice.ROUTERHOSTINGDEVICE_ALIAS,
         routertype.ROUTERTYPE_ALIAS,
-        routertypeawarescheduler.ROUTERTYPE_AWARE_SCHEDULER_ALIAS]
+        routertypeawarescheduler.ROUTERTYPE_AWARE_SCHEDULER_ALIAS,
+        ha.HA_ALIAS]
 
     def __init__(self):
         self.setup_rpc()
