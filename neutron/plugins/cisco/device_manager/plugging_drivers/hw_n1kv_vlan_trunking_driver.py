@@ -15,6 +15,7 @@
 import eventlet
 
 from oslo.utils import excutils
+from oslo_log import log as logging
 from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes
@@ -23,7 +24,6 @@ from neutron.common import constants as l3_constants
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI, _LW
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager import config
 from neutron.plugins.cisco.device_manager.plugging_drivers import (
     n1kv_trunking_driver)

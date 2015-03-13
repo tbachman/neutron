@@ -14,10 +14,11 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
+from oslo_log import log as logging
+
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
 from neutron.i18n import _LE
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager import (n1kv_plugging_constants as
                                                   n1kv_const)
 from neutron.plugins.cisco.device_manager.plugging_drivers import (

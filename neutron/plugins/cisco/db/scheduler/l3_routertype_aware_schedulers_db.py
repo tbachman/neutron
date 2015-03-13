@@ -13,7 +13,7 @@
 #    under the License.
 
 from oslo.config import cfg
-from sqlalchemy.orm import exc
+from oslo_log import log as logging
 from sqlalchemy import sql
 
 from neutron.common import topics
@@ -21,7 +21,6 @@ from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import models_v2
 from neutron.db import portbindings_db as p_binding
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.l3 import l3_models

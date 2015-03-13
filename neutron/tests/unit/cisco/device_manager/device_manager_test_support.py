@@ -15,6 +15,7 @@
 import mock
 from novaclient import exceptions as nova_exc
 from oslo.config import cfg
+from oslo_log import log as logging
 from oslo.utils import excutils
 
 from neutron.api.v2 import attributes
@@ -23,7 +24,6 @@ from neutron import context as n_context
 from neutron.i18n import _LE
 from neutron.db import agents_db
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 import neutron.plugins
 from neutron.plugins.cisco.db.device_manager import hosting_device_manager_db

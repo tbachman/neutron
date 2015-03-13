@@ -14,10 +14,11 @@
 
 from datetime import timedelta
 from operator import itemgetter
+
+from oslo_log import log as logging
 from sqlalchemy import func
 from sqlalchemy.sql import expression as expr
 
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.db.device_manager import hd_models
 
 LOG = logging.getLogger(__name__)

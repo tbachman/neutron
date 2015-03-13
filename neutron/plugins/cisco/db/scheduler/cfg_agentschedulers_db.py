@@ -14,10 +14,10 @@
 
 from oslo.config import cfg
 from oslo.utils import timeutils
+from oslo_log import log as logging
 
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 

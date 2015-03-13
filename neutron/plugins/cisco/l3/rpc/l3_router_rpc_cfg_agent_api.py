@@ -14,13 +14,13 @@
 #
 
 from oslo import messaging
+from oslo_log import log as logging
 
 from neutron.common import constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.common import constants as svc_constants

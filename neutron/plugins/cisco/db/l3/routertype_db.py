@@ -15,11 +15,11 @@
 
 from oslo.db import exception as db_exc
 from oslo.utils import excutils
+from oslo_log import log as logging
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
 from neutron.i18n import _LE
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import l3_models
 import neutron.plugins.cisco.extensions.routertype as routertype

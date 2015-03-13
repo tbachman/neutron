@@ -12,12 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
 from sqlalchemy import sql
 
 from neutron.common import constants
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.extensions import routertype
 from neutron.scheduler import l3_agent_scheduler

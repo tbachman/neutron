@@ -14,6 +14,7 @@
 
 import mock
 from oslo.config import cfg
+from oslo_log import log as logging
 
 import neutron
 from neutron.api.v2 import attributes
@@ -21,7 +22,6 @@ from neutron.db import agents_db
 from neutron.extensions import extraroute
 from neutron.extensions import l3
 from neutron.extensions import providernet as pnet
-from neutron.openstack.common import log as logging
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.device_manager import service_vm_lib

@@ -14,11 +14,12 @@
 
 import mock
 
+from oslo_log import log as logging
+
 from neutron.api.v2 import attributes
 from neutron.common import constants
 from neutron.db import common_db_mixin
 from neutron.extensions import l3
-from neutron.openstack.common import log as logging
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db

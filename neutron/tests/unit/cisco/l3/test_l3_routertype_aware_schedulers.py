@@ -13,13 +13,13 @@
 #    under the License.
 
 from oslo.config import cfg
+from oslo_log import log as logging
+from oslo_utils import importutils
 
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants
 from neutron import context as q_context
 from neutron import manager
-from neutron.openstack.common import importutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as plugin_consts
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.scheduler import (

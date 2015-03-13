@@ -22,6 +22,7 @@ from oslo.config import cfg
 from oslo.utils import excutils
 from oslo.utils import importutils
 from oslo.utils import timeutils
+from oslo_log import log as logging
 
 from sqlalchemy import func
 from sqlalchemy.orm import exc
@@ -33,7 +34,6 @@ from neutron.common import utils
 from neutron import context as neutron_context
 from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
@@ -107,10 +107,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             u_name = cfg.CONF.keystone_authtoken.username
             pw = cfg.CONF.keystone_authtoken.password
             tenant = cfg.CONF.general.l3_admin_tenant
-            self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
+            self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
                 user=u_name, passwd=pw, l3_admin_tenant=tenant,
                 auth_url=auth_url)
-        return
+        return self._svc_vm_mgr_obj
 
     @classmethod
     def l3_tenant_id(cls):

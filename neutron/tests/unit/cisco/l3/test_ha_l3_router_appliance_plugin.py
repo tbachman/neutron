@@ -15,6 +15,7 @@
 import copy
 
 from oslo.config import cfg
+from oslo_log import log as logging
 import webob.exc
 
 import neutron
@@ -22,7 +23,6 @@ from neutron import context
 from neutron.extensions import extraroute
 from neutron.extensions import l3
 from neutron.common import constants as l3_constants
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.extensions import ha

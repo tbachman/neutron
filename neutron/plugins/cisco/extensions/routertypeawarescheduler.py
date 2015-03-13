@@ -14,6 +14,7 @@
 
 import abc
 
+from oslo_log import log as logging
 import webob.exc
 
 from neutron.api import extensions
@@ -24,7 +25,6 @@ from neutron.common import rpc as n_rpc
 from neutron.extensions import l3
 from neutron.i18n import _LE
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 from neutron import policy

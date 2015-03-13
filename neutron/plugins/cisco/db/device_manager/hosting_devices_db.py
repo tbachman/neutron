@@ -15,11 +15,11 @@
 from oslo.db import exception as db_exc
 from oslo.utils import excutils
 from oslo.utils import timeutils
+from oslo_log import log as logging
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 
 from neutron.db import common_db_mixin
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager

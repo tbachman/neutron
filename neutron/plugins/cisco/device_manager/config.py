@@ -16,10 +16,10 @@ import webob.exc
 
 from oslo.config import cfg
 from oslo.utils import excutils
+from oslo_log import log as logging
 
 from neutron.api.v2 import attributes
 from neutron.i18n import _LE
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 
 LOG = logging.getLogger(__name__)

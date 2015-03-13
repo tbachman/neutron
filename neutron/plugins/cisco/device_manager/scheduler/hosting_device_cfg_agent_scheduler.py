@@ -16,11 +16,11 @@
 
 import random
 
+from oslo_log import log as logging
 from sqlalchemy.orm import exc
 
 from neutron.db import agents_db
 from neutron.i18n import _LW
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
 

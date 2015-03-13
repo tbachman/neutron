@@ -16,10 +16,10 @@ import netaddr
 
 from oslo.config import cfg
 from oslo.utils import excutils
+from oslo_log import log as logging
 
 from neutron.i18n import _LE
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.device_manager import hosting_device_drivers
 
 LOG = logging.getLogger(__name__)

@@ -16,13 +16,13 @@ import contextlib
 import mock
 
 from oslo.config import cfg
+from oslo_utils import importutils
 import webob.exc
 
 from neutron.api import extensions as api_ext
 from neutron.common import config
 from neutron import context as n_context
 from neutron.manager import NeutronManager
-from neutron.openstack.common import importutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
@@ -278,7 +278,7 @@ class TestDeviceManagerDBPlugin(
         self._create_mgmt_nw_for_tests(self.fmt)
         self._devmgr = NeutronManager.get_service_plugins()[
             constants.DEVICE_MANAGER]
-        self._devmgr._svc_vm_mgr = service_vm_lib.ServiceVMManager()
+        self._devmgr._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
         self._mock_svc_vm_create_delete(self._devmgr)
         self._other_tenant_id = device_manager_test_support._uuid()
 
