@@ -181,14 +181,15 @@ class TestN1KVMechDriverNetworksV2(test_db_plugin.TestNetworksV2,
 
     def test_shared_network_create(self):
         """Test shared network creation"""
-        #TODO Currently untested- revisit once UTs working
-        res = self._create_network(self.fmt, name='net', admin_state_up=True, shared=True)
+        #TODO(sthillma) Currently untested- revisit once UTs working
+        res = self._create_network(self.fmt, name='net', admin_state_up=True,
+                                   shared=True)
         network = self.deserialize(self.fmt, res)
         self.assertEqual(network['network']['tenantId'], 0)
 
     def test_update_network_set_shared(self):
         """Test shared network udpate"""
-        #TODO Currently untested- revisit once UTs working
+        #TODO(sthillma) Currently untested- revisit once UTs working
         with self.network(shared=False) as network:
             data = {'network': {'shared': True}}
             req = self.new_update_request('networks',
