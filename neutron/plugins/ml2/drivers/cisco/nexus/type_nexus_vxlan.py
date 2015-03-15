@@ -1,4 +1,4 @@
-# Copyright 2013 IBM Corp.
+# Copyright (c) 2015 Cisco Systems Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,10 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
 
-from oslo_concurrency.fixture import lockutils
+from networking_cisco.plugins.ml2.drivers.cisco.nexus import type_nexus_vxlan
 
 
-class LockFixture(lockutils.LockFixture):
-    def __init__(self, name):
-        super(LockFixture, self).__init__(name, 'tempest-')
+class NexusVxlanTypeDriver(type_nexus_vxlan.NexusVxlanTypeDriver):
+    pass
