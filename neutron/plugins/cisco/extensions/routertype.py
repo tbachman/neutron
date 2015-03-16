@@ -13,8 +13,8 @@
 #    under the License.
 
 import abc
+import imp
 
-from oslo.utils import importutils
 from oslo_log import log as logging
 
 from neutron.api import extensions
@@ -26,17 +26,20 @@ from neutron.plugins.common import constants
 LOG = logging.getLogger(__name__)
 
 
-def convert_validate_import(import_obj):
-    if import_obj is None:
-        raise DriverNotFound(driver=import_obj)
-    try:
-        kwargs = {}
-        importutils.import_object(import_obj, **kwargs)
-        return import_obj
-    except ImportError:
-        raise DriverNotFound(driver=import_obj)
-    except Exception:
-        return import_obj
+def convert_validate_driver_class(driver_class_name):
+    # Verify that import_obj is a loadable class
+    if not (driver_class_name is None or driver_class_name == ''):
+        parts = driver_class_name.split('.')
+        m_pathname = '/'.join(parts[:-1])
+        try:
+            info = imp.find_module(m_pathname)
+            mod = imp.load_module(parts[-2], *info)
+            if parts[-1] in dir(mod):
+                return driver_class_name
+        except ImportError:
+            pass
+    raise DriverNotFound(driver=driver_class_name)
+
 
 ROUTERTYPE = 'routertype'
 ROUTERTYPE_ALIAS = ROUTERTYPE
@@ -69,11 +72,11 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'is_visible': True},
         'scheduler': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
-                      'convert_to': convert_validate_import,
+                      'convert_to': convert_validate_driver_class,
                       'is_visible': True},
         'cfg_agent_driver': {'allow_post': True, 'allow_put': False,
                              'required_by_policy': True,
-                             'convert_to': convert_validate_import,
+                             'convert_to': convert_validate_driver_class,
                              'is_visible': True},
     }
 }

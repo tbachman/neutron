@@ -58,7 +58,6 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
             cfg.CONF.set_override('api_extensions_path', cp + to_add)
         self.cfg_agent_scheduler = importutils.import_object(
             cfg.CONF.general.configuration_agent_scheduler_driver)
-#        self._setup_device_manager()
 
     def setup_rpc(self):
         # RPC support

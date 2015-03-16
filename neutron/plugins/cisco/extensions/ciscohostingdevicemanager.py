@@ -15,10 +15,9 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 import abc
+import imp
 
-from oslo.utils import importutils
 import six
-
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
@@ -81,17 +80,19 @@ def convert_empty_string_to_none(value):
         return value
 
 
-def convert_validate_driver(driver):
-    if driver is None:
-        raise DriverNotFound(driver=driver)
-    try:
-        # yes, this is a coarse-grained check...
-        importutils.import_object(driver)
-        return driver
-    except ImportError:
-        raise DriverNotFound(driver=driver)
-    except Exception:
-        return driver
+def convert_validate_driver_class(driver_class_name):
+    # Verify that import_obj is a loadable class
+    if not (driver_class_name is None or driver_class_name == ''):
+        parts = driver_class_name.split('.')
+        m_pathname = '/'.join(parts[:-1])
+        try:
+            info = imp.find_module(m_pathname)
+            mod = imp.load_module(parts[-2], *info)
+            if parts[-1] in dir(mod):
+                return driver_class_name
+        except ImportError:
+            pass
+    raise DriverNotFound(driver=driver_class_name)
 
 
 # Hosting device belong to one of the following categories:
@@ -205,10 +206,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_list': []},
                          'default': [], 'is_visible': True},
         'device_driver': {'allow_post': True, 'allow_put': False,
-                          'convert_to': convert_validate_driver,
+                          'convert_to': convert_validate_driver_class,
                           'is_visible': True},
         'plugging_driver': {'allow_post': True, 'allow_put': False,
-                            'convert_to': convert_validate_driver,
+                            'convert_to': convert_validate_driver_class,
                             'is_visible': True},
     }
 }
