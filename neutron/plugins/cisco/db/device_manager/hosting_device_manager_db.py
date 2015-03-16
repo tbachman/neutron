@@ -116,6 +116,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
+            # This should normally only happen once so we register hosting
+            # device templates defined in config file here.
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
 #            user = cfg.CONF.keystone_authtoken.admin_user
 #            pw = cfg.CONF.keystone_authtoken.admin_password
