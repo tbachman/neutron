@@ -28,7 +28,9 @@ LOG = logging.getLogger(__name__)
 
 def convert_validate_driver_class(driver_class_name):
     # Verify that import_obj is a loadable class
-    if not (driver_class_name is None or driver_class_name == ''):
+    if driver_class_name is None or driver_class_name == '':
+        return driver_class_name
+    else:
         parts = driver_class_name.split('.')
         m_pathname = '/'.join(parts[:-1])
         try:
