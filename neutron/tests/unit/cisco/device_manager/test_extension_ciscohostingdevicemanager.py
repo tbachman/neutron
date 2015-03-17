@@ -253,10 +253,10 @@ class TestCiscoHostingDeviceManagerAttributeValidators(base.BaseTestCase):
     def test_convert_validate_driver(self):
         drv = ('neutron.plugins.cisco.device_manager.plugging_drivers'
                '.noop_plugging_driver.NoopPluggingDriver')
-        res = ciscohostingdevicemanager.convert_validate_driver(drv)
+        res = ciscohostingdevicemanager.convert_validate_driver_class(drv)
         self.assertEqual(res, drv)
 
         self.assertRaises(
             ciscohostingdevicemanager.DriverNotFound,
-            ciscohostingdevicemanager.convert_validate_driver,
+            ciscohostingdevicemanager.convert_validate_driver_class,
             'this.is.not.a.driver')

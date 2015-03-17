@@ -39,7 +39,6 @@ from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.device_manager import hosting_devices_db
 from neutron.plugins.cisco.device_manager import config
-from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
@@ -99,7 +98,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     _nova_running = False
 
     @property
-    def _svc_vm_mgr(self):
+    def svc_vm_mgr(self):
         if self._svc_vm_mgr_obj is None:
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
     #        u_name = cfg.CONF.keystone_authtoken.admin_user
@@ -427,7 +426,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 context, hd.id, hd.complementary_id, self.l3_tenant_id(),
                 self.mgmt_nw_id())
             if is_vm:
-                self._svc_vm_mgr.delete_service_vm(context, hd.id)
+                self.svc_vm_mgr.delete_service_vm(context, hd.id)
             plugging_drv.delete_hosting_device_resources(
                 context, self.l3_tenant_id(), **res)
             with context.session.begin(subtransactions=True):
@@ -491,6 +490,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 'service_types': template.service_types,
                 'management_ip_address': mgmt_ip,
                 'protocol_port': hosting_device.protocol_port,
+                'timeout': None,
                 'created_at': str(hosting_device.created_at),
                 'booting_time': template.booting_time}
 
@@ -548,7 +548,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
         if cfg.CONF.general.ensure_nova_running and not self._nova_running:
-            if self._svc_vm_mgr.nova_services_up():
+            if self.svc_vm_mgr.nova_services_up():
                 self._nova_running = True
             else:
                 LOG.info(_LI('Not all Nova services are up and running. '
@@ -650,7 +650,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if res.get('mgmt_port') is None:
                 # Required ports could not be created
                 return hosting_devices
-            vm_instance = self._svc_vm_mgr.dispatch_service_vm(
+            vm_instance = self.svc_vm_mgr.dispatch_service_vm(
                 context, template['name'] + '_nrouter', template['image'],
                 template['flavor'], hosting_device_drv, res['mgmt_port'],
                 res.get('ports'))
@@ -714,7 +714,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 context, hd_candidates[i]['id'],
                 hd_candidates[i]['complementary_id'], self.l3_tenant_id(),
                 self.mgmt_nw_id())
-            if self._svc_vm_mgr.delete_service_vm(context,
+            if self.svc_vm_mgr.delete_service_vm(context,
                                                   hd_candidates[i]['id']):
                 with context.session.begin(subtransactions=True):
                     context.session.delete(hd_candidates[i])
@@ -741,7 +741,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         res = plugging_drv.get_hosting_device_resources(
             context, hosting_device['id'], hosting_device['complementary_id'],
             self.l3_tenant_id(), self.mgmt_nw_id())
-        if not self._svc_vm_mgr.delete_service_vm(context,
+        if not self.svc_vm_mgr.delete_service_vm(context,
                                                   hosting_device['id']):
             LOG.error(_LE('Failed to delete hosting device %s service VM. '
                           'Will un-register it anyway.'),

@@ -30,10 +30,12 @@ class NoopPluggingDriver(plug.PluginSidePluggingDriver):
                                         **kwargs):
         pass
 
-    def setup_logical_port_connectivity(self, context, port_db):
+    def setup_logical_port_connectivity(self, context, port_db,
+                                        hosting_device_id):
         pass
 
-    def teardown_logical_port_connectivity(self, context, port_db):
+    def teardown_logical_port_connectivity(self, context, port_db,
+                                        hosting_device_id):
         pass
 
     def extend_hosting_port_info(self, context, port_db, hosting_device,

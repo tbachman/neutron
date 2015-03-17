@@ -386,7 +386,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         parse = ciscoconfparse.CiscoConfParse(ioscfg)
         vrfs_raw = parse.find_lines("^vrf definition")
         for line in vrfs_raw:
-            #  raw format ['vrf definition <vrf-name>',....]
+            #  raw format ['ip vrf <vrf-name>',....]
             vrf_name = line.strip().split(' ')[2]
             vrfs.append(vrf_name)
         LOG.info(_LI("VRFs:%s"), vrfs)
@@ -643,10 +643,10 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _edit_running_config(self, confstr, snippet):
         conn = self._get_connection()
         rpc_obj = conn.edit_config(target='running', config=confstr)
-        self._check_response(rpc_obj, snippet)
+        self._check_response(rpc_obj, snippet, confstr=confstr)
 
     @staticmethod
-    def _check_response(rpc_obj, snippet_name):
+    def _check_response(rpc_obj, snippet_name, confstr=None):
         """This function checks the rpc response object for status.
 
         This function takes as input the response rpc_obj and the snippet name
@@ -678,9 +678,11 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         if "<ok />" in xml_str:
             LOG.debug("RPCReply for %s is OK", snippet_name)
             LOG.info(_LI("%s successfully executed"), snippet_name)
+            LOG.debug("Config applied was:%s", confstr)
             return True
         # Not Ok, we throw a ConfigurationException
         e_type = rpc_obj._root[0][0].text
         e_tag = rpc_obj._root[0][1].text
-        params = {'snippet': snippet_name, 'type': e_type, 'tag': e_tag}
+        params = {'snippet': snippet_name, 'type': e_type, 'tag': e_tag,
+                  'confstr': confstr}
         raise cfg_exc.CSR1kvConfigException(**params)

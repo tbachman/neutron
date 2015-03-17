@@ -18,7 +18,7 @@ from novaclient.v2 import client
 from oslo.config import cfg
 from oslo_log import log as logging
 
-from neutron.i18n import _LE
+from neutron.i18n import _LE, _LI
 from neutron import manager
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -59,7 +59,7 @@ class ServiceVMManager(object):
         returns: True if all needed Nova services are up, False otherwise
         """
         required = set(['nova-conductor', 'nova-cert', 'nova-scheduler',
-                        'nova-compute', 'nova-consoleauth'])
+                       'nova-compute'])
         try:
             services = self._nclient.services.list()
         # There are several individual Nova client exceptions but they have
@@ -214,3 +214,22 @@ class ServiceVMManager(object):
                       {'id': vm_id, 'err': e})
             result = False
         return result
+
+    def interface_attach(self, vm_id, port_id):
+        self._nclient.servers.interface_attach(vm_id, port_id=port_id,
+                                               net_id=None, fixed_ip=None)
+        LOG.debug('Nova interface add succeeded on VM:%(vm)s for port:%(id)s',
+                  {'vm': vm_id, 'id': port_id})
+
+    def interface_detach(self, vm_id, port_id):
+        self._nclient.servers.interface_detach(vm_id, port_id)
+        LOG.debug('Nova interface detach succeeded on VM:%(vm)s for '
+                  'port:%(id)s', {'vm': vm_id, 'id': port_id})
+
+    def vm_interface_list(self, vm_id):
+        servers = self._nclient.servers.interface_list(vm_id)
+        ips = []
+        for s in servers:
+            ips.append(s.fixed_ips[0]['ip_address'])
+        LOG.info(_LI('Interfaces connected on VM:%(vm_id)s is %(ips)s'),
+                 {'ips': ips, 'vm_id': vm_id})

@@ -128,7 +128,8 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                    'id': t_n[resource_index]['id'],
                    'subnet': t_sn[resource_index]['id']})
 
-    def setup_logical_port_connectivity(self, context, port_db):
+    def setup_logical_port_connectivity(self, context, port_db,
+                                        hosting_device_id):
         # Remove the VLAN from the VLANs that the hosting port trunks.
         if (port_db is None or port_db.hosting_info is None or
                 port_db.hosting_info.hosting_port is None):
@@ -142,7 +143,8 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
             port_db.hosting_info.hosting_port['network_id'],
             network_dict)
 
-    def teardown_logical_port_connectivity(self, context, port_db):
+    def teardown_logical_port_connectivity(self, context, port_db,
+                                        hosting_device_id):
         # Remove the VLAN from the VLANs that the hosting port trunks.
         if (port_db is None or port_db.hosting_info is None or
                 port_db.hosting_info.hosting_port is None):

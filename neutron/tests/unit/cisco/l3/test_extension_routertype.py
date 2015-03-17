@@ -19,6 +19,7 @@ from webob import exc
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.extensions import routertype
+from neutron.tests import base
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
 
@@ -125,3 +126,15 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
     def test_routertype_delete(self):
         self._test_entity_delete('routertype')
 
+
+class TestRouterTypeAttributeValidators(base.BaseTestCase):
+
+    def test_convert_validate_driver(self):
+        drv = ('neutron.plugins.cisco.cfg_agent.device_drivers.'
+               'dummy_driver.DummyRoutingDriver')
+        res = routertype.convert_validate_driver_class(drv)
+        self.assertEqual(res, drv)
+
+        self.assertRaises(routertype.DriverNotFound,
+                          routertype.convert_validate_driver_class,
+                          'this.is.not.a.driver')

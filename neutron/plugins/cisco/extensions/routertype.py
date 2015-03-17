@@ -15,15 +15,11 @@
 import abc
 import imp
 
-from oslo_log import log as logging
-
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions
 from neutron.plugins.common import constants
-
-LOG = logging.getLogger(__name__)
 
 
 def convert_validate_driver_class(driver_class_name):
