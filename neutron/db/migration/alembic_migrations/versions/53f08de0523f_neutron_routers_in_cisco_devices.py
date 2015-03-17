@@ -35,9 +35,9 @@ def upgrade():
     op.create_table('cisco_router_types',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('name', sa.String(length=255), nullable=True),
+        sa.Column('name', sa.String(length=255), nullable=False),
         sa.Column('description', sa.String(length=255), nullable=True),
-        sa.Column('template_id', sa.String(length=36), nullable=False),
+        sa.Column('template_id', sa.String(length=36), nullable=True),
         sa.Column('shared', sa.Boolean(), nullable=False,
                   server_default=sa.sql.true()),
         sa.Column('slot_need', sa.Integer(), autoincrement=False,
@@ -79,9 +79,13 @@ def upgrade():
         op.add_column('cisco_router_mappings',
                       sa.Column('share_hosting_device', sa.Boolean(),
                                 nullable=False, server_default=sa.sql.true()))
+        op.create_index(op.f('ix_cisco_router_types_tenant_id'),
+                        'cisco_router_types', ['tenant_id'], unique=False)
 
 
 def downgrade():
+    op.drop_index(op.f('ix_cisco_router_types_tenant_id'),
+                  table_name='cisco_router_types')
     op.drop_column('cisco_router_mappings', 'share_hosting_device')
     op.drop_column('cisco_router_mappings', 'inflated_slot_need')
     op.drop_constraint('cisco_router_mappings_ibfk_2',
@@ -101,3 +105,4 @@ def downgrade():
                           table_name='cisco_router_mappings',
                           cols=['router_id'])
     op.drop_table('cisco_router_types')
+

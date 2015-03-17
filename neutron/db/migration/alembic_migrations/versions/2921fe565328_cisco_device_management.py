@@ -67,7 +67,7 @@ def upgrade():
         sa.Column('device_driver', sa.String(length=255), nullable=False),
         sa.Column('plugging_driver', sa.String(length=255), nullable=False),
 #        sa.ForeignKeyConstraint(['default_credentials_id'],
-#                                ['cisco_device_credentials.id'], ),
+#                                ['cisco_device_credentials.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_table('cisco_slot_allocations',
@@ -80,9 +80,9 @@ def upgrade():
                   nullable=False),
         sa.Column('tenant_bound', sa.String(length=36), nullable=True),
         sa.ForeignKeyConstraint(['template_id'],
-                                ['cisco_hosting_device_templates.id'], ),
+                                ['cisco_hosting_device_templates.id']),
         sa.ForeignKeyConstraint(['hosting_device_id'],
-                                ['cisco_hosting_devices.id'], ),
+                                ['cisco_hosting_devices.id']),
         sa.PrimaryKeyConstraint('logical_resource_id')
     )
     if migration.schema_has_table('cisco_hosting_devices'):
@@ -114,9 +114,14 @@ def upgrade():
         op.add_column('cisco_hosting_devices',
                       sa.Column('auto_delete', sa.Boolean(), nullable=False,
                                 server_default=sa.sql.false()))
+    op.create_index(op.f('ix_cisco_hosting_device_templates_tenant_id'),
+                    'cisco_hosting_device_templates', ['tenant_id'],
+                    unique=False)
 
 
 def downgrade():
+    op.drop_index(op.f('ix_cisco_hosting_device_templates_tenant_id'),
+                  table_name='cisco_hosting_device_templates')
     op.drop_column('cisco_hosting_devices', 'auto_delete')
     op.drop_column('cisco_hosting_devices', 'tenant_bound')
     op.drop_column('cisco_hosting_devices', 'management_ip_address')
