@@ -136,15 +136,16 @@ class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
         pass
 
     def teardown_logical_port_connectivity(self, context, port_db,
-                                        hosting_device_id):
+                                           hosting_device_id):
         pass
 
     def extend_hosting_port_info(self, context, port_db, hosting_device,
                                  hosting_info):
         hosting_info['segmentation_id'] = port_db.hosting_info.segmentation_id
+        is_external = port_db.get('router_port', {}).get(
+            'port_type') == l3_constants.DEVICE_OWNER_ROUTER_GW
         hosting_info['physical_interface'] = self._get_interface_info(
-            hosting_device['id'], port_db.network_id,
-            port_db.device_owner != l3_constants.DEVICE_OWNER_ROUTER_INTF)
+            hosting_device['id'], port_db.network_id, is_external)
 
     def allocate_hosting_port(self, context, router_id, port_db, network_type,
                               hosting_device_id):

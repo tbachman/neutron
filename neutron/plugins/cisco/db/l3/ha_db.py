@@ -289,10 +289,9 @@ class HA_db_mixin(object):
         if not (updated_router[ha.ENABLED] or ha_enabled_requested):
             # No HA currently enabled and no HA requested so we're done
             return
-        # The redundancy routers need interfaces on the
-        # same networks as the user visible router.
-        ports = self._get_router_interfaces(context,
-                                            updated_router['id'])
+        # The redundancy routers need interfaces on the same networks as the
+        # user visible router.
+        ports = self._get_router_interfaces(updated_router_db)
         if not updated_router[ha.ENABLED] and ha_enabled_requested:
             # No HA currently enabled but HA requested
             router_requested.update(requested_ha_settings)
@@ -397,11 +396,9 @@ class HA_db_mixin(object):
             self.delete_router(e_context, r_id)
             LOG.debug("Deleted redundant router %s", r_id)
 
-    def _get_router_interfaces(self, context, router_id):
-        device_filter = {'device_id': [router_id],
-                         'device_owner': [l3_db.DEVICE_OWNER_ROUTER_INTF]}
-        return self._core_plugin.get_ports(context.elevated(),
-                                           filters=device_filter)
+    def _get_router_interfaces(self, router_db, type=DEVICE_OWNER_ROUTER_INTF):
+        return [p['port'] for p in router_db.attached_ports if
+                p['port_type'] == type]
 
     def _delete_redundancy_routers(self, context, router_db):
         """To be called in delete_router() BEFORE router has been

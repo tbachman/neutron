@@ -19,10 +19,9 @@ import time
 from functools import wraps
 
 
-class ML2OVSPluggingDriver(plug.PluginSidePluggingDriver):
-    """Driver class for service VMs used with the ML2 OVS plugin.
-
-    The driver makes use of ML2 L2 API.
+class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
+    """Driver class for service VMs used with Neutron plugins supporting
+    VIF hotplug.
     """
 
     def retry(ExceptionToCheck, tries=4, delay=3, backoff=2):
@@ -61,7 +60,7 @@ class ML2OVSPluggingDriver(plug.PluginSidePluggingDriver):
 
     @property
     def _core_plugin(self):
-           return manager.NeutronManager.get_plugin()
+        return manager.NeutronManager.get_plugin()
 
     @property
     def _dev_mgr(self):
