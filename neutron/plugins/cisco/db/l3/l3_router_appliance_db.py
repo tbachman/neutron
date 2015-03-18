@@ -182,6 +182,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         return info
 
     def remove_router_interface(self, context, router_id, interface_info):
+        e_context = context.elevated()
+        r_hd_binding = self._get_router_binding_info(e_context, router_id)
         if 'port_id' in (interface_info or {}):
             port_db = self._core_plugin._get_port(
                 context, interface_info['port_id'])
@@ -189,13 +191,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             subnet_db = self._core_plugin._get_subnet(
                 context, interface_info['subnet_id'])
             port_db = self._get_router_port_db_on_subnet(
-                context, router_id, subnet_db)
+                context, r_hd_binding.router, subnet_db)
         else:
             msg = _("Either subnet_id or port_id must be specified")
             raise n_exc.BadRequest(resource='router', msg=msg)
         routers = [self.get_router(context, router_id)]
-        e_context = context.elevated()
-        r_hd_binding = self._get_router_binding_info(e_context, router_id)
         self._add_type_and_hosting_device_info(e_context, routers[0],
                                                binding_info=r_hd_binding)
         p_drv = self.get_hosting_device_plugging_driver()
@@ -313,8 +313,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
         Adds information about hosting device as well as trunking.
         """
-        sync_data = (super(L3RouterApplianceDBMixin, self).
-                     get_sync_data(context, router_ids, active))
+        sync_data = self.get_sync_data(context, router_ids, active)
         for router in sync_data:
             self._add_type_and_hosting_device_info(context, router)
             plg_drv = self.get_hosting_device_plugging_driver()
@@ -540,18 +539,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                         hosting_device_id)
         return h_info
 
-    def _get_router_port_db_on_subnet(self, context, router_id, subnet):
-        try:
-            rport_qry = context.session.query(models_v2.Port)
-            ports = rport_qry.filter_by(
-                device_id=router_id,
-                device_owner=l3_db.DEVICE_OWNER_ROUTER_INTF,
-                network_id=subnet['network_id'])
-            for p in ports:
-                if p['fixed_ips'][0]['subnet_id'] == subnet['id']:
-                    return p
-        except exc.NoResultFound:
-            return
+    def _get_router_port_db_on_subnet(self, context, router_db, subnet):
+        for router_port in router_db.attached_ports:
+            if router_port.port['fixed_ips'][0]['subnet_id'] == subnet['id']:
+                return router_port.port
+        return None
 
     def list_active_sync_routers_on_hosting_devices(self, context, host,
                                                     router_ids=None,
@@ -638,3 +630,23 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                                   entry[1]):
             return entry[0]
         return ""
+
+    def get_sync_data(self, context, router_ids=None, active=None):
+        routers, interfaces, floating_ips = self._get_router_info_list(
+            context, router_ids=router_ids, active=active)
+        routers_dict = dict((router['id'], router) for router in routers)
+        self._process_floating_ips(context, routers_dict, floating_ips)
+        self._process_interfaces_ext(context, routers_dict, interfaces)
+        return routers_dict.values()
+
+    def _process_interfaces_ext(self, context, routers_dict, interfaces):
+        for interface in interfaces:
+            query = context.session.query(l3_db.RouterPort.router_id)
+            router_id = query.filter_by(port_id=interface['id']).first()
+            if router_id:
+                router = routers_dict.get(router_id[0])
+                if router:
+                    router_interfaces = router.get(
+                        l3_constants.INTERFACE_KEY, [])
+                    router_interfaces.append(interface)
+                    router[l3_constants.INTERFACE_KEY] = router_interfaces
