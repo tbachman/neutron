@@ -648,6 +648,45 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         return self._make_router_interface_info(router_id, port['tenant_id'],
                                                 port['id'], subnet['id'])
 
+    def get_router_interfaces(self, context, router_id, filters=None,
+                              fields=None, sorts=None, limit=None, marker=None,
+                              page_reverse=False):
+
+        """
+        Get the attached interfaces of a router.
+        :param context: the context of the request
+        :param router_id: id of the router whose attached interfaces is fetched
+        :return: ports attached to the router. The response is of the format
+        {
+            'routerports': [ {'type': <DEVICE_OWNER_....>,
+                              'tenant_id': id of tenant who owns the router
+                              'router_id': id of router,
+                              'port': <port dict> },
+                              {..}, ......
+                            ]
+        }
+        """
+        router = self._get_router(context, router_id)
+        # Unless user has specified id filtering, we add all attached router
+        #  ports to the port query filter
+        if filters is None:
+            # Filter is missing, create a filter dict with attached port ids
+            filters = {'id': [p.port.id for p in router.attached_ports]}
+        elif not filter.get('id'):
+            # id is missing, we add the attached port ids entry
+            filters['id'] = [p.port.id for p in router.attached_ports]
+        port_types = {rp.port.id: rp.port_type for rp in router.attached_ports}
+        # need to query elevated since the ports may belong to other tenant
+        # than tenant owning the router, e.g., router in service vm cases
+        ports = self._core_plugin.get_ports(context.elevated(), filters,
+                                            fields, sorts, limit, marker,
+                                            page_reverse)
+        routerports = [{'type': port_types[p['id']],
+                        'tenant_id': router.tenant_id,
+                        'router_id': router_id,
+                        'port': p} for p in ports]
+        return {'routerports': routerports}
+
     def _get_floatingip(self, context, id):
         try:
             floatingip = self._get_by_id(context, FloatingIP, id)

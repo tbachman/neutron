@@ -196,7 +196,8 @@ class L3(extensions.ExtensionDescriptor):
         plural_mappings['external_fixed_ips'] = 'external_fixed_ip'
         attr.PLURALS.update(plural_mappings)
         action_map = {'router': {'add_router_interface': 'PUT',
-                                 'remove_router_interface': 'PUT'}}
+                                 'remove_router_interface': 'PUT',
+                                 'get_router_interfaces': 'GET'}}
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.L3_ROUTER_NAT,
@@ -243,6 +244,12 @@ class RouterPluginBase(object):
 
     @abc.abstractmethod
     def remove_router_interface(self, context, router_id, interface_info):
+        pass
+
+    @abc.abstractmethod
+    def get_router_interfaces(self, context, router_id, filters=None,
+                              fields=None,sorts=None, limit=None, marker=None,
+                              page_reverse=False):
         pass
 
     @abc.abstractmethod
