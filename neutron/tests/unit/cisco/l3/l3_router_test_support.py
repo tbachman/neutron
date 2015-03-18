@@ -14,6 +14,7 @@
 
 import mock
 
+from oslo.config import cfg
 from oslo_log import log as logging
 
 from neutron.api.v2 import attributes
@@ -54,6 +55,17 @@ class L3RouterTestSupportMixin:
         plugin.agent_notifiers = {
             constants.AGENT_TYPE_L3: self._l3_agent_mock,
             cisco_constants.AGENT_TYPE_L3_CFG: self._cfg_agent_mock}
+
+    def _define_keystone_authtoken(self):
+        test_opts = [
+            cfg.StrOpt('auth_uri', default='http://localhost:35357/v2.0/'),
+            cfg.StrOpt('identity_uri', default='http://localhost:5000'),
+            #cfg.StrOpt('admin_user', default='neutron'),
+            cfg.StrOpt('username', default='neutron'),
+            #cfg.StrOpt('admin_password', default='secrete'),
+            cfg.StrOpt('password', default='secrete'),
+            cfg.StrOpt('project_name', default='service')]
+        cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
 
 class TestL3RouterBaseExtensionManager(object):

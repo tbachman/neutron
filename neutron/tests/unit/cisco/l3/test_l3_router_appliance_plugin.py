@@ -151,12 +151,7 @@ class L3RouterApplianceTestCaseBase(
         self.setup_notification_driver()
 
         cfg.CONF.set_override('allow_sorting', True)
-        test_opts = [
-            cfg.StrOpt('auth_uri', default='http://localhost:35357/v2.0/'),
-            cfg.StrOpt('identity_uri', default='http://localhost:5000'),
-            cfg.StrOpt('admin_user', default='neutron'),
-            cfg.StrOpt('admin_password', default='secrete')]
-        cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
+        self._define_keystone_authtoken()
 
         cfg.CONF.register_opt(
             cfg.BoolOpt('router_auto_schedule', default=True,

@@ -142,7 +142,7 @@ class DeviceManagerTestSupportMixin:
     # Function used to mock novaclient services list
     def _novaclient_services_list(self, all=True):
         services = set(['nova-conductor', 'nova-cert', 'nova-scheduler',
-                        'nova-compute', 'nova-consoleauth'])
+                        'nova-compute'])
         full_list = [FakeResource(binary=res) for res in services]
         _all = all
 

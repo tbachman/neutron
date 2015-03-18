@@ -1,3 +1,4 @@
+import contextlib
 import mock
 from oslo_log import log as logging
 
@@ -63,24 +64,49 @@ class TestVIFHotPlugPluggingDriver(base.BaseTestCase):
                                                           mgmt_port_id)
             self.assertEquals(1, mocked_plugin.delete_port.call_count)
 
-    @mock.patch.object(HostingDeviceManagerMixin, 'l3_tenant_id')
-    def test_setup_logical_port_connectivity(self, mock_l3tenant):
+    def test_setup_logical_port_connectivity(self):
         mock_portdb = {'id': 'fake_port_id',
                        'tenant_id': 'fake_tenant_id',
                        'device_id': 'fake_device_id',
                        'device_owner': 'fake_device_owner'}
         hosting_device_id = 'fake_hosting_device_id'
-        mocked_plugin = mock.MagicMock()
+        l3_admin_tenant = 'L3AdminTenant'
         mock_ctx = mock.MagicMock()
-        with mock.patch.object(VIFHotPlugPluggingDriver,
-                               '_core_plugin') as plugin:
-            plugin.__get__ = mock.MagicMock(return_value=mocked_plugin)
+        with contextlib.nested(
+            mock.patch.object(VIFHotPlugPluggingDriver, '_core_plugin'),
+            mock.patch.object(VIFHotPlugPluggingDriver, '_dev_mgr')) as (
+                plugin, dev_mgr):
+            plugin.update_port = mock.MagicMock()
+            dev_mgr.l3_tenant_id = mock.MagicMock(return_value=l3_admin_tenant)
+            dev_mgr.svc_vm_mgr = mock.MagicMock()
             plugging_driver = VIFHotPlugPluggingDriver()
-            plugging_driver._svc_vm_mgr = mock.MagicMock()
             plugging_driver.setup_logical_port_connectivity(
                 mock_ctx, mock_portdb, hosting_device_id)
-            plugging_driver._svc_vm_mgr.interface_attach\
-                .assert_called_once_with(hosting_device_id, mock_portdb['id'])
+            plugin.update_port.assert_called_once_with(
+                mock.ANY, mock_portdb['id'],
+                {'port': {'device_owner': '',  'device_id': '',
+                          'tenant_id': l3_admin_tenant}})
+            self.assertEqual(mock_ctx.elevated.call_count, 1)
+            dev_mgr.svc_vm_mgr.interface_attach.assert_called_once_with(
+                hosting_device_id, mock_portdb['id'])
+
+    def test_teardown_logical_port_connectivity(self):
+        mock_portdb = {'id': 'fake_port_id',
+                       'tenant_id': 'fake_tenant_id',
+                       'device_id': 'fake_device_id',
+                       'device_owner': 'fake_device_owner'}
+        hosting_device_id = 'fake_hosting_device_id'
+        mock_ctx = mock.MagicMock()
+        with contextlib.nested(
+            mock.patch.object(VIFHotPlugPluggingDriver, '_core_plugin'),
+            mock.patch.object(VIFHotPlugPluggingDriver, '_dev_mgr')) as (
+                plugin, dev_mgr):
+            dev_mgr.svc_vm_mgr = mock.MagicMock()
+            plugging_driver = VIFHotPlugPluggingDriver()
+            plugging_driver.teardown_logical_port_connectivity(
+                 mock_ctx, mock_portdb, hosting_device_id)
+            dev_mgr.svc_vm_mgr.interface_detach.assert_called_once_with(
+                hosting_device_id, mock_portdb['id'])
 
     def test_create_hosting_device_resources(self):
         complementary_id = 'fake_complementary_id'

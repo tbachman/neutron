@@ -412,7 +412,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             r_f['id'] = router_ids
         routers = self.get_routers(context, filters=r_f, fields=['id']) or []
         router_ids = [item['id'] for item in routers]
-        # now do similar processing as in parent class...
+        return self._get_sync_data(context, router_ids, active)
+
+    def _get_sync_data(self, context, router_ids, active):
+        # Do similar processing as get_sync_data in parent class...
         routers, interfaces, floating_ips = self._get_router_info_list(
             context, router_ids=router_ids, active=active)
         routers_dict = dict((router['id'], router) for router in routers)
@@ -426,8 +429,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
         Adds information about hosting device as well as trunking.
         """
-        sync_data = (super(L3RouterApplianceDBMixin, self).
-                     get_sync_data(context, router_ids, active))
+#        sync_data = (super(L3RouterApplianceDBMixin, self).
+#                     get_sync_data(context, router_ids, active))
+        sync_data = self._get_sync_data(context, router_ids, active)
         for router in sync_data:
             self._add_type_and_hosting_device_info(context, router)
             if utils.is_extension_supported(self, ha.HA_ALIAS):

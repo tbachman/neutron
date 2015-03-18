@@ -91,6 +91,7 @@ class L3RoutertypeAwareSchedulerTestCase(
             plugin=core_plugin, service_plugins=service_plugins,
             ext_mgr=ext_mgr)
 
+        self._define_keystone_authtoken()
         cfg.CONF.set_override('default_router_type',
                               c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
