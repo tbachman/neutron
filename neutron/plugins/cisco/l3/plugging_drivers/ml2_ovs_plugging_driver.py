@@ -165,9 +165,9 @@ class ML2OVSPluggingDriver(plug.PluginSidePluggingDriver):
         except Exception as e:
             LOG.error(_LE("Failed to attach interface corresponding to port:"
                           "%(p_id)s on hosting device:%(hd_id)s due to "
-                          "error %(str(e))"), {'p_id': port_db['id'],
+                          "error %(error)s"), {'p_id': port_db['id'],
                                                'hd_id': hosting_device_id,
-                                               'error': e})
+                                               'error': str(e)})
 
     def teardown_logical_port_connectivity(self, context, port_db,
                                            hosting_device_id):
@@ -187,9 +187,9 @@ class ML2OVSPluggingDriver(plug.PluginSidePluggingDriver):
         except Exception as e:
             LOG.error(_LE("Failed to detach interface corresponding to port:"
                           "%(p_id)s on hosting device:%(hd_id)s due to "
-                          "error %(str(e))"), {'p_id': port_db['id'],
+                          "error %(error)s"), {'p_id': port_db['id'],
                                                'hd_id': hosting_device_id,
-                                               'error': e})
+                                               'error': str(e)})
 
     def extend_hosting_port_info(self, context, port_db, hosting_info):
         """Extends hosting information for a logical port."""
