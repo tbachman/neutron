@@ -42,8 +42,8 @@ class Client(object):
     This client implements functions to communicate with
     Cisco Nexus1000V VSM.
 
-    For every Neutron objects, Cisco Nexus1000V Neutron Plugin
-    creates a corresponding object in the controller (Cisco
+    For every Neutron object, Cisco Nexus1000V Neutron Plugin
+    creates a corresponding object on the controller (Cisco
     Nexus1000V VSM).
 
     CONCEPTS:
@@ -107,6 +107,7 @@ class Client(object):
     bridge_domain_path = "/kvm/bridge-domain/%s"
     logical_network_path = "/logical-network/%s"
     md5_path = "/kvm/config-md5-hashes"
+    sync_notification_path = "/sync-notification"
 
     pool = eventlet.GreenPool(cfg.CONF.ml2_cisco_n1kv.http_pool_size)
 
@@ -128,77 +129,87 @@ class Client(object):
             if not getattr(self, opt):
                 raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')
 
+    def send_sync_notification(self, msg, vsm_ip):
+        """Send a start/end/no-change sync notification to the VSM.
+
+        :param vsm_ip: IP of the VSM to which notification has to be sent
+        :param msg: message string, start, end or no-change
+        """
+        body = {'status': msg}
+        self._post(self.sync_notification_path, body=body, vsm_ip=vsm_ip)
+
     def list_port_profiles(self, vsm_ip=None):
         """Fetch all policy profiles from the VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :returns: JSON string
         """
         return self._get(self.port_profiles_path, vsm_ip=vsm_ip)
 
     def list_network_profiles(self, vsm_ip=None):
-        '''
-        Fetch all network profiles from VSM.
+        """Fetch all network profiles from VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.network_segment_pools_path, vsm_ip=vsm_ip)
 
     def list_networks(self, vsm_ip=None):
-        '''
-        Fetch all networks from VSM.
+        """Fetch all networks from VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.network_segments_path, vsm_ip=vsm_ip)
 
     def list_subnets(self, vsm_ip=None):
-        '''
-        Fetch all subnets from VSM.
+        """Fetch all subnets from VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.ip_pools_path, vsm_ip=vsm_ip)
 
     def list_vmnetworks(self, vsm_ip=None):
-        '''
-        Fetch all VM networks from VSM.
+        """Fetch all VM networks from VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.vm_networks_path, vsm_ip=vsm_ip)
 
     def list_md5_hashes(self, vsm_ip=None):
-        '''
-        Fetch MD5 hashes for network profiles, networks, subnets,
-        ports and a consolidated hash of these hashes from the
-        VSM.
+        """Fetch MD5 hashes for all resources from VSM.
 
+        Fetch MD5 hashes for network profiles, networks, subnets, ports and
+        a consolidated hash of these hashes from the VSM
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.md5_path, vsm_ip=vsm_ip)
 
     def list_bridge_domains(self, vsm_ip=None):
-        '''
-        Fetch the list of all bridge domains on the VSM
+        """Fetch the list of all bridge domains on the VSM.
 
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.bridge_domains_path, vsm_ip=vsm_ip)
 
     def show_network(self, network_id, vsm_ip=None):
-        '''
-        Fetch details of a given network like segment type from the VSM
+        """Fetch details of a given network like segment type from the VSM.
 
         :param network_id: UUID of the network whose details are needed
-
+        :param vsm_ip: IP address of the VSM controller
         :return: JSON string
-        '''
+        """
         return self._get(self.network_segment_path % network_id, vsm_ip=vsm_ip)
 
     def _create_logical_network(self, network_profile, vsm_ip=None):
         """Create a logical network on the VSM.
 
         :param network_profile: network profile dict
+        :param vsm_ip: IP address of the VSM controller
         """
         body = {'description': network_profile.name}
         logical_network_name = (network_profile.id +
@@ -211,6 +222,7 @@ class Client(object):
 
         :param logical_network_name: string representing name of the logical
                                      network
+        :param vsm_ip: IP address of the VSM controller
         """
         return self._delete(
             self.logical_network_path % logical_network_name, vsm_ip=vsm_ip)
@@ -219,6 +231,7 @@ class Client(object):
         """Create a network segment pool on the VSM.
 
         :param network_profile: network profile dict
+        :param vsm_ip: IP address of the VSM controller
         """
         self._create_logical_network(network_profile, vsm_ip=vsm_ip)
         logical_network_name = (network_profile.id +
@@ -237,6 +250,7 @@ class Client(object):
 
         :param network_segment_pool_id: UUID representing the network
                                         segment pool
+        :param vsm_ip: IP address of the VSM controller
         """
         return self._delete(self.network_segment_pool_path %
                             network_segment_pool_id, vsm_ip=vsm_ip)
@@ -246,6 +260,7 @@ class Client(object):
 
         :param network: network dict
         :param network_profile: network profile object
+        :param vsm_ip: IP address of the VSM controller
         """
         body = {'publishName': network['id'],
                 'description': network['name'],
@@ -293,6 +308,7 @@ class Client(object):
 
         :param network_segment_id: UUID representing the network segment
         :param network_type: type of network to be deleted
+        :param vsm_ip: IP address of the VSM controller
         """
         if network_type in self.vxlan_types:
             bd_name = network_segment_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
@@ -304,6 +320,7 @@ class Client(object):
         """Create a bridge domain on VSM.
 
         :param network: network dict
+        :param vsm_ip: IP address of the VSM controller
         """
         if network[providernet.NETWORK_TYPE] == p_const.TYPE_VXLAN:
             groupIp = cfg.CONF.ml2_type_vxlan.vxlan_group
@@ -326,6 +343,7 @@ class Client(object):
         """Delete a bridge domain on VSM.
 
         :param name: name of the bridge domain to be deleted
+        :param vsm_ip: IP address of the VSM controller
         """
         return self._delete(self.bridge_domain_path % name, vsm_ip=vsm_ip)
 
@@ -333,6 +351,7 @@ class Client(object):
         """Create a subnet on VSM.
 
         :param subnet: subnet dict
+        :param vsm_ip: IP address of the VSM controller
         """
         if subnet['cidr']:
             try:
@@ -367,8 +386,7 @@ class Client(object):
                           body=body, vsm_ip=vsm_ip)
 
     def update_ip_pool(self, subnet):
-        """
-        Update an ip-pool on the VSM.
+        """Update an ip-pool on the VSM.
 
         :param subnet: subnet dictionary
         """
@@ -379,10 +397,10 @@ class Client(object):
                           body=body)
 
     def delete_ip_pool(self, subnet_id, vsm_ip=None):
-        """
-        Delete an ip-pool on the VSM.
+        """Delete an ip-pool on the VSM.
 
         :param subnet_id: UUID representing the subnet
+        :param vsm_ip: IP address of the VSM controller
         """
         return self._delete(self.ip_pool_path % subnet_id, vsm_ip=vsm_ip)
 
@@ -393,6 +411,7 @@ class Client(object):
         :param port: port dict
         :param vmnetwork_name: name of the VM network
         :param policy_profile: policy profile object
+        :param vsm_ip: IP address of the VSM controller
         """
         body = {'name': vmnetwork_name,
                 'networkSegmentId': port['network_id'],
@@ -415,6 +434,7 @@ class Client(object):
 
         :param vmnetwork_name: name of the VM network which imports this port
         :param port_id: UUID of the port
+        :param vsm_ip: IP address of the VSM controller
         """
         return self._delete(self.port_path % (vmnetwork_name, port_id),
                             vsm_ip=vsm_ip)
@@ -448,10 +468,12 @@ class Client(object):
             hosts.append(vsm_ip)
         else:
             hosts = self.get_vsm_hosts()
+        # _get_auth_header() assumes all VSMs have the same credentials
+        headers = self._get_auth_header()
+        headers['Content-Type'] = headers['Accept'] = "application/json"
         for vsm_ip in hosts:
             vsm_action = action % vsm_ip
-            headers = self._get_auth_header(vsm_ip)
-            headers['Content-Type'] = headers['Accept'] = "application/json"
+
             try:
                 resp = self.pool.spawn(requests.request,
                                        method,
@@ -488,14 +510,13 @@ class Client(object):
                                 headers=headers, vsm_ip=vsm_ip)
 
     def get_vsm_hosts(self):
-        """
-        Retrieve a list of VSM ip addresses.
+        """Retrieve a list of VSM ip addresses.
 
         :return: list of host ip addresses
         """
         return self.n1kv_vsm_ips
 
-    def _get_auth_header(self, vsm_ip):
+    def _get_auth_header(self):
         """Retrieve header with auth info for the VSM.
 
         :return: authorization header dict
