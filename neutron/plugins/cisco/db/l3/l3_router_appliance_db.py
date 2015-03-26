@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import eventlet
 import copy
 
 from oslo.config import cfg
@@ -32,7 +33,6 @@ from neutron import context as n_context
 from neutron.db import db_base_plugin_v2
 from neutron.db import extraroute_db
 from neutron.db import l3_db
-from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI
@@ -154,9 +154,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         e_context = context.elevated()
         if old_ext_gw is not None and old_ext_gw != new_ext_gw:
             o_r = self._make_router_dict(o_r_db, process_extensions=False)
-            # no need to schedule now since we're only doing this to tear-down
-            # connectivity and there won't be any if not already scheduled.
             r_hd_binding = self._get_router_binding_info(e_context, router_id)
+            # no need to schedule now since we're only doing this to tear-down
+            # connectivity and there won't be any if not already scheduled
             self._add_type_and_hosting_device_info(
                 e_context, o_r, binding_info=r_hd_binding, schedule=False)
             p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
@@ -200,6 +200,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router = self._make_router_dict(router_db)
         e_context = context.elevated()
         r_hd_binding = self._get_router_binding_info(e_context, router_id)
+        # disable scheduling now since router is to be deleted and we're only
+        # doing this to tear-down connectivity in case it is already scheduled
         self._add_type_and_hosting_device_info(
             e_context, router, binding_info=r_hd_binding, schedule=False)
         if router_db.gw_port is not None:

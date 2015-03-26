@@ -14,6 +14,7 @@
 
 import copy
 
+import contextlib
 from oslo.config import cfg
 from oslo_log import log as logging
 import webob.exc
@@ -83,19 +84,7 @@ class HAL3RouterApplianceNamespaceTestCase(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
 
-class HAL3RouterApplianceVMTestCase(
-    test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
-
-    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
-              ext_mgr=None):
-        if l3_plugin is None:
-            l3_plugin = L3_PLUGIN_KLASS
-        if ext_mgr is None:
-            ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
-        cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
-        super(HAL3RouterApplianceVMTestCase, self).setUp(
-            l3_plugin=l3_plugin, ext_mgr=ext_mgr)
+class HAL3RouterTestsMixin(object):
 
     def _get_ha_defaults(self, ha_enabled=None, ha_type=None,
                          redundancy_level=None, priority=10,
@@ -145,6 +134,22 @@ class HAL3RouterApplianceVMTestCase(
         self.assertEqual(p_e['fixed_ips'][0]['subnet_id'], external_subnet_id)
         self.assertEqual(p_e['device_owner'],
                          l3_constants.DEVICE_OWNER_ROUTER_GW)
+
+
+class HAL3RouterApplianceVMTestCase(
+    HAL3RouterTestsMixin,
+    test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
+
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        if l3_plugin is None:
+            l3_plugin = L3_PLUGIN_KLASS
+        if ext_mgr is None:
+            ext_mgr = TestHAL3RouterApplianceExtensionManager()
+        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
+        cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
+        super(HAL3RouterApplianceVMTestCase, self).setUp(
+            l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
     def _test_create_ha_router(self, router, subnet, ha_settings=None):
         if ha_settings is None:
@@ -609,19 +614,22 @@ class L3AgentHARouterApplianceTestCase(
 
 
 class L3CfgAgentHARouterApplianceTestCase(
+    HAL3RouterTestsMixin,
     test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
-              ext_mgr=None):
-        self.core_plugin = device_manager_test_support.TestCorePlugin()
-        # service plugin providing L3 routing
-        self.plugin = TestApplianceHAL3RouterServicePlugin()
-        self.orig_get_sync_data = self.plugin.get_sync_data
-        self.plugin.get_sync_data = self.plugin.get_sync_data_ext
+                     ext_mgr=None):
+        if l3_plugin is None:
+            l3_plugin = L3_PLUGIN_KLASS
+        if ext_mgr is None:
+            ext_mgr = TestHAL3RouterApplianceExtensionManager()
+        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
+        cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
 
         super(L3CfgAgentHARouterApplianceTestCase, self).setUp(
-            core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
-            ext_mgr=ext_mgr)
+            l3_plugin=l3_plugin, ext_mgr=ext_mgr)
+        self.orig_get_sync_data = self.plugin.get_sync_data
+        self.plugin.get_sync_data = self.plugin.get_sync_data_ext
 
         self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_get_routertype_scheduler_always_none()
@@ -634,3 +642,116 @@ class L3CfgAgentHARouterApplianceTestCase(
         kargs = [item for item in args]
         kargs.append(self._cfg_agent_mock)
         target_func(*kargs)
+
+    def test_l3_cfg_agent_query_ha_router_with_fips(self):
+        with contextlib.nested(
+                self.subnet(cidr='10.0.1.0/24'),
+                self.subnet(cidr='10.0.2.0/24'),
+                self.subnet(cidr='10.0.3.0/24')) as (s_ext, s1, s2):
+            self._set_net_external(s_ext['subnet']['network_id'])
+            with self.router(external_gateway_info={
+                    'network_id': s_ext['subnet']['network_id']}) as r:
+                ipspec1 = [{'subnet_id': s1['subnet']['id'],
+                            'ip_address': s1['subnet']['gateway_ip']}]
+                ipspec2 = [{'subnet_id': s2['subnet']['id'],
+                            'ip_address': s2['subnet']['gateway_ip']}]
+                with contextlib.nested(self.port(subnet=s1, fixed_ips=ipspec1),
+                                       self.port(subnet=s1),
+                                       self.port(subnet=s2, fixed_ips=ipspec2),
+                                       self.port(subnet=s2)) as (
+                        p1, private_p1, p2, private_p2):
+                    self._router_interface_action(
+                        'add', r['router']['id'], None, p1['port']['id'])
+                    self._router_interface_action(
+                        'add', r['router']['id'], None, p2['port']['id'])
+                    fip1 = self._make_floatingip(
+                        self.fmt,
+                        s_ext['subnet']['network_id'],
+                        port_id=private_p1['port']['id'])
+                    fip2 = self._make_floatingip(
+                        self.fmt,
+                        s_ext['subnet']['network_id'],
+                        port_id=private_p2['port']['id'])
+                    fips = self._list('floatingips',
+                                      query_params='router_id=%s' % r[
+                                          'router']['id'])
+                    self.assertEqual(len(fips['floatingips']), 2)
+                    fips_dict = {fip1['floatingip']['id']: fip1['floatingip'],
+                                 fip2['floatingip']['id']: fip2['floatingip']}
+                    e_context = context.get_admin_context()
+                    ports = {p1['port']['id']: p1['port'],
+                             p2['port']['id']: p2['port']}
+                    ha_groups_dict = {}
+                    ha_settings = self._get_ha_defaults()
+                    routers = self._validate_router_sync_data(
+                        e_context, [r['router']['id']], s_ext, ports,
+                        ha_settings, ha_groups_dict, fips_dict)
+                    rr_ids = [rr['id'] for rr in routers[0][ha.DETAILS][
+                        ha.REDUNDANCY_ROUTERS]]
+                    # redundancy routers should here have same ha settings
+                    # as the user visible routers since the l3 cfg agent
+                    # needs that information to configure the redundancy
+                    # router
+                    self._validate_router_sync_data(
+                        e_context, rr_ids, s_ext, ports, ha_settings,
+                        ha_groups_dict, fips_dict)
+                    # clean-up
+                    self._delete('floatingips', fip2['floatingip']['id'])
+                    self._delete('floatingips', fip1['floatingip']['id'])
+                    self._router_interface_action('remove', r['router']['id'],
+                                                  None, p2['port']['id'])
+                    self._router_interface_action('remove', r['router']['id'],
+                                                  None, p1['port']['id'])
+
+    def _validate_router_sync_data(self, context, router_ids, external_subnet,
+                                   ports, ha_settings, ha_groups_dict,
+                                   fips_dict):
+            routers = self.plugin.get_sync_data_ext(context, router_ids)
+            self.assertEqual(len(router_ids), len(routers))
+            for r in routers:
+                self.assertEqual(external_subnet['subnet']['id'],
+                                 r['gw_port']['subnet']['id'])
+                # redundancy routers should here have same ha settings
+                # as the user visible routers since the l3 cfg agent
+                # needs that information to configure the redundancy
+                # router
+                self._verify_ha_settings(r, ha_settings)
+                # the id of this redundancy router should be in the
+                # list of redundancy routers
+                rr_ids = [rr['id'] for rr in r[ha.DETAILS][
+                    ha.REDUNDANCY_ROUTERS]]
+                r_fips = r.get(l3_constants.FLOATINGIP_KEY, [])
+#                self.assertEqual(len(r_fips), len(fips_dict))
+                print "len(r_fips)=%d %s len(fips_dict)=%d" % (
+                    len(r_fips), "NOT EQUAL TO" if len(r_fips) != len(
+                        fips_dict) else "==", len(fips_dict)
+                )
+                for r_fip in r_fips:
+                    self.assertEqual(r_fip, fips_dict[r_fip['id']])
+                if ha_groups_dict:
+                    # the id of a redundancy router should be in the
+                    # list of redundancy routers
+                    self.assertIn(r['id'], rr_ids)
+                else:
+                    # but not the id of a user visible router
+                    self.assertNotIn(r['id'], rr_ids)
+                self._validate_router_interface_ha_info(
+                    ports, r[l3_constants.INTERFACE_KEY],
+                    ha_groups_dict)
+            return routers
+
+    def _validate_router_interface_ha_info(self, ports_dict, interfaces,
+                                           ha_groups_dict):
+        self.assertEqual(len(ports_dict), len(interfaces))
+        assemble_groups = len(ha_groups_dict) == 0
+        for i in interfaces:
+            ha_info = i[ha_db.HA_INFO]
+            self.assertIsNotNone(ha_info)
+            if assemble_groups:
+                ha_groups_dict[ha_info[ha_db.HA_PORT]['id']] = ha_info[
+                    ha_db.HA_GROUP]
+            else:
+                ha_port_id = ha_info[ha_db.HA_PORT]['id']
+                self.assertIsNotNone(ports_dict.get(ha_port_id))
+                self.assertEquals(ha_info[ha_db.HA_GROUP],
+                                  ha_groups_dict[ha_port_id])

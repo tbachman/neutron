@@ -34,6 +34,9 @@ from neutron.plugins.cisco.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
+HA_INFO = 'ha_info'
+HA_GROUP = 'group'
+HA_PORT = 'ha_port'
 
 MAX_VRRP_GROUPS = 4094
 MAX_HSRP_GROUPS = 4094
@@ -44,6 +47,7 @@ ATTR_NOT_SPECIFIED = attrs.ATTR_NOT_SPECIFIED
 EXTERNAL_GW_INFO = l3.EXTERNAL_GW_INFO
 DEVICE_OWNER_ROUTER_GW = l3_constants.DEVICE_OWNER_ROUTER_GW
 DEVICE_OWNER_ROUTER_INTF = l3_constants.DEVICE_OWNER_ROUTER_INTF
+DEVICE_OWNER_ROUTER_HA_INTF = l3_constants.DEVICE_OWNER_ROUTER_HA_INTF
 DEFAULT_MASTER_PRIORITY = 10
 PRIORITY_INCREASE_STEP = 10
 REDUNDANCY_ROUTER_SUFFIX = '_HA_backup_'
@@ -111,13 +115,13 @@ class RouterHAGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     ha_type = sa.Column(sa.String(255))
     # 'group_identity'
     group_identity = sa.Column(sa.String(255))
-    # 'virtual_port_id' is id of port used for virtual IP address
-    virtual_port_id = sa.Column(sa.String(36),
-                                sa.ForeignKey('ports.id'),
-                                primary_key=True)
-    virtual_port = orm.relationship(
+    # 'ha_port_id' is id of port used for virtual IP address
+    ha_port_id = sa.Column(sa.String(36),
+                           sa.ForeignKey('ports.id'),
+                           primary_key=True)
+    ha_port = orm.relationship(
         models_v2.Port,
-        primaryjoin='Port.id==RouterHAGroup.virtual_port_id')
+        primaryjoin='Port.id==RouterHAGroup.ha_port_id')
     # 'extra_port_id' is id of port for user visible router's extra ip address
     extra_port_id = sa.Column(sa.String(36),
                               sa.ForeignKey('ports.id', ondelete='SET NULL'),
@@ -427,24 +431,24 @@ class HA_db_mixin(object):
             self._create_ha_group(e_context, router_id, new_port, ha_settings)
         for r_id in (redundant_router_ids or
                      self._get_redundancy_router_ids(e_context, router_id)):
-            ha_port = self._create_ha_port(e_context, new_port['network_id'],
-                                           '')
-            interface_info = {'port_id': ha_port['id']}
+            redundancy_port = self._create_hidden_port(
+                e_context, new_port['network_id'], '')
+            interface_info = {'port_id': redundancy_port['id']}
             self.add_router_interface(e_context, r_id, interface_info)
 
     def _create_ha_group(self, context, router_id, port, ha_settings):
         ha_group_uuid = uuidutils.generate_uuid()
         # use HA group as device instead of the router to hide this port
         with context.session.begin(subtransactions=True):
-            extra_port = self._create_ha_port(context, port['network_id'],
-                                              ha_group_uuid)
+            extra_port = self._create_hidden_port(context, port['network_id'],
+                                                  ha_group_uuid)
             r_ha_g = RouterHAGroup(
                 id=ha_group_uuid,
                 tenant_id=self._get_tenant_id_for_create(context, port),
                 ha_type=ha_settings['ha_type'],
                 group_identity=self._generate_group_identity(
                     ha_settings['ha_type'], router_id, ha_group_uuid),
-                virtual_port_id=port['id'],
+                ha_port_id=port['id'],
                 extra_port_id=extra_port['id'],
                 subnet_id=port['fixed_ips'][0]['subnet_id'],
                 user_router_id=router_id,
@@ -469,28 +473,13 @@ class HA_db_mixin(object):
             self.remove_router_interface(e_context, r_id, interface_info)
         self._delete_ha_group(e_context, old_port['id'])
 
-    def _delete_ha_group(self, context, virtual_port_id):
-        hag = self._get_ha_group_by_virtual_port_id(context, virtual_port_id)
+    def _delete_ha_group(self, context, ha_port_id):
+        hag = self._get_ha_group_by_ha_port_id(context, ha_port_id)
         if hag is not None:
             self._core_plugin.delete_port(context, hag.extra_port_id,
                                           l3_port_check=False)
             with context.session.begin(subtransactions=True):
                 context.session.delete(hag)
-
-    def _add_ha_attributes(self, context, router_res, ha_s=None):
-        if ha_s is None:
-            ha_s = self._get_ha_settings_by_router_id(context,
-                                                      router_res['id'])
-        # We only add HA attributes to the router visible to the user.
-        router_res[ha.ENABLED] = False if ha_s is None else True
-        if router_res[ha.ENABLED]:
-            router_res[ha.TYPE] = ha_s.ha_type
-            router_res[ha.REDUNDANCY_LEVEL] = ha_s.redundancy_level
-            router_res[ha.PROBE_CONNECTIVITY] = ha_s.probe_connectivity
-            if router_res[ha.PROBE_CONNECTIVITY]:
-                router_res[ha.PROBE_TARGET] = ha_s.probe_target
-                router_res[ha.PROBE_INTERVAL] = ha_s.probe_interval
-        return router_res
 
     def _extend_router_dict_ha(self, router_res, router_db):
         if utils.is_extension_supported(self, ha.HA_ALIAS):
@@ -504,7 +493,7 @@ class HA_db_mixin(object):
                 if ha_details[ha.PROBE_CONNECTIVITY]:
                     ha_details.update({ha.PROBE_TARGET: ha_s.probe_target,
                                        ha.PROBE_INTERVAL: ha_s.probe_interval})
-                ha_details['redundancy_routers'] = (
+                ha_details[ha.REDUNDANCY_ROUTERS] = (
                     [{'id': b.redundancy_router_id, 'priority': b.priority}
                      for b in router_db.redundancy_bindings])
                 router_res[ha.DETAILS] = ha_details
@@ -519,62 +508,59 @@ class HA_db_mixin(object):
         r_r_b = self._get_redundancy_router_bindings(
             context, redundancy_router_id=router['id'])
         if not r_r_b:
-            # The router is a user visible router. It MAY or
-            # MAY NOT have HA enabled.
-            user_router_id = router['id']
-            fips = []
+            if router[ha.ENABLED]:
+                # The router is a user visible router with HA enabled.
+                user_router_id = router['id']
+                fips = []
+            else:
+                # The router is a user visible router with HA disabled.
+                # Nothing more to do here.
+                return
         else:
-            user_router_id = r_r_b[0].user_router_id
+            # The router is a redundancy router.
             # Need to fetch floatingips configrations from user visible router
             # so they can be added to the redundancy routers.
+            user_router_id = r_r_b[0].user_router_id
             fips = self.get_floatingips(context,
                                         {'router_id': [user_router_id]})
-        ha_s = self._get_ha_settings_by_router_id(context, user_router_id)
-        if ha_s is None:
-            # Router does not have HA enabled
-            router['ha_info'] = {ha.ENABLED: False}
-            return
-        # We add the HA settings from user visible router to
-        # its redundancy routers.
-        ha_dict = {}
-        self._add_ha_attributes(context, ha_dict, ha_s)
-        ha_dict['priority'] = r_r_b[0].priority if r_r_b else ha_s.priority
-        router['ha_info'] = ha_dict
-        hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
+        if router['id'] != user_router_id:
+            # We add the HA settings from user visible router to
+            # its redundancy routers.
+            user_router_db = self._get_router(context, user_router_id)
+            self._extend_router_dict_ha(router, user_router_db)
         # The interfaces of the user visible router must use the
         # IP configuration of the extra ports in the HA groups.
         modified_interfaces = []
         e_context = context.elevated()
+        hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
         for itfc in router.get(l3_constants.INTERFACE_KEY, []):
             hag = hags[itfc['fixed_ips'][0]['subnet_id']]
-            if router['id'] == hag.user_router_id:
+            if router['id'] == user_router_id:
                 router_port = self._core_plugin.get_port(e_context,
                                                          hag.extra_port_id)
                 self._populate_subnet_for_ports(e_context, [router_port])
                 modified_interfaces.append(router_port)
-                virtual_port = itfc
+                ha_port = itfc
             else:
-                virtual_port = self._core_plugin.get_port(context,
-                                                          hag.virtual_port_id)
-                self._populate_subnet_for_ports(context, [virtual_port])
+                ha_port = self._core_plugin.get_port(context, hag.ha_port_id)
+                self._populate_subnet_for_ports(context, [ha_port])
                 router_port = itfc
             ha_g_info = {
-                'ha_type': hag.ha_type,
-                'group': hag.group_identity,
+                ha.TYPE: hag.ha_type,
+                HA_GROUP: hag.group_identity,
                 'timers_config': hag.timers_config,
                 'tracking_config': hag.tracking_config,
                 'other_config': hag.other_config,
-                'virtual_port': virtual_port
-                }
-            router_port['ha_info'] = ha_g_info
+                HA_PORT: ha_port}
+            router_port[HA_INFO] = ha_g_info
         if modified_interfaces:
             router[l3_constants.INTERFACE_KEY] = modified_interfaces
         if fips:
             router[l3_constants.FLOATINGIP_KEY] = fips
 
-    def _create_ha_port(self, context, network_id, device_id):
-        """Creates ports used specially for HA purposes.
-        """
+    def _create_hidden_port(self, context, network_id, device_id,
+                            type=DEVICE_OWNER_ROUTER_INTF):
+        """Creates port used specially for HA purposes."""
         return self._core_plugin.create_port(context, {
             'port':
             {'tenant_id': '',  # intentionally not set
@@ -582,7 +568,7 @@ class HA_db_mixin(object):
              'mac_address': attrs.ATTR_NOT_SPECIFIED,
              'fixed_ips': attrs.ATTR_NOT_SPECIFIED,
              'device_id': device_id,
-             'device_owner': DEVICE_OWNER_ROUTER_INTF,
+             'device_owner': type,
              'admin_state_up': True,
              'name': ''}})
 
@@ -595,9 +581,9 @@ class HA_db_mixin(object):
             return
         return r_ha_s
 
-    def _get_ha_group_by_virtual_port_id(self, context, port_id):
+    def _get_ha_group_by_ha_port_id(self, context, port_id):
         query = context.session.query(RouterHAGroup)
-        query = query.filter(RouterHAGroup.virtual_port_id == port_id)
+        query = query.filter(RouterHAGroup.ha_port_id == port_id)
         try:
             r_ha_g = query.one()
         except exc.NoResultFound, exc.MultipleResultsFound:

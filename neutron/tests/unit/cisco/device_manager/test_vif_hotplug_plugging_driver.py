@@ -5,8 +5,6 @@ from oslo_log import log as logging
 from neutron.common import exceptions as n_exc
 from neutron.tests import base
 
-from neutron.plugins.cisco.db.device_manager.hosting_device_manager_db import (
-    HostingDeviceManagerMixin)
 from neutron.plugins.cisco.device_manager.plugging_drivers.\
     vif_hotplug_plugging_driver import VIFHotPlugPluggingDriver
 

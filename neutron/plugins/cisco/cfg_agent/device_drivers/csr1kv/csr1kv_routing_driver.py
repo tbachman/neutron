@@ -28,9 +28,12 @@ from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers import devicedriver_api
+from neutron.plugins.cisco.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
+# HA constants
+HA_INFO = 'ha_info'
 
 # N1kv constants
 T1_PORT_NAME_PREFIX = 't1_p:'  # T1 port/network is for VXLAN
@@ -73,7 +76,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def internal_network_added(self, ri, port):
         self._csr_create_subinterface(ri, port)
-        if port.get('ha_info') is not None and ri.ha_info['ha:enabled']:
+        if port.get(HA_INFO) is not None and ri.get(ha.ENABLED, False):
             self._csr_add_ha(ri, port)
 
     def internal_network_removed(self, ri, port):
@@ -130,18 +133,18 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _csr_add_ha(self, ri, port):
         func_dict = {
-            'HSRP': CSR1kvRoutingDriver._csr_add_ha_HSRP,
-            'VRRP': CSR1kvRoutingDriver._csr_add_ha_VRRP,
-            'GBLP': CSR1kvRoutingDriver._csr_add_ha_GBLP
+            ha.HA_HSRP: CSR1kvRoutingDriver._csr_add_ha_HSRP,
+            ha.HA_VRRP: CSR1kvRoutingDriver._csr_add_ha_VRRP,
+            ha.HA_GLBP: CSR1kvRoutingDriver._csr_add_ha_GBLP
         }
         #Invoke the right function for the ha type
-        func_dict[ri.ha_info['ha:type']](self, ri, port)
+        func_dict[ri[ha.DETAILS][ha.TYPE]](self, ri, port)
 
     def _csr_add_ha_HSRP(self, ri, port):
-        priority = ri.ha_info['priority']
-        port_ha_info = port['ha_info']
+        priority = ri[ha.DETAILS][ha.PRIORITY]
+        port_ha_info = port[HA_INFO]
         group = port_ha_info['group']
-        ip = port_ha_info['virtual_port']['fixed_ips'][0]['ip_address']
+        ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
         if ip and group and priority:
             vrf_name = self._csr_get_vrf_name(ri)
             subinterface = self._get_interface_name_from_hosting_port(port)
