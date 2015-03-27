@@ -317,25 +317,37 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         return router_interface_info
 
     def remove_router_interface(self, context, router_id, interface_info):
-        if not interface_info:
-            msg = _("Either subnet_id or port_id must be specified")
-            raise n_exc.BadRequest(resource='router', msg=msg)
-
+        remove_by_port, remove_by_subnet = (
+            self._validate_interface_info(interface_info, for_removal=True)
+        )
         port_id = interface_info.get('port_id')
         subnet_id = interface_info.get('subnet_id')
         router = self._get_router(context, router_id)
         device_owner = self._get_device_owner(context, router)
 
-        if port_id:
+        if remove_by_port:
             port, subnet = self._remove_interface_by_port(
                 context, router_id, port_id, subnet_id, device_owner)
-        elif subnet_id:
+        # remove_by_subnet is not used here, because the validation logic of
+        # _validate_interface_info ensures that at least one of remote_by_*
+        # is True.
+        else:
             port, subnet = self._remove_interface_by_subnet(
                 context, router_id, subnet_id, device_owner)
 
-        if router.extra_attributes.distributed and router.gw_port:
-            self.delete_csnat_router_interface_ports(
-                context.elevated(), router, subnet_id=subnet_id)
+        if router.extra_attributes.distributed:
+            if router.gw_port:
+                self.delete_csnat_router_interface_ports(
+                    context.elevated(), router, subnet_id=subnet_id)
+            plugin = manager.NeutronManager.get_service_plugins().get(
+                        constants.L3_ROUTER_NAT)
+            l3_agents = plugin.get_l3_agents_hosting_routers(context,
+                                                             [router_id])
+            for l3_agent in l3_agents:
+                if not plugin.check_ports_exist_on_l3agent(context, l3_agent,
+                                                           router_id):
+                    plugin.remove_router_from_l3_agent(
+                        context, l3_agent['id'], router_id)
 
         router_interface_info = self._make_router_interface_info(
             router_id, port['tenant_id'], port['id'],
@@ -360,7 +372,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         interfaces = self._core_plugin.get_ports(context, {'id': ports})
         LOG.debug("Return the SNAT ports: %s", interfaces)
         if interfaces:
-            self._populate_subnet_for_ports(context, interfaces)
+            self._populate_subnets_for_ports(context, interfaces)
         return interfaces
 
     def _build_routers_list(self, context, routers, gw_ports):
@@ -404,30 +416,26 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                 router[SNAT_ROUTER_INTF_KEY] = snat_router_intfs
         return routers_dict
 
-    def _process_floating_ips(self, context, routers_dict, floating_ips):
+    def _process_floating_ips_dvr(self, context, routers_dict,
+                                  floating_ips, host, agent):
+        fip_sync_interfaces = None
+        LOG.debug("FIP Agent : %s ", agent.id)
         for floating_ip in floating_ips:
             router = routers_dict.get(floating_ip['router_id'])
             if router:
                 router_floatingips = router.get(l3_const.FLOATINGIP_KEY, [])
-                floatingip_agent_intfs = []
                 if router['distributed']:
-                    floating_ip['host'] = self.get_vm_port_hostid(
-                        context, floating_ip['port_id'])
-                    LOG.debug("Floating IP host: %s", floating_ip['host'])
-                    # if no VM there won't be an agent assigned
-                    if not floating_ip['host']:
+                    if floating_ip.get('host', None) != host:
                         continue
-                    fip_agent = self._get_agent_by_type_and_host(
-                        context, l3_const.AGENT_TYPE_L3,
-                        floating_ip['host'])
-                    LOG.debug("FIP Agent : %s ", fip_agent['id'])
-                    floatingip_agent_intfs = self.get_fip_sync_interfaces(
-                        context, fip_agent['id'])
-                    LOG.debug("FIP Agent ports: %s", floatingip_agent_intfs)
+                    LOG.debug("Floating IP host: %s", floating_ip['host'])
                 router_floatingips.append(floating_ip)
                 router[l3_const.FLOATINGIP_KEY] = router_floatingips
+                if not fip_sync_interfaces:
+                    fip_sync_interfaces = self.get_fip_sync_interfaces(
+                        context, agent.id)
+                    LOG.debug("FIP Agent ports: %s", fip_sync_interfaces)
                 router[l3_const.FLOATINGIP_AGENT_INTF_KEY] = (
-                    floatingip_agent_intfs)
+                    fip_sync_interfaces)
 
     def get_fip_sync_interfaces(self, context, fip_agent_id):
         """Query router interfaces that relate to list of router_ids."""
@@ -438,18 +446,26 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         interfaces = self._core_plugin.get_ports(context.elevated(), filters)
         LOG.debug("Return the FIP ports: %s ", interfaces)
         if interfaces:
-            self._populate_subnet_for_ports(context, interfaces)
+            self._populate_subnets_for_ports(context, interfaces)
         return interfaces
 
-    def get_sync_data(self, context, router_ids=None, active=None):
+    def get_dvr_sync_data(self, context, host, agent, router_ids=None,
+                          active=None):
         routers, interfaces, floating_ips = self._get_router_info_list(
             context, router_ids=router_ids, active=active,
             device_owners=l3_const.ROUTER_INTERFACE_OWNERS)
+        port_filter = {portbindings.HOST_ID: [host]}
+        ports = self._core_plugin.get_ports(context, port_filter)
+        port_dict = dict((port['id'], port) for port in ports)
         # Add the port binding host to the floatingip dictionary
         for fip in floating_ips:
-            fip['host'] = self.get_vm_port_hostid(context, fip['port_id'])
+            vm_port = port_dict.get(fip['port_id'], None)
+            if vm_port:
+                fip['host'] = self.get_vm_port_hostid(context, fip['port_id'],
+                                                      port=vm_port)
         routers_dict = self._process_routers(context, routers)
-        self._process_floating_ips(context, routers_dict, floating_ips)
+        self._process_floating_ips_dvr(context, routers_dict,
+                                       floating_ips, host, agent)
         self._process_interfaces(routers_dict, interfaces)
         return routers_dict.values()
 
@@ -541,12 +557,12 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                               'admin_state_up': True,
                               'name': ''}})
                 if agent_port:
-                    self._populate_subnet_for_ports(context, [agent_port])
+                    self._populate_subnets_for_ports(context, [agent_port])
                     return agent_port
                 msg = _("Unable to create the Agent Gateway Port")
                 raise n_exc.BadRequest(resource='router', msg=msg)
             else:
-                self._populate_subnet_for_ports(context, [f_port])
+                self._populate_subnets_for_ports(context, [f_port])
                 return f_port
 
     def get_snat_interface_ports_for_router(self, context, router_id):
@@ -588,7 +604,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
             context.session.add(router_port)
 
         if do_pop:
-            return self._populate_subnet_for_ports(context, [snat_port])
+            return self._populate_subnets_for_ports(context, [snat_port])
         return snat_port
 
     def create_snat_intf_ports_if_not_exists(self, context, router):
@@ -601,7 +617,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         port_list = self.get_snat_interface_ports_for_router(
             context, router.id)
         if port_list:
-            self._populate_subnet_for_ports(context, port_list)
+            self._populate_subnets_for_ports(context, port_list)
             return port_list
         port_list = []
 
@@ -623,7 +639,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                     intf['fixed_ips'][0]['subnet_id'], do_pop=False)
                 port_list.append(snat_port)
         if port_list:
-            self._populate_subnet_for_ports(context, port_list)
+            self._populate_subnets_for_ports(context, port_list)
         return port_list
 
     def dvr_vmarp_table_update(self, context, port_dict, action):

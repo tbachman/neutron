@@ -616,7 +616,7 @@ class TestBase(base.BaseTestCase):
         self.conf.set_override('state_path', '')
 
         self.replace_p = mock.patch('neutron.agent.linux.utils.replace_file')
-        self.execute_p = mock.patch('neutron.agent.linux.utils.execute')
+        self.execute_p = mock.patch('neutron.agent.common.utils.execute')
         self.safe = self.replace_p.start()
         self.execute = self.execute_p.start()
 
@@ -860,6 +860,9 @@ class TestDnsmasq(TestBase):
                         lease_duration, seconds)])
                 possible_leases += netaddr.IPNetwork(s.cidr).size
 
+        if cfg.CONF.advertise_mtu:
+            expected.append('--dhcp-option-force=option:mtu,%s' % network.mtu)
+
         expected.append('--dhcp-lease-max=%d' % min(
             possible_leases, max_leases))
         expected.extend(extra_options)
@@ -945,6 +948,13 @@ class TestDnsmasq(TestBase):
         self.conf.set_override('dhcp_broadcast_reply', True)
         self._test_spawn(['--conf-file=', '--domain=openstacklocal',
                           '--dhcp-broadcast'])
+
+    def test_spawn_cfg_advertise_mtu(self):
+        cfg.CONF.set_override('advertise_mtu', True)
+        network = FakeV4Network()
+        network.mtu = 1500
+        self._test_spawn(['--conf-file=', '--domain=openstacklocal'],
+                         network)
 
     def _test_output_opts_file(self, expected, network, ipm_retval=None):
         with mock.patch.object(dhcp.Dnsmasq, 'get_conf_file_name') as conf_fn:

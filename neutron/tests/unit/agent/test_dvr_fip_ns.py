@@ -70,13 +70,16 @@ class TestDvrFipNs(base.BaseTestCase):
     @mock.patch.object(ip_lib, 'send_gratuitous_arp')
     @mock.patch.object(ip_lib, 'device_exists')
     def test_gateway_added(self, device_exists, send_arp, IPDevice, IPWrapper):
+        subnet_id = _uuid()
         agent_gw_port = {'fixed_ips': [{'ip_address': '20.0.0.30',
-                                        'subnet_id': _uuid()}],
-                         'subnet': {'gateway_ip': '20.0.0.1'},
+                                        'prefixlen': 24,
+                                        'subnet_id': subnet_id}],
+                         'subnets': [{'id': subnet_id,
+                                      'cidr': '20.0.0.0/24',
+                                      'gateway_ip': '20.0.0.1'}],
                          'id': _uuid(),
                          'network_id': self.net_id,
-                         'mac_address': 'ca:fe:de:ad:be:ef',
-                         'ip_cidr': '20.0.0.30/24'}
+                         'mac_address': 'ca:fe:de:ad:be:ef'}
 
         device_exists.return_value = False
         self.fip_ns._gateway_added(agent_gw_port,
@@ -126,14 +129,19 @@ class TestDvrFipNs(base.BaseTestCase):
         pair = lla.LinkLocalAddressPair('169.254.31.28/31')
         allocator.allocate.return_value = pair
         device_exists.return_value = False
+        ip_wrapper = IPWrapper()
+        self.conf.network_device_mtu = 2000
+        ip_wrapper.add_veth.return_value = (IPDevice(), IPDevice())
+
         self.fip_ns.create_rtr_2_fip_link(ri)
 
-        ip_wrapper = IPWrapper()
         ip_wrapper.add_veth.assert_called_with(rtr_2_fip_name,
                                                fip_2_rtr_name,
                                                fip_ns_name)
 
         device = IPDevice()
+        device.link.set_mtu.assert_called_with(2000)
+        self.assertEqual(device.link.set_mtu.call_count, 2)
         device.route.add_gateway.assert_called_once_with(
             '169.254.31.29', table=16)
 

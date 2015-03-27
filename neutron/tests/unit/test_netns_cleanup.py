@@ -35,6 +35,7 @@ class TestNetnsCleanup(base.BaseTestCase):
             util.kill_dhcp(conf, 'ns')
 
             expected_params = {'conf': conf, 'network': mock.ANY,
+                               'process_monitor': mock.ANY,
                                'plugin': mock.ANY}
             import_object.assert_called_once_with('driver', **expected_params)
 
@@ -74,6 +75,12 @@ class TestNetnsCleanup(base.BaseTestCase):
     def test_eligible_for_deletion_not_empty_forced(self):
         self._test_eligible_for_deletion_helper('qdhcp-', True, False, True)
 
+    def test_eligible_for_deletion_fip_namespace(self):
+        self._test_eligible_for_deletion_helper('fip-', False, True, True)
+
+    def test_eligible_for_deletion_snat_namespace(self):
+        self._test_eligible_for_deletion_helper('snat-', False, True, True)
+
     def test_unplug_device_regular_device(self):
         conf = mock.Mock()
         device = mock.Mock()
@@ -89,9 +96,10 @@ class TestNetnsCleanup(base.BaseTestCase):
         device.name = 'tap1'
         device.link.delete.side_effect = RuntimeError
 
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge') as ovs_br_cls:
+        with mock.patch(
+                'neutron.agent.common.ovs_lib.OVSBridge') as ovs_br_cls:
             br_patch = mock.patch(
-                'neutron.agent.linux.ovs_lib.BaseOVS.get_bridge_for_iface')
+                'neutron.agent.common.ovs_lib.BaseOVS.get_bridge_for_iface')
             with br_patch as mock_get_bridge_for_iface:
                 mock_get_bridge_for_iface.return_value = 'br-int'
                 ovs_bridge = mock.Mock()
@@ -112,9 +120,10 @@ class TestNetnsCleanup(base.BaseTestCase):
         device.name = 'tap1'
         device.link.delete.side_effect = RuntimeError
 
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge') as ovs_br_cls:
+        with mock.patch(
+                'neutron.agent.common.ovs_lib.OVSBridge') as ovs_br_cls:
             br_patch = mock.patch(
-                'neutron.agent.linux.ovs_lib.BaseOVS.get_bridge_for_iface')
+                'neutron.agent.common.ovs_lib.BaseOVS.get_bridge_for_iface')
             with br_patch as mock_get_bridge_for_iface:
                 with mock.patch.object(util.LOG, 'debug') as debug:
                     mock_get_bridge_for_iface.return_value = None

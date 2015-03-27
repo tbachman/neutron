@@ -20,12 +20,14 @@ import re
 import shutil
 
 import netaddr
+from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import importutils
 import six
 
 from neutron.agent.linux import external_process
 from neutron.agent.linux import ip_lib
+from neutron.agent.linux import iptables_manager
 from neutron.agent.linux import utils
 from neutron.common import constants
 from neutron.common import exceptions
@@ -348,6 +350,12 @@ class Dnsmasq(DhcpLocalProcess):
                                 cidr.network, mode,
                                 cidr.prefixlen, lease))
                 possible_leases += cidr.size
+
+        if cfg.CONF.advertise_mtu:
+            mtu = self.network.mtu
+            # Do not advertise unknown mtu
+            if mtu > 0:
+                cmd.append('--dhcp-option-force=option:mtu,%d' % mtu)
 
         # Cap the limit because creating lots of subnets can inflate
         # this possible lease cap.
@@ -928,6 +936,7 @@ class DeviceManager(object):
                              interface_name,
                              port.mac_address,
                              namespace=network.namespace)
+            self.fill_dhcp_udp_checksums(namespace=network.namespace)
         ip_cidrs = []
         for fixed_ip in port.fixed_ips:
             subnet = fixed_ip.subnet
@@ -964,3 +973,12 @@ class DeviceManager(object):
 
         self.plugin.release_dhcp_port(network.id,
                                       self.get_device_id(network))
+
+    def fill_dhcp_udp_checksums(self, namespace):
+        """Ensure DHCP reply packets always have correct UDP checksums."""
+        iptables_mgr = iptables_manager.IptablesManager(use_ipv6=False,
+                                                        namespace=namespace)
+        ipv4_rule = ('-p udp --dport %d -j CHECKSUM --checksum-fill'
+                     % constants.DHCP_RESPONSE_PORT)
+        iptables_mgr.ipv4['mangle'].add_rule('POSTROUTING', ipv4_rule)
+        iptables_mgr.apply()

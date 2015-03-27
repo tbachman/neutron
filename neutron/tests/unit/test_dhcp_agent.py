@@ -33,6 +33,7 @@ from neutron.agent.linux import interface
 from neutron.common import config as common_config
 from neutron.common import constants as const
 from neutron.common import exceptions
+from neutron.common import utils
 from neutron import context
 from neutron.tests import base
 
@@ -102,6 +103,7 @@ fake_port1 = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
                             fixed_ips=[fake_fixed_ip1]))
 
 fake_port2 = dhcp.DictModel(dict(id='12345678-1234-aaaa-123456789000',
+                            device_id='dhcp-12345678-1234-aaaa-123456789000',
                             device_owner='',
                             mac_address='aa:bb:cc:dd:ee:99',
                             network_id='12345678-1234-5678-1234567890ab',
@@ -529,6 +531,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
         cfg.CONF.set_override('interface_driver',
                               'neutron.agent.linux.interface.NullDriver')
         cfg.CONF.register_opts(dhcp_config.DHCP_AGENT_OPTS)
+        cfg.CONF.register_opts(dhcp_config.DHCP_OPTS)
 
         self.plugin_p = mock.patch(DHCP_PLUGIN)
         plugin_cls = self.plugin_p.start()
@@ -914,6 +917,26 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
         self.call_driver.assert_has_calls(
             [mock.call.call_driver('reload_allocations', fake_network)])
 
+    def test_port_update_change_ip_on_dhcp_agents_port(self):
+        self.cache.get_network_by_id.return_value = fake_network
+        self.cache.get_port_by_id.return_value = fake_port1
+        payload = dict(port=copy.deepcopy(fake_port1))
+        device_id = utils.get_dhcp_agent_device_id(
+            payload['port']['network_id'], self.dhcp.conf.host)
+        payload['port']['fixed_ips'][0]['ip_address'] = '172.9.9.99'
+        payload['port']['device_id'] = device_id
+        self.dhcp.port_update_end(None, payload)
+        self.call_driver.assert_has_calls(
+            [mock.call.call_driver('restart', fake_network)])
+
+    def test_port_update_on_dhcp_agents_port_no_ip_change(self):
+        payload = dict(port=fake_port1)
+        self.cache.get_network_by_id.return_value = fake_network
+        self.cache.get_port_by_id.return_value = fake_port1
+        self.dhcp.port_update_end(None, payload)
+        self.call_driver.assert_has_calls(
+            [mock.call.call_driver('reload_allocations', fake_network)])
+
     def test_port_delete_end(self):
         payload = dict(port_id=fake_port2.id)
         self.cache.get_network_by_id.return_value = fake_network
@@ -1167,6 +1190,14 @@ class TestDeviceManager(base.BaseTestCase):
         driver_cls.return_value = self.mock_driver
         iproute_cls.return_value = self.mock_iproute
 
+        iptables_cls_p = mock.patch(
+            'neutron.agent.linux.iptables_manager.IptablesManager')
+        iptables_cls = iptables_cls_p.start()
+        self.iptables_inst = mock.Mock()
+        iptables_cls.return_value = self.iptables_inst
+        self.mangle_inst = mock.Mock()
+        self.iptables_inst.ipv4 = {'mangle': self.mangle_inst}
+
     def _test_setup_helper(self, device_is_ready, net=None, port=None):
         net = net or fake_network
         port = port or fake_port1
@@ -1217,6 +1248,13 @@ class TestDeviceManager(base.BaseTestCase):
         self._test_setup_helper(False)
         cfg.CONF.set_override('enable_metadata_network', True)
         self._test_setup_helper(False)
+
+    def test_setup_calls_fill_dhcp_udp_checksums(self):
+        self._test_setup_helper(False)
+        rule = ('-p udp --dport %d -j CHECKSUM --checksum-fill'
+                % const.DHCP_RESPONSE_PORT)
+        expected = [mock.call.add_rule('POSTROUTING', rule)]
+        self.mangle_inst.assert_has_calls(expected)
 
     def test_setup_ipv6(self):
         self._test_setup_helper(True, net=fake_network_ipv6,

@@ -51,7 +51,6 @@ from neutron.tests.unit import test_agent_ext_plugin
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension
 from neutron.tests.unit import test_db_plugin
-from neutron.tests.unit import testlib_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -390,7 +389,7 @@ class L3NatTestCaseMixin(object):
         interface_data = {}
         if subnet_id:
             interface_data.update({'subnet_id': subnet_id})
-        if port_id and (action != 'add' or not subnet_id):
+        if port_id:
             interface_data.update({'port_id': port_id})
 
         req = self.new_action_request('routers', interface_data, router_id,
@@ -410,12 +409,14 @@ class L3NatTestCaseMixin(object):
     def router(self, name='router1', admin_state_up=True,
                fmt=None, tenant_id=_uuid(),
                external_gateway_info=None, set_context=False,
+               no_delete=False,
                **kwargs):
         router = self._make_router(fmt or self.fmt, tenant_id, name,
                                    admin_state_up, external_gateway_info,
                                    set_context, **kwargs)
         yield router
-        self._delete('routers', router['router']['id'])
+        if not no_delete:
+            self._delete('routers', router['router']['id'])
 
     def _set_net_external(self, net_id):
         self._update('networks', net_id,
@@ -1182,6 +1183,17 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                                           expected_code=exc.
                                           HTTPBadRequest.code)
 
+    def test_router_add_interface_with_both_ids_returns_400(self):
+        with self.router() as r:
+            with self.subnet() as s:
+                with self.port(subnet=s) as p:
+                    self._router_interface_action('add',
+                                                  r['router']['id'],
+                                                  s['subnet']['id'],
+                                                  p['port']['id'],
+                                                  expected_code=exc.
+                                                  HTTPBadRequest.code)
+
     def test_router_add_gateway_dup_subnet1_returns_400(self):
         with self.router() as r:
             with self.subnet() as s:
@@ -1331,13 +1343,22 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                     s['subnet']['network_id'],
                     expected_code=exc.HTTPBadRequest.code)
 
-    def test_router_add_gateway_no_subnet_returns_400(self):
+    def test_router_add_gateway_no_subnet(self):
         with self.router() as r:
             with self.network() as n:
                 self._set_net_external(n['network']['id'])
                 self._add_external_gateway_to_router(
                     r['router']['id'],
-                    n['network']['id'], expected_code=exc.HTTPBadRequest.code)
+                    n['network']['id'])
+                body = self._show('routers', r['router']['id'])
+                net_id = body['router']['external_gateway_info']['network_id']
+                self.assertEqual(net_id, n['network']['id'])
+                self._remove_external_gateway_from_router(
+                    r['router']['id'],
+                    n['network']['id'])
+                body = self._show('routers', r['router']['id'])
+                gw_info = body['router']['external_gateway_info']
+                self.assertIsNone(gw_info)
 
     def test_router_remove_interface_inuse_returns_409(self):
         with self.router() as r:
@@ -1425,6 +1446,25 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                                                   None,
                                                   p['port']['id'])
 
+    def test_router_remove_interface_nothing_returns_400(self):
+        with self.router() as r:
+            with self.subnet() as s:
+                with self.port(subnet=s) as p:
+                    self._router_interface_action('add',
+                                                  r['router']['id'],
+                                                  None,
+                                                  p['port']['id'])
+                    self._router_interface_action('remove',
+                                                  r['router']['id'],
+                                                  None,
+                                                  None,
+                                                  exc.HTTPBadRequest.code)
+                    #remove properly to clean-up
+                    self._router_interface_action('remove',
+                                                  r['router']['id'],
+                                                  None,
+                                                  p['port']['id'])
+
     def test_router_remove_interface_returns_200(self):
         with self.router() as r:
             with self.port() as p:
@@ -1437,6 +1477,19 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                                               None,
                                               p['port']['id'],
                                               expected_body=body)
+
+    def test_router_remove_interface_with_both_ids_returns_200(self):
+        with self.router() as r:
+            with self.subnet() as s:
+                with self.port(subnet=s) as p:
+                    self._router_interface_action('add',
+                                                  r['router']['id'],
+                                                  None,
+                                                  p['port']['id'])
+                    self._router_interface_action('remove',
+                                                  r['router']['id'],
+                                                  s['subnet']['id'],
+                                                  p['port']['id'])
 
     def test_router_remove_interface_wrong_port_returns_404(self):
         with self.router() as r:
@@ -1614,6 +1667,13 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
             self.assertEqual(expected_status, body['floatingip']['status'])
             self.assertIsNotNone(body['floatingip']['fixed_ip_address'])
             self.assertIsNotNone(body['floatingip']['router_id'])
+
+    def test_floating_port_status_not_applicable(self):
+        with self.floatingip_with_assoc():
+            port_body = self._list('ports',
+               query_params='device_owner=network:floatingip')['ports'][0]
+            self.assertEqual(l3_constants.PORT_STATUS_NOTAPPLICABLE,
+                             port_body['status'])
 
     def test_floatingip_update(
         self, expected_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
@@ -1997,6 +2057,50 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                 self._delete('floatingips', fp2['floatingip']['id'])
                 self._delete('floatingips', fp3['floatingip']['id'])
 
+    def test_floatingip_multi_external_one_internal(self):
+        with contextlib.nested(self.subnet(cidr="10.0.0.0/24"),
+                               self.subnet(cidr="11.0.0.0/24"),
+                               self.subnet(cidr="12.0.0.0/24")
+                               ) as (exs1, exs2, ins1):
+            network_ex_id1 = exs1['subnet']['network_id']
+            network_ex_id2 = exs2['subnet']['network_id']
+            self._set_net_external(network_ex_id1)
+            self._set_net_external(network_ex_id2)
+
+            r2i_fixed_ips = [{'ip_address': '12.0.0.2'}]
+            with contextlib.nested(self.router(no_delete=True),
+                                   self.router(no_delete=True),
+                                   self.port(subnet=ins1,
+                                             fixed_ips=r2i_fixed_ips)
+                                   ) as (r1, r2, r2i_port):
+                self._add_external_gateway_to_router(
+                    r1['router']['id'],
+                    network_ex_id1)
+                self._router_interface_action('add', r1['router']['id'],
+                                              ins1['subnet']['id'],
+                                              None)
+                self._add_external_gateway_to_router(
+                    r2['router']['id'],
+                    network_ex_id2)
+                self._router_interface_action('add', r2['router']['id'],
+                                              None,
+                                              r2i_port['port']['id'])
+
+                with self.port(subnet=ins1,
+                               fixed_ips=[{'ip_address': '12.0.0.3'}]
+                               ) as private_port:
+
+                    fp1 = self._make_floatingip(self.fmt, network_ex_id1,
+                                            private_port['port']['id'],
+                                            floating_ip='10.0.0.3')
+                    fp2 = self._make_floatingip(self.fmt, network_ex_id2,
+                                            private_port['port']['id'],
+                                            floating_ip='11.0.0.3')
+                    self.assertEqual(fp1['floatingip']['router_id'],
+                                     r1['router']['id'])
+                    self.assertEqual(fp2['floatingip']['router_id'],
+                                     r2['router']['id'])
+
     def test_floatingip_delete_router_intf_with_subnet_id_returns_409(self):
         found = False
         with self.floatingip_with_assoc():
@@ -2147,7 +2251,9 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
                 self.assertEqual(1, len(routers))
                 interfaces = routers[0][l3_constants.INTERFACE_KEY]
                 self.assertEqual(1, len(interfaces))
-                subnet_id = interfaces[0]['subnet']['id']
+                subnets = interfaces[0]['subnets']
+                self.assertEqual(1, len(subnets))
+                subnet_id = subnets[0]['id']
                 wanted_subnetid = p['port']['fixed_ips'][0]['subnet_id']
                 self.assertEqual(wanted_subnetid, subnet_id)
                 # clean-up
@@ -2193,7 +2299,9 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
                     context.get_admin_context(), [r['router']['id']])
                 self.assertEqual(1, len(routers))
                 gw_port = routers[0]['gw_port']
-                self.assertEqual(s['subnet']['id'], gw_port['subnet']['id'])
+                subnets = gw_port.get('subnets')
+                self.assertEqual(1, len(subnets))
+                self.assertEqual(s['subnet']['id'], subnets[0]['id'])
                 self._remove_external_gateway_from_router(
                     r['router']['id'],
                     s['subnet']['network_id'])
@@ -2268,8 +2376,7 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
         self._test_notify_op_agent(self._test_floatingips_op_agent)
 
 
-class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase,
-                        testlib_plugin.NotificationSetupHelper):
+class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
     mock_rescheduling = True
 
@@ -2290,8 +2397,7 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase,
         self.setup_notification_driver()
 
 
-class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase,
-                        testlib_plugin.NotificationSetupHelper):
+class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
 
     def setUp(self, plugin=None, ext_mgr=None):
         # the plugin without L3 support

@@ -22,6 +22,7 @@ from sqlalchemy.orm import scoped_session
 
 from neutron.api.v2 import attributes
 from neutron.common import constants
+from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
 from neutron.db import models_v2
@@ -127,11 +128,7 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         tenant_id = self._get_tenant_id_for_create(context, s)
 
         if not default_sg:
-            try:
-                self._ensure_default_security_group(context, tenant_id)
-            except exception.DBDuplicateEntry as ex:
-                LOG.debug("Duplicate default security group %s was not"
-                          " created", ex.value)
+            self._ensure_default_security_group(context, tenant_id)
 
         with context.session.begin(subtransactions=True):
             security_group_db = SecurityGroup(id=s.get('id') or (
@@ -301,7 +298,8 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
                 rule = rule_dict['security_group_rule']
                 tenant_id = self._get_tenant_id_for_create(context, rule)
                 db = SecurityGroupRule(
-                    id=uuidutils.generate_uuid(), tenant_id=tenant_id,
+                    id=(rule.get('id') or uuidutils.generate_uuid()),
+                    tenant_id=tenant_id,
                     security_group_id=rule['security_group_id'],
                     direction=rule['direction'],
                     remote_group_id=rule.get('remote_group_id'),
@@ -311,7 +309,7 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
                     port_range_max=rule['port_range_max'],
                     remote_ip_prefix=rule.get('remote_ip_prefix'))
                 context.session.add(db)
-            ret.append(self._make_security_group_rule_dict(db))
+                ret.append(self._make_security_group_rule_dict(db))
         return ret
 
     def create_security_group_rule(self, context, security_group_rule):
@@ -530,20 +528,29 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         :returns: the default security group id.
         """
         query = self._model_query(context, DefaultSecurityGroup)
-        try:
-            default_group = query.filter(
-                DefaultSecurityGroup.tenant_id == tenant_id).one()
-        except exc.NoResultFound:
-            security_group = {
-                'security_group': {'name': 'default',
-                                   'tenant_id': tenant_id,
-                                   'description': _('Default security group')}
-            }
-            ret = self.create_security_group(context, security_group,
-                                             default_sg=True)
-            return ret['id']
-        else:
-            return default_group['security_group_id']
+        # the next loop should do 2 iterations at max
+        while True:
+            try:
+                default_group = query.filter_by(tenant_id=tenant_id).one()
+            except exc.NoResultFound:
+                security_group = {
+                    'security_group':
+                        {'name': 'default',
+                         'tenant_id': tenant_id,
+                         'description': _('Default security group')}
+                }
+                try:
+                    with db_api.autonested_transaction(context.session):
+                        ret = self.create_security_group(
+                            context, security_group, default_sg=True)
+                except exception.DBDuplicateEntry as ex:
+                    LOG.debug("Duplicate default security group %s was "
+                              "not created", ex.value)
+                    continue
+                else:
+                    return ret['id']
+            else:
+                return default_group['security_group_id']
 
     def _get_security_groups_on_port(self, context, port):
         """Check that all security groups on port belong to tenant.

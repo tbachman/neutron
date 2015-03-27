@@ -17,11 +17,13 @@ import contextlib
 import mock
 
 from neutron.common import constants as l3_const
+from neutron.common import exceptions
 from neutron import context
 from neutron.db import l3_dvr_db
 from neutron.extensions import l3
 from neutron import manager
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants as plugin_const
 from neutron.tests.unit import testlib_api
 
 _uuid = uuidutils.generate_uuid
@@ -160,7 +162,7 @@ class L3DvrTestCase(testlib_api.SqlTestCase):
             plugin = mock.Mock()
             gp.return_value = plugin
             plugin._get_port.return_value = port
-            self.assertRaises(l3.L3PortInUse,
+            self.assertRaises(exceptions.ServicePortInUse,
                               self.mixin.prevent_l3_port_deletion,
                               self.ctx,
                               port['id'])
@@ -316,8 +318,11 @@ class L3DvrTestCase(testlib_api.SqlTestCase):
         floatingip = {
             'id': _uuid(),
             'port_id': _uuid(),
-            'router_id': 'foo_router_id'
+            'router_id': 'foo_router_id',
+            'host': hostid
         }
+        if not hostid:
+            hostid = 'not_my_host_id'
         routers = {
             'foo_router_id': router
         }
@@ -333,16 +338,15 @@ class L3DvrTestCase(testlib_api.SqlTestCase):
             return_value=fipagent)
         self.mixin.get_fip_sync_interfaces = mock.Mock(
             return_value='fip_interface')
+        agent = mock.Mock()
+        agent.id = fipagent['id']
 
-        self.mixin._process_floating_ips(self.ctx, routers, [floatingip])
+        self.mixin._process_floating_ips_dvr(self.ctx, routers, [floatingip],
+                                             hostid, agent)
         return (router, floatingip)
 
-    def test_floatingip_on_port_no_host(self):
+    def test_floatingip_on_port_not_host(self):
         router, fip = self._floatingip_on_port_test_setup(None)
-
-        self.assertTrue(self.mixin.get_vm_port_hostid.called)
-        self.assertFalse(self.mixin._get_agent_by_type_and_host.called)
-        self.assertFalse(self.mixin.get_fip_sync_interfaces.called)
 
         self.assertNotIn(l3_const.FLOATINGIP_KEY, router)
         self.assertNotIn(l3_const.FLOATINGIP_AGENT_INTF_KEY, router)
@@ -350,8 +354,6 @@ class L3DvrTestCase(testlib_api.SqlTestCase):
     def test_floatingip_on_port_with_host(self):
         router, fip = self._floatingip_on_port_test_setup(_uuid())
 
-        self.assertTrue(self.mixin.get_vm_port_hostid.called)
-        self.assertTrue(self.mixin._get_agent_by_type_and_host.called)
         self.assertTrue(self.mixin.get_fip_sync_interfaces.called)
 
         self.assertIn(l3_const.FLOATINGIP_KEY, router)
@@ -516,3 +518,46 @@ class L3DvrTestCase(testlib_api.SqlTestCase):
             self.mixin.check_router_has_no_vpnaas(mock.ANY, {'id': 'foo_id'})
             vpn_plugin.check_router_in_use.assert_called_once_with(
                 mock.ANY, 'foo_id')
+
+    def test_remove_router_interface_delete_router_l3agent_binding(self):
+        interface_info = {'subnet_id': '123'}
+        router = mock.MagicMock()
+        router.extra_attributes.distributed = True
+        plugin = mock.MagicMock()
+        plugin.get_l3_agents_hosting_routers = mock.Mock(
+            return_value=[mock.MagicMock()])
+        plugin.check_ports_exist_on_l3agent = mock.Mock(
+            return_value=False)
+        plugin.remove_router_from_l3_agent = mock.Mock(
+            return_value=None)
+        with contextlib.nested(
+            mock.patch.object(self.mixin,
+                              '_get_router'),
+            mock.patch.object(self.mixin,
+                              '_get_device_owner'),
+            mock.patch.object(self.mixin,
+                              '_remove_interface_by_subnet'),
+            mock.patch.object(self.mixin,
+                              'delete_csnat_router_interface_ports'),
+            mock.patch.object(manager.NeutronManager,
+                              'get_service_plugins'),
+            mock.patch.object(self.mixin,
+                              '_make_router_interface_info'),
+            mock.patch.object(self.mixin,
+                              'notify_router_interface_action'),
+                             ) as (grtr, gdev, rmintf, delintf, gplugin,
+                                   mkintf, notify):
+            grtr.return_value = router
+            gdev.return_value = mock.Mock()
+            rmintf.return_value = (mock.MagicMock(), mock.Mock())
+            mkintf.return_value = mock.Mock()
+            gplugin.return_value = {plugin_const.L3_ROUTER_NAT: plugin}
+            delintf.return_value = None
+            notify.return_value = None
+
+            self.mixin.manager = manager
+            self.mixin.remove_router_interface(
+                self.ctx, mock.Mock(), interface_info)
+            self.assertTrue(plugin.get_l3_agents_hosting_routers.called)
+            self.assertTrue(plugin.check_ports_exist_on_l3agent.called)
+            self.assertTrue(plugin.remove_router_from_l3_agent.called)

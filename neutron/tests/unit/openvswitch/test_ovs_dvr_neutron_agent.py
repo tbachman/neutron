@@ -18,7 +18,7 @@ import mock
 from oslo_config import cfg
 import oslo_messaging
 
-from neutron.agent.linux import utils
+from neutron.agent.common import utils
 from neutron.common import constants as n_const
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.openvswitch.agent import ovs_neutron_agent
@@ -32,17 +32,6 @@ OVS_LINUX_KERN_VERS_WITHOUT_VXLAN = "3.12.0"
 FAKE_MAC = '00:11:22:33:44:55'
 FAKE_IP1 = '10.0.0.1'
 FAKE_IP2 = '10.0.0.2'
-
-
-class CreateAgentConfigMapDvr(base.BaseTestCase):
-
-    def test_create_agent_config_map_enable_distributed_routing(self):
-        self.addCleanup(cfg.CONF.reset)
-        # Verify setting only enable_tunneling will default tunnel_type to GRE
-        cfg.CONF.set_override('enable_distributed_routing', True,
-                              group='AGENT')
-        cfgmap = ovs_neutron_agent.create_agent_config_map(cfg.CONF)
-        self.assertEqual(cfgmap['enable_distributed_routing'], True)
 
 
 class TestOvsDvrNeutronAgent(base.BaseTestCase):
@@ -67,21 +56,20 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
 
         with contextlib.nested(
             mock.patch('neutron.plugins.openvswitch.agent.ovs_neutron_agent.'
-                       'OVSNeutronAgent.setup_integration_br',
-                       return_value=mock.Mock()),
+                       'OVSNeutronAgent.setup_integration_br'),
             mock.patch('neutron.plugins.openvswitch.agent.ovs_neutron_agent.'
                        'OVSNeutronAgent.setup_ancillary_bridges',
                        return_value=[]),
-            mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+            mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                        'create'),
-            mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+            mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                        'set_secure_mode'),
-            mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+            mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                        'get_local_port_mac',
                        return_value='00:00:00:00:00:01'),
             mock.patch('neutron.agent.linux.utils.get_interface_mac',
                        return_value='00:00:00:00:00:01'),
-            mock.patch('neutron.agent.linux.ovs_lib.BaseOVS.get_bridges'),
+            mock.patch('neutron.agent.common.ovs_lib.BaseOVS.get_bridges'),
             mock.patch('neutron.openstack.common.loopingcall.'
                        'FixedIntervalLoopingCall',
                        new=MockFixedIntervalLoopingCall)):
@@ -141,13 +129,13 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
         physical_network = self._physical_network
         segmentation_id = self._segmentation_id
         network_type = p_const.TYPE_VLAN
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
-                           return_value=str(self._old_local_vlan)),
+                           return_value=self._old_local_vlan),
                 mock.patch.object(self.agent.dvr_agent.plugin_rpc,
                                   'get_subnet_for_dvr',
                                   return_value={
@@ -261,11 +249,11 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
         self._compute_port.vif_mac = '77:88:99:00:11:22'
         physical_network = self._physical_network
         segmentation_id = self._segmentation_id
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
                            return_value=self._old_local_vlan),
                 mock.patch.object(self.agent.dvr_agent.plugin_rpc,
@@ -393,11 +381,11 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
 
     def test_port_bound_for_dvr_with_csnat_ports(self, ofport=10):
         self._setup_for_dvr_test()
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
                            return_value=self._old_local_vlan),
                 mock.patch.object(
@@ -441,11 +429,11 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
         else:
             gateway_ip = '2001:100::1'
             cidr = '2001:100::0/64'
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
                            return_value=self._old_local_vlan),
                 mock.patch.object(
@@ -522,11 +510,11 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
         else:
             gateway_ip = '2001:100::1'
             cidr = '2001:100::0/64'
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
                            return_value=self._old_local_vlan),
                 mock.patch.object(
@@ -599,11 +587,11 @@ class TestOvsDvrNeutronAgent(base.BaseTestCase):
 
     def test_treat_devices_removed_for_dvr_csnat_port(self, ofport=10):
         self._setup_for_dvr_test()
-        with mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+        with mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                         'set_db_attribute',
                         return_value=True):
             with contextlib.nested(
-                mock.patch('neutron.agent.linux.ovs_lib.OVSBridge.'
+                mock.patch('neutron.agent.common.ovs_lib.OVSBridge.'
                            'db_get_val',
                            return_value=self._old_local_vlan),
                 mock.patch.object(

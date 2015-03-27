@@ -266,10 +266,33 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
         self._assert_sg_rule_has_kvs(v6_rule, expected)
 
     def test_skip_duplicate_default_sg_error(self):
+        num_called = [0]
+        original_func = self.plugin.create_security_group
+
+        def side_effect(context, security_group, default_sg):
+            # can't always raise, or create_security_group will hang
+            self.assertTrue(default_sg)
+            self.assertTrue(num_called[0] < 2)
+            num_called[0] += 1
+            ret = original_func(context, security_group, default_sg)
+            if num_called[0] == 1:
+                return ret
+            # make another call to cause an exception.
+            # NOTE(yamamoto): raising the exception by ourselves
+            # doesn't update the session state appropriately.
+            self.assertRaises(exc.DBDuplicateEntry,
+                              original_func, context, security_group,
+                              default_sg)
+
         with mock.patch.object(SecurityGroupTestPlugin,
-                               '_ensure_default_security_group',
-                               side_effect=exc.DBDuplicateEntry()):
-            self._make_security_group(self.fmt, 'test_sg', 'test_desc')
+                               'create_security_group',
+                               side_effect=side_effect):
+            self.plugin.create_network(
+                context.get_admin_context(),
+                {'network': {'name': 'foo',
+                             'admin_state_up': True,
+                             'shared': False,
+                             'tenant_id': 'bar'}})
 
     def test_update_security_group(self):
         with self.security_group() as sg:
@@ -1231,8 +1254,9 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
             rules = {'security_group_rules': [rule1['security_group_rule'],
                                               rule2['security_group_rule']]}
             res = self._create_security_group_rule(self.fmt, rules)
-            self.deserialize(self.fmt, res)
+            ret = self.deserialize(self.fmt, res)
             self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
+            self.assertEqual(2, len(ret['security_group_rules']))
 
     def test_create_security_group_rule_bulk_emulated(self):
         real_has_attr = hasattr
@@ -1426,6 +1450,21 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
 
                 self.deserialize(self.fmt, res)
                 self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def test_create_security_group_rule_with_specific_id(self):
+        neutron_context = context.Context('', 'test-tenant')
+        specified_id = "4cd70774-cc67-4a87-9b39-7d1db38eb087"
+        with self.security_group() as sg:
+            rule = self._build_security_group_rule(
+                sg['security_group']['id'], 'ingress', const.PROTO_NUM_TCP)
+            rule['security_group_rule'].update({'id': specified_id,
+                                                'port_range_min': None,
+                                                'port_range_max': None,
+                                                'remote_ip_prefix': None,
+                                                'remote_group_id': None})
+            result = self.plugin.create_security_group_rule(
+                neutron_context, rule)
+            self.assertEqual(specified_id, result['id'])
 
 
 class TestConvertIPPrefixToCIDR(base.BaseTestCase):

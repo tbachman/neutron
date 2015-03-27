@@ -179,10 +179,11 @@ def _subprocess_setup():
 
 
 def subprocess_popen(args, stdin=None, stdout=None, stderr=None, shell=False,
-                     env=None):
+                     env=None, preexec_fn=_subprocess_setup, close_fds=True):
+
     return subprocess.Popen(args, shell=shell, stdin=stdin, stdout=stdout,
-                            stderr=stderr, preexec_fn=_subprocess_setup,
-                            close_fds=True, env=env)
+                            stderr=stderr, preexec_fn=preexec_fn,
+                            close_fds=close_fds, env=env)
 
 
 def parse_mappings(mapping_list, unique_values=True):
@@ -384,6 +385,15 @@ def ip_to_cidr(ip, prefix=None):
         # Can't pass ip and prefix separately.  Must concatenate strings.
         net = netaddr.IPNetwork(str(net.ip) + '/' + str(prefix))
     return str(net)
+
+
+def fixed_ip_cidrs(fixed_ips):
+    """Create a list of a port's fixed IPs in cidr notation.
+
+    :param fixed_ips: A neutron port's fixed_ips dictionary
+    """
+    return [ip_to_cidr(fixed_ip['ip_address'], fixed_ip.get('prefixlen'))
+            for fixed_ip in fixed_ips]
 
 
 def is_cidr_host(cidr):

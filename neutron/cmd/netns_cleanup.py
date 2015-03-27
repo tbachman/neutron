@@ -21,19 +21,25 @@ from oslo_log import log as logging
 from oslo_utils import importutils
 
 from neutron.agent.common import config as agent_config
+from neutron.agent.common import ovs_lib
 from neutron.agent.dhcp import config as dhcp_config
 from neutron.agent.l3 import agent as l3_agent
+from neutron.agent.l3 import dvr
+from neutron.agent.l3 import dvr_fip_ns
 from neutron.agent.linux import dhcp
+from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
-from neutron.agent.linux import ovs_lib
 from neutron.api.v2 import attributes
 from neutron.common import config
 from neutron.i18n import _LE
 
 
 LOG = logging.getLogger(__name__)
-NS_MANGLING_PATTERN = ('(%s|%s)' % (dhcp.NS_PREFIX, l3_agent.NS_PREFIX) +
+NS_MANGLING_PATTERN = ('(%s|%s|%s|%s)' % (dhcp.NS_PREFIX,
+                                          l3_agent.NS_PREFIX,
+                                          dvr.SNAT_NS_PREFIX,
+                                          dvr_fip_ns.FIP_NS_PREFIX) +
                        attributes.UUID_PATTERN)
 
 
@@ -69,6 +75,11 @@ def setup_conf():
     return conf
 
 
+def _get_dhcp_process_monitor(config):
+    return external_process.ProcessMonitor(config=config,
+                                           resource_type='dhcp')
+
+
 def kill_dhcp(conf, namespace):
     """Disable DHCP for a network if DHCP is still active."""
     network_id = namespace.replace(dhcp.NS_PREFIX, '')
@@ -76,6 +87,7 @@ def kill_dhcp(conf, namespace):
     dhcp_driver = importutils.import_object(
         conf.dhcp_driver,
         conf=conf,
+        process_monitor=_get_dhcp_process_monitor(conf),
         network=dhcp.NetModel(conf.use_namespaces, {'id': network_id}),
         plugin=FakeDhcpPlugin())
 
@@ -135,6 +147,19 @@ def destroy_namespace(conf, namespace, force=False):
         LOG.exception(_LE('Error unable to destroy namespace: %s'), namespace)
 
 
+def cleanup_network_namespaces(conf):
+    # Identify namespaces that are candidates for deletion.
+    candidates = [ns for ns in
+                  ip_lib.IPWrapper.get_namespaces()
+                  if eligible_for_deletion(conf, ns, conf.force)]
+
+    if candidates:
+        time.sleep(2)
+
+        for namespace in candidates:
+            destroy_namespace(conf, namespace, conf.force)
+
+
 def main():
     """Main method for cleaning up network namespaces.
 
@@ -155,14 +180,4 @@ def main():
     conf = setup_conf()
     conf()
     config.setup_logging()
-
-    # Identify namespaces that are candidates for deletion.
-    candidates = [ns for ns in
-                  ip_lib.IPWrapper.get_namespaces()
-                  if eligible_for_deletion(conf, ns, conf.force)]
-
-    if candidates:
-        time.sleep(2)
-
-        for namespace in candidates:
-            destroy_namespace(conf, namespace, conf.force)
+    cleanup_network_namespaces(conf)

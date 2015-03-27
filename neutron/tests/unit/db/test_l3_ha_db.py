@@ -26,8 +26,8 @@ from neutron.extensions import l3
 from neutron.extensions import l3_ext_ha_mode
 from neutron import manager
 from neutron.openstack.common import uuidutils
+from neutron.scheduler import l3_agent_scheduler
 from neutron.tests.unit import testlib_api
-from neutron.tests.unit import testlib_plugin
 
 _uuid = uuidutils.generate_uuid
 
@@ -39,8 +39,7 @@ class FakeL3PluginWithAgents(common_db_mixin.CommonDbMixin,
     pass
 
 
-class L3HATestFramework(testlib_api.SqlTestCase,
-                        testlib_plugin.PluginSetupHelper):
+class L3HATestFramework(testlib_api.SqlTestCase):
     def setUp(self):
         super(L3HATestFramework, self).setUp()
 
@@ -93,12 +92,43 @@ class L3HATestFramework(testlib_api.SqlTestCase,
 
     def _bind_router(self, router_id):
         with self.admin_ctx.session.begin(subtransactions=True):
-            bindings = self.plugin.get_ha_router_port_bindings(self.admin_ctx,
-                                                               [router_id])
+            scheduler = l3_agent_scheduler.ChanceScheduler()
+            agents_db = self.plugin.get_agents_db(self.admin_ctx)
+            scheduler.bind_ha_router_to_agents(
+                self.plugin,
+                self.admin_ctx,
+                router_id,
+                agents_db)
 
-            for agent_id, binding in zip(
-                    [self.agent1['id'], self.agent2['id']], bindings):
-                binding.l3_agent_id = agent_id
+    def test_get_ha_router_port_bindings(self):
+        router = self._create_router()
+        self._bind_router(router['id'])
+        bindings = self.plugin.get_ha_router_port_bindings(
+            self.admin_ctx, [router['id']])
+        binding_dicts = [{'router_id': binding['router_id'],
+                          'l3_agent_id': binding['l3_agent_id']}
+                         for binding in bindings]
+        self.assertIn({'router_id': router['id'],
+                       'l3_agent_id': self.agent1['id']}, binding_dicts)
+        self.assertIn({'router_id': router['id'],
+                       'l3_agent_id': self.agent2['id']}, binding_dicts)
+
+    def test_get_l3_bindings_hosting_router_with_ha_states_ha_router(self):
+        router = self._create_router()
+        self._bind_router(router['id'])
+        self.plugin.update_routers_states(
+            self.admin_ctx, {router['id']: 'active'}, self.agent1['host'])
+        bindings = self.plugin.get_l3_bindings_hosting_router_with_ha_states(
+            self.admin_ctx, router['id'])
+        agent_ids = [(agent[0]['id'], agent[1]) for agent in bindings]
+        self.assertIn((self.agent1['id'], 'active'), agent_ids)
+        self.assertIn((self.agent2['id'], 'standby'), agent_ids)
+
+    def test_get_l3_bindings_hosting_router_with_ha_states_not_scheduled(self):
+        router = self._create_router(ha=False)
+        bindings = self.plugin.get_l3_bindings_hosting_router_with_ha_states(
+            self.admin_ctx, router['id'])
+        self.assertEqual([], bindings)
 
 
 class L3HATestCase(L3HATestFramework):
@@ -195,24 +225,10 @@ class L3HATestCase(L3HATestFramework):
 
         self.assertEqual(constants.DEVICE_OWNER_ROUTER_HA_INTF,
                          interface['device_owner'])
-        self.assertEqual(cfg.CONF.l3_ha_net_cidr, interface['subnet']['cidr'])
 
-    def test_update_state(self):
-        router = self._create_router()
-        self._bind_router(router['id'])
-        routers = self.plugin.get_ha_sync_data_for_host(self.admin_ctx,
-                                                        self.agent1['host'])
-        state = routers[0].get(constants.HA_ROUTER_STATE_KEY)
-        self.assertEqual('standby', state)
-
-        self.plugin.update_router_state(self.admin_ctx, router['id'], 'active',
-                                        self.agent1['host'])
-
-        routers = self.plugin.get_ha_sync_data_for_host(self.admin_ctx,
-                                                        self.agent1['host'])
-
-        state = routers[0].get(constants.HA_ROUTER_STATE_KEY)
-        self.assertEqual('active', state)
+        subnets = interface['subnets']
+        self.assertEqual(1, len(subnets))
+        self.assertEqual(cfg.CONF.l3_ha_net_cidr, subnets[0]['cidr'])
 
     def test_unique_ha_network_per_tenant(self):
         tenant1 = _uuid()
@@ -403,6 +419,43 @@ class L3HATestCase(L3HATestFramework):
 
         routers_after = self.plugin.get_routers(self.admin_ctx)
         self.assertEqual(routers_before, routers_after)
+
+    def test_update_routers_states(self):
+        router1 = self._create_router()
+        self._bind_router(router1['id'])
+        router2 = self._create_router()
+        self._bind_router(router2['id'])
+
+        routers = self.plugin.get_ha_sync_data_for_host(self.admin_ctx,
+                                                        self.agent1['host'])
+        for router in routers:
+            self.assertEqual('standby', router[constants.HA_ROUTER_STATE_KEY])
+
+        states = {router1['id']: 'active',
+                  router2['id']: 'standby'}
+        self.plugin.update_routers_states(
+            self.admin_ctx, states, self.agent1['host'])
+
+        routers = self.plugin.get_ha_sync_data_for_host(self.admin_ctx,
+                                                        self.agent1['host'])
+        for router in routers:
+            self.assertEqual(states[router['id']],
+                             router[constants.HA_ROUTER_STATE_KEY])
+
+    def test_set_router_states_handles_concurrently_deleted_router(self):
+        router1 = self._create_router()
+        self._bind_router(router1['id'])
+        router2 = self._create_router()
+        self._bind_router(router2['id'])
+        bindings = self.plugin.get_ha_router_port_bindings(
+            self.admin_ctx, [router1['id'], router2['id']])
+        self.plugin.delete_router(self.admin_ctx, router1['id'])
+        self.plugin._set_router_states(
+            self.admin_ctx, bindings, {router1['id']: 'active',
+                                       router2['id']: 'active'})
+        routers = self.plugin.get_ha_sync_data_for_host(self.admin_ctx,
+                                                        self.agent1['host'])
+        self.assertEqual('active', routers[0][constants.HA_ROUTER_STATE_KEY])
 
     def test_exclude_dvr_agents_for_ha_candidates(self):
         """Test dvr agents are not counted in the ha candidates.

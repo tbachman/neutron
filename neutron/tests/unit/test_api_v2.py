@@ -38,7 +38,6 @@ from neutron import quota
 from neutron.tests import base
 from neutron.tests import fake_notifier
 from neutron.tests.unit import testlib_api
-from neutron.tests.unit import testlib_plugin
 
 
 ROOTDIR = os.path.dirname(os.path.dirname(__file__))
@@ -87,7 +86,7 @@ class ResourceIndexTestCase(base.BaseTestCase):
         self.assertEqual(link['rel'], 'self')
 
 
-class APIv2TestBase(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
+class APIv2TestBase(base.BaseTestCase):
     def setUp(self):
         super(APIv2TestBase, self).setUp()
 
@@ -768,6 +767,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         net_id = _uuid()
         initial_input = {'network': {'name': 'net1', 'tenant_id': _uuid()}}
         full_input = {'network': {'admin_state_up': True,
+                                  'vlan_transparent': False,
                                   'shared': False}}
         full_input['network'].update(initial_input['network'])
 
@@ -802,6 +802,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         # tenant_id should be fetched from env
         initial_input = {'network': {'name': 'net1'}}
         full_input = {'network': {'admin_state_up': True,
+                      'vlan_transparent': False,
                       'shared': False, 'tenant_id': tenant_id}}
         full_input['network'].update(initial_input['network'])
 
@@ -844,6 +845,16 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         data = {'network': {'name': 'net1', 'tenant_id': _uuid(),
                             'status': "ACTIVE"}}
         self._test_create_failure_bad_request('networks', data)
+
+    def test_create_with_too_long_name(self):
+        data = {'network': {'name': "12345678" * 32,
+                            'admin_state_up': True,
+                            'tenant_id': _uuid()}}
+        res = self.api.post(_get_path('networks', fmt=self.fmt),
+                            self.serialize(data),
+                            content_type='application/' + self.fmt,
+                            expect_errors=True)
+        self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
 
     def test_create_bulk(self):
         data = {'networks': [{'name': 'net1',
@@ -1091,7 +1102,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         self.assertEqual(res.status_int, 400)
 
 
-class SubresourceTest(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
+class SubresourceTest(base.BaseTestCase):
     def setUp(self):
         super(SubresourceTest, self).setUp()
 
@@ -1366,7 +1377,7 @@ class QuotaTest(APIv2TestBase):
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
 
 
-class ExtensionTestCase(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
+class ExtensionTestCase(base.BaseTestCase):
     def setUp(self):
         super(ExtensionTestCase, self).setUp()
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
@@ -1411,7 +1422,8 @@ class ExtensionTestCase(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
         net_id = _uuid()
         initial_input = {'network': {'name': 'net1', 'tenant_id': _uuid(),
                                      'v2attrs:something_else': "abc"}}
-        data = {'network': {'admin_state_up': True, 'shared': False}}
+        data = {'network': {'admin_state_up': True, 'shared': False,
+                            'vlan_transparent': False}}
         data['network'].update(initial_input['network'])
 
         return_value = {'subnets': [], 'status': "ACTIVE",
