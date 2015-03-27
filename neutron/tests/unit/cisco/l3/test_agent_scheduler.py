@@ -71,6 +71,7 @@ class L3RouterApplianceAgentSchedulerTestCase(
         self.l3_plugin = (L3_PLUGIN_KLASS if l3_plugin is None
                           else l3_plugin)
 
+        self._define_keystone_authtoken()
         cfg.CONF.set_override('api_extensions_path',
                               l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',

@@ -416,19 +416,9 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         """
         router = self._get_router(context, router_id)
         device_owner = self._get_device_owner(context, router)
-
-        fail = False
-        for rp in router.attached_ports.all():
-            if rp.port_type == device_owner:
-                print "======>> Port %s, of type %s in use by router %s" % (
-                    rp.port.id, rp.port_type, router_id)
-                fail = True
-        if fail:
+        if any(rp.port_type == device_owner
+               for rp in router.attached_ports.all()):
             raise l3.RouterInUse(router_id=router_id)
-
-#        if any(rp.port_type == device_owner
- #              for rp in router.attached_ports.all()):
- #           raise l3.RouterInUse(router_id=router_id)
         return router
 
     def delete_router(self, context, id):
@@ -927,10 +917,6 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         # floating IP record once the port is deleted. We can't start
         # a transaction first to remove it ourselves because the delete_port
         # method will yield in its post-commit activities.
-
-        print "======>> To delete floatingip port %s on router %s" % (
-            floatingip['floating_port_id'], router_id)
-
         self._core_plugin.delete_port(context.elevated(),
                                       floatingip['floating_port_id'],
                                       l3_port_check=False)
@@ -1089,8 +1075,6 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             Router.id.in_(router_ids),
             RouterPort.port_type.in_(device_owners)
         )
-
-        rps = qry.all()
 
         # TODO(markmcclain): This is suboptimal but was left to reduce
         # changeset size since it is late in cycle

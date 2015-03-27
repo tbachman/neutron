@@ -43,6 +43,9 @@ def upgrade():
         sa.Column('slot_need', sa.Integer(), autoincrement=False,
                   nullable=True),
         sa.Column('scheduler', sa.String(length=255), nullable=False),
+        #TODO(bobmel): Activate cfg agent service helper driver
+#        sa.Column('cfg_agent_service_helper', sa.String(length=255),
+#                  nullable=False),
         sa.Column('cfg_agent_driver', sa.String(length=255), nullable=False),
         sa.ForeignKeyConstraint(['template_id'],
                                 ['cisco_hosting_device_templates.id'],

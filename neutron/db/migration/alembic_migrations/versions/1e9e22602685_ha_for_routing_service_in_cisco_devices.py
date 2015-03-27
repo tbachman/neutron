@@ -31,6 +31,9 @@ import sqlalchemy as sa
 from neutron.plugins.cisco.extensions import ha
 
 
+ha_states = sa.Enum('ACTIVE', 'STANDBY', name='ha_states')
+
+
 def upgrade():
     op.create_table('cisco_router_ha_settings',
         sa.Column('router_id', sa.String(36), nullable=True),
@@ -41,6 +44,7 @@ def upgrade():
         sa.Column('probe_connectivity', sa.Boolean, nullable=True),
         sa.Column('probe_target', sa.String(64), nullable=True),
         sa.Column('probe_interval', sa.Integer, nullable=True),
+        sa.Column('state', ha_states, server_default='ACTIVE'),
         sa.ForeignKeyConstraint(['router_id'], ['routers.id'],
                                 ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('router_id')
@@ -67,6 +71,7 @@ def upgrade():
     op.create_table('cisco_router_redundancy_bindings',
         sa.Column('redundancy_router_id', sa.String(36)),
         sa.Column('priority', sa.Integer),
+        sa.Column('state', ha_states, server_default='STANDBY'),
         sa.Column('user_router_id', sa.String(36)),
         sa.ForeignKeyConstraint(['redundancy_router_id'], ['routers.id'],
                                 ondelete='CASCADE'),

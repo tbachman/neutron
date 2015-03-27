@@ -24,6 +24,7 @@ from sqlalchemy.orm import joinedload
 
 from neutron.api.v2 import attributes as attrs
 from neutron.common import constants as l3_constants
+from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron.db import l3_db
 from neutron.db import model_base
@@ -105,6 +106,9 @@ class RouterHASetting(model_base.BASEV2):
     probe_target = sa.Column(sa.String(64))
     # 'ping_interval' is the time between probes
     probe_interval = sa.Column(sa.Integer)
+    # 'state' is the state of the user visible router: HA_ACTIVE or HA_STANDBY
+    state = sa.Column(sa.Enum(ha.HA_ACTIVE, ha.HA_STANDBY, name='ha_states'),
+                      default=ha.HA_ACTIVE, server_default=ha.HA_ACTIVE)
 
 
 class RouterHAGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -156,6 +160,9 @@ class RouterRedundancyBinding(model_base.BASEV2):
                                      primary_key=True)
     # 'priority' is the priority used in VRRP, HSRP, and GLBP
     priority = sa.Column(sa.Integer)
+    # 'state' is the state of the redundancy router: HA_ACTIVE or HA_STANDBY
+    state = sa.Column(sa.Enum(ha.HA_ACTIVE, ha.HA_STANDBY, name='ha_states'),
+                      default=ha.HA_STANDBY, server_default=ha.HA_STANDBY)
     # 'user_router_id' is id of router visible to the user
     user_router_id = sa.Column(sa.String(36),
                                sa.ForeignKey('routers.id'))
@@ -164,7 +171,6 @@ class RouterRedundancyBinding(model_base.BASEV2):
         primaryjoin='Router.id==RouterRedundancyBinding.user_router_id',
         backref=orm.backref('redundancy_bindings',
                             order_by=priority, cascade='all'))
-
     __mapper_args__ = {
         'confirm_deleted_rows': False
     }
@@ -278,7 +284,6 @@ class HA_db_mixin(object):
                 res[ha.DETAILS] = requested_ha_details
         elif requested_ha_enabled is False:
             res[ha.ENABLED] = False
-        #TODO(bob-melander): Do I need to ensure router has no floatingips?
         return res
 
     def _update_redundancy_routers(self, context, updated_router,
@@ -488,13 +493,15 @@ class HA_db_mixin(object):
             if router_res[ha.ENABLED]:
                 ha_details = {ha.TYPE: ha_s.ha_type,
                               ha.PRIORITY: ha_s.priority,
+                              ha.STATE: ha_s.state,
                               ha.REDUNDANCY_LEVEL: ha_s.redundancy_level,
                               ha.PROBE_CONNECTIVITY: ha_s.probe_connectivity}
                 if ha_details[ha.PROBE_CONNECTIVITY]:
                     ha_details.update({ha.PROBE_TARGET: ha_s.probe_target,
                                        ha.PROBE_INTERVAL: ha_s.probe_interval})
                 ha_details[ha.REDUNDANCY_ROUTERS] = (
-                    [{'id': b.redundancy_router_id, 'priority': b.priority}
+                    [{'id': b.redundancy_router_id, ha.PRIORITY: b.priority,
+                      ha.STATE: b.state}
                      for b in router_db.redundancy_bindings])
                 router_res[ha.DETAILS] = ha_details
             else:
@@ -634,3 +641,48 @@ class HA_db_mixin(object):
 
     def _get_default_other_config(self, router):
         return ''
+
+    def _get_router_for_floatingip(self, context, internal_port,
+                                   internal_subnet_id,
+                                   external_network_id):
+        """We need to over-load this function so that we only return the
+        user visible router and never its redundancy routers (as they never
+        have floatingips associated with them).
+        """
+        subnet_db = self._core_plugin._get_subnet(context,
+                                                  internal_subnet_id)
+        if not subnet_db['gateway_ip']:
+            msg = (_('Cannot add floating IP to port on subnet %s '
+                     'which has no gateway_ip') % internal_subnet_id)
+            raise n_exc.BadRequest(resource='floatingip', msg=msg)
+
+        router_intf_ports = self._get_interface_ports_for_network(
+            context, internal_port['network_id'])
+
+        # This joins on port_id so is not a cross-join
+        routerport_qry = router_intf_ports.join(models_v2.IPAllocation)
+        routerport_qry = routerport_qry.filter(
+            models_v2.IPAllocation.subnet_id == internal_subnet_id
+        )
+
+        # Ensure that redundancy routers (in a ha group) are not returned,
+        # since only the user visible router should have floatingips.
+        # This can be done by checking that the id of routers does not
+        # appear in the 'redundancy_router_id' column in the
+        # 'cisco_router_redundancy_bindings' table.
+        routerport_qry = routerport_qry.outerjoin(
+            RouterRedundancyBinding,
+            RouterRedundancyBinding.redundancy_router_id ==
+            l3_db.RouterPort.router_id)
+        routerport_qry = routerport_qry.filter(
+            RouterRedundancyBinding.redundancy_router_id == None)
+
+        router_port = routerport_qry.first()
+
+        if router_port and router_port.router.gw_port:
+            return router_port.router.id
+
+        raise l3.ExternalGatewayForFloatingIPNotFound(
+            subnet_id=internal_subnet_id,
+            external_network_id=external_network_id,
+            port_id=internal_port['id'])

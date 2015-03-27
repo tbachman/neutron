@@ -60,8 +60,8 @@ class TestHAL3RouterApplianceExtensionManager(
 # A set routes and HA capable L3 routing service plugin class
 # supporting appliances
 class TestApplianceHAL3RouterServicePlugin(
-        test_l3_router_appliance_plugin.TestApplianceL3RouterServicePlugin,
-        ha_db.HA_db_mixin):
+        ha_db.HA_db_mixin,
+        test_l3_router_appliance_plugin.TestApplianceL3RouterServicePlugin):
 
     supported_extension_aliases = ["router", "extraroute",
                                    routertype.ROUTERTYPE_ALIAS,
@@ -88,8 +88,8 @@ class HAL3RouterTestsMixin(object):
 
     def _get_ha_defaults(self, ha_enabled=None, ha_type=None,
                          redundancy_level=None, priority=10,
-                         probing_enabled=None, probe_target=None,
-                         probe_interval=None):
+                         state=ha.HA_ACTIVE, probing_enabled=None,
+                         probe_target=None, probe_interval=None):
 
         if ha_enabled is None:
             ha_enabled = cfg.CONF.ha.ha_enabled_by_default
@@ -98,6 +98,7 @@ class HAL3RouterTestsMixin(object):
         ha_details = {
             ha.TYPE: ha_type or cfg.CONF.ha.default_ha_mechanism,
             ha.PRIORITY: priority,
+            ha.STATE: state,
             ha.REDUNDANCY_LEVEL: (redundancy_level or
                                   cfg.CONF.ha.default_ha_redundancy_level),
             ha.PROBE_CONNECTIVITY: (
@@ -618,7 +619,7 @@ class L3CfgAgentHARouterApplianceTestCase(
     test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
-                     ext_mgr=None):
+              ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
@@ -672,10 +673,6 @@ class L3CfgAgentHARouterApplianceTestCase(
                         self.fmt,
                         s_ext['subnet']['network_id'],
                         port_id=private_p2['port']['id'])
-                    fips = self._list('floatingips',
-                                      query_params='router_id=%s' % r[
-                                          'router']['id'])
-                    self.assertEqual(len(fips['floatingips']), 2)
                     fips_dict = {fip1['floatingip']['id']: fip1['floatingip'],
                                  fip2['floatingip']['id']: fip2['floatingip']}
                     e_context = context.get_admin_context()
@@ -721,11 +718,7 @@ class L3CfgAgentHARouterApplianceTestCase(
                 rr_ids = [rr['id'] for rr in r[ha.DETAILS][
                     ha.REDUNDANCY_ROUTERS]]
                 r_fips = r.get(l3_constants.FLOATINGIP_KEY, [])
-#                self.assertEqual(len(r_fips), len(fips_dict))
-                print "len(r_fips)=%d %s len(fips_dict)=%d" % (
-                    len(r_fips), "NOT EQUAL TO" if len(r_fips) != len(
-                        fips_dict) else "==", len(fips_dict)
-                )
+                self.assertEqual(len(r_fips), len(fips_dict))
                 for r_fip in r_fips:
                     self.assertEqual(r_fip, fips_dict[r_fip['id']])
                 if ha_groups_dict:

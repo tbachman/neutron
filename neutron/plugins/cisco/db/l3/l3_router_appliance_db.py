@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import eventlet
 import copy
 
 from oslo.config import cfg
@@ -107,12 +106,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     def create_router(self, context, router):
         r = router['router']
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
-            #TODO(bobmel): Ensure that Cisco HA is not applied on
-            #TODO(bobmel): Namespace-based routers
+        router_type_id = self._ensure_create_routertype_compliant(context, r)
+        is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                 router_type_id != self.get_namespace_router_type_id(context))
+        if is_ha:
             # Ensure create spec is compliant with any HA
             ha_spec = self._ensure_create_ha_compliant(r)
-        router_type_id = self._ensure_create_routertype_compliant(context, r)
         # TODO(bobmel): Hard coding to shared host for now
         share_host = True
         #TODO(bobmel): Fix autoschedule setting
@@ -129,7 +128,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
         router_created[routertype.TYPE_ATTR] = router_type_id
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
+        if is_ha:
             # process any HA
             self._create_redundancy_routers(context, router_created, ha_spec,
                                             r_hd_b_db.router)
@@ -139,22 +138,23 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     def update_router(self, context, router_id, router):
         r = router['router']
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
-            #TODO(bobmel): Ensure that Cisco HA is not applied on
-            #TODO(bobmel): Namespace-based routers
+        o_r_db = self._get_router(context, router_id)
+        r_hd_binding = o_r_db.hosting_info
+        is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                 r_hd_binding.router_type_id !=
+                 self.get_namespace_router_type_id(context))
+        if is_ha:
             # Ensure update is compliant with any HA
             req_ha_settings = self._ensure_update_ha_compliant(
                 context, router_id, r)
         # Check if external gateway has changed so we may have to
         # update trunking
-        o_r_db = self._get_router(context, router_id)
         old_ext_gw = (o_r_db.gw_port or {}).get('network_id')
         new_ext_gw = (r.get('external_gateway_info', {}) or {}).get(
             'network_id')
         e_context = context.elevated()
         if old_ext_gw is not None and old_ext_gw != new_ext_gw:
             o_r = self._make_router_dict(o_r_db, process_extensions=False)
-            r_hd_binding = self._get_router_binding_info(e_context, router_id)
             # no need to schedule now since we're only doing this to tear-down
             # connectivity and there won't be any if not already scheduled
             self._add_type_and_hosting_device_info(
@@ -168,7 +168,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_updated = (
             super(L3RouterApplianceDBMixin, self).update_router(
                 context, router_id, router))
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
+        if is_ha:
             # process any HA
             self._update_redundancy_routers(context, router_updated, router,
                                             req_ha_settings, o_r_db)
@@ -199,7 +199,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_db = self._get_router(context, router_id)
         router = self._make_router_dict(router_db)
         e_context = context.elevated()
-        r_hd_binding = self._get_router_binding_info(e_context, router_id)
+        r_hd_binding = router_db.hosting_info
         # disable scheduling now since router is to be deleted and we're only
         # doing this to tear-down connectivity in case it is already scheduled
         self._add_type_and_hosting_device_info(
@@ -226,9 +226,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
             self.unschedule_router_from_hosting_device(context, r_hd_binding)
         try:
-            if utils.is_extension_supported(self, ha.HA_ALIAS):
-                #TODO(bobmel): Ensure that Cisco HA is not applied on
-                #TODO(bobmel): Namespace-based routers
+            is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                     r_hd_binding.router_type_id !=
+                     self.get_namespace_router_type_id(context))
+            if is_ha:
                 # process any HA
                 self._delete_redundancy_routers(context, router_db)
             super(L3RouterApplianceDBMixin, self).delete_router(context,
@@ -257,7 +258,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def add_router_interface(self, context, router_id, interface_info):
         info = (super(L3RouterApplianceDBMixin, self).
                 add_router_interface(context, router_id, interface_info))
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
+        r_hd_binding = self._get_router_binding_info(context.elevated(),
+                                                     router_id)
+        is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                 r_hd_binding.router_type_id !=
+                 self.get_namespace_router_type_id(context))
+        if is_ha:
             # process any HA
             self._add_redundancy_router_interfaces(
                 context, router_id,
@@ -289,7 +295,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if p_drv is not None:
             p_drv.teardown_logical_port_connectivity(
                 e_context, port_db, r_hd_binding.hosting_device_id)
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
+        is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                 r_hd_binding.router_type_id !=
+                 self.get_namespace_router_type_id(context))
+        if is_ha:
             # process any HA
             self._remove_redundancy_router_interfaces(context, router_id,
                                                       port_db)
@@ -551,7 +560,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # Ensure we get latest state from DB in case it was updated while
         # thread was waiting for lock to enter this function
         context.session.expire(router_binding)
-        if (router_binding.hosting_device_id is not None or
+        # Namespace-based routers are scheduled by the l3 scheduler so we
+        # don't backlog those
+        if (router_binding.router_type_id == self.get_namespace_router_type_id(
+                context) or
+            router_binding.hosting_device_id is not None or
                 router_binding.router_id in self._backlogged_routers):
             return
         LOG.info(_LI('Backlogging router %s for renewed scheduling attempt '
@@ -772,6 +785,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router['router_type'] = {
             'id': binding_info.router_type.id,
             'name': binding_info.router_type.name,
+            #TODO(bobmel): Include cfg agent service helper driver
+#            'cfg_agent_service_helper': binding_info.cfg_agent_service_helper,
             'cfg_agent_driver': binding_info.router_type.cfg_agent_driver}
         router['share_host'] = binding_info['share_hosting_device']
         if binding_info.router_type_id == self.get_namespace_router_type_id(
