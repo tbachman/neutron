@@ -213,6 +213,7 @@ class DeviceManagerTestCaseMixin(object):
         # template for network nodes.
         nnt = self._create_hosting_device_template(self.fmt, NN_TEMPLATE_NAME,
                                                    True, NN_CATEGORY)
+        nw_node_template = self.deserialize(self.fmt, nnt)
         vmt = self._create_hosting_device_template(
             self.fmt, VM_TEMPLATE_NAME, True, VM_CATEGORY,
             booting_time=VM_BOOTING_TIME,
@@ -220,9 +221,10 @@ class DeviceManagerTestCaseMixin(object):
             desired_slots_free=VM_DESIRED_SLOTS_FREE,
             device_driver=TEST_DEVICE_DRIVER,
             plugging_driver=TEST_PLUGGING_DRIVER)
-        nw_node_template = self.deserialize(self.fmt, nnt)
         vm_template = self.deserialize(self.fmt, vmt)
-        hw_template = None
+        hwt = self._create_hosting_device_template(
+            self.fmt, HW_TEMPLATE_NAME, True, HW_CATEGORY)
+        hw_template = self.deserialize(self.fmt, hwt)
         self._templates = {'network_node': {'template': nw_node_template,
                                             'router_type': NS_ROUTERTYPE_NAME},
                            'vm': {'template': vm_template,

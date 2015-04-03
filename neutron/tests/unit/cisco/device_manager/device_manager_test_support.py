@@ -20,6 +20,7 @@ from oslo.utils import excutils
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
+from neutron.common import test_lib
 from neutron import context as n_context
 from neutron.i18n import _LE
 from neutron.db import agents_db
@@ -30,6 +31,7 @@ from neutron.plugins.cisco.db.device_manager import hosting_device_manager_db
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
 from neutron.plugins.common import constants
+from neutron.tests import base
 from neutron.tests.unit import test_l3_plugin
 
 LOG = logging.getLogger(__name__)
@@ -195,10 +197,20 @@ class DeviceManagerTestSupportMixin:
 
     def _mock_dispatch_pool_maintenance(self):
         # Mock creation/deletion of service VMs
-        self.dispatch_pool_maintenance_job_fcn_p = mock.patch(
-            'neutron.plugins.cisco.device_manager.hosting_device_manager_db'
+        dispatch_pool_maintenance_job_fcn_p = mock.patch(
+            'neutron.plugins.cisco.db.device_manager.hosting_device_manager_db'
             '.HostingDeviceManagerMixin._dispatch_pool_maintenance_job')
-        self.dispatch_pool_maintenance_job_fcn_p .start()
+        dispatch_pool_maintenance_job_fcn_p .start()
+
+    def _mock_eventlet_greenpool_spawn_n(self):
+        # Mock GreenPool's spawn_n to execute the specified function directly
+        self._greenpool_mock = mock.MagicMock()
+        self._greenpool_mock.return_value.spawn_n = (
+            lambda f, *args,  **kwargs: f(*args, **kwargs))
+        _eventlet_greenpool_fcn_p = mock.patch(
+            'neutron.plugins.cisco.db.device_manager.hosting_device_manager_db'
+            '.eventlet.GreenPool', self._greenpool_mock)
+        _eventlet_greenpool_fcn_p.start()
 
     def _mock_io_file_ops(self):
         # Mock library functions for config drive file operations
@@ -225,6 +237,16 @@ class DeviceManagerTestSupportMixin:
     def _get_test_context(self, user_id=None, tenant_id=None, is_admin=False):
         return n_context.Context(user_id, tenant_id, is_admin,
                                  load_admin_roles=True)
+
+    def _add_device_manager_plugin_ini_file(self):
+        # includes config files for device manager service plugin
+        cfg_file = (
+            base.TEST_ROOT_DIR +
+            '/unit/cisco/etc/cisco_device_manager_plugin.ini')
+        if 'config_files' in test_lib.test_config:
+            test_lib.test_config['config_files'].append(cfg_file)
+        else:
+            test_lib.test_config['config_files'] = [cfg_file]
 
 
 class TestDeviceManagerExtensionManager(object):

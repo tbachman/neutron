@@ -707,7 +707,7 @@ class L3CfgAgentHARouterApplianceTestCase(
             self.assertEqual(len(router_ids), len(routers))
             for r in routers:
                 self.assertEqual(external_subnet['subnet']['id'],
-                                 r['gw_port']['subnet']['id'])
+                                 r['gw_port']['subnets'][0]['id'])
                 # redundancy routers should here have same ha settings
                 # as the user visible routers since the l3 cfg agent
                 # needs that information to configure the redundancy

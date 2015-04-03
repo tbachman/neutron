@@ -19,16 +19,17 @@ from oslo_log import log as logging
 
 from neutron.api.v2 import attributes
 from neutron.common import constants
+from neutron.common import test_lib
 from neutron.db import common_db_mixin
 from neutron.extensions import l3
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
+from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
-#from neutron.plugins.cisco.l3.rpc import l3_rpc_agent_api_noop
-from neutron.tests.unit import test_l3_plugin
+from neutron.tests import base
 
 LOG = logging.getLogger(__name__)
 
@@ -67,13 +68,28 @@ class L3RouterTestSupportMixin:
             cfg.StrOpt('project_name', default='service')]
         cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
+    def _add_router_plugin_ini_file(self):
+        # includes config file for router service plugin
+        cfg_file = (
+            base.TEST_ROOT_DIR +
+            '/unit/cisco/etc/cisco_router_plugin.ini')
+        if 'config_files' in test_lib.test_config:
+            test_lib.test_config['config_files'].append(cfg_file)
+        else:
+            test_lib.test_config['config_files'] = [cfg_file]
+
 
 class TestL3RouterBaseExtensionManager(object):
 
     def get_resources(self):
+        # add hosting device attribute to router resource
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            routerhostingdevice.EXTENDED_ATTRIBUTES_2_0['routers'])
+        # add routertype attribute to router resource
         l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
             routertype.EXTENDED_ATTRIBUTES_2_0['routers'])
         res = l3.L3.get_resources()
+        # add routertype resource
         for item in routertype.Routertype.get_resources():
             res.append(item)
         # Add the resources to the global attribute map
@@ -93,15 +109,17 @@ class TestL3RouterBaseExtensionManager(object):
         return []
 
 
-# A routertype capable L3 routing service plugin class
+# A L3 routing service plugin class supporting the routertype and
+# routerhost:hostingdevice extensions
 class TestL3RouterServicePlugin(
     common_db_mixin.CommonDbMixin,
     routertype_db.RoutertypeDbMixin,
         l3_router_appliance_db.L3RouterApplianceDBMixin):
 
-    supported_extension_aliases = ["router", routertype.ROUTERTYPE_ALIAS]
-#    # Disable notifications from l3 base class to l3 agents
-#    l3_rpc_notifier = l3_rpc_agent_api_noop.L3AgentNotifyNoOp
+    supported_extension_aliases = [
+        "router",
+        routerhostingdevice.ROUTERHOSTINGDEVICE_ALIAS,
+        routertype.ROUTERTYPE_ALIAS]
 
     def get_plugin_type(self):
         return service_constants.L3_ROUTER_NAT

@@ -18,10 +18,10 @@ import pprint
 import sys
 import time
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo import messaging
-from oslo.utils import importutils
-from oslo.utils import timeutils
+from oslo_utils import importutils
+from oslo_utils import timeutils
 from oslo_concurrency import lockutils
 from oslo_log import log as logging
 

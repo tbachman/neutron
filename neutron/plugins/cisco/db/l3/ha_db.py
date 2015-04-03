@@ -15,7 +15,7 @@
 import copy
 import random
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -545,12 +545,12 @@ class HA_db_mixin(object):
             if router['id'] == user_router_id:
                 router_port = self._core_plugin.get_port(e_context,
                                                          hag.extra_port_id)
-                self._populate_subnet_for_ports(e_context, [router_port])
+                self._populate_subnets_for_ports(e_context, [router_port])
                 modified_interfaces.append(router_port)
                 ha_port = itfc
             else:
                 ha_port = self._core_plugin.get_port(context, hag.ha_port_id)
-                self._populate_subnet_for_ports(context, [ha_port])
+                self._populate_subnets_for_ports(context, [ha_port])
                 router_port = itfc
             ha_g_info = {
                 ha.TYPE: hag.ha_type,
@@ -677,10 +677,20 @@ class HA_db_mixin(object):
         routerport_qry = routerport_qry.filter(
             RouterRedundancyBinding.redundancy_router_id == None)
 
-        router_port = routerport_qry.first()
+#        router_port = routerport_qry.first()
 
-        if router_port and router_port.router.gw_port:
-            return router_port.router.id
+#        if router_port and router_port.router.gw_port:
+#            return router_port.router.id
+
+        for router_port in routerport_qry:
+            router_id = router_port.router.id
+            router_gw_qry = context.session.query(models_v2.Port)
+            has_gw_port = router_gw_qry.filter_by(
+                network_id=external_network_id,
+                device_id=router_id,
+                device_owner=DEVICE_OWNER_ROUTER_GW).count()
+            if has_gw_port:
+                return router_id
 
         raise l3.ExternalGatewayForFloatingIPNotFound(
             subnet_id=internal_subnet_id,

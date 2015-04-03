@@ -43,9 +43,9 @@ def upgrade():
         sa.Column('slot_need', sa.Integer(), autoincrement=False,
                   nullable=True),
         sa.Column('scheduler', sa.String(length=255), nullable=False),
-        #TODO(bobmel): Activate cfg agent service helper driver
-#        sa.Column('cfg_agent_service_helper', sa.String(length=255),
-#                  nullable=False),
+        sa.Column('driver', sa.String(length=255), nullable=False),
+        sa.Column('cfg_agent_service_helper', sa.String(length=255),
+                  nullable=False),
         sa.Column('cfg_agent_driver', sa.String(length=255), nullable=False),
         sa.ForeignKeyConstraint(['template_id'],
                                 ['cisco_hosting_device_templates.id'],
@@ -53,6 +53,8 @@ def upgrade():
         sa.PrimaryKeyConstraint('id')
     )
     if migration.schema_has_table('cisco_router_mappings'):
+        op.add_column('cisco_router_mappings',
+                      sa.Column('role', sa.String(255)))
         op.add_column('cisco_router_mappings',
                       sa.Column('router_type_id', sa.String(length=36),
                                 nullable=False))
@@ -107,5 +109,5 @@ def downgrade():
     op.create_primary_key(name='cisco_router_mappings_ibfk_2',
                           table_name='cisco_router_mappings',
                           cols=['router_id'])
+    op.drop_column('cisco_router_mappings', 'role')
     op.drop_table('cisco_router_types')
-

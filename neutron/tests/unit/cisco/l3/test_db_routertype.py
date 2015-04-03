@@ -17,6 +17,7 @@ import contextlib
 from oslo.config import cfg
 import webob.exc
 
+from neutron.common import constants as n_const
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
@@ -35,9 +36,12 @@ NS_ROUTERTYPE_NAME = c_constants.NAMESPACE_ROUTER_TYPE
 VM_ROUTERTYPE_NAME = c_constants.CSR1KV_ROUTER_TYPE
 HW_ROUTERTYPE_NAME = "HW_router"
 
-NOOP_SCHEDULER = ('neutron.plugins.cisco.l3.scheduler.'
+NOOP_SCHEDULER = ('neutron.plugins.cisco.l3.schedulers.'
                   'noop_l3_router_hosting_device_scheduler.'
                   'NoopL3RouterHostingDeviceScheduler')
+NOOP_RT_DRIVER = ('neutron.plugins.cisco.l3.drivers.noop_routertype_driver.'
+                  'NoopL3RouterDriver')
+NOOP_AGT_SVC_HELPER = NOOP_SCHEDULER
 NOOP_AGT_DRV = NOOP_SCHEDULER
 
 TEST_SLOT_NEED = 2
@@ -46,18 +50,23 @@ RT_SETTINGS = {
     NS_ROUTERTYPE_NAME: {
         'slot_need': 0,
         'scheduler': NOOP_SCHEDULER,
+        'router_type_driver': NOOP_RT_DRIVER,
         'cfg_agent_driver': NOOP_AGT_DRV},
     VM_ROUTERTYPE_NAME: {
         'slot_need': TEST_SLOT_NEED,
-        'scheduler': 'neutron.plugins.cisco.l3.scheduler.'
+        'scheduler': 'neutron.plugins.cisco.l3.schedulers.'
                      'l3_router_hosting_device_scheduler.'
                      'L3RouterHostingDeviceScheduler',
+        'driver': NOOP_RT_DRIVER,
+        'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
         'cfg_agent_driver': NOOP_AGT_DRV},
     HW_ROUTERTYPE_NAME: {
         'slot_need': 200,
-        'scheduler': 'neutron.plugins.cisco.l3.scheduler.'
+        'scheduler': 'neutron.plugins.cisco.l3.schedulers.'
                      'l3_router_hosting_device_scheduler.'
                      'L3RouterHostingDeviceScheduler',
+        'driver': NOOP_RT_DRIVER,
+        'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
         'cfg_agent_driver': NOOP_AGT_DRV}}
 
 
@@ -99,6 +108,8 @@ class RoutertypeTestCaseMixin(object):
             'template_id': template_id,
             'slot_need': slot_need,
             'scheduler': kwargs.get('scheduler', NOOP_SCHEDULER),
+            'driver': NOOP_RT_DRIVER,
+            'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
             'cfg_agent_driver': kwargs.get('cfg_agent_driver', NOOP_AGT_DRV)}
         return data
 
@@ -130,7 +141,8 @@ class RoutertypeTestCaseMixin(object):
                 rt = self._create_routertype(
                     self.fmt, template['hosting_device_template']['id'],
                     routertype_name,
-                    RT_SETTINGS[routertype_name]['slot_need'])
+                    RT_SETTINGS[routertype_name]['slot_need'],
+                    scheduler=RT_SETTINGS[routertype_name]['scheduler'])
                 self._routertypes[routertype_name] = self.deserialize(self.fmt,
                                                                       rt)
         return self._routertypes
@@ -138,6 +150,27 @@ class RoutertypeTestCaseMixin(object):
     def _test_remove_routertypes(self, delete_routers=True):
         if delete_routers:
             for r in self._list('routers')['routers']:
+                # Remove any floatingips using the router
+                for fip in self._list(
+                        'floatingips',
+                        query_params='router_id=%s' % r['id'])['floatingips']:
+                    self._delete('floatingips', fip['id'])
+                # Remove any router interfaces
+                for p in self._list(
+                        'ports',
+                        query_params='device_id=%s&device_owner=%s' % (
+                            r['id'],
+                            n_const.DEVICE_OWNER_ROUTER_INTF))['ports']:
+                    # get_ports can be mocked in some tests so we need to
+                    # ensure we get a port that is indeed a router port.
+                    if (p.get('device_owner',
+                              n_const.DEVICE_OWNER_ROUTER_INTF) and
+                        p.get('fixed_ips') and
+                            'subnet_id' in p['fixed_ips'][0]):
+                        self._router_interface_action(
+                            'remove', r['id'], p['fixed_ips'][0]['subnet_id'],
+                            None)
+                # Remove the router
                 self._delete('routers', r['id'])
         try:
             for name, rt in self._routertypes.items():

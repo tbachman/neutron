@@ -13,7 +13,7 @@
 #    under the License.
 
 from oslo import messaging
-from oslo.serialization import jsonutils
+from oslo_serialization import jsonutils
 from oslo_log import log as logging
 
 from neutron.common import constants

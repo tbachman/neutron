@@ -14,8 +14,8 @@
 
 import datetime
 
-from oslo.config import cfg
-from oslo.utils import timeutils
+from oslo_config import cfg
+from oslo_utils import timeutils
 from oslo_log import log as logging
 
 from neutron.agent.linux import utils as linux_utils

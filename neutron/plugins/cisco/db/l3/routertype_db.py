@@ -13,8 +13,8 @@
 #    under the License.
 
 
-from oslo.db import exception as db_exc
-from oslo.utils import excutils
+from oslo_db import exception as db_exc
+from oslo_utils import excutils
 from oslo_log import log as logging
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
@@ -48,6 +48,8 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                 shared=rt['shared'],
                 slot_need=rt['slot_need'],
                 scheduler=rt['scheduler'],
+                driver=rt['driver'],
+                cfg_agent_service_helper=rt['cfg_agent_service_helper'],
                 cfg_agent_driver=rt['cfg_agent_driver'])
             context.session.add(routertype_db)
         return self._make_routertype_dict(routertype_db)
@@ -76,8 +78,8 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
 
     def get_routertype(self, context, id, fields=None):
         LOG.debug("get_routertype() called")
-        rtd = self._get_routertype(context, id)
-        return self._make_routertype_dict(rtd, fields)
+        rt_db = self._get_routertype(context, id)
+        return self._make_routertype_dict(rt_db, fields)
 
     def get_routertypes(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
@@ -132,6 +134,9 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                'shared': routertype['shared'],
                'slot_need': routertype['slot_need'],
                'scheduler': routertype['scheduler'],
+               'driver': routertype['driver'],
+               'cfg_agent_service_helper': routertype[
+                   'cfg_agent_service_helper'],
                'cfg_agent_driver': routertype['cfg_agent_driver']}
         return self._fields(res, fields)
 

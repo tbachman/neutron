@@ -42,16 +42,15 @@ class RouterType(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     template = orm.relationship(hd_models.HostingDeviceTemplate)
     # 'shared' is True if routertype is available to all tenants
     shared = sa.Column(sa.Boolean, default=True, nullable=False)
+    #TODO(bobmel): add HA attribute: One of None, 'GPLB', 'VRRP', or 'HSRP'
     # The number of slots this router type consume in hosting device
     slot_need = sa.Column(sa.Integer, autoincrement=False)
     # module to be used as scheduler for router of this type
     scheduler = sa.Column(sa.String(255), nullable=False)
-    #TODO(bobmel): Activate router type driver
     # module to be used by router plugin as router type driver
-    # router_type_driver = sa.Column(sa.String(255), nullable=False)
-    #TODO(bobmel): Activate cfg agent service helper driver
+    driver = sa.Column(sa.String(255), nullable=False)
     # module to be used by configuration agent as service helper driver
-    #cfg_agent_service_helper = sa.Column(sa.String(255), nullable=False)
+    cfg_agent_service_helper = sa.Column(sa.String(255), nullable=False)
     # module to be used by configuration agent for in-device configurations
     cfg_agent_driver = sa.Column(sa.String(255), nullable=False)
 
@@ -66,6 +65,8 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
     router = orm.relationship(
         l3_db.Router,
         backref=orm.backref('hosting_info', cascade='all', uselist=False))
+    # 'router_role' specifies the type of role the router serves in
+    role = sa.String(255)
     # 'router_type_id' is id of router type for this router
     router_type_id = sa.Column(
         sa.String(36),

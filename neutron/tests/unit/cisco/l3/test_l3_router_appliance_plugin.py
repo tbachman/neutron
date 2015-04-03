@@ -34,7 +34,6 @@ from neutron.tests.unit.cisco.l3 import test_db_routertype
 from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
 from neutron.tests.unit import test_l3_plugin
-from neutron.tests.unit import testlib_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -110,7 +109,6 @@ class TestApplianceL3RouterServicePlugin(
 
 class L3RouterApplianceTestCaseBase(
     test_db_plugin.NeutronDbPluginV2TestCase,
-    testlib_plugin.NotificationSetupHelper,
     test_db_routertype.RoutertypeTestCaseMixin,
     test_db_device_manager.DeviceManagerTestCaseMixin,
     l3_router_test_support.L3RouterTestSupportMixin,
@@ -163,10 +161,10 @@ class L3RouterApplianceTestCaseBase(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-        templates = self._test_create_hosting_device_templates()
-        self._test_create_routertypes(templates.values())
+ #       templates = self._test_create_hosting_device_templates()
+ #       self._test_create_routertypes(templates.values())
         self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
-        self._mock_svc_vm_create_delete(self.core_plugin)
+#        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
         self._mock_cfg_agent_notifier(self.plugin)
 

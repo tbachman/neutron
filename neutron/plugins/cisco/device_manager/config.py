@@ -14,8 +14,8 @@
 
 import webob.exc
 
-from oslo.config import cfg
-from oslo.utils import excutils
+from oslo_config import cfg
+from oslo_utils import excutils
 from oslo_log import log as logging
 
 from neutron.api.v2 import attributes

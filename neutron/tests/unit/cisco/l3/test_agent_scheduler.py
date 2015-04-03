@@ -12,15 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import contextlib
-
-import mock
 from oslo.config import cfg
 from oslo_utils import importutils
 
 from neutron.common import constants
 from neutron.db import agentschedulers_db
-from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
@@ -54,7 +50,7 @@ class TestAgentSchedCorePlugin(device_manager_test_support.TestCorePlugin,
         super(TestAgentSchedCorePlugin, self).__init__()
 
 
-class L3RouterApplianceAgentSchedulerTestCase(
+class L3RouterApplianceL3AgentSchedulerTestCase(
         test_agent_scheduler.OvsAgentSchedulerTestCase,
         test_db_routertype.RoutertypeTestCaseMixin,
         test_db_device_manager.DeviceManagerTestCaseMixin,
@@ -77,7 +73,7 @@ class L3RouterApplianceAgentSchedulerTestCase(
         cfg.CONF.set_override('default_router_type',
                               c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
-        super(L3RouterApplianceAgentSchedulerTestCase, self).setUp()
+        super(L3RouterApplianceL3AgentSchedulerTestCase, self).setUp()
 
         self._mock_l3_admin_tenant()
         templates = self._test_create_hosting_device_templates()
@@ -86,7 +82,7 @@ class L3RouterApplianceAgentSchedulerTestCase(
     def tearDown(self):
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
-        super(L3RouterApplianceAgentSchedulerTestCase, self).tearDown()
+        super(L3RouterApplianceL3AgentSchedulerTestCase, self).tearDown()
 
 
 class L3RouterApplianceL3AgentNotifierTestCase(
@@ -106,6 +102,7 @@ class L3RouterApplianceL3AgentNotifierTestCase(
         self.l3_plugin = (L3_PLUGIN_KLASS if l3_plugin is None
                           else l3_plugin)
 
+        self._define_keystone_authtoken()
         cfg.CONF.set_override('api_extensions_path',
                               l3_router_test_support.extensions_path)
         cfg.CONF.set_override('default_router_type',

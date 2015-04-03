@@ -18,10 +18,10 @@ import threading
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from oslo.config import cfg
-from oslo.utils import excutils
-from oslo.utils import importutils
-from oslo.utils import timeutils
+from oslo_config import cfg
+from oslo_utils import excutils
+from oslo_utils import importutils
+from oslo_utils import timeutils
 from oslo_log import log as logging
 
 from sqlalchemy import func
@@ -573,6 +573,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # For now the pool size is only elastic for service VMs.
         if template['host_category'] != VM_CATEGORY:
             return
+        #TODO(bobmel): Support HA/load-balanced Neutron servers:
+        #TODO(bobmel): Locking across multiple running Neutron server instances
         lock = self._get_template_pool_lock(template['id'])
         acquired = lock.acquire(False)
         if not acquired:

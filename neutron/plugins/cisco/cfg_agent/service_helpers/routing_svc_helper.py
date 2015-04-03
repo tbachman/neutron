@@ -17,7 +17,7 @@ import collections
 import eventlet
 import netaddr
 from oslo import messaging
-from oslo.utils import excutils
+from oslo_utils import excutils
 from oslo_log import log as logging
 
 from neutron.common import constants as l3_constants

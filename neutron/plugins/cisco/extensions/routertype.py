@@ -63,6 +63,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                    'convert_to': attr.convert_to_boolean,
                    'validate': {'type:boolean': None}, 'default': True,
                    'is_visible': True},
+        #TODO(bobmel): add HA attribute: One of None, 'GPLB', 'VRRP', or 'HSRP'
         'slot_need': {'allow_post': True, 'allow_put': True,
                       'required_by_policy': True,
                       'validate': {'type:non_negative': None},
@@ -72,6 +73,13 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'required_by_policy': True,
                       'convert_to': convert_validate_driver_class,
                       'is_visible': True},
+        'driver':  {'allow_post': True, 'allow_put': False,
+                    'required_by_policy': True,
+                    'convert_to': convert_validate_driver_class,
+                    'is_visible': True},
+        'cfg_agent_service_helper': {
+            'allow_post': True, 'allow_put': False, 'required_by_policy': True,
+            'convert_to': convert_validate_driver_class, 'is_visible': True},
         'cfg_agent_driver': {'allow_post': True, 'allow_put': False,
                              'required_by_policy': True,
                              'convert_to': convert_validate_driver_class,

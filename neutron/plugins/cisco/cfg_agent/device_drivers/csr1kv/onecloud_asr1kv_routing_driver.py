@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import ciscoconfparse
 from ncclient import manager
 
-from oslo.config import cfg
+from oslo_config import cfg
 
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (

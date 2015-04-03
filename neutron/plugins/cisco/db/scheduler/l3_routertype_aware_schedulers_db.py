@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 from sqlalchemy import sql
 
@@ -34,7 +34,7 @@ AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
 
 ROUTER_TYPE_AWARE_SCHEDULER_OPTS = [
     cfg.StrOpt('router_type_aware_scheduler_driver',
-               default='neutron.plugins.cisco.l3.scheduler.'
+               default='neutron.plugins.cisco.l3.schedulers.'
                        'l3_routertype_aware_agent_scheduler.'
                        'L3RouterTypeAwareScheduler',
                help=_('Driver to use for router type-aware scheduling of '
@@ -54,11 +54,11 @@ class L3RouterTypeAwareSchedulerDbMixin(
     def validate_hosting_device_router_combination(self, context, binding_info,
                                                    hosting_device_id):
         #TODO(bobmel): Perform proper hosting device validation
-        target_hd =  self._dev_mgr._get_hosting_device(context,
-                                                       hosting_device_id)
+        target_hd_db =  self._dev_mgr._get_hosting_device(context,
+                                                          hosting_device_id)
         rt_info = self.get_routertypes(
             context, fields=['id', 'slot_need'],
-            filters={'template_id': [target_hd.template_id]})
+            filters={'template_id': [target_hd_db.template_id]})
         if not rt_info:
             raise routertypeawarescheduler.RouterHostingDeviceMismatch(
                 router_type=binding_info.routertype_id,
@@ -70,20 +70,21 @@ class L3RouterTypeAwareSchedulerDbMixin(
                                      router_id):
         """Add a (non-hosted) router to a hosting device."""
         e_context = context.elevated()
-        r_hd_binding = self._get_router_binding_info(e_context, router_id)
-        if r_hd_binding.hosting_device_id:
+        r_hd_binding_db = self._get_router_binding_info(e_context, router_id)
+        if r_hd_binding_db.hosting_device_id:
             raise routertypeawarescheduler.RouterHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
         rt_info = self.validate_hosting_device_router_combination(
-            context, r_hd_binding, hosting_device_id)
+            context, r_hd_binding_db, hosting_device_id)
         result = self.schedule_router_on_hosting_device(
-            e_context, r_hd_binding, hosting_device_id, rt_info['slot_need'])
+            e_context, r_hd_binding_db, hosting_device_id,
+            rt_info['slot_need'])
         if result:
             # refresh so that we get latest contents from DB
-            e_context.session.expire(r_hd_binding)
+            e_context.session.expire(r_hd_binding_db)
             router = self.get_router(e_context, router_id)
             self._add_type_and_hosting_device_info(
-                e_context, router, binding_info=r_hd_binding, schedule=False)
+                e_context, router, r_hd_binding_db, schedule=False)
             l3_cfg_notifier = self.agent_notifiers.get(AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
                 l3_cfg_notifier.router_added_to_hosting_device(context, router)
@@ -100,25 +101,25 @@ class L3RouterTypeAwareSchedulerDbMixin(
         manually.
         """
         e_context = context.elevated()
-        r_hd_binding = self._get_router_binding_info(e_context, router_id)
-        if r_hd_binding.hosting_device_id != hosting_device_id:
+        r_hd_binding_db = self._get_router_binding_info(e_context, router_id)
+        if r_hd_binding_db.hosting_device_id != hosting_device_id:
             raise routertypeawarescheduler.RouterNotHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
         router = self.get_router(context, router_id)
         self._add_type_and_hosting_device_info(
-            e_context, router, binding_info=r_hd_binding, schedule=False)
+            e_context, router, r_hd_binding_db, schedule=False)
         # conditionally remove router from backlog ensure it does not get
         # scheduled automatically
         self.remove_router_from_backlog(id)
         l3_cfg_notifier = self.agent_notifiers.get(AGENT_TYPE_L3_CFG)
         if l3_cfg_notifier:
             l3_cfg_notifier.router_removed_from_hosting_device(context, router)
-        LOG.debug("Unscheduling router %s", r_hd_binding.router_id)
-        self.unschedule_router_from_hosting_device(context, r_hd_binding)
+        LOG.debug("Unscheduling router %s", r_hd_binding_db.router_id)
+        self.unschedule_router_from_hosting_device(context, r_hd_binding_db)
         # now unbind the router from the hosting device
         with e_context.session.begin(subtransactions=True):
-            r_hd_binding.hosting_device_id = None
-            e_context.session.add(r_hd_binding)
+            r_hd_binding_db.hosting_device_id = None
+            e_context.session.add(r_hd_binding_db)
 
     def list_routers_on_hosting_device(self, context, hosting_device_id):
         query = context.session.query(

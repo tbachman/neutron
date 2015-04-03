@@ -44,8 +44,9 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
                                          routertype.ROUTERTYPE_ALIAS])
 
     def test_create_routertype(self):
-        dummy = ('neutron.plugins.cisco.device_manager.hosting_device_drivers.'
-                 'noop_hd_driver.NoopHostingDeviceDriver')
+        dummy_driver = ('neutron.plugins.cisco.l3.schedulers.'
+                        'noop_l3_router_hosting_device_scheduler.'
+                        'NoopL3RouterHostingDeviceScheduler')
         rt_id = _uuid()
         data = {'routertype': {
             'id': None,
@@ -55,8 +56,10 @@ class RouterTypeTestCase(test_api_v2_ext.ExtensionTestCase):
             'template_id': _uuid(),
             'shared': True,
             'slot_need': 200,
-            'scheduler': dummy,
-            'cfg_agent_driver': dummy}}
+            'scheduler': dummy_driver,
+            'driver': dummy_driver,
+            'cfg_agent_service_helper': dummy_driver,
+            'cfg_agent_driver': dummy_driver}}
 
         return_value = copy.copy(data['routertype'])
         return_value.update({'id': rt_id})
