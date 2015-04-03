@@ -63,6 +63,17 @@ IPTABLES_OPTS = [
                 help=_("Add comments to iptables rules.")),
 ]
 
+IPSET_OPTS = [
+    cfg.IntOpt('ipset_maxelem', default=131072,
+               help=_("Maximum number of elements which can be stored in "
+                      "an IPset. If None is specified, the system default "
+                      "will be used.")),
+    cfg.IntOpt('ipset_hashsize', default=2048,
+               help=_("Initial hash size for an IPset. Must be a power of 2, "
+                      "else the kernel will round it up automatically. If "
+                      "None is specified, the system default will be used.")),
+]
+
 PROCESS_MONITOR_OPTS = [
     cfg.StrOpt('check_child_processes_action', default='respawn',
                choices=['respawn', 'exit'],
@@ -73,7 +84,7 @@ PROCESS_MONITOR_OPTS = [
 ]
 
 
-def get_log_args(conf, log_file_name):
+def get_log_args(conf, log_file_name, **kwargs):
     cmd_args = []
     if conf.debug:
         cmd_args.append('--debug')
@@ -91,6 +102,8 @@ def get_log_args(conf, log_file_name):
             log_dir = os.path.dirname(conf.log_file)
         if log_dir:
             cmd_args.append('--log-dir=%s' % log_dir)
+        if kwargs.get('metadata_proxy_watch_log') is False:
+            cmd_args.append('--metadata_proxy_watch_log=false')
     else:
         if conf.use_syslog:
             cmd_args.append('--use-syslog')
@@ -118,6 +131,10 @@ def register_use_namespaces_opts_helper(conf):
 
 def register_iptables_opts(conf):
     conf.register_opts(IPTABLES_OPTS, 'AGENT')
+
+
+def register_ipset_opts(conf):
+    conf.register_opts(IPSET_OPTS, 'AGENT')
 
 
 def register_process_monitor_opts(conf):

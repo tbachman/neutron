@@ -14,8 +14,13 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from neutron.api.v2 import attributes
+from neutron.callbacks import events
+from neutron.callbacks import exceptions
+from neutron.callbacks import registry
+from neutron.callbacks import resources
 from neutron.common import constants as l3_const
 from neutron.common import exceptions as n_exc
 from neutron.common import utils as n_utils
@@ -83,34 +88,19 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
             raise NotImplementedError()
         elif (not router_db.extra_attributes.distributed and
               router_res.get('distributed')):
-            # Add a check for Services FWaaS and VPNaaS
-            # This check below ensures that the legacy routers with
-            # associated VPNaaS or FWaaS services are not allowed to
-            # migrate.
-            if (self.check_router_has_no_vpnaas(context, router_db) and
-                self.check_router_has_no_firewall(context, router_db)):
-                LOG.info(_LI("No Service associated, so safe to migrate: %s "
-                             "listed"), router_db['id'])
-
-    def check_router_has_no_firewall(self, context, router_db):
-        """Check if FWaaS is associated with the legacy router."""
-        fwaas_service = manager.NeutronManager.get_service_plugins().get(
-                constants.FIREWALL)
-        if fwaas_service:
-            tenant_firewalls = fwaas_service.get_firewalls(
-                context,
-                filters={'tenant_id': [router_db['tenant_id']]})
-            if tenant_firewalls:
-                raise l3.RouterInUse(router_id=router_db['id'])
-        return True
-
-    def check_router_has_no_vpnaas(self, context, router_db):
-        """Check if VPNaaS is associated with the legacy router."""
-        vpn_plugin = manager.NeutronManager.get_service_plugins().get(
-            constants.VPN)
-        if vpn_plugin:
-            vpn_plugin.check_router_in_use(context, router_db['id'])
-        return True
+            # Notify advanced services of the imminent state transition
+            # for the router.
+            try:
+                kwargs = {'context': context, 'router': router_db}
+                registry.notify(
+                    resources.ROUTER, events.BEFORE_UPDATE, self, **kwargs)
+            except exceptions.CallbackFailure as e:
+                with excutils.save_and_reraise_exception():
+                    # NOTE(armax): preserve old check's behavior
+                    if len(e.errors) == 1:
+                        raise e.errors[0].error
+                    raise l3.RouterInUse(router_id=router_db['id'],
+                                         reason=e)
 
     def _update_distributed_attr(
         self, context, router_id, router_db, data, gw_info):
@@ -151,20 +141,19 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                                         agent['id'])
             return router_db
 
-    def _delete_current_gw_port(self, context, router_id, router, new_network,
-                                ext_ip_change):
+    def _delete_current_gw_port(self, context, router_id, router, new_network):
         super(L3_NAT_with_dvr_db_mixin,
               self)._delete_current_gw_port(context, router_id,
-                                            router, new_network, ext_ip_change)
+                                            router, new_network)
         if router.extra_attributes.distributed:
             self.delete_csnat_router_interface_ports(
                 context.elevated(), router)
 
-    def _create_gw_port(self, context, router_id, router, new_network, ext_ips,
-                        ext_ip_change):
+    def _create_gw_port(self, context, router_id, router, new_network,
+                        ext_ips):
         super(L3_NAT_with_dvr_db_mixin,
               self)._create_gw_port(context, router_id, router, new_network,
-                                    ext_ips, ext_ip_change)
+                                    ext_ips)
         # Make sure that the gateway port exists before creating the
         # snat interface ports for distributed router.
         if router.extra_attributes.distributed and router.gw_port:
@@ -289,29 +278,33 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         router = self._get_router(context, router_id)
         device_owner = self._get_device_owner(context, router)
 
+        # This should be True unless adding an IPv6 prefix to an existing port
+        new_port = True
+
         if add_by_port:
-            port = self._add_interface_by_port(
-                context, router, interface_info['port_id'], device_owner)
+            port, subnets = self._add_interface_by_port(
+                    context, router, interface_info['port_id'], device_owner)
         elif add_by_sub:
-            port = self._add_interface_by_subnet(
-                context, router, interface_info['subnet_id'], device_owner)
+            port, subnets, new_port = self._add_interface_by_subnet(
+                    context, router, interface_info['subnet_id'], device_owner)
 
-        with context.session.begin(subtransactions=True):
-            router_port = l3_db.RouterPort(
-                port_id=port['id'],
-                router_id=router.id,
-                port_type=device_owner
-            )
-            context.session.add(router_port)
+        if new_port:
+            with context.session.begin(subtransactions=True):
+                router_port = l3_db.RouterPort(
+                    port_id=port['id'],
+                    router_id=router.id,
+                    port_type=device_owner
+                )
+                context.session.add(router_port)
 
-        if router.extra_attributes.distributed and router.gw_port:
-            self.add_csnat_router_interface_port(
-                context.elevated(), router, port['network_id'],
-                port['fixed_ips'][0]['subnet_id'])
+            if router.extra_attributes.distributed and router.gw_port:
+                self.add_csnat_router_interface_port(
+                    context.elevated(), router, port['network_id'],
+                    port['fixed_ips'][-1]['subnet_id'])
 
         router_interface_info = self._make_router_interface_info(
-            router_id, port['tenant_id'], port['id'],
-            port['fixed_ips'][0]['subnet_id'])
+            router_id, port['tenant_id'], port['id'], subnets[-1]['id'],
+            [subnet['id'] for subnet in subnets])
         self.notify_router_interface_action(
             context, router_interface_info, 'add')
         return router_interface_info
@@ -326,14 +319,14 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         device_owner = self._get_device_owner(context, router)
 
         if remove_by_port:
-            port, subnet = self._remove_interface_by_port(
-                context, router_id, port_id, subnet_id, device_owner)
+            port, subnets = self._remove_interface_by_port(
+                    context, router_id, port_id, subnet_id, device_owner)
         # remove_by_subnet is not used here, because the validation logic of
         # _validate_interface_info ensures that at least one of remote_by_*
         # is True.
         else:
-            port, subnet = self._remove_interface_by_subnet(
-                context, router_id, subnet_id, device_owner)
+            port, subnets = self._remove_interface_by_subnet(
+                    context, router_id, subnet_id, device_owner)
 
         if router.extra_attributes.distributed:
             if router.gw_port:
@@ -350,8 +343,8 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                         context, l3_agent['id'], router_id)
 
         router_interface_info = self._make_router_interface_info(
-            router_id, port['tenant_id'], port['id'],
-            port['fixed_ips'][0]['subnet_id'])
+            router_id, port['tenant_id'], port['id'], subnets[0]['id'],
+            [subnet['id'] for subnet in subnets])
         self.notify_router_interface_action(
             context, router_interface_info, 'remove')
         return router_interface_info
@@ -643,11 +636,13 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         return port_list
 
     def dvr_vmarp_table_update(self, context, port_dict, action):
-        """Notify the L3 agent of VM ARP table changes.
+        """Notify L3 agents of VM ARP table changes.
 
-        Provide the details of the VM ARP to the L3 agent when
-        a Nova instance gets created or deleted.
+        When a VM goes up or down, look for one DVR router on the port's
+        subnet, and send the VM's ARP details to all L3 agents hosting the
+        router.
         """
+
         # Check this is a valid VM port
         if ("compute:" not in port_dict['device_owner'] or
             not port_dict['fixed_ips']):

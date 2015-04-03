@@ -48,12 +48,12 @@ CONF = cfg.CONF
 CONF.import_opt('state_path', 'neutron.common.config')
 LOG_FORMAT = "%(asctime)s %(levelname)8s [%(name)s] %(message)s"
 
-ROOT_DIR = os.path.join(os.path.dirname(__file__), '..', '..')
-TEST_ROOT_DIR = os.path.dirname(__file__)
+ROOTDIR = os.path.dirname(__file__)
+ETCDIR = os.path.join(ROOTDIR, 'etc')
 
 
-def etcdir(filename, root=TEST_ROOT_DIR):
-    return os.path.join(root, 'etc', filename)
+def etcdir(*p):
+    return os.path.join(ETCDIR, *p)
 
 
 def fake_use_fatal_exceptions(*args):
@@ -72,6 +72,10 @@ def get_rand_name(max_length=None, prefix='test'):
 def bool_from_env(key, strict=False, default=False):
     value = os.environ.get(key)
     return strutils.bool_from_string(value, strict=strict, default=default)
+
+
+def get_test_timeout(default=0):
+    return int(os.environ.get('OS_TEST_TIMEOUT', 0))
 
 
 class AttributeDict(dict):
@@ -118,7 +122,7 @@ class DietTestCase(testtools.TestCase):
                 nuke_handlers=capture_logs,
             ))
 
-        test_timeout = int(os.environ.get('OS_TEST_TIMEOUT', 0))
+        test_timeout = get_test_timeout()
         if test_timeout == -1:
             test_timeout = 0
         if test_timeout > 0:
@@ -214,12 +218,8 @@ class BaseTestCase(DietTestCase):
         """Create the default configurations."""
         # neutron.conf.test includes rpc_backend which needs to be cleaned up
         if args is None:
-            args = ['--config-file', etcdir('neutron.conf.test')]
-        # this is needed to add ROOT_DIR to the list of paths that oslo.config
-        # will try to traverse when searching for a new config file (it's
-        # needed so that policy module can locate policy_file)
-        args += ['--config-file', etcdir('neutron.conf', root=ROOT_DIR)]
-
+            args = []
+        args += ['--config-file', etcdir('neutron.conf.test')]
         if conf is None:
             config.init(args=args)
         else:

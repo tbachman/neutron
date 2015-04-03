@@ -15,8 +15,10 @@
 
 import fcntl
 import glob
+import grp
 import httplib
 import os
+import pwd
 import shlex
 import socket
 import struct
@@ -334,6 +336,24 @@ def ensure_directory_exists_without_file(path):
         ensure_dir(dirname)
 
 
+def is_effective_user(user_id_or_name):
+    """Returns True if user_id_or_name is effective user (id/name)."""
+    euid = os.geteuid()
+    if str(user_id_or_name) == str(euid):
+        return True
+    effective_user_name = pwd.getpwuid(euid).pw_name
+    return user_id_or_name == effective_user_name
+
+
+def is_effective_group(group_id_or_name):
+    """Returns True if group_id_or_name is effective group (id/name)."""
+    egid = os.getegid()
+    if str(group_id_or_name) == str(egid):
+        return True
+    effective_group_name = grp.getgrgid(egid).gr_name
+    return group_id_or_name == effective_group_name
+
+
 class UnixDomainHTTPConnection(httplib.HTTPConnection):
     """Connection class for HTTP over UNIX domain socket."""
     def __init__(self, host, port=None, strict=None, timeout=None,
@@ -365,10 +385,12 @@ class UnixDomainWSGIServer(wsgi.Server):
         self._server = None
         super(UnixDomainWSGIServer, self).__init__(name)
 
-    def start(self, application, file_socket, workers, backlog):
+    def start(self, application, file_socket, workers, backlog, mode=None):
         self._socket = eventlet.listen(file_socket,
                                        family=socket.AF_UNIX,
                                        backlog=backlog)
+        if mode is not None:
+            os.chmod(file_socket, mode)
 
         self._launch(application, workers=workers)
 

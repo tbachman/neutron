@@ -140,6 +140,10 @@ class Port(model_base.BASEV2, HasId, HasTenant):
     device_owner = sa.Column(sa.String(attr.DEVICE_OWNER_MAX_LEN),
                              nullable=False)
     __table_args__ = (
+        sa.Index(
+            'ix_ports_network_id_mac_address', 'network_id', 'mac_address'),
+        sa.Index(
+            'ix_ports_network_id_device_owner', 'network_id', 'device_owner'),
         sa.UniqueConstraint(
             network_id, mac_address,
             name='uniq_ports0network_id0mac_address'),
@@ -184,6 +188,7 @@ class Subnet(model_base.BASEV2, HasId, HasTenant):
 
     name = sa.Column(sa.String(attr.NAME_MAX_LEN))
     network_id = sa.Column(sa.String(36), sa.ForeignKey('networks.id'))
+    subnetpool_id = sa.Column(sa.String(36), index=True)
     ip_version = sa.Column(sa.Integer, nullable=False)
     cidr = sa.Column(sa.String(64), nullable=False)
     gateway_ip = sa.Column(sa.String(64))
@@ -234,6 +239,7 @@ class SubnetPool(model_base.BASEV2, HasId, HasTenant):
     min_prefixlen = sa.Column(sa.Integer, nullable=False)
     max_prefixlen = sa.Column(sa.Integer, nullable=False)
     shared = sa.Column(sa.Boolean, nullable=False)
+    default_quota = sa.Column(sa.Integer, nullable=True)
     prefixes = orm.relationship(SubnetPoolPrefix,
                                 backref='subnetpools',
                                 cascade='all, delete, delete-orphan',

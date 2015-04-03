@@ -53,14 +53,17 @@ from neutron.db import dvr_mac_db
 from neutron.db import external_net_db
 from neutron.db import extradhcpopt_db
 from neutron.db import models_v2
+from neutron.db import netmtu_db
 from neutron.db import quota_db  # noqa
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
+from neutron.db import vlantransparent_db
 from neutron.extensions import allowedaddresspairs as addr_pair
 from neutron.extensions import extra_dhcp_opt as edo_ext
 from neutron.extensions import portbindings
 from neutron.extensions import portsecurity as psec
 from neutron.extensions import providernet as provider
 from neutron.extensions import securitygroup as ext_sg
+from neutron.extensions import vlantransparent
 from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
 from neutron.openstack.common import uuidutils
@@ -89,7 +92,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 sg_db_rpc.SecurityGroupServerRpcMixin,
                 agentschedulers_db.DhcpAgentSchedulerDbMixin,
                 addr_pair_db.AllowedAddressPairsMixin,
-                extradhcpopt_db.ExtraDhcpOptMixin):
+                vlantransparent_db.Vlantransparent_db_mixin,
+                extradhcpopt_db.ExtraDhcpOptMixin,
+                netmtu_db.Netmtu_db_mixin):
 
     """Implement the Neutron L2 abstractions using modules.
 
@@ -112,7 +117,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                     "quotas", "security-group", "agent",
                                     "dhcp_agent_scheduler",
                                     "multi-provider", "allowed-address-pairs",
-                                    "extra_dhcp_opt"]
+                                    "extra_dhcp_opt", "subnet_allocation",
+                                    "net-mtu", "vlan-transparent"]
 
     @property
     def supported_extension_aliases(self):
@@ -120,6 +126,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             aliases = self._supported_extension_aliases[:]
             aliases += self.extension_manager.extension_aliases()
             sg_rpc.disable_security_group_extension_by_config(aliases)
+            vlantransparent.disable_extension_by_config(aliases)
             self._aliases = aliases
         return self._aliases
 
@@ -1419,7 +1426,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             LOG.debug("No binding found for DVR port %s", port['id'])
             return False
         else:
-            port_host = db.get_port_binding_host(port_id)
+            port_host = db.get_port_binding_host(context.session, port_id)
             return (port_host == host)
 
     def get_ports_from_devices(self, devices):

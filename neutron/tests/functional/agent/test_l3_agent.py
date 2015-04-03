@@ -15,6 +15,7 @@
 
 import copy
 import functools
+import os.path
 
 import mock
 import netaddr
@@ -36,11 +37,14 @@ from neutron.agent.linux import dhcp
 from neutron.agent.linux import external_process
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.callbacks import events
+from neutron.callbacks import manager
+from neutron.callbacks import registry
+from neutron.callbacks import resources
 from neutron.common import config as common_config
 from neutron.common import constants as l3_constants
 from neutron.common import utils as common_utils
 from neutron.openstack.common import uuidutils
-from neutron.services import advanced_service as adv_svc
 from neutron.tests.common import net_helpers
 from neutron.tests.functional.agent.linux import base
 from neutron.tests.functional.agent.linux import helpers
@@ -60,6 +64,12 @@ class L3AgentTestFramework(base.BaseOVSLinuxTestCase):
     def setUp(self):
         super(L3AgentTestFramework, self).setUp()
         mock.patch('neutron.agent.l3.agent.L3PluginApi').start()
+
+        # TODO(pcm): Move this to BaseTestCase, if we find that more tests
+        # use this mechanism.
+        self._callback_manager = manager.CallbacksManager()
+        mock.patch.object(registry, '_get_callback_manager',
+                          return_value=self._callback_manager).start()
         self.agent = self._configure_agent('agent1')
 
     def _get_config_opts(self):
@@ -80,8 +90,8 @@ class L3AgentTestFramework(base.BaseOVSLinuxTestCase):
             'neutron.agent.linux.interface.OVSInterfaceDriver')
         conf.set_override('router_delete_namespaces', True)
 
-        br_int = self.create_ovs_bridge()
-        br_ex = self.create_ovs_bridge()
+        br_int = self.useFixture(net_helpers.OVSBridgeFixture()).bridge
+        br_ex = self.useFixture(net_helpers.OVSBridgeFixture()).bridge
         conf.set_override('ovs_integration_bridge', br_int.br_name)
         conf.set_override('external_network_bridge', br_ex.br_name)
 
@@ -141,6 +151,13 @@ class L3AgentTestFramework(base.BaseOVSLinuxTestCase):
                'fixed_ip_address': fixed_address,
                'host': host}
         router.router[l3_constants.FLOATINGIP_KEY].append(fip)
+
+    def _add_internal_interface_by_subnet(self, router, count=1,
+                                          ip_version=4,
+                                          ipv6_subnet_modes=None,
+                                          interface_id=None):
+        return test_l3_agent.router_append_subnet(router, count,
+                ip_version, ipv6_subnet_modes, interface_id)
 
     def _namespace_exists(self, namespace):
         ip = ip_lib.IPWrapper(namespace=namespace)
@@ -301,11 +318,6 @@ class L3AgentTestFramework(base.BaseOVSLinuxTestCase):
 
 
 class L3AgentTestCase(L3AgentTestFramework):
-    def test_observer_notifications_legacy_router(self):
-        self._test_observer_notifications(enable_ha=False)
-
-    def test_observer_notifications_ha_router(self):
-        self._test_observer_notifications(enable_ha=True)
 
     def test_keepalived_state_change_notification(self):
         enqueue_mock = mock.patch.object(
@@ -348,24 +360,40 @@ class L3AgentTestCase(L3AgentTestFramework):
             lambda: self._expected_rpc_report(
                 {router1.router_id: 'standby', router2.router_id: 'active'}))
 
-    def _test_observer_notifications(self, enable_ha):
-        """Test create, update, delete of router and notifications."""
-        with mock.patch.object(
-                self.agent.event_observers, 'notify') as notify:
-            router_info = self.generate_router_info(enable_ha)
-            router = self.manage_router(self.agent, router_info)
-            self.agent._process_updated_router(router.router)
-            self._delete_router(self.agent, router.router_id)
+    def test_agent_notifications_for_router_events(self):
+        """Test notifications for router create, update, and delete.
 
-            calls = notify.call_args_list
-            self.assertEqual(
-                [((adv_svc.AdvancedService.before_router_added, router),),
-                 ((adv_svc.AdvancedService.after_router_added, router),),
-                 ((adv_svc.AdvancedService.before_router_updated, router),),
-                 ((adv_svc.AdvancedService.after_router_updated, router),),
-                 ((adv_svc.AdvancedService.before_router_removed, router),),
-                 ((adv_svc.AdvancedService.after_router_removed, router),)],
-                calls)
+        Make sure that when the agent sends notifications of router events
+        for router create, update, and delete, that the correct handler is
+        called with the right resource, event, and router information.
+        """
+        event_handler = mock.Mock()
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.BEFORE_CREATE)
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.AFTER_CREATE)
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.BEFORE_UPDATE)
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.AFTER_UPDATE)
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.BEFORE_DELETE)
+        registry.subscribe(event_handler,
+                           resources.ROUTER, events.AFTER_DELETE)
+
+        router_info = self.generate_router_info(enable_ha=False)
+        router = self.manage_router(self.agent, router_info)
+        self.agent._process_updated_router(router.router)
+        self._delete_router(self.agent, router.router_id)
+
+        expected_calls = [
+            mock.call('router', 'before_create', self.agent, router=router),
+            mock.call('router', 'after_create', self.agent, router=router),
+            mock.call('router', 'before_update', self.agent, router=router),
+            mock.call('router', 'after_update', self.agent, router=router),
+            mock.call('router', 'before_delete', self.agent, router=router),
+            mock.call('router', 'after_delete', self.agent, router=router)]
+        event_handler.assert_has_calls(expected_calls)
 
     def test_legacy_router_lifecycle(self):
         self._router_lifecycle(enable_ha=False, dual_stack=True)
@@ -535,6 +563,14 @@ class L3AgentTestCase(L3AgentTestFramework):
                                                     v6_ext_gw_with_sub))
         router = self.manage_router(self.agent, router_info)
 
+        # Add multiple-IPv6-prefix internal router port
+        slaac = l3_constants.IPV6_SLAAC
+        slaac_mode = {'ra_mode': slaac, 'address_mode': slaac}
+        subnet_modes = [slaac_mode] * 2
+        self._add_internal_interface_by_subnet(router.router, count=2,
+                ip_version=6, ipv6_subnet_modes=subnet_modes)
+        router.process(self.agent)
+
         if enable_ha:
             port = router.get_ex_gw_port()
             interface_name = router.get_external_device_name(port['id'])
@@ -637,6 +673,49 @@ class L3AgentTestCase(L3AgentTestFramework):
                 router1.ns_name,
                 router1.get_ha_device_name()))
 
+    def test_fip_connection_from_same_subnet(self):
+        '''Test connection to floatingip which is associated with
+           fixed_ip on the same subnet of the source fixed_ip.
+           In other words it confirms that return packets surely
+           go through the router.
+        '''
+        router_info = self.generate_router_info(enable_ha=False)
+        router = self.manage_router(self.agent, router_info)
+        router_ip_cidr = self._port_first_ip_cidr(router.internal_ports[0])
+        router_ip = router_ip_cidr.partition('/')[0]
+
+        src_ip_cidr = net_helpers.increment_ip_cidr(router_ip_cidr)
+        dst_ip_cidr = net_helpers.increment_ip_cidr(src_ip_cidr)
+        dst_ip = dst_ip_cidr.partition('/')[0]
+        dst_fip = '19.4.4.10'
+        router.router[l3_constants.FLOATINGIP_KEY] = []
+        self._add_fip(router, dst_fip, fixed_address=dst_ip)
+        router.process(self.agent)
+
+        br_int = get_ovs_bridge(self.agent.conf.ovs_integration_bridge)
+
+        # FIXME(cbrandily): temporary, will be replaced by fake machines
+        src_ns = self._create_namespace(prefix='test-src-')
+        src_port = self.useFixture(
+            net_helpers.OVSPortFixture(br_int, src_ns.namespace)).port
+        src_port.addr.add(src_ip_cidr)
+        net_helpers.set_namespace_gateway(src_port, router_ip)
+        dst_ns = self._create_namespace(prefix='test-dst-')
+        dst_port = self.useFixture(
+            net_helpers.OVSPortFixture(br_int, dst_ns.namespace)).port
+        dst_port.addr.add(dst_ip_cidr)
+        net_helpers.set_namespace_gateway(dst_port, router_ip)
+
+        protocol_port = helpers.get_free_namespace_port(dst_ns)
+        # client sends to fip
+        netcat = helpers.NetcatTester(src_ns, dst_ns, dst_ip,
+                                      protocol_port,
+                                      client_address=dst_fip,
+                                      run_as_root=True,
+                                      udp=False)
+        self.addCleanup(netcat.stop_processes)
+        self.assertTrue(netcat.test_connectivity())
+
 
 class L3HATestFramework(L3AgentTestFramework):
 
@@ -698,12 +777,21 @@ class MetadataFakeProxyHandler(object):
 
 class MetadataL3AgentTestCase(L3AgentTestFramework):
 
+    SOCKET_MODE = 0o644
+
     def _create_metadata_fake_server(self, status):
         server = utils.UnixDomainWSGIServer('metadata-fake-server')
         self.addCleanup(server.stop)
+
+        # NOTE(cbrandily): TempDir fixture creates a folder with 0o700
+        # permissions but metadata_proxy_socket folder must be readable by all
+        # users
+        self.useFixture(
+            helpers.RecursivePermDirFixture(
+                os.path.dirname(self.agent.conf.metadata_proxy_socket), 0o555))
         server.start(MetadataFakeProxyHandler(status),
                      self.agent.conf.metadata_proxy_socket,
-                     workers=0, backlog=4096)
+                     workers=0, backlog=4096, mode=self.SOCKET_MODE)
 
     def test_access_to_metadata_proxy(self):
         """Test access to the l3-agent metadata proxy.
@@ -730,7 +818,11 @@ class MetadataL3AgentTestCase(L3AgentTestFramework):
         router_ip_cidr = self._port_first_ip_cidr(router.internal_ports[0])
         ip_cidr = net_helpers.increment_ip_cidr(router_ip_cidr)
         br_int = get_ovs_bridge(self.agent.conf.ovs_integration_bridge)
-        port = self.bind_namespace_to_cidr(client_ns, br_int, ip_cidr)
+
+        # FIXME(cbrandily): temporary, will be replaced by a fake machine
+        port = self.useFixture(
+            net_helpers.OVSPortFixture(br_int, client_ns.namespace)).port
+        port.addr.add(ip_cidr)
         net_helpers.set_namespace_gateway(port,
                                           router_ip_cidr.partition('/')[0])
 
@@ -746,6 +838,39 @@ class MetadataL3AgentTestCase(L3AgentTestFramework):
         # Check status code
         firstline = raw_headers.splitlines()[0]
         self.assertIn(str(webob.exc.HTTPOk.code), firstline.split())
+
+
+class UnprivilegedUserMetadataL3AgentTestCase(MetadataL3AgentTestCase):
+    """Test metadata proxy with least privileged user.
+
+    The least privileged user has uid=65534 and is commonly named 'nobody' but
+    not always, that's why we use its uid.
+    """
+
+    SOCKET_MODE = 0o664
+
+    def setUp(self):
+        super(UnprivilegedUserMetadataL3AgentTestCase, self).setUp()
+        self.agent.conf.set_override('metadata_proxy_user', '65534')
+        self.agent.conf.set_override('metadata_proxy_watch_log', False)
+
+
+class UnprivilegedUserGroupMetadataL3AgentTestCase(MetadataL3AgentTestCase):
+    """Test metadata proxy with least privileged user/group.
+
+    The least privileged user has uid=65534 and is commonly named 'nobody' but
+    not always, that's why we use its uid.
+    Its group has gid=65534 and is commonly named 'nobody' or 'nogroup', that's
+    why we use its gid.
+    """
+
+    SOCKET_MODE = 0o666
+
+    def setUp(self):
+        super(UnprivilegedUserGroupMetadataL3AgentTestCase, self).setUp()
+        self.agent.conf.set_override('metadata_proxy_user', '65534')
+        self.agent.conf.set_override('metadata_proxy_group', '65534')
+        self.agent.conf.set_override('metadata_proxy_watch_log', False)
 
 
 class TestDvrRouter(L3AgentTestFramework):
@@ -995,6 +1120,26 @@ class TestDvrRouter(L3AgentTestFramework):
         self._create_router(restarted_agent, router1.router)
         self._assert_dvr_snat_gateway(router1)
         self.assertFalse(self._namespace_exists(fip_ns))
+
+    def test_dvr_router_add_internal_network_set_arp_cache(self):
+        # Check that, when the router is set up and there are
+        # existing ports on the the uplinked subnet, the ARP
+        # cache is properly populated.
+        self.agent.conf.agent_mode = 'dvr_snat'
+        router_info = test_l3_agent.prepare_router_data()
+        router_info['distributed'] = True
+        expected_neighbor = '35.4.1.10'
+        port_data = {
+            'fixed_ips': [{'ip_address': expected_neighbor}],
+            'mac_address': 'fa:3e:aa:bb:cc:dd',
+            'device_owner': 'compute:None'
+        }
+        self.agent.plugin_rpc.get_ports_by_subnet.return_value = [port_data]
+        router1 = self._create_router(self.agent, router_info)
+        internal_device = router1.get_internal_device_name(
+            router_info['_interfaces'][0]['id'])
+        neighbors = ip_lib.IPDevice(internal_device, router1.ns_name).neigh
+        self.assertEqual(expected_neighbor, neighbors.show().split()[0])
 
     def _assert_rfp_fpr_mtu(self, router, expected_mtu=1500):
         dev_mtu = self.get_device_mtu(
