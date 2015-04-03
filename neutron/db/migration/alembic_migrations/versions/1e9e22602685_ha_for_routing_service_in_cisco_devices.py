@@ -61,12 +61,12 @@ def upgrade():
         sa.Column('timers_config', sa.String(255), nullable=True),
         sa.Column('tracking_config',sa.String(255), nullable=True),
         sa.Column('other_config', sa.String(255), nullable=True),
-        sa.ForeignKeyConstraint(['virtual_port_id'], ['ports.id']),
+        sa.ForeignKeyConstraint(['extra_port_id'], ['ports.id']),
         sa.ForeignKeyConstraint(['ha_port_id'], ['ports.id'],
                                 ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['subnet_id'], ['subnets.id']),
         sa.ForeignKeyConstraint(['user_router_id'], ['routers.id']),
-        sa.PrimaryKeyConstraint('virtual_port_id')
+        sa.PrimaryKeyConstraint('extra_port_id')
     )
     op.create_table('cisco_router_redundancy_bindings',
         sa.Column('redundancy_router_id', sa.String(36)),
