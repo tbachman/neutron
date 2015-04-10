@@ -15,7 +15,7 @@
 import copy
 
 import contextlib
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import webob.exc
 
@@ -29,9 +29,10 @@ from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
-from neutron.tests.unit.cisco.device_manager import device_manager_test_support
-from neutron.tests.unit.cisco.l3 import test_db_routertype
-from neutron.tests.unit.cisco.l3 import test_l3_router_appliance_plugin
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    device_manager_test_support)
+from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
+from neutron.tests.unit.plugins.cisco.l3 import test_l3_router_appliance_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ _uuid = uuidutils.generate_uuid
 
 CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
-    "neutron.tests.unit.cisco.l3.test_ha_l3_router_appliance_plugin."
+    "neutron.tests.unit.plugins.cisco.l3.test_ha_l3_router_appliance_plugin."
     "TestApplianceHAL3RouterServicePlugin")
 extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
 
@@ -60,7 +61,7 @@ class TestHAL3RouterApplianceExtensionManager(
 # A set routes and HA capable L3 routing service plugin class
 # supporting appliances
 class TestApplianceHAL3RouterServicePlugin(
-        ha_db.HA_db_mixin,
+    ha_db.HA_db_mixin,
         test_l3_router_appliance_plugin.TestApplianceL3RouterServicePlugin):
 
     supported_extension_aliases = ["router", "extraroute",
@@ -69,9 +70,9 @@ class TestApplianceHAL3RouterServicePlugin(
 
 
 #TODO(bobmel): Add tests that ensures that Cisco HA is not applied on
-#TODO(bobmel): Namespace-based routers
+# Namespace-based routers
 class HAL3RouterApplianceNamespaceTestCase(
-    test_l3_router_appliance_plugin.L3RouterApplianceNamespaceTestCase):
+        test_l3_router_appliance_plugin.L3RouterApplianceNamespaceTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -139,7 +140,7 @@ class HAL3RouterTestsMixin(object):
 
 class HAL3RouterApplianceVMTestCase(
     HAL3RouterTestsMixin,
-    test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
+        test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -602,7 +603,7 @@ class HAL3RouterApplianceVMTestCase(
 
 
 class L3AgentHARouterApplianceTestCase(
-    test_l3_router_appliance_plugin.L3AgentRouterApplianceTestCase):
+        test_l3_router_appliance_plugin.L3AgentRouterApplianceTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -616,7 +617,7 @@ class L3AgentHARouterApplianceTestCase(
 
 class L3CfgAgentHARouterApplianceTestCase(
     HAL3RouterTestsMixin,
-    test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
+        test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -631,9 +632,6 @@ class L3CfgAgentHARouterApplianceTestCase(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
         self.orig_get_sync_data = self.plugin.get_sync_data
         self.plugin.get_sync_data = self.plugin.get_sync_data_ext
-
-        self._mock_svc_vm_create_delete(self.core_plugin)
-        self._mock_get_routertype_scheduler_always_none()
 
     def tearDown(self):
         self.plugin.get_sync_data = self.orig_get_sync_data

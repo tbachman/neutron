@@ -15,7 +15,7 @@
 import contextlib
 import mock
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_utils import importutils
 import webob.exc
 
@@ -29,8 +29,9 @@ from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
                                                      as hdm_db)
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
-from neutron.tests.unit.cisco.device_manager import device_manager_test_support
-from neutron.tests.unit import test_db_plugin
+from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    device_manager_test_support)
 
 
 DB_DM_PLUGIN_KLASS = (
@@ -63,7 +64,7 @@ NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.device_manager.'
 TEST_DEVICE_DRIVER = NOOP_DEVICE_DRIVER
 #    ('neutron.plugins.cisco.test.device_manager.'
 #                      'hd_test_driver.TestHostingDeviceDriver')
-TEST_PLUGGING_DRIVER = ('neutron.tests.unit.cisco.device_manager.'
+TEST_PLUGGING_DRIVER = ('neutron.tests.unit.plugins.cisco.device_manager.'
                         'plugging_test_driver.TestPluggingDriver')
 
 DESCRIPTION = "default description"
@@ -94,7 +95,7 @@ class DeviceManagerTestCaseMixin(object):
         return hd_res
 
     @contextlib.contextmanager
-    def hosting_device(self, template_id, management_port_id, fmt=None,
+    def hosting_device(self, template_id, management_port_id=None, fmt=None,
                        admin_state_up=True, no_delete=False,
                        set_port_device_id=True, **kwargs):
         if not fmt:
@@ -104,7 +105,7 @@ class DeviceManagerTestCaseMixin(object):
         if res.status_int >= 400:
             raise webob.exc.HTTPClientError(code=res.status_int)
         hosting_device = self.deserialize(fmt or self.fmt, res)
-        if set_port_device_id:
+        if set_port_device_id is True and management_port_id is not None:
             data = {'port': {
                 'device_id': hosting_device['hosting_device']['id'],
                 'device_owner': 'Nova'}}
@@ -225,30 +226,23 @@ class DeviceManagerTestCaseMixin(object):
         hwt = self._create_hosting_device_template(
             self.fmt, HW_TEMPLATE_NAME, True, HW_CATEGORY)
         hw_template = self.deserialize(self.fmt, hwt)
-        self._templates = {'network_node': {'template': nw_node_template,
-                                            'router_type': NS_ROUTERTYPE_NAME},
-                           'vm': {'template': vm_template,
-                                  'router_type': VM_ROUTERTYPE_NAME},
-                           'hw': {'template': hw_template,
-                                  'router_type': HW_ROUTERTYPE_NAME}}
-        return self._templates
+        return {'network_node': {'template': nw_node_template,
+                                 'router_type': NS_ROUTERTYPE_NAME},
+                'vm': {'template': vm_template,
+                       'router_type': VM_ROUTERTYPE_NAME},
+                'hw': {'template': hw_template,
+                       'router_type': HW_ROUTERTYPE_NAME}}
 
     def _test_remove_hosting_device_templates(self):
-
-        try:
-            for name, info in self._templates.items():
-                template = info['template']
-                if template is not None:
-                    self._delete('hosting_device_templates',
-                                 template['hosting_device_template']['id'])
-        except AttributeError:
-            return
+        for hdt in self._list('hosting_device_templates')[
+                'hosting_device_templates']:
+            self._delete('hosting_device_templates', hdt['id'])
 
 
 class TestDeviceManagerDBPlugin(
-    test_db_plugin.NeutronDbPluginV2TestCase,
+    test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
     DeviceManagerTestCaseMixin,
-    device_manager_test_support.DeviceManagerTestSupportMixin):
+        device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = dict(
         (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
@@ -653,7 +647,7 @@ class TestDeviceManagerDBPlugin(
                          bind=False)
 
     def test_acquire_slots_release_hosting_device_ownership_affects_all(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def test_acquire_slots_in_other_owned_hosting_device_fails(self):
@@ -669,7 +663,7 @@ class TestDeviceManagerDBPlugin(
 
     def test_acquire_slots_take_ownership_of_multi_tenant_hosting_device_fails(
             self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def test_acquire_with_slot_deficit_in_owned_hosting_device_fails(self):

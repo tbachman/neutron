@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_utils import importutils
 
 from neutron.common import constants
@@ -20,19 +20,22 @@ from neutron.db import agentschedulers_db
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
-from neutron.tests.unit.cisco.device_manager import device_manager_test_support
-from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_test_support
-from neutron.tests.unit.cisco.l3 import test_db_routertype
-from neutron.tests.unit.cisco.l3 import test_l3_routertype_aware_schedulers
-from neutron.tests.unit.openvswitch import test_agent_scheduler
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    device_manager_test_support)
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    test_db_device_manager)
+from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
+from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
+from neutron.tests.unit.plugins.cisco.l3 import (
+    test_l3_routertype_aware_schedulers)
+from neutron.tests.unit.plugins.openvswitch import test_agent_scheduler
 
 
 L3_HOSTA = test_agent_scheduler.L3_HOSTA
 L3_HOSTB = test_agent_scheduler.L3_HOSTB
 
-CORE_PLUGIN_KLASS = ('neutron.tests.unit.cisco.l3.test_agent_scheduler.'
-                     'TestAgentSchedCorePlugin')
+CORE_PLUGIN_KLASS = ('neutron.tests.unit.plugins.cisco.l3'
+                     '.test_agent_scheduler.TestAgentSchedCorePlugin')
 L3_PLUGIN_KLASS = test_l3_routertype_aware_schedulers.L3_PLUGIN_KLASS
 
 
@@ -51,10 +54,10 @@ class TestAgentSchedCorePlugin(device_manager_test_support.TestCorePlugin,
 
 
 class L3RouterApplianceL3AgentSchedulerTestCase(
-        test_agent_scheduler.OvsAgentSchedulerTestCase,
-        test_db_routertype.RoutertypeTestCaseMixin,
-        test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_test_support.L3RouterTestSupportMixin,
+    test_agent_scheduler.OvsAgentSchedulerTestCase,
+    test_db_routertype.RoutertypeTestCaseMixin,
+    test_db_device_manager.DeviceManagerTestCaseMixin,
+    l3_router_test_support.L3RouterTestSupportMixin,
         device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
@@ -86,10 +89,10 @@ class L3RouterApplianceL3AgentSchedulerTestCase(
 
 
 class L3RouterApplianceL3AgentNotifierTestCase(
-        test_agent_scheduler.OvsL3AgentNotifierTestCase,
-        test_db_routertype.RoutertypeTestCaseMixin,
-        test_db_device_manager.DeviceManagerTestCaseMixin,
-        l3_router_test_support.L3RouterTestSupportMixin,
+    test_agent_scheduler.OvsL3AgentNotifierTestCase,
+    test_db_routertype.RoutertypeTestCaseMixin,
+    test_db_device_manager.DeviceManagerTestCaseMixin,
+    l3_router_test_support.L3RouterTestSupportMixin,
         device_manager_test_support.DeviceManagerTestSupportMixin):
 
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin

@@ -102,38 +102,6 @@ EXTENDED_ATTRIBUTES_2_0 = {
     }
 }
 
-DISABLED_EXTENDED_ATTRIBUTES_2_0 = {
-    'routers': {
-        ENABLED: {'allow_post': True, 'allow_put': True,
-                     'convert_to': attr.convert_to_boolean,
-                     'default': attr.ATTR_NOT_SPECIFIED,
-                     'is_visible': True},
-        TYPE: {'allow_post': True, 'allow_put': True,
-               'validate': {'type:values': HA_TYPES},
-               'default': attr.ATTR_NOT_SPECIFIED,
-               'is_visible': True},
-        REDUNDANCY_LEVEL: {'allow_post': True, 'allow_put': True,
-                           'convert_to': attr.convert_to_int,
-                           'validate': {'type:range': [MIN_REDUNDANCY_LEVEL,
-                                                       MAX_REDUNDANCY_LEVEL]},
-                           'default': attr.ATTR_NOT_SPECIFIED,
-                           'is_visible': True},
-        PROBE_CONNECTIVITY: {'allow_post': True, 'allow_put': True,
-                             'convert_to': attr.convert_to_boolean,
-                             'default': attr.ATTR_NOT_SPECIFIED,
-                             'is_visible': True},
-        PROBE_TARGET: {'allow_post': True, 'allow_put': True,
-                      'validate': {'type:ip_address': None},
-                      'default': attr.ATTR_NOT_SPECIFIED,
-                      'is_visible': True},
-        PROBE_INTERVAL: {'allow_post': True, 'allow_put': True,
-                        'convert_to': attr.convert_to_int,
-                        'validate': attr._validate_non_negative,
-                        'default': attr.ATTR_NOT_SPECIFIED,
-                        'is_visible': True}
-    }
-}
-
 
 class Ha(extensions.ExtensionDescriptor):
     """Extension class to support HA by VRRP, HSRP and GLBP.

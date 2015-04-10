@@ -358,13 +358,13 @@ class HA_db_mixin(object):
         priority = (DEFAULT_MASTER_PRIORITY +
                     max(0, start_index - 1)*PRIORITY_INCREASE_STEP)
         r = copy.deepcopy(user_visible_router)
-        # No tenant_id so redundant routers are hidden from user
+        # No tenant_id so redundancy routers are hidden from user
         r['tenant_id'] = ''
         name = r['name']
         redundancy_r_ids = []
         for i in xrange(start_index, stop_index):
             del r['id']
-            # The redundant routers must have HA disabled
+            # The redundancy routers must have HA disabled
             r[ha.ENABLED] = False
             r['name'] = name + REDUNDANCY_ROUTER_SUFFIX + str(max(1, i))
             # Ensure ip address is not specified as it cannot be same as
@@ -372,7 +372,7 @@ class HA_db_mixin(object):
             r[EXTERNAL_GW_INFO]['external_fixed_ips'][0].pop('ip_address',
                                                              None)
             r = self.create_router(context.elevated(), {'router': r})
-            LOG.debug("Created redundant router %(index)d with router id "
+            LOG.debug("Created redundancy router %(index)d with router id "
                       "%(r_id)s", {'index': i, 'r_id': r['id']})
             priority += PRIORITY_INCREASE_STEP
             r_b_b = RouterRedundancyBinding(
@@ -396,14 +396,14 @@ class HA_db_mixin(object):
         for r_id in router_ids:
             for i in xrange(len(subnets_info)):
                 self.remove_router_interface(e_context, r_id, subnets_info[i])
-                LOG.debug("Removed interface on %(s_id)s to redundant router "
+                LOG.debug("Removed interface on %(s_id)s to redundancy router "
                           "with %(r_id)s",
                           {'s_id': port['network_id'], 'r_id': r_id})
                 # There is only one ha group per network so only delete once
                 if delete_ha_groups and r_id == router_ids[0]:
                     self._delete_ha_group(context, ports[i]['id'])
             self.delete_router(e_context, r_id)
-            LOG.debug("Deleted redundant router %s", r_id)
+            LOG.debug("Deleted redundancy router %s", r_id)
 
     def _get_router_interfaces(self, router_db, type=DEVICE_OWNER_ROUTER_INTF):
         return [p['port'] for p in router_db.attached_ports if
@@ -416,11 +416,11 @@ class HA_db_mixin(object):
         e_context = context.elevated()
         for binding in router_db.redundancy_bindings:
             self.delete_router(e_context, binding.redundancy_router_id)
-            LOG.debug("Deleted redundant router %s",
+            LOG.debug("Deleted redundancy router %s",
                       binding.redundancy_router_id)
 
     def _add_redundancy_router_interfaces(self, context, router_id, new_port,
-                                          redundant_router_ids=None,
+                                          redundancy_router_ids=None,
                                           ha_settings=None,
                                           create_ha_group=True):
         """To be called in add_router_interface() AFTER interface has been
@@ -434,7 +434,7 @@ class HA_db_mixin(object):
         e_context = context.elevated()
         if create_ha_group:
             self._create_ha_group(e_context, router_id, new_port, ha_settings)
-        for r_id in (redundant_router_ids or
+        for r_id in (redundancy_router_ids or
                      self._get_redundancy_router_ids(e_context, router_id)):
             redundancy_port = self._create_hidden_port(
                 e_context, new_port['network_id'], '')

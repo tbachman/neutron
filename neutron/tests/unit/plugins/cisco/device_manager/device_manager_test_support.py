@@ -12,11 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
+
 import mock
 from novaclient import exceptions as nova_exc
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
-from oslo.utils import excutils
+from oslo_utils import excutils
+from oslo_utils import importutils
+from oslo_utils import timeutils
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
@@ -24,15 +28,21 @@ from neutron.common import test_lib
 from neutron import context as n_context
 from neutron.i18n import _LE
 from neutron.db import agents_db
+from neutron.extensions import agent
 from neutron import manager
 from neutron.openstack.common import uuidutils
 import neutron.plugins
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hosting_device_manager_db
+from neutron.plugins.cisco.db.scheduler import cfg_agentschedulers_db
+from neutron.plugins.cisco.device_manager.rpc import devices_cfgagent_rpc_cb
+from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
+from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.common import constants
 from neutron.tests import base
-from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit.extensions import test_l3
 
 LOG = logging.getLogger(__name__)
 
@@ -40,9 +50,13 @@ LOG = logging.getLogger(__name__)
 _uuid = uuidutils.generate_uuid
 
 CORE_PLUGIN_KLASS = (
-    'neutron.tests.unit.cisco.device_manager.device_manager_test_support.'
-    'TestCorePlugin')
+    'neutron.tests.unit.plugins.cisco.device_manager'
+    '.device_manager_test_support.TestCorePlugin')
 extensions_path = ':' + neutron.plugins.__path__[0] + '/cisco/extensions'
+
+L3_CFG_HOST_A = 'host_a'
+L3_CFG_HOST_B = 'host_b'
+L3_CFG_HOST_C = 'host_c'
 
 
 class DeviceManagerTestSupportMixin:
@@ -78,68 +92,6 @@ class DeviceManagerTestSupportMixin:
             self._delete('networks', self._mgmt_nw['network']['id'])
         hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = (
             None)
-
-    # # Functions to mock service VM creation.
-    # def _dispatch_service_vm_mock(self, context, instance_name, vm_image,
-    #                               vm_flavor, hosting_device_drv, mgmt_port,
-    #                               ports=None):
-    #     vm_id = uuidutils.generate_uuid()
-    #
-    #     try:
-    #         # Assumption for now is that this does not need to be
-    #         # plugin dependent, only hosting device type dependent.
-    #         hosting_device_drv.create_config(context, mgmt_port)
-    #     except IOError:
-    #         return
-    #
-    #     if mgmt_port is not None:
-    #         p_dict = {'port': {'device_id': vm_id,
-    #                            'device_owner': 'nova'}}
-    #         self._core_plugin.update_port(context, mgmt_port['id'], p_dict)
-    #
-    #     for port in ports or {}:
-    #         p_dict = {'port': {'device_id': vm_id,
-    #                            'device_owner': 'nova'}}
-    #         self._core_plugin.update_port(context, port['id'], p_dict)
-    #
-    #     myserver = {'server': {'adminPass': "MVk5HPrazHcG",
-    #                 'id': vm_id,
-    #                 'links': [{'href': "http://openstack.example.com/v2/"
-    #                                    "openstack/servers/" + vm_id,
-    #                            'rel': "self"},
-    #                           {'href': "http://openstack.example.com/"
-    #                                    "openstack/servers/" + vm_id,
-    #                            'rel': "bookmark"}]}}
-    #
-    #     return myserver['server']
-    #
-    # def _delete_service_vm_mock(self, context, vm_id):
-    #         result = True
-    #
-    #         try:
-    #             ports = self._core_plugin.get_ports(
-    #                 context, filters={'device_id': [vm_id]})
-    #             for port in ports:
-    #                 self._core_plugin.delete_port(context, port['id'])
-    #         except n_exc.NeutronException as e:
-    #             LOG.error('Failed to delete service VM %(id)s due to '
-    #                       '%(err)s', {'id': vm_id, 'err': e})
-    #             result = False
-    #         return result
-
-    # def _mock_svc_vm_create_delete(self):
-    #     # Mock creation/deletion of service VMs
-    #     self.dispatch_svc_vm_fcn_p = mock.patch(
-    #         'neutron.plugins.cisco.device_manager.service_vm_lib'
-    #         '.ServiceVMManager.dispatch_service_vm',
-    #         self._dispatch_service_vm_mock)
-    #     self.dispatch_svc_vm_fcn_p.start()
-    #
-    #     self.delete_svc_vm_fcn_p = mock.patch(
-    #         'neutron.plugins.cisco.device_manager.service_vm_lib'
-    #         '.ServiceVMManager.delete_service_vm',
-    #         self._delete_service_vm_mock)
-    #     self.delete_svc_vm_fcn_p.start()
 
     # Function used to mock novaclient services list
     def _novaclient_services_list(self, all=True):
@@ -241,18 +193,68 @@ class DeviceManagerTestSupportMixin:
     def _add_device_manager_plugin_ini_file(self):
         # includes config files for device manager service plugin
         cfg_file = (
-            base.TEST_ROOT_DIR +
-            '/unit/cisco/etc/cisco_device_manager_plugin.ini')
+            base.ROOTDIR +
+            '/unit/plugins/cisco/etc/cisco_device_manager_plugin.ini')
         if 'config_files' in test_lib.test_config:
             test_lib.test_config['config_files'].append(cfg_file)
         else:
             test_lib.test_config['config_files'] = [cfg_file]
+
+    def _register_cfg_agent_states(self, host_a_active=True,
+                                   host_b_active=False,
+                                   host_c_active=False):
+        """Register zero, one, two, or three L3 config agents."""
+        l3_cfg_host_a = {
+            'binary': 'neutron-cisco-cfg-agent',
+            'host': L3_CFG_HOST_A,
+            'topic': cisco_constants.CFG_AGENT,
+            'configurations': {
+                'total routers': 0,
+                'total ex_gw_ports': 0,
+                'total interfaces': 0,
+                'total floating_ips': 0,
+                'hosting_devices': 0,
+                'non_responding_hosting_devices': {}},
+            'local_time': str(timeutils.utcnow()),
+            'agent_type': cisco_constants.AGENT_TYPE_CFG}
+        agent_callback = agents_db.AgentExtRpcCallback()
+        dev_mgr_callback = devices_cfgagent_rpc_cb.DeviceMgrCfgRpcCallback(
+            manager.NeutronManager.get_service_plugins()[
+                constants.DEVICE_MANAGER])
+        if host_a_active is True:
+            agent_callback.report_state(
+                self.adminContext,
+                agent_state={'agent_state': l3_cfg_host_a},
+                time=timeutils.strtime())
+            dev_mgr_callback.register_for_duty(self.adminContext,
+                                               L3_CFG_HOST_A)
+        if host_b_active is True:
+            l3_cfg_host_b = copy.deepcopy(l3_cfg_host_a)
+            l3_cfg_host_b['host'] = L3_CFG_HOST_B
+            l3_cfg_host_b['local_time'] = str(timeutils.utcnow()),
+            agent_callback.report_state(
+                self.adminContext, agent_state={'agent_state': l3_cfg_host_b},
+                time=timeutils.strtime())
+            dev_mgr_callback.register_for_duty(self.adminContext,
+                                               L3_CFG_HOST_B)
+        if host_c_active is True:
+            l3_cfg_host_c = copy.deepcopy(l3_cfg_host_a)
+            l3_cfg_host_c['host'] = L3_CFG_HOST_C
+            l3_cfg_host_c['local_time'] = str(timeutils.utcnow()),
+            agent_callback.report_state(
+                self.adminContext, agent_state={'agent_state': l3_cfg_host_c},
+                time=timeutils.strtime())
+            dev_mgr_callback.register_for_duty(self.adminContext,
+                                               L3_CFG_HOST_B)
 
 
 class TestDeviceManagerExtensionManager(object):
 
     def get_resources(self):
         res = ciscodevmgr.Ciscohostingdevicemanager.get_resources()
+        # add agent resource
+        for item in agent.Agent.get_resources():
+            res.append(item)
         # Add the resources to the global attribute map
         # This is done here as the setup process won't
         # initialize the main API router which extends
@@ -268,12 +270,23 @@ class TestDeviceManagerExtensionManager(object):
         return []
 
 
-# A core plugin supporting Cisco device manager functionality
-class TestCorePlugin(test_l3_plugin.TestNoL3NatPlugin, agents_db.AgentDbMixin,
+# A core plugin supporting Cisco device manager and hosting device to cfg
+# agent scheduling functionality
+class TestCorePlugin(test_l3.TestNoL3NatPlugin,
+                     cfg_agentschedulers_db.CfgAgentSchedulerDbMixin,
                      hosting_device_manager_db.HostingDeviceManagerMixin):
 
-    supported_extension_aliases = ["external-net",
-                                   ciscodevmgr.HOSTING_DEVICE_MANAGER_ALIAS]
+    supported_extension_aliases = [
+        "agent", "external-net",
+        ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS,
+        ciscodevmgr.HOSTING_DEVICE_MANAGER_ALIAS]
+
+    def __init__(self):
+        super(TestCorePlugin, self).__init__()
+        self.cfg_agent_scheduler = importutils.import_object(
+            cfg.CONF.general.configuration_agent_scheduler_driver)
+        self.agent_notifiers[cisco_constants.AGENT_TYPE_CFG] = (
+            devmgr_rpc_cfgagent_api.DeviceMgrCfgAgentNotifyAPI(self))
 
 
 # Used to fake Glance images, Nova VMs and Nova services

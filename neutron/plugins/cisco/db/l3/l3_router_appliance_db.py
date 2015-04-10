@@ -506,7 +506,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     e_context, selected_hd, router_db,
                     slot_need or binding_info_db.router_type.slot_need,
                     exclusive=not binding_info_db.share_hosting_device)
-                if acquired:
+                if acquired is True:
                     binding_info_db.hosting_device_id = selected_hd['id']
                     self.remove_router_from_backlog(router_db['id'])
                     LOG.info(_LI('Successfully scheduled router %(r_id)s to '
@@ -543,7 +543,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_ctxt = driver_context.RouterContext(
                 self._make_router_dict(binding_info_db.router))
         result = scheduler.unschedule_router(self, context, binding_info_db)
-        if result:
+        if result is True:
             # must use slot need for effective (i.e., current) router type
             slot_need = self._get_effective_slot_need(context, binding_info_db)
             self._dev_mgr.release_hosting_device_slots(
@@ -593,11 +593,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     @lockutils.synchronized('routers', 'neutron-')
     def remove_router_from_backlog(self, router_id):
-        self._remove_router_from_backlog(router_id)
+        self._remove_routers_from_backlog([router_id])
 
-    def _remove_router_from_backlog(self, router_id):
-        self._backlogged_routers.discard(router_id)
-        LOG.info(_LI('Router %s removed from backlog'), router_id)
+    def _remove_routers_from_backlog(self, router_ids):
+        for router_id in router_ids:
+            if router_id in self._backlogged_routers:
+                self._backlogged_routers.discard(router_id)
+                LOG.info(_LI('Router %s removed from backlog'), router_id)
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def _process_backlogged_routers(self):
@@ -609,7 +611,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         scheduled_routers = []
         LOG.info(_LI('Processing router (scheduling) backlog'))
         # try to reschedule
-        for r_id in set(self._backlogged_routers):
+        s = copy.deepcopy(self._backlogged_routers)
+        for r_id in s: #copy.deepcopy(self._backlogged_routers):
             r_hd_binding = self._get_router_binding_info(e_context, r_id)
             self.schedule_router_on_hosting_device(e_context, r_hd_binding)
             e_context.session.expire(r_hd_binding)
@@ -619,7 +622,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     e_context, router, r_hd_binding, schedule=False)
                 # scheduling attempt succeeded
                 scheduled_routers.append(router)
-                self._remove_router_from_backlog(r_id)
+        self._remove_routers_from_backlog([r['id'] for r in scheduled_routers])
         # notify cfg agents so the scheduled routers are instantiated
         if scheduled_routers:
             for ni in self._get_notifiers(e_context, scheduled_routers):

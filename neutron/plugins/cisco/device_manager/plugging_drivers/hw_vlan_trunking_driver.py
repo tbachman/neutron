@@ -55,11 +55,18 @@ class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 'network_id': mgmt_context['mgmt_nw_id'],
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
                 'fixed_ips': self._mgmt_subnet_spec(context, mgmt_context),
-                'n1kv:profile_id': self.mgmt_port_profile_id(),
                 'device_id': "",
                 # Use device_owner attribute to ensure we can query for these
                 # ports even before Nova has set device_id attribute.
                 'device_owner': complementary_id}}
+            try:
+                # perform this operation in this try-except to allow us to
+                # use this driver also with other plugins than n1kv monolitic
+                p_spec['n1kv:profile_id'] = self.mgmt_port_profile_id()
+            except AttributeError:
+                # this error means that we're not using the n1kv plugin so
+                # the profile_id attribute should not be included
+                pass
             try:
                 mgmt_port = self._core_plugin.create_port(context,
                                                           p_spec)

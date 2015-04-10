@@ -249,10 +249,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             (exclusive and not self._exclusively_used(context, hosting_device,
                                                       resource['tenant_id']))):
             LOG.debug('Rejecting allocation of %(num)d slots in hosting '
-                      'device %(device)s to logical resource %(id)s due to '
+                      'device %(device)s to logical resource %(r_id)s due to '
                       'conflict of exclusive usage.',
                       {'num': num, 'device': hosting_device['id'],
-                       'id': resource['id']})
+                       'r_id': resource['id']})
             return False
         with context.session.begin(subtransactions=True):
             try:
@@ -263,10 +263,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             except exc.MultipleResultsFound:
                 # this should not happen
                 LOG.error(_LE('DB inconsistency: Multiple slot allocation '
-                              'entries for logical resource %(res)s in '
+                              'entries for logical resource %(r_id)s in '
                               'hosting device %(device)s. Rejecting slot '
                               'allocation!'),
-                          {'res': resource['id'],
+                          {'r_id': resource['id'],
                            'device': hosting_device['id']})
                 return False
             except exc.NoResultFound:
@@ -281,9 +281,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if hosting_device['template']['slot_capacity'] < new_allocation:
                 LOG.debug('Rejecting allocation of %(num)d slots in '
                           'hosting device %(device)s to logical resource '
-                          '%(id)s due to insufficent slot availability.',
+                          '%(r_id)s due to insufficent slot availability.',
                           {'num': num, 'device': hosting_device['id'],
-                           'id': resource['id']})
+                           'r_id': resource['id']})
                 self._dispatch_pool_maintenance_job(hosting_device['template'])
                 return False
             # handle any changes to exclusive usage by tenant
@@ -298,9 +298,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         self._dispatch_pool_maintenance_job(hosting_device['template'])
         # report success
         LOG.info(_LI('Allocated %(num)d additional slots in hosting device '
-                     '%(hd_id)s. %(total)d slots are now allocated in that '
-                     'hosting device.'), {'num': num, 'total': new_allocation,
-                                          'hd_id': hosting_device['id']})
+                     '%(hd_id)s. In total %(total)d slots are now allocated '
+                     'in that hosting device for logical resource %(r_id)s.'),
+                 {'num': num, 'total': new_allocation,
+                  'hd_id': hosting_device['id'], 'r_id': resource['id']})
         return True
 
     def release_hosting_device_slots(self, context, hosting_device, resource,
@@ -500,8 +501,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             # mgmt network not yet created, need to abort
             return
         adm_context = neutron_context.get_admin_context()
-        plg_drv = self.get_hosting_device_plugging_driver(adm_context,
-                                                          hosting_device.id)
+        plg_drv = self.get_hosting_device_plugging_driver(
+            adm_context, hosting_device.template_id)
         if not plg_drv:
             return
         mgmt_context = {
@@ -509,7 +510,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             'mgmt_nw_id': mgmt_nw_id,
             'mgmt_sec_grp_id': self.mgmt_sec_grp_id}
         res = plg_drv.create_hosting_device_resources(
-            adm_context, uuidutils.generate_uuid(), self.l3_tenant_id,
+            adm_context, uuidutils.generate_uuid(), self.l3_tenant_id(),
             mgmt_context, 1)
         if not res['mgmt_port']:
             return

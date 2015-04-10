@@ -21,15 +21,15 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
 from neutron.tests import base
-from neutron.tests.unit import test_api_v2
-from neutron.tests.unit import test_api_v2_extension as test_api_v2_ext
-
+from neutron.tests.unit.api.v2 import test_base
+from neutron.tests.unit.extensions import base as test_extensions_base
 
 _uuid = uuidutils.generate_uuid
-_get_path = test_api_v2._get_path
+_get_path = test_base._get_path
 
 
-class CiscoHostingDeviceManagerTestCase(test_api_v2_ext.ExtensionTestCase):
+class CiscoHostingDeviceManagerTestCase(
+    test_extensions_base.ExtensionTestCase):
     fmt = 'json'
 
     def setUp(self):

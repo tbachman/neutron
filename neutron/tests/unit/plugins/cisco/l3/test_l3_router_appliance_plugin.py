@@ -13,7 +13,7 @@
 #    under the License.
 
 import mock
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 import neutron
@@ -27,21 +27,23 @@ from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
-from neutron.tests.unit.cisco.device_manager import device_manager_test_support
-from neutron.tests.unit.cisco.device_manager import test_db_device_manager
-from neutron.tests.unit.cisco.l3 import l3_router_test_support
-from neutron.tests.unit.cisco.l3 import test_db_routertype
-from neutron.tests.unit import test_db_plugin
-from neutron.tests.unit import test_extension_extraroute as test_ext_extraroute
-from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    device_manager_test_support)
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    test_db_device_manager)
+from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
+from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
+from neutron.tests.unit.extensions import test_extraroute
+from neutron.tests.unit.extensions import test_l3
 
 LOG = logging.getLogger(__name__)
 
 
 CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
 L3_PLUGIN_KLASS = (
-    "neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin."
-    "TestApplianceL3RouterServicePlugin")
+    'neutron.tests.unit.plugins.cisco.l3.test_l3_router_appliance_plugin.'
+    'TestApplianceL3RouterServicePlugin')
 extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
 
 
@@ -55,7 +57,7 @@ class TestL3RouterApplianceExtensionManager(
                      self).get_resources()
 
 
-class TestNoL3NatPlugin(test_l3_plugin.TestNoL3NatPlugin,
+class TestNoL3NatPlugin(test_l3.TestNoL3NatPlugin,
                         agents_db.AgentDbMixin):
 
     # There is no need to expose agent REST API
@@ -108,7 +110,7 @@ class TestApplianceL3RouterServicePlugin(
 
 
 class L3RouterApplianceTestCaseBase(
-    test_db_plugin.NeutronDbPluginV2TestCase,
+    test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
     test_db_routertype.RoutertypeTestCaseMixin,
     test_db_device_manager.DeviceManagerTestCaseMixin,
     l3_router_test_support.L3RouterTestSupportMixin,
@@ -117,6 +119,8 @@ class L3RouterApplianceTestCaseBase(
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
     router_type = None
+    configure_routertypes = True
+    mock_cfg_agent_notifiers = True
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -161,12 +165,14 @@ class L3RouterApplianceTestCaseBase(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
- #       templates = self._test_create_hosting_device_templates()
- #       self._test_create_routertypes(templates.values())
+        if self.configure_routertypes is True:
+            templates = self._test_create_hosting_device_templates()
+            self._test_create_routertypes(templates.values())
         self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
-#        self._mock_svc_vm_create_delete(self.core_plugin)
+        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
-        self._mock_cfg_agent_notifier(self.plugin)
+        if self.mock_cfg_agent_notifiers is True:
+            self._mock_cfg_agent_notifier(self.plugin)
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP
@@ -176,12 +182,19 @@ class L3RouterApplianceTestCaseBase(
         self._test_remove_routertypes()
         self._test_remove_hosting_device_templates()
         self._remove_mgmt_nw_for_tests()
-        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
-            TestApplianceL3RouterServicePlugin._mgmt_nw_uuid) = None
-        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
+        (neutron.tests.unit.plugins.cisco.l3.test_l3_router_appliance_plugin.
             TestApplianceL3RouterServicePlugin._refresh_router_backlog) = True
-        (neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.
-            TestApplianceL3RouterServicePlugin._nova_running) = False
+        device_manager_test_support.TestCorePlugin._l3_tenant_uuid = None
+        device_manager_test_support.TestCorePlugin._mgmt_nw_uuid = None
+        device_manager_test_support.TestCorePlugin._mgmt_sec_grp_id = None
+        device_manager_test_support.TestCorePlugin._credentials = {}
+        device_manager_test_support.TestCorePlugin._plugging_drivers = {}
+        device_manager_test_support.TestCorePlugin._hosting_device_drivers = {}
+        device_manager_test_support.TestCorePlugin._hosting_device_locks = {}
+        device_manager_test_support.TestCorePlugin._cfgagent_scheduler = None
+        device_manager_test_support.TestCorePlugin._svc_vm_mgr_obj = None
+        device_manager_test_support.TestCorePlugin._nova_running = False
+
         #TODO(bobmel): Investigate why the following lines need to be disabled
 #        plugin = manager.NeutronManager.get_service_plugins()[
 #            service_constants.L3_ROUTER_NAT]
@@ -191,8 +204,7 @@ class L3RouterApplianceTestCaseBase(
 
 
 class L3RouterApplianceNamespaceTestCase(
-    test_l3_plugin.L3NatTestCaseBase,
-    test_ext_extraroute.ExtraRouteDBTestCaseBase,
+    test_l3.L3NatTestCaseBase, test_extraroute.ExtraRouteDBTestCaseBase,
         L3RouterApplianceTestCaseBase):
 
     router_type = c_const.NAMESPACE_ROUTER_TYPE
@@ -202,8 +214,7 @@ class L3RouterApplianceNamespaceTestCase(
             'neutron.db.l3_db.L3_NAT_dbonly_mixin._check_and_get_fip_assoc')
 
 
-class L3RouterApplianceVMTestCase(
-    L3RouterApplianceNamespaceTestCase):
+class L3RouterApplianceVMTestCase(L3RouterApplianceNamespaceTestCase):
 
     router_type = c_const.CSR1KV_ROUTER_TYPE
 
@@ -213,12 +224,11 @@ class L3RouterApplianceVMTestCase(
             core_plugin=core_plugin, l3_plugin=l3_plugin, dm_plugin=dm_plugin,
             ext_mgr=ext_mgr)
 
-        self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_get_routertype_scheduler_always_none()
 
 
 class L3AgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
-                                     test_l3_plugin.L3AgentDbTestCaseBase):
+                                     test_l3.L3AgentDbTestCaseBase):
 
     router_type = c_const.NAMESPACE_ROUTER_TYPE
 
@@ -229,7 +239,7 @@ class L3AgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
 
 
 class L3CfgAgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
-                                        test_l3_plugin.L3AgentDbTestCaseBase):
+                                        test_l3.L3AgentDbTestCaseBase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):

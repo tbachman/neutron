@@ -14,7 +14,7 @@
 
 import copy
 import mock
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo import messaging
 
 from neutron.common import config as base_config
@@ -187,7 +187,9 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         snip_name = 'CREATE_SUBINTERFACE'
         e_type = 'Fake error'
         e_tag = 'Fake error tag'
-        params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
+        confstr = 'Fake config string'
+        params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag,
+                  'confstr': confstr}
         self.routing_helper._internal_network_added.side_effect = (
             cfg_exceptions.CSR1kvConfigException(**params))
         router, ports = prepare_router_data()

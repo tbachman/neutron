@@ -56,6 +56,9 @@ class L3RouterTypeAwareSchedulerDbMixin(
         #TODO(bobmel): Perform proper hosting device validation
         target_hd_db =  self._dev_mgr._get_hosting_device(context,
                                                           hosting_device_id)
+        if target_hd_db.admin_state_up is False:
+            raise routertypeawarescheduler.InvalidHostingDevice(
+                hosting_device_id=hosting_device_id)
         rt_info = self.get_routertypes(
             context, fields=['id', 'slot_need'],
             filters={'template_id': [target_hd_db.template_id]})
@@ -72,6 +75,8 @@ class L3RouterTypeAwareSchedulerDbMixin(
         e_context = context.elevated()
         r_hd_binding_db = self._get_router_binding_info(e_context, router_id)
         if r_hd_binding_db.hosting_device_id:
+            if r_hd_binding_db.hosting_device_id == hosting_device_id:
+                return
             raise routertypeawarescheduler.RouterHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
         rt_info = self.validate_hosting_device_router_combination(
@@ -128,8 +133,11 @@ class L3RouterTypeAwareSchedulerDbMixin(
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             hosting_device_id)
         router_ids = [item[0] for item in query]
-        return {'routers': self.get_sync_data_ext(context,
-                                                  router_ids=router_ids)}
+        if router_ids:
+            return {'routers': self.get_sync_data_ext(context,
+                                                      router_ids=router_ids)}
+        else:
+            return {'routers': []}
 
     def list_hosting_devices_hosting_router(self, context, router_id):
         query = context.session.query(

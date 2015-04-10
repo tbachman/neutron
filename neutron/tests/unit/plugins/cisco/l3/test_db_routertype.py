@@ -14,19 +14,21 @@
 
 import contextlib
 
-from oslo.config import cfg
+from oslo_config import cfg
 import webob.exc
 
 from neutron.common import constants as n_const
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
+from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.common import constants
-from neutron.tests.unit.cisco.device_manager import device_manager_test_support
-from neutron.tests.unit.cisco.device_manager.test_db_device_manager import (
-    DeviceManagerTestCaseMixin)
-from neutron.tests.unit.cisco.l3 import l3_router_test_support
-from neutron.tests.unit import test_db_plugin
+from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron.tests.unit.plugins.cisco.device_manager import (
+    device_manager_test_support)
+from neutron.tests.unit.plugins.cisco.device_manager.test_db_device_manager \
+    import DeviceManagerTestCaseMixin
+from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
 
 
 CORE_PLUGIN_KLASS = device_manager_test_support.CORE_PLUGIN_KLASS
@@ -131,25 +133,30 @@ class RoutertypeTestCaseMixin(object):
     def _test_create_routertypes(self, mappings=None):
         if mappings is None:
             mappings = {}
-        self._routertypes = {}
         for mapping in mappings:
             template = mapping['template']
             if template is None:
                 self._routertypes[mapping['router_type']] = None
             else:
                 routertype_name = mapping['router_type']
-                rt = self._create_routertype(
+                self._create_routertype(
                     self.fmt, template['hosting_device_template']['id'],
                     routertype_name,
                     RT_SETTINGS[routertype_name]['slot_need'],
                     scheduler=RT_SETTINGS[routertype_name]['scheduler'])
-                self._routertypes[routertype_name] = self.deserialize(self.fmt,
-                                                                      rt)
-        return self._routertypes
 
     def _test_remove_routertypes(self, delete_routers=True):
         if delete_routers:
+            ha_redundancy_router_ids = set()
             for r in self._list('routers')['routers']:
+                # Exclude any redundancy routers as they are removed
+                # automatically when removing the user visible router
+                for rr_info in r.get(
+                        ha.DETAILS,
+                        {ha.REDUNDANCY_ROUTERS: []})[ha.REDUNDANCY_ROUTERS]:
+                    ha_redundancy_router_ids.add(rr_info['id'])
+                if r['id'] in ha_redundancy_router_ids:
+                    continue
                 # Remove any floatingips using the router
                 for fip in self._list(
                         'floatingips',
@@ -163,21 +170,15 @@ class RoutertypeTestCaseMixin(object):
                             n_const.DEVICE_OWNER_ROUTER_INTF))['ports']:
                     # get_ports can be mocked in some tests so we need to
                     # ensure we get a port that is indeed a router port.
-                    if (p.get('device_owner',
-                              n_const.DEVICE_OWNER_ROUTER_INTF) and
-                        p.get('fixed_ips') and
-                            'subnet_id' in p['fixed_ips'][0]):
-                        self._router_interface_action(
-                            'remove', r['id'], p['fixed_ips'][0]['subnet_id'],
-                            None)
+                    if (p.get('device_owner') ==
+                            n_const.DEVICE_OWNER_ROUTER_INTF and
+                            'fixed_ips' in p and 'id' in p):
+                        self._router_interface_action('remove', r['id'], None,
+                                                      p['id'])
                 # Remove the router
                 self._delete('routers', r['id'])
-        try:
-            for name, rt in self._routertypes.items():
-                if rt is not None:
-                    self._delete('routertypes', rt['routertype']['id'])
-        except AttributeError:
-            pass
+        for rt in self._list('routertypes')['routertypes']:
+            self._delete('routertypes', rt['id'])
 
 
 class L3TestRoutertypeExtensionManager(
@@ -192,7 +193,7 @@ class L3TestRoutertypeExtensionManager(
         return res
 
 
-class TestRoutertypeDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
+class TestRoutertypeDBPlugin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
                              RoutertypeTestCaseMixin,
                              DeviceManagerTestCaseMixin):
     resource_prefix_map = dict(
@@ -225,22 +226,22 @@ class TestRoutertypeDBPlugin(test_db_plugin.NeutronDbPluginV2TestCase,
                     self.assertEqual(rt['routertype'][k], v)
 
     def _test_show_routertype(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def _test_list_routertypes(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def _test_update_routertype(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def _test_delete_routertype(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 
     def _test_delete_routertype_in_use(self):
-        #TODO
+        #TODO(bobmel): Implement this unit test
         pass
 

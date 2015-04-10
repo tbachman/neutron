@@ -273,7 +273,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             res = self.devmgr_rpc.register_for_duty(context)
             if res is True:
                 LOG.info(_LI("[Agent registration] Agent successfully "
-                           "registered"))
+                             "registered"))
                 return
             elif res is False:
                 LOG.warning(_LW("[Agent registration] Neutron server said "
@@ -286,7 +286,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                               "Exiting!"))
                 raise SystemExit("Cfg Agent exiting")
         LOG.error(_LE("[Agent registration] %d unsuccessful registration "
-                    "attempts. Exiting!"), MAX_REGISTRATION_ATTEMPTS)
+                      "attempts. Exiting!"), MAX_REGISTRATION_ATTEMPTS)
         raise SystemExit("Cfg Agent exiting")
 
     def _report_state(self):

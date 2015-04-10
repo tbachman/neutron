@@ -90,7 +90,7 @@ RESOURCE_ATTRIBUTE_MAP = {
 EXTENDED_ATTRIBUTES_2_0 = {
     'routers': {
         TYPE_ATTR: {'allow_post': True, 'allow_put': True,
-                    'validate': {'type:uuid': None},
+                    'validate': {'type:string': None},
                     'default': attr.ATTR_NOT_SPECIFIED,
                     'is_visible': True},
     }
