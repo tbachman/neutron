@@ -18,6 +18,7 @@ from oslo_log import log as logging
 import webob.exc
 
 from neutron.api import extensions
+from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import base
 from neutron.api.v2 import resource
 from neutron.common import exceptions
@@ -68,6 +69,8 @@ L3_ROUTER_DEVICE = 'l3-router-device'
 L3_ROUTER_DEVICES = L3_ROUTER_DEVICE + 's'
 L3_DEVICE = 'l3-hosting-device'
 L3_DEVICES = L3_DEVICE + 's'
+AUTO_SCHEDULE_ATTR = ROUTERTYPE_AWARE_SCHEDULER_ALIAS + ':auto_schedule'
+SHARE_HOST_ATTR = ROUTERTYPE_AWARE_SCHEDULER_ALIAS + ':share_hosting_device'
 
 
 class RouterHostingDeviceSchedulerController(wsgi.Controller):
@@ -128,6 +131,22 @@ class HostingDevicesHostingRouterController(wsgi.Controller):
                                                           kwargs['router_id'])
 
 
+EXTENDED_ATTRIBUTES_2_0 = {
+    'routers': {
+        AUTO_SCHEDULE_ATTR: {'allow_post': True, 'allow_put': True,
+                             'convert_to': attr.convert_to_boolean,
+                             'validate': {'type:boolean': None},
+                             'default': attr.ATTR_NOT_SPECIFIED,
+                             'is_visible': True},
+        SHARE_HOST_ATTR: {'allow_post': True, 'allow_put': False,
+                          'convert_to': attr.convert_to_boolean,
+                          'validate': {'type:boolean': None},
+                          'default': attr.ATTR_NOT_SPECIFIED,
+                          'is_visible': True},
+    }
+}
+
+
 class Routertypeawarescheduler(extensions.ExtensionDescriptor):
     """Extension class supporting l3 agent scheduler."""
     @classmethod
@@ -172,7 +191,10 @@ class Routertypeawarescheduler(extensions.ExtensionDescriptor):
         return exts
 
     def get_extended_resources(self, version):
-        return {}
+        if version == "2.0":
+            return EXTENDED_ATTRIBUTES_2_0
+        else:
+            return {}
 
 
 class RouterTypeAwareSchedulerPluginBase(object):

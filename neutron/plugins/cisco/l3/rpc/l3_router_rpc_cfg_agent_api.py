@@ -62,9 +62,7 @@ class L3RouterCfgAgentNotifyAPI(object):
                            'topic': CFG_AGENT_L3_ROUTING,
                            'host': agent.host,
                            'method': method})
-                cctxt = self.client.prepare(#topic=CFG_AGENT_L3_ROUTING,
-                                            server=agent.host)#,
-                                            #version='1.0')
+                cctxt = self.client.prepare(server=agent.host)
                 cctxt.cast(context, method, routers=[router['id']])
 
     def _notification(self, context, method, routers, operation,

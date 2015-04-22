@@ -54,6 +54,25 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 context, filters={'id': unscheduled_router_ids})
         return []
 
+    def filter_unscheduled_routers(self, context, plugin, routers):
+        """Filter from list of routers the ones that are not scheduled."""
+        unscheduled_routers = []
+        for router in routers:
+            if (router[routertype.TYPE_ATTR] !=
+                    plugin.get_namespace_router_type_id(context)):
+                # ignore non-namespace routers
+                continue
+            l3_agents = plugin.get_l3_agents_hosting_routers(
+                context, [router['id']])
+            if l3_agents:
+                LOG.debug('Router %(router_id)s has already been '
+                          'hosted by L3 agent %(agent_id)s',
+                          {'router_id': router['id'],
+                           'agent_id': l3_agents[0]['id']})
+            else:
+                unscheduled_routers.append(router)
+        return unscheduled_routers
+
     def schedule(self, plugin, context, router, candidates=None,
                  hints=None):
         # Only network namespace based routers should be scheduled here

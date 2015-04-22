@@ -185,6 +185,7 @@ class L3TestRoutertypeExtensionManager(
         l3_router_test_support.TestL3RouterBaseExtensionManager):
 
     def get_resources(self):
+        # most of the resources are added in our super class
         res = super(L3TestRoutertypeExtensionManager, self).get_resources()
         ext_mgr = (device_manager_test_support.
                    TestDeviceManagerExtensionManager())

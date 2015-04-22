@@ -25,6 +25,8 @@ import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
+from neutron.plugins.cisco.db.scheduler import (
+    l3_routertype_aware_schedulers_db as router_sch_db)
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
@@ -81,24 +83,23 @@ class L3RouterTestSupportMixin:
 class TestL3RouterBaseExtensionManager(object):
 
     def get_resources(self):
-        # add hosting device attribute to router resource
-        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
-            routerhostingdevice.EXTENDED_ATTRIBUTES_2_0['routers'])
-        # add routertype attribute to router resource
-        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
-            routertype.EXTENDED_ATTRIBUTES_2_0['routers'])
-        res = l3.L3.get_resources()
-        # add routertype resource
-        for item in routertype.Routertype.get_resources():
-            res.append(item)
         # Add the resources to the global attribute map
         # This is done here as the setup process won't
         # initialize the main API router which extends
         # the global attribute map
+        # first, add hosting device attribute to router resource
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            routerhostingdevice.EXTENDED_ATTRIBUTES_2_0['routers'])
+        # also add routertype attribute to router resource
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            routertype.EXTENDED_ATTRIBUTES_2_0['routers'])
+        # finally, extend the global attribute map
         attributes.RESOURCE_ATTRIBUTE_MAP.update(
             l3.RESOURCE_ATTRIBUTE_MAP)
-        attributes.RESOURCE_ATTRIBUTE_MAP.update(
-            routertype.RESOURCE_ATTRIBUTE_MAP)
+        res = l3.L3.get_resources()
+        # add routertype resource
+        for item in routertype.Routertype.get_resources():
+            res.append(item)
         return res
 
     def get_actions(self):
@@ -113,7 +114,10 @@ class TestL3RouterBaseExtensionManager(object):
 class TestL3RouterServicePlugin(
     common_db_mixin.CommonDbMixin,
     routertype_db.RoutertypeDbMixin,
-        l3_router_appliance_db.L3RouterApplianceDBMixin):
+    l3_router_appliance_db.L3RouterApplianceDBMixin,
+    # we need the router scheduling db but do not expose the scheduling
+    # REST operations
+        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
     supported_extension_aliases = [
         "router",

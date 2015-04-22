@@ -17,6 +17,7 @@ from oslo_log import log as logging
 from sqlalchemy import sql
 
 from neutron.common import topics
+from neutron.api.v2 import attributes
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import models_v2
@@ -39,6 +40,15 @@ ROUTER_TYPE_AWARE_SCHEDULER_OPTS = [
                        'L3RouterTypeAwareScheduler',
                help=_('Driver to use for router type-aware scheduling of '
                       'router to a default L3 agent')),
+    cfg.BoolOpt('auto_schedule',
+                default=True,
+                help=_('Set to True if routers are to be automatically '
+                       'scheduled by default')),
+    cfg.BoolOpt('share_hosting_device',
+                default=True,
+                help=_('Set to True if routers can share hosts with routers '
+                       'owned by other tenants by default')),
+
 ]
 
 cfg.CONF.register_opts(ROUTER_TYPE_AWARE_SCHEDULER_OPTS, "routing")
@@ -175,6 +185,23 @@ class L3RouterTypeAwareSchedulerDbMixin(
                                           active=True)
         else:
             return []
+
+    def _ensure_router_scheduling_compliant(self, router):
+        auto_schedule = router.pop(routertypeawarescheduler.AUTO_SCHEDULE_ATTR,
+                                   attributes.ATTR_NOT_SPECIFIED)
+        if auto_schedule is attributes.ATTR_NOT_SPECIFIED:
+            auto_schedule = cfg.CONF.routing.auto_schedule
+        share_host = router.pop(routertypeawarescheduler.SHARE_HOST_ATTR,
+                                attributes.ATTR_NOT_SPECIFIED)
+        if share_host is attributes.ATTR_NOT_SPECIFIED:
+            share_host = cfg.CONF.routing.share_hosting_device
+        return auto_schedule, share_host
+
+    def _extend_router_dict_scheduling_info(self, router_res, router_db):
+        router_res[routertypeawarescheduler.AUTO_SCHEDULE_ATTR] = (
+            (router_db.hosting_info or {}).get('auto_schedule'))
+        router_res[routertypeawarescheduler.SHARE_HOST_ATTR] = (
+            (router_db.hosting_info or {}).get('share_hosting_device'))
 
     def get_active_routers_for_host(self, context, host):
         query = context.session.query(

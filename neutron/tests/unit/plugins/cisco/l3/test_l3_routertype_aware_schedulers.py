@@ -27,12 +27,12 @@ from neutron.common import constants
 from neutron.common import test_lib
 from neutron import context as q_context
 from neutron.extensions import agent
+from neutron.extensions import l3
 from neutron import manager
 from neutron.plugins.common import constants as plugin_consts
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
-from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
@@ -58,14 +58,20 @@ L3_PLUGIN_KLASS = (
     'TestSchedulingCapableL3RouterServicePlugin')
 
 _uuid = uuidutils.generate_uuid
-
+HOSTING_DEVICE_ATTR = routerhostingdevice.HOSTING_DEVICE_ATTR
 
 class TestSchedulingL3RouterApplianceExtensionManager(
         test_db_routertype.L3TestRoutertypeExtensionManager):
 
     def get_resources(self):
+        # first, add auto_schedule and share_hosting_device attributes to
+        # router resource
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            routertypeawarescheduler.EXTENDED_ATTRIBUTES_2_0['routers'])
+        # most of the resources are added in our super class
         res = super(TestSchedulingL3RouterApplianceExtensionManager,
                     self).get_resources()
+        # add the router scheduling resources
         ext_mgr = routertypeawarescheduler.Routertypeawarescheduler()
         for item in ext_mgr.get_resources():
             res.append(item)
@@ -87,8 +93,6 @@ class TestSchedulingCapableL3RouterServicePlugin(
             {constants.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotifyAPI(),
              c_const.AGENT_TYPE_L3_CFG:
              l3_router_rpc_cfg_agent_api.L3RouterCfgAgentNotifyAPI(self)})#,
-#             c_const.AGENT_TYPE_CFG:
-#             devmgr_rpc_cfgagent_api.DeviceMgrCfgAgentNotifyAPI})
         self.router_scheduler = importutils.import_object(
             cfg.CONF.routing.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
@@ -137,7 +141,6 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
         self.plugin.router_scheduler = (
             self.l3_plugin.l3agent_scheduler)
         self._register_l3_agents()
-
         self._mock_l3_admin_tenant()
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
@@ -148,16 +151,87 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
         super(L3RoutertypeAwareL3AgentSchedulerTestCase, self).tearDown()
 
     def get_unscheduled_routers_only_returns_namespace_routers(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+        self._create_mgmt_nw_for_tests(self.fmt)
+        arg_list = (routertype.TYPE_ATTR, )
+        kwargs = {routertype.TYPE_ATTR: test_db_routertype.HW_ROUTERTYPE_NAME}
+        # router 1
+        self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
+                          **kwargs)['router']
+        # namespace-based routers
+        with contextlib.nested(self.router(name='router2'),
+                               self.router(name='router3')) as (
+                router2, router3):
+            r2 = router2['router']
+            r3 = router3['router']
+            # router 4
+            self._make_router(self.fmt, _uuid(), 'router2', arg_list=arg_list,
+                              **kwargs)['router']
+            routers = self.l3_plugin.router_scheduler.get_unscheduled_routers(
+                self.adminContext, self.l3_plugin)
+            r_ids = set(r['id'] for r in routers)
+            self.assertEqual(len(r_ids), 2)
+            for r in [r2, r3]:
+                self.assertIn(r['id'], r_ids)
+        self._remove_mgmt_nw_for_tests()
 
-    def test_namespace_router_scheduled_by_l3agent_scheduler(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+    def test_only_namespace_routers_scheduled_by_l3agent_scheduler(self):
+        self._create_mgmt_nw_for_tests(self.fmt)
+        arg_list = (routertype.TYPE_ATTR, )
+        kwargs = {routertype.TYPE_ATTR: test_db_routertype.HW_ROUTERTYPE_NAME}
+        r1 = self._make_router(self.fmt, _uuid(), 'router1',
+                               arg_list=arg_list, **kwargs)['router']
+        # namespace-based routers
+        with contextlib.nested(
+            self.router(name='router2'), self.router(name='router3'),
+            mock.patch.object(self.l3_plugin.l3agent_scheduler,
+                              'schedule'),
+            mock.patch('neutron.scheduler.l3_agent_scheduler.L3Scheduler.'
+                       'get_routers_can_schedule')) as (
+                router2, router3, scheduler_mock, auto_scheduler_mock):
+            r2 = router2['router']
+            r3 = router3['router']
+            r4 = self._make_router(self.fmt, _uuid(), 'router4',
+                                   arg_list=arg_list, **kwargs)['router']
+            r_list = [r1, r2, r3, r4]
+            # first test schedule function
+            self.l3_plugin.schedule_routers(self.adminContext, r_list)
+            scheduler_mock.assert_has_calls(
+                [mock.call(mock.ANY, self.adminContext, r2['id'], None),
+                 mock.call(mock.ANY, self.adminContext, r3['id'], None)])
+            r_ids = [r['id'] for r in r_list]
+            # then test auto_schedule function
+            self.l3_plugin.auto_schedule_routers(self.adminContext, 'host_1',
+                                                 r_ids)
+            r_ids_scheduled = set([r['id'] for r in
+                                   auto_scheduler_mock.call_args[0][2]])
+            self.assertEqual(len(r_ids_scheduled), 2)
+            for r in [r2, r3]:
+                self.assertIn(r['id'], r_ids_scheduled)
+        self._remove_mgmt_nw_for_tests()
 
-    def test_non_namespace_router_not_scheduled_by_l3agent_scheduler(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+    def test_rpc_sync_routers_gets_only_namespace_routers(self):
+        self._create_mgmt_nw_for_tests(self.fmt)
+        arg_list = (routertype.TYPE_ATTR, )
+        kwargs = {routertype.TYPE_ATTR: test_db_routertype.HW_ROUTERTYPE_NAME}
+        # router 1
+        self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
+                          **kwargs)['router']
+        # namespace-based routers
+        with contextlib.nested(self.router(name='router2'),
+                               self.router(name='router3')) as (
+                router2, router3):
+            r2 = router2['router']
+            r3 = router3['router']
+            # router 4
+            self._make_router(self.fmt, _uuid(), 'router2', arg_list=arg_list,
+                              **kwargs)['router']
+            routers = self.l3_plugin.get_sync_data(self.adminContext)
+            r_ids = set(r['id'] for r in routers)
+            self.assertEqual(len(r_ids), 2)
+            for r in [r2, r3]:
+                self.assertIn(r['id'], r_ids)
+        self._remove_mgmt_nw_for_tests()
+
 
 class L3RoutertypeAwareChanceL3AgentSchedulerTestCase(
     test_l3_agent_scheduler.L3AgentChanceSchedulerTestCase,
@@ -280,74 +354,53 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase(
 
 
 class L3RoutertypeAwareHostingDeviceSchedulerBaseTestCase(
-    L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase):
+        L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase):
 
-#    def setUp(self):
-#        super(L3RoutertypeAwareHostingDeviceSchedulerBaseTestCase,
-#              self).setUp()
-#        self.scheduler = FakeL3Scheduler()
-#        self.plugin = mock.Mock()
-
-    def test_new_router_is_backlogged(self):
-        with mock.patch('neutron.plugins.cisco.db.l3.l3_router_appliance_db'
-                        '.L3RouterApplianceDBMixin.backlog_router') as m:
-            with self.router() as router:
-                r = router['router']
-                rt_id = '00000000-0000-0000-0000-000000000005'
-                self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-                self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
-                # router should be back-logged for later scheduling attempts
-                m.assert_called_once()
-
-    def test_backlogged_router_is_scheduled_if_hosting_device_exists(self):
-        class mockset:
-            def __init__(i_self):
-                i_self.back_log = set()
-                i_self._calls = []
-                i_self._contains_calls = []
-                i_self._add_calls = []
-                i_self._iter_calls = []
-
-            def __contains__(i_self, item):
-                i_self._calls.append(item)
-                i_self.cont_calls.append(item)
-                return item in i_self.back_log
-
-            def add(i_self, item):
-                i_self._calls.append(item)
-                i_self._add_calls.append(item)
-                i_self.back_log.add(item)
-
-            def discard(i_self, item):
-                i_self._calls.append(item)
-                i_self._discard_calls.append(item)
-                i_self.back_log.discard(item)
-
-            def __iter__(i_self):
-                i_self._calls.append('__iter__')
-                i_self._iter_calls.append('__iter__')
-                return list(i_self.back_log)
-
+    def test_new_router_backlogged_and_remains_backlogged_if_no_hosting_device(
+            self):
         with contextlib.nested(
             mock.patch.object(self.plugin, '_backlogged_routers'),
             mock.patch.object(self.plugin, '_refresh_router_backlog',
                               False)) as (m1, m2):
             back_log = set()
-            m1.__contains__.side_effect = lambda r_id: r_id in back_log
+            m1.__iter__ = lambda obj: iter(copy.deepcopy(back_log))
+            m1.__contains__ = lambda obj, r_id: r_id in back_log
             m1.add.side_effect = lambda r_id: back_log.add(r_id)
             m1.discard.side_effect = lambda r_id: back_log.discard(r_id)
-            m1.__iter__.return_value = back_log.__iter__
+            arg_list = (routertype.TYPE_ATTR, )
+            kwargs = {
+                routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000007'}
+            router = self._make_router(self.fmt, _uuid(), 'router1',
+                                       arg_list=arg_list, **kwargs)
+            r = router['router']
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+            # verify that the new router is backlogged
+            m1.add.assert_called_once_with(r['id'])
+            self.assertIn(r['id'], back_log)
+            self.plugin._process_backlogged_routers()
+            # verify that the router remains backlogged since not hosting
+            # device exists for the router type
+            self.assertIn(r['id'], back_log)
+
+    def test_backlogged_router_is_scheduled_if_hosting_device_exists(self):
+        with contextlib.nested(
+            mock.patch.object(self.plugin, '_backlogged_routers'),
+            mock.patch.object(self.plugin, '_refresh_router_backlog',
+                              False)) as (m1, m2):
+            back_log = set()
+            # o'boy, this __iter__ mock took me so long to figure out....
+            m1.__iter__ = lambda obj: iter(copy.deepcopy(back_log))
+            m1.__contains__ = lambda obj, r_id: r_id in back_log
+            m1.add.side_effect = lambda r_id: back_log.add(r_id)
+            m1.discard.side_effect = lambda r_id: back_log.discard(r_id)
             arg_list = (routertype.TYPE_ATTR, )
             kwargs = {
                 routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000006'}
             router = self._make_router(self.fmt, _uuid(), 'router1',
                                        arg_list=arg_list, **kwargs)
             r = router['router']
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             m1.add.assert_called_once_with(r['id'])
-#            m1.__iter__.return_value = [r['id']]
-           # m1.__iter__.return_value = list(back_log)
-            m1.iter = back_log.__iter__
             self.plugin._process_backlogged_routers()
             self.assertNotIn(r['id'], back_log)
 
@@ -358,14 +411,14 @@ class L3RoutertypeAwareHostingDeviceSchedulerBaseTestCase(
             m.add.side_effect = lambda r_id: back_log.add(r_id)
             with self.router() as router:
                 r = router['router']
-                self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+                self.assertIsNone(r[HOSTING_DEVICE_ATTR])
                 m.add.assert_called_once_with(r['id'])
                 r_after = self._update(
                     'routers', r['id'],
                     {'router': {'name': 'routerA'}})['router']
                 self.assertEqual(r_after['name'], 'routerA')
                 self.assertIsNone(
-                    r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+                    r_after[HOSTING_DEVICE_ATTR])
                 # router should be back-logged only once for later
                 # scheduling attempts
                 m.add.assert_called_once_with(r['id'])
@@ -385,67 +438,50 @@ class L3RoutertypeAwareHostingDeviceSchedulerBaseTestCase(
             r = router['router']
             self.assertEqual(m.add.called, False)
             self.assertEqual(m.__contains__.called, False)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             r_after = self._update('routers', r['id'],
                                    {'router': {'name': 'routerA'}})['router']
             self.assertEqual(r_after['name'], 'routerA')
             self.assertIsNone(
-                r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+                r_after[HOSTING_DEVICE_ATTR])
             # router should be back-logged only once for later
             # scheduling attempts
             self.assertEqual(m.add.called, False)
             self.assertEqual(m.__contains__.called, False)
 
-    def test_router_remains_backlogged_if_no_hosting_device(self):
-        with mock.patch.object(self.plugin, '_backlogged_routers') as m:
-            back_log = set()
-            m.__contains__.side_effect = lambda r_id: r_id in back_log
-            m.add.side_effect = lambda r_id: back_log.add(r_id)
-            m.discard.side_effect = lambda r_id: back_log.discard(r_id)
-            arg_list = (routertype.TYPE_ATTR, )
+    def test_router_without_auto_schedule_not_backlogged(self):
+        with mock.patch.object(self.plugin, '_backlog_router') as (
+                mock_b_lg):
+            arg_list = (routertypeawarescheduler.AUTO_SCHEDULE_ATTR, )
             kwargs = {
-                routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000007'}
+                routertypeawarescheduler.AUTO_SCHEDULE_ATTR: False}
             router = self._make_router(self.fmt, _uuid(), 'router1',
                                        arg_list=arg_list, **kwargs)
             r = router['router']
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
-            m.add.assert_called_once_with(r['id'])
-            self.plugin._process_backlogged_routers()
-            self.assertIn(r['id'], back_log)
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+            mock_b_lg.assert_has_calls([])
+            r_after = self._update('routers', r['id'],
+                                   {'router': {'name': 'routerA'}})['router']
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
+            mock_b_lg.assert_has_calls([])
 
-    def test_get_hosting_device_candidates(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_get_hosting_devices_hosting_routers(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    #####
-
-    def test_router_reschedule_from_dead_hosting_device(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_router_no_reschedule_from_dead_admin_down_hosting_device(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_rpc_sync_routers_ext(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_router_auto_schedule_for_specified_routers(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_router_schedule_with_hosting_device_candidates(self):
-        #TODO(bobmel): Implement this unit test
-        pass
-
-    def test_router_without_l3_cfg_agents(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+    def test_rpc_sync_routers_ext_gets_no_namespace_routers(self):
+        arg_list = (routertype.TYPE_ATTR, )
+        kwargs = {routertype.TYPE_ATTR: test_db_routertype.NS_ROUTERTYPE_NAME}
+        # namespace-based routers
+        r1 = self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
+                               **kwargs)['router']
+        # hw routers
+        with contextlib.nested(self.router(name='router2'),
+                               self.router(name='router3')) as (r2, r3):
+            # router 4
+            r4 = self._make_router(self.fmt, _uuid(), 'router4',
+                                   arg_list=arg_list, **kwargs)['router']
+            routers = self.plugin.get_sync_data_ext(self.adminContext)
+            r_ids = set(r['id'] for r in routers)
+            self.assertEqual(len(r_ids), 2)
+            for r in [r2['router'], r3['router']]:
+                self.assertIn(r['id'], r_ids)
 
 
 class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
@@ -456,12 +492,12 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             r = router['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             self._add_router_to_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'])
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
                              '00000000-0000-0000-0000-000000000001')
 
     def test_hosted_router_add_to_hosting_device(self):
@@ -471,40 +507,78 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             r = self._show('routers', router['router']['id'])['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNotNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNotNone(r[HOSTING_DEVICE_ATTR])
             self._add_router_to_hosting_device(
                 '00000000-0000-0000-0000-000000000002', r['id'],
                 exc.HTTPConflict.code)
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
-                             r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
+                             r[HOSTING_DEVICE_ATTR])
 
     def test_hosted_router_add_to_different_type_hosting_device(self):
         with self.router() as router:
             r = router['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             hd_id = '00000000-0000-0000-0000-000000000004'
             self._add_router_to_hosting_device(hd_id, r['id'])
             r_after = self._show('routers', r['id'])['router']
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
                              hd_id)
             temp_rt_id = '00000000-0000-0000-0000-000000000006'
             routertype_id = "%s (normal: %s)" % (temp_rt_id, rt_id)
             self.assertEqual(r_after[routertype.TYPE_ATTR], routertype_id)
 
     def test_router_add_to_hosting_device_insufficient_slots(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+        with contextlib.nested(
+            mock.patch.object(self.core_plugin,
+                              'acquire_hosting_device_slots'),
+                self.router()) as (acquire_mock, router):
+            acquire_mock.return_value = False
+            r = router['router']
+            rt_id = '00000000-0000-0000-0000-000000000005'
+            self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+            hd_id = '00000000-0000-0000-0000-000000000004'
+            self._add_router_to_hosting_device(hd_id, r['id'],
+                                               exc.HTTPConflict.code)
+            r_after = self._show('routers', r['id'])['router']
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
+            self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
+
+    def test_router_add_to_hosting_device_insufficient_slots_no_auto(self):
+        with contextlib.nested(
+            mock.patch.object(self.core_plugin,
+                              'acquire_hosting_device_slots'),
+            mock.patch.object(self.plugin, '_backlog_router')) as (
+                acquire_mock, mock_b_lg):
+            acquire_mock.return_value = False
+            arg_list = (routertypeawarescheduler.AUTO_SCHEDULE_ATTR, )
+            kwargs = {
+                routertypeawarescheduler.AUTO_SCHEDULE_ATTR: False}
+            router = self._make_router(self.fmt, _uuid(), 'router1',
+                                       arg_list=arg_list, **kwargs)
+            r = router['router']
+            rt_id = '00000000-0000-0000-0000-000000000005'
+            self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+            mock_b_lg.assert_has_calls([])
+            hd_id = '00000000-0000-0000-0000-000000000004'
+            self._add_router_to_hosting_device(hd_id, r['id'],
+                                               exc.HTTPConflict.code)
+            r_after = self._show('routers', r['id'])['router']
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
+            self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
+            mock_b_lg.assert_has_calls([])
 
     def test_router_add_to_hosting_device_with_admin_state_down(self):
         with self.router() as router:
             r = router['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             id_hd_disabled = '00000000-0000-0000-0000-000000000001'
             self._update('hosting_devices', id_hd_disabled,
                          {'hosting_device': {'admin_state_up': False}})
@@ -512,25 +586,25 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
                                                exc.HTTPNotFound.code)
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
 
     def test_router_add_to_hosting_device_two_times(self):
         with self.router() as router:
             r = router['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             self._add_router_to_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'])
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
                              '00000000-0000-0000-0000-000000000001')
             self._add_router_to_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'])
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
                              '00000000-0000-0000-0000-000000000001')
 
     def test_router_remove_from_hosting_device(self):
@@ -540,12 +614,12 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             r = self._show('routers', router['router']['id'])['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNotNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNotNone(r[HOSTING_DEVICE_ATTR])
             self._remove_router_from_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'])
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
 
     def test_router_remove_from_wrong_hosting_device(self):
         with self.router() as router:
@@ -554,27 +628,27 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             r = self._show('routers', router['router']['id'])['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNotNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNotNone(r[HOSTING_DEVICE_ATTR])
             self._remove_router_from_hosting_device(
                 '00000000-0000-0000-0000-000000000002', r['id'],
                 exc.HTTPConflict.code)
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR],
-                             r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
+                             r[HOSTING_DEVICE_ATTR])
 
     def test_unhosted_router_remove_from_hosting_device(self):
         with self.router() as router:
             r = router['router']
             rt_id = '00000000-0000-0000-0000-000000000005'
             self.assertEqual(r[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r[HOSTING_DEVICE_ATTR])
             self._remove_router_from_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'],
                 exc.HTTPConflict.code)
             r_after = self._show('routers', r['id'])['router']
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertIsNone(r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+            self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
 
     def test_router_policy(self):
         with contextlib.nested(self.router(), self.router()) as (router1,
@@ -628,7 +702,7 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             self._add_router_to_hosting_device(hd2_id, r3['id'])
             r_list1 = self._list_routers_hosted_by_hosting_device(hd1_id)
             self.assertEqual(len(r_list1['routers']), 2)
-            r1_set = set([r1['id'], r2['id']])
+            r1_set = {r1['id'], r2['id']}
             for r in r_list1['routers']:
                 self.assertTrue(r1_set)
             r_list2 = self._list_routers_hosted_by_hosting_device(hd2_id)
@@ -716,7 +790,7 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
         agent_id = agent_dict[host]['id']
         for r in r_l:
             self.assertEqual(r['id'] in r_set, True)
-            router_host = r[routerhostingdevice.HOSTING_DEVICE_ATTR]
+            router_host = r[HOSTING_DEVICE_ATTR]
             if router_host not in hds:
                 hd = self._show('hosting_devices', router_host)
                 hds[router_host] = hd['hosting_device']
@@ -798,8 +872,8 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
                                             host_c_active=True)
             r_set = {}
             agents = self._list(
-                    'agents',
-                    query_params='agent_type=%s' % c_const.AGENT_TYPE_CFG)
+                'agents',
+                query_params='agent_type=%s' % c_const.AGENT_TYPE_CFG)
             agent_dict = {agt['host']: agt for agt in agents['agents']}
             self._verify_hosting(agent_dict, r_set,
                                  device_manager_test_support.L3_CFG_HOST_C)
@@ -818,6 +892,64 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             agent.AgentNotFoundByTypeHost,
             self.plugin.list_active_sync_routers_on_hosting_devices,
             self.adminContext, 'bogus_host')
+
+    def test_router_reschedule_from_dead_hosting_device(self):
+        with contextlib.nested(
+            mock.patch.object(self.plugin, '_backlogged_routers'),
+            mock.patch.object(self.plugin, '_refresh_router_backlog',
+                              False)) as (m1, m2):
+            back_log = set()
+            m1.__iter__ = lambda obj: iter(copy.deepcopy(back_log))
+            m1.__contains__ = lambda obj, r_id: r_id in back_log
+            m1.add.side_effect = lambda r_id: back_log.add(r_id)
+            m1.discard.side_effect = lambda r_id: back_log.discard(r_id)
+            with contextlib.nested(
+                self.router(name='router1'), self.router(name='router2'),
+                self.router(name='router3')) as (
+                    router1, router2, router3):
+                rs_initial = [r['router'] for r in [router1, router2, router3]]
+                # all routers initially un-hosted
+                for r in rs_initial:
+                    self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+                hosting_device_id1 = '00000000-0000-0000-0000-000000000001'
+                hosting_device_id2 = '00000000-0000-0000-0000-000000000002'
+                r_ids = [r['id'] for r in [rs_initial[0], rs_initial[2]]]
+                for r_id in r_ids:
+                    self._add_router_to_hosting_device(hosting_device_id1,
+                                                       r_id)
+                self._add_router_to_hosting_device(hosting_device_id2,
+                                                   rs_initial[1]['id'])
+                rs_after = [self._show('routers', r['id'])['router']
+                            for r in rs_initial]
+                # r1 and r3 on hosting device 1, r2 on hosting device 2
+                for r in [rs_after[0], rs_after[2]]:
+                    self.assertEqual(r[HOSTING_DEVICE_ATTR],
+                                     hosting_device_id1)
+                self.assertEqual(rs_after[1][HOSTING_DEVICE_ATTR],
+                                 hosting_device_id2)
+                # no routers should be back-logged now
+                self.assertEqual(len(back_log), 0)
+                hosting_device_1 = self._show(
+                    'hosting_devices', hosting_device_id1)['hosting_device']
+                affected_resources = {}
+                # now report hosting device 1 as dead
+                self.plugin.handle_non_responding_hosting_devices(
+                    self.adminContext, [hosting_device_1], affected_resources)
+                # only routers 1 and 3 should be affected
+                affected_rs = affected_resources[hosting_device_id1]['routers']
+                self.assertEqual(len(affected_rs), 2)
+                # affected routers should be back-logged
+                for r_id in r_ids:
+                    self.assertIn(r_id, affected_rs)
+                    self.assertIn(r_id, back_log)
+                rs_final = [self._show('routers', r['id'])['router']
+                            for r in rs_initial]
+                # routers 1 and 3 should be un-hosted
+                for r in [rs_final[0], rs_final[2]]:
+                    self.assertIsNone(r[HOSTING_DEVICE_ATTR])
+                # router 2 was unaffected and should remain hosted
+                self.assertEqual(rs_final[1][HOSTING_DEVICE_ATTR],
+                                 hosting_device_id2)
 
 
 class HostingDeviceRouterL3CfgAgentNotifierTestCase(
@@ -877,6 +1009,56 @@ class HostingDeviceRouterL3CfgAgentNotifierTestCase(
             expected_event_type = 'hosting_device.router.remove'
             self._assert_notify(notifications, expected_event_type)
 
-    def test_backlogged_routers_scheduled_routers_updated_notification_(self):
-        #TODO(bobmel): Implement this unit test
-        pass
+    def test_backlogged_routers_scheduled_routers_updated_notification(self):
+        l3_notifier = self.plugin.agent_notifiers[c_const.AGENT_TYPE_L3_CFG]
+        with contextlib.nested(
+            mock.patch.object(l3_notifier.client, 'prepare',
+                              return_value=l3_notifier.client),
+            mock.patch.object(l3_notifier.client, 'cast'),
+            mock.patch.object(self.plugin, '_backlogged_routers'),
+            mock.patch.object(self.plugin, '_refresh_router_backlog',
+                              False)) as (
+                mock_prepare, mock_cast, mock_b_lg, mock_refresh):
+            back_log = set()
+            mock_b_lg.__iter__ = lambda obj: iter(copy.deepcopy(back_log))
+            mock_b_lg.__contains__ = lambda obj, r_id: r_id in back_log
+            mock_b_lg.add.side_effect = lambda r_id: back_log.add(r_id)
+            mock_b_lg.discard.side_effect = lambda r_id: back_log.discard(r_id)
+            arg_list = (routertype.TYPE_ATTR, )
+            # namespace-based router
+            kwargs = {
+                routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000001'}
+            r1 = self._make_router(self.fmt, _uuid(), 'router1',
+                                   arg_list=arg_list, **kwargs)['router']
+            # router that should be successfully hosted
+            kwargs = {
+                routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000006'}
+            r2 = self._make_router(self.fmt, _uuid(), 'router2',
+                                   arg_list=arg_list, **kwargs)['router']
+            # routertype for which no hosting devices exists
+            kwargs = {
+                routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000007'}
+            r3 = self._make_router(self.fmt, _uuid(), 'router3',
+                                   arg_list=arg_list, **kwargs)['router']
+            # routers that should be successfully hosted
+            with contextlib.nested(self.router(name='router4'),
+                                   self.router(name='router5')) as (
+                    router4, router5):
+                # when cfg agent on host_a registers itself, hosting
+                # devices will be assigned to that cfg agent
+                self._register_cfg_agent_states()
+                r4 = router4['router']
+                r5 = router5['router']
+                self.assertEqual(len(back_log), 4)
+                for r_id in [r2['id'], r3['id'], r4['id'], r5['id']]:
+                    self.assertIn(r_id, back_log)
+                self.plugin._process_backlogged_routers()
+                mock_prepare.assert_called_with(
+                    server=device_manager_test_support.L3_CFG_HOST_A)
+                calls = [
+                    mock.call(mock.ANY, 'routers_updated', routers=[r2['id']]),
+                    mock.call(mock.ANY, 'routers_updated', routers=[r4['id']]),
+                    mock.call(mock.ANY, 'routers_updated', routers=[r5['id']])]
+                mock_cast.assert_has_calls(calls, any_order=True)
+                self.assertEqual(len(back_log), 1)
+                self.assertIn(r3['id'], back_log)
