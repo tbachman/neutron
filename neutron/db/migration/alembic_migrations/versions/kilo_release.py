@@ -1,6 +1,3 @@
-# Copyright 2015 Cloudbase Solutions.
-# All Rights Reserved.
-#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -12,16 +9,21 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
 
-# This is a placeholder so that the vendor code that import the ovs_lib
-# module from agent/linux doesn't fail
-# TODO(atuvenie) remove this module after opening the liberty cycle
+"""kilo
 
-from neutron.agent.common import ovs_lib
+Revision ID: kilo
+Revises: 20c469a5f920
+Create Date: 2015-04-16 00:00:00.000000
 
-INVALID_OFPORT = ovs_lib.INVALID_OFPORT
-BaseOVS = ovs_lib.BaseOVS
-OVSBridge = ovs_lib.OVSBridge
-DeferredOVSBridge = ovs_lib.DeferredOVSBridge
-VifPort = ovs_lib.VifPort
-_build_flow_expr_str = ovs_lib._build_flow_expr_str
+"""
+
+# revision identifiers, used by Alembic.
+revision = 'kilo'
+down_revision = '20c469a5f920'
+
+
+def upgrade():
+    """A no-op migration for marking the Kilo release."""
+    pass

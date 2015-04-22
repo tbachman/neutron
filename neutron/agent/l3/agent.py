@@ -317,6 +317,17 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         # TODO(Carl) This is a hook in to fwaas.  It should be cleaned up.
         self.process_router_add(ri)
 
+    def _safe_router_removed(self, router_id):
+        """Try to delete a router and return True if successful."""
+
+        try:
+            self._router_removed(router_id)
+        except Exception:
+            LOG.exception(_LE('Error while deleting router %s'), router_id)
+            return False
+        else:
+            return True
+
     def _router_removed(self, router_id):
         ri = self.router_info.get(router_id)
         if ri is None:
@@ -439,9 +450,8 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                     router = routers[0]
 
             if not router:
-                try:
-                    self._router_removed(update.id)
-                except Exception:
+                removed = self._safe_router_removed(update.id)
+                if not removed:
                     # TODO(Carl) Stop this fullsync non-sense.  Just retry this
                     # one router by sticking the update at the end of the queue
                     # at a lower priority.
@@ -456,7 +466,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 if router['id'] in self.router_info:
                     LOG.error(_LE("Removing incompatible router '%s'"),
                               router['id'])
-                    self._router_removed(router['id'])
+                    self._safe_router_removed(router['id'])
             except Exception:
                 msg = _LE("Failed to process compatible router '%s'")
                 LOG.exception(msg, update.id)
@@ -571,7 +581,6 @@ class L3NATAgentWithStateReport(L3NATAgent):
             self.heartbeat.start(interval=report_interval)
 
     def _report_state(self):
-        LOG.debug("Report state task started")
         num_ex_gw_ports = 0
         num_interfaces = 0
         num_floating_ips = 0
@@ -595,7 +604,6 @@ class L3NATAgentWithStateReport(L3NATAgent):
                                         self.use_call)
             self.agent_state.pop('start_flag', None)
             self.use_call = False
-            LOG.debug("Report state task successfully completed")
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_LW("Neutron server does not support state report."

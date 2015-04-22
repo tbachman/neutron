@@ -17,8 +17,8 @@ from oslo_log import log
 import oslo_messaging
 from sqlalchemy.orm import exc
 
-from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.handlers import dvr_rpc
+from neutron.api.rpc.handlers import securitygroups_rpc as sg_rpc
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
@@ -96,17 +96,18 @@ class RpcCallbacks(type_tunnel.TunnelRpcCallbackMixin):
                          'vif_type': port[portbindings.VIF_TYPE]})
             return {'device': device}
 
-        new_status = (q_const.PORT_STATUS_BUILD if port['admin_state_up']
-                      else q_const.PORT_STATUS_DOWN)
-        if port['status'] != new_status:
-            plugin.update_port_status(rpc_context,
-                                      port_id,
-                                      new_status,
-                                      host)
+        if (not host or host == port_context.host):
+            new_status = (q_const.PORT_STATUS_BUILD if port['admin_state_up']
+                          else q_const.PORT_STATUS_DOWN)
+            if port['status'] != new_status:
+                plugin.update_port_status(rpc_context,
+                                          port_id,
+                                          new_status,
+                                          host)
 
         entry = {'device': device,
                  'network_id': port['network_id'],
-                 'port_id': port_id,
+                 'port_id': port['id'],
                  'mac_address': port['mac_address'],
                  'admin_state_up': port['admin_state_up'],
                  'network_type': segment[api.NETWORK_TYPE],

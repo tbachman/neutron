@@ -32,12 +32,13 @@ from neutron import context
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as base_plugin
 from neutron.db import l3_db
-from neutron.extensions import external_net as external_net
+from neutron.db import models_v2
+from neutron.extensions import external_net
 from neutron.extensions import multiprovidernet as mpnet
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as pnet
 from neutron import manager
-from neutron.plugins.common import constants as service_constants
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import config
 from neutron.plugins.ml2 import db as ml2_db
@@ -266,9 +267,92 @@ class TestMl2NetworksV2(test_plugin.TestNetworksV2,
             self.assertEqual(db_api.MAX_RETRIES + 1, f.call_count)
 
 
+class TestExternalNetwork(Ml2PluginV2TestCase):
+
+    def _create_external_network(self):
+        data = {'network': {'name': 'net1',
+                            'router:external': 'True',
+                            'tenant_id': 'tenant_one'}}
+        network_req = self.new_create_request('networks', data)
+        network = self.deserialize(self.fmt,
+                                   network_req.get_response(self.api))
+        return network
+
+    def test_external_network_type_none(self):
+        config.cfg.CONF.set_default('external_network_type',
+                                    None,
+                                    group='ml2')
+
+        network = self._create_external_network()
+        # For external network, expected network type to be
+        # tenant_network_types which is by default 'local'.
+        self.assertEqual(p_const.TYPE_LOCAL,
+                         network['network'][pnet.NETWORK_TYPE])
+        # No physical network specified, expected 'None'.
+        self.assertIsNone(network['network'][pnet.PHYSICAL_NETWORK])
+        # External network will not have a segmentation id.
+        self.assertIsNone(network['network'][pnet.SEGMENTATION_ID])
+        # External network will not have multiple segments.
+        self.assertNotIn(mpnet.SEGMENTS, network['network'])
+
+    def test_external_network_type_vlan(self):
+        config.cfg.CONF.set_default('external_network_type',
+                                    p_const.TYPE_VLAN,
+                                    group='ml2')
+
+        network = self._create_external_network()
+        # For external network, expected network type to be 'vlan'.
+        self.assertEqual(p_const.TYPE_VLAN,
+                         network['network'][pnet.NETWORK_TYPE])
+        # Physical network is expected.
+        self.assertIsNotNone(network['network'][pnet.PHYSICAL_NETWORK])
+        # External network will have a segmentation id.
+        self.assertIsNotNone(network['network'][pnet.SEGMENTATION_ID])
+        # External network will not have multiple segments.
+        self.assertNotIn(mpnet.SEGMENTS, network['network'])
+
+
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
                        Ml2PluginV2TestCase):
-    pass
+    def test_delete_subnet_race_with_dhcp_port_creation(self):
+        with self.network() as network:
+            with self.subnet(network=network) as subnet:
+                subnet_id = subnet['subnet']['id']
+                attempt = [0]
+
+                def check_and_create_ports(context, subnet_id):
+                    """A method to emulate race condition.
+
+                    Adds dhcp port in the middle of subnet delete
+                    """
+                    if attempt[0] > 0:
+                        return False
+                    attempt[0] += 1
+                    data = {'port': {'network_id': network['network']['id'],
+                                     'tenant_id':
+                                     network['network']['tenant_id'],
+                                     'name': 'port1',
+                                     'admin_state_up': 1,
+                                     'device_owner':
+                                     constants.DEVICE_OWNER_DHCP,
+                                     'fixed_ips': [{'subnet_id': subnet_id}]}}
+                    port_req = self.new_create_request('ports', data)
+                    port_res = port_req.get_response(self.api)
+                    self.assertEqual(201, port_res.status_int)
+                    return (context.session.query(models_v2.IPAllocation).
+                            filter_by(subnet_id=subnet_id).
+                            join(models_v2.Port).first())
+
+                plugin = manager.NeutronManager.get_plugin()
+                # we mock _subnet_check_ip_allocations with method
+                # that creates DHCP port 'in the middle' of subnet_delete
+                # causing retry this way subnet is deleted on the
+                # second attempt
+                with mock.patch.object(plugin, '_subnet_check_ip_allocations',
+                                       side_effect=check_and_create_ports):
+                    req = self.new_delete_request('subnets', subnet_id)
+                    res = req.get_response(self.api)
+                    self.assertEqual(204, res.status_int)
 
 
 class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
@@ -313,7 +397,7 @@ class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
 
     def test_l3_cleanup_on_net_delete(self):
         l3plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
+            p_const.L3_ROUTER_NAT)
         kwargs = {'arg_list': (external_net.EXTERNAL,),
                   external_net.EXTERNAL: True}
         with self.network(**kwargs) as n:
@@ -432,7 +516,7 @@ class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
         ctx = context.get_admin_context()
         plugin = manager.NeutronManager.get_plugin()
         l3plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
+            p_const.L3_ROUTER_NAT)
         with contextlib.nested(
             self.port(),
             mock.patch.object(l3plugin, 'disassociate_floatingips'),
@@ -468,7 +552,7 @@ class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
     def test_disassociate_floatingips_do_notify_returns_nothing(self):
         ctx = context.get_admin_context()
         l3plugin = manager.NeutronManager.get_service_plugins().get(
-            service_constants.L3_ROUTER_NAT)
+            p_const.L3_ROUTER_NAT)
         with self.port() as port:
 
             port_id = port['port']['id']
@@ -554,7 +638,7 @@ class TestMl2DvrPortsV2(TestMl2PortsV2):
 
     def test_concurrent_csnat_port_delete(self):
         plugin = manager.NeutronManager.get_service_plugins()[
-            service_constants.L3_ROUTER_NAT]
+            p_const.L3_ROUTER_NAT]
         r = plugin.create_router(
             self.context,
             {'router': {'name': 'router', 'admin_state_up': True}})

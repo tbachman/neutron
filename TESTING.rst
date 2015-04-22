@@ -66,12 +66,12 @@ code tree, e.g. ::
 
 Unit test modules should have the same path under neutron/tests/unit/
 as the module they target has under neutron/, and their name should be
-the name of the target module prefixed by 'test_'.  This requirement
+the name of the target module prefixed by `test_`.  This requirement
 is intended to make it easier for developers to find the unit tests
 for a given module.
 
 Similarly, when a test module targets a package, that module's name
-should be the name of the package prefixed by 'test_' with the same
+should be the name of the package prefixed by `test_` with the same
 path as when a test targets a module, e.g. ::
 
  - target package: neutron.ipam
@@ -194,6 +194,11 @@ To run only pep8::
 
     tox -e pep8
 
+Since pep8 includes running pylint on all files, it can take quite some time to run.
+To restrict the pylint check to only the files altered by the latest patch changes::
+
+    tox -e pep8 HEAD~1
+
 To run only the unit tests::
 
     tox -e py27
@@ -259,7 +264,7 @@ TEMPEST_CONFIG_DIR before invoking tox: ::
 
 
 Running individual tests
-~~~~~~~~~~~~~~~~~~~~~~~~
+------------------------
 
 For running individual test modules or cases, you just need to pass
 the dot-separated path to the module you want as an argument to it.
