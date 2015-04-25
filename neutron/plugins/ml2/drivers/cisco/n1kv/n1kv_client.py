@@ -288,7 +288,7 @@ class Client(object):
                 # Reraise the exception so that caller method executes further
                 # clean up.
                 if network[providernet.NETWORK_TYPE] in self.vxlan_types:
-                    self._delete_bridge_domain(bd_name, vsm_ip)
+                    self._delete_bridge_domain(bd_name, vsm_ip=vsm_ip)
 
     def update_network_segment(self, updated_network):
         """Update a network segment on the VSM.
@@ -314,7 +314,7 @@ class Client(object):
             bd_name = network_segment_id + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             self._delete_bridge_domain(bd_name, vsm_ip=vsm_ip)
         return self._delete(self.network_segment_path % network_segment_id,
-                            vsm_ip)
+                            vsm_ip=vsm_ip)
 
     def _create_bridge_domain(self, network, vsm_ip=None):
         """Create a bridge domain on VSM.
