@@ -21,6 +21,7 @@ import eventlet
 
 from oslo.config import cfg
 
+from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.common import constants as n_const
 from neutron.common import exceptions as n_exc
 from neutron.db import db_base_plugin_v2
@@ -61,12 +62,14 @@ class N1KVMechanismDriver(api.MechanismDriver):
             self._ensure_network_profiles_created_on_vsm()
         except (n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
             LOG.error(_LE("VSM Failed to create default network profiles."))
+        # Use hybrid port plugging only if neutron security groups is enabled.
+        sg_enabled = sg_rpc.is_firewall_enabled()
         if cfg.CONF.ml2_cisco_n1kv.enable_vif_type_n1kv:
             self.vif_type = portbindings.VIF_TYPE_N1KV
         else:
             self.vif_type = portbindings.VIF_TYPE_OVS
         self.vif_details = {portbindings.CAP_PORT_FILTER: True,
-                            portbindings.OVS_HYBRID_PLUG: True}
+                            portbindings.OVS_HYBRID_PLUG: sg_enabled}
         # Nexus interop
         self.supported_network_types = [p_const.TYPE_VLAN, p_const.TYPE_VXLAN,
                                         p_const.TYPE_NEXUS_VXLAN]
