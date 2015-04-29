@@ -119,15 +119,22 @@ class Client(object):
         self.format = 'json'
 
         # Extract configuration parameters from the configuration file.
-        self.n1kv_vsm_ips = cfg.CONF.ml2_cisco_n1kv.n1kv_vsm_ips
         self.username = cfg.CONF.ml2_cisco_n1kv.username
         self.password = cfg.CONF.ml2_cisco_n1kv.password
         self.action_prefix = 'http://%s/api/n1k'
         self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
-        required_opts = ('n1kv_vsm_ips', 'username', 'password')
+        required_opts = ('vsm_hosts', 'username', 'password')
         for opt in required_opts:
             if not getattr(self, opt):
                 raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')
+
+    @property
+    def vsm_hosts(self):
+        """Retrieve a list of VSM ip addresses.
+
+        :return: list of host ip addresses
+        """
+        return cfg.CONF.ml2_cisco_n1kv.n1kv_vsm_ips
 
     def send_sync_notification(self, msg, vsm_ip):
         """Send a start/end/no-change sync notification to the VSM.
@@ -277,7 +284,7 @@ class Client(object):
         elif network[providernet.NETWORK_TYPE] in self.vxlan_types:
             # Create a bridge domain on VSM
             bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
-            self._create_bridge_domain(network, vsm_ip)
+            self.create_bridge_domain(network, vsm_ip)
             body['bridgeDomain'] = bd_name
         try:
             return self._post(self.network_segment_path % network['id'],
@@ -288,7 +295,7 @@ class Client(object):
                 # Reraise the exception so that caller method executes further
                 # clean up.
                 if network[providernet.NETWORK_TYPE] in self.vxlan_types:
-                    self._delete_bridge_domain(bd_name, vsm_ip)
+                    self.delete_bridge_domain(bd_name, vsm_ip)
 
     def update_network_segment(self, updated_network):
         """Update a network segment on the VSM.
@@ -316,7 +323,7 @@ class Client(object):
         return self._delete(self.network_segment_path % network_segment_id,
                             vsm_ip)
 
-    def _create_bridge_domain(self, network, vsm_ip=None):
+    def create_bridge_domain(self, network, vsm_ip=None):
         """Create a bridge domain on VSM.
 
         :param network: network dict
@@ -339,7 +346,7 @@ class Client(object):
         return self._post(self.bridge_domains_path,
                           body=body, vsm_ip=vsm_ip)
 
-    def _delete_bridge_domain(self, name, vsm_ip=None):
+    def delete_bridge_domain(self, name, vsm_ip=None):
         """Delete a bridge domain on VSM.
 
         :param name: name of the bridge domain to be deleted
@@ -467,7 +474,7 @@ class Client(object):
         if vsm_ip:
             hosts.append(vsm_ip)
         else:
-            hosts = self.get_vsm_hosts()
+            hosts = self.vsm_hosts()
         # _get_auth_header() assumes all VSMs have the same credentials
         headers = self._get_auth_header()
         headers['Content-Type'] = headers['Accept'] = "application/json"
@@ -508,13 +515,6 @@ class Client(object):
     def _put(self, action, body=None, headers=None, vsm_ip=None):
         return self._do_request("PUT", action, body=body,
                                 headers=headers, vsm_ip=vsm_ip)
-
-    def get_vsm_hosts(self):
-        """Retrieve a list of VSM ip addresses.
-
-        :return: list of host ip addresses
-        """
-        return self.n1kv_vsm_ips
 
     def _get_auth_header(self):
         """Retrieve header with auth info for the VSM.
