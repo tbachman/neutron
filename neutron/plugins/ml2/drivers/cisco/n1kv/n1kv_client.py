@@ -24,6 +24,7 @@ from oslo.config import cfg
 from neutron.common import exceptions as n_exc
 from neutron.extensions import providernet
 from neutron.openstack.common import excutils
+from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common.gettextutils import _LI
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as p_const
@@ -124,6 +125,7 @@ class Client(object):
         self.password = cfg.CONF.ml2_cisco_n1kv.password
         self.action_prefix = 'http://%s/api/n1k'
         self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
+        self.max_vsm_retries = cfg.CONF.ml2_cisco_n1kv.max_vsm_retries
         required_opts = ('n1kv_vsm_ips', 'username', 'password')
         for opt in required_opts:
             if not getattr(self, opt):
@@ -473,17 +475,26 @@ class Client(object):
         headers['Content-Type'] = headers['Accept'] = "application/json"
         for vsm_ip in hosts:
             vsm_action = action % vsm_ip
-
-            try:
-                resp = self.pool.spawn(requests.request,
-                                       method,
-                                       url=vsm_action,
-                                       data=body,
-                                       headers=headers,
-                                       timeout=self.timeout).wait()
-            except Exception as e:
-                raise n1kv_exc.VSMConnectionFailed(reason=e)
+            for attempt in range(self.max_vsm_retries + 1):
+                try:
+                    LOG.debug("[VSM %(vsm)s attempt %(id)s]: Connecting.." %
+                        {"vsm": vsm_ip, "id": attempt})
+                    resp = self.pool.spawn(requests.request,
+                                           method,
+                                           url=vsm_action,
+                                           data=body,
+                                           headers=headers,
+                                           timeout=self.timeout).wait()
+                    break
+                except Exception as e:
+                    LOG.debug("[VSM %(vsm)s attempt %(id)s]: Conn timeout." %
+                        {"vsm": vsm_ip, "id": attempt})
+                    if attempt == self.max_vsm_retries:
+                        LOG.error(_LE("VSM %s, Conn failed."), vsm_ip)
+                        raise n1kv_exc.VSMConnectionFailed(reason=e)
             if resp.status_code != requests.codes.OK:
+                LOG.error(_LE("VSM %(vsm)s, Got error: %(err)s"),
+                    {"vsm": vsm_ip, "err": resp.text})
                 raise n1kv_exc.VSMError(reason=resp.text)
         if 'application/json' in resp.headers['content-type']:
             try:

@@ -48,6 +48,8 @@ n1kv_opts = [
                       "Nexus1000V VSM")),
     cfg.IntOpt('sync_interval', default=300,
                help=_("Time interval between consecutive neutron-VSM syncs ")),
+    cfg.IntOpt('max_vsm_retries', default=2,
+               help=_("Maximum number of retry attempts for VSM REST API.")),
 
 ]
 
