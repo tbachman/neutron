@@ -262,7 +262,7 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
     def _check_policy_profile_on_all_vsm(self, id, db_session=None):
         """Checks if port profile is present on all VSM"""
         db_session = db_session or db.get_session()
-        vsm_count = len(self.n1kvclient.get_vsm_hosts())
+        vsm_count = len(self.n1kvclient.vsm_hosts)
         return (db_session.query(n1kv_models.PolicyProfile).
                 filter_by(id=id).count() == vsm_count)
 
@@ -312,7 +312,7 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
 
     def _populate_policy_profiles(self):
         """Populate all the policy profiles from VSM."""
-        hosts = self.n1kvclient.get_vsm_hosts()
+        hosts = self.n1kvclient.vsm_hosts
         for vsm_ip in hosts:
             try:
                 policy_profiles = self.n1kvclient.list_port_profiles(vsm_ip)
