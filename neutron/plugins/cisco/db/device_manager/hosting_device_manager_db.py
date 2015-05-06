@@ -718,7 +718,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 hd_candidates[i]['complementary_id'], self.l3_tenant_id(),
                 self.mgmt_nw_id())
             if self.svc_vm_mgr.delete_service_vm(context,
-                                                  hd_candidates[i]['id']):
+                                                 hd_candidates[i]['id']):
                 with context.session.begin(subtransactions=True):
                     context.session.delete(hd_candidates[i])
                 plugging_drv.delete_hosting_device_resources(

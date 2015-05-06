@@ -98,7 +98,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
             # refresh so that we get latest contents from DB
             e_context.session.expire(r_hd_binding_db)
             router = self.get_router(e_context, router_id)
-            self._add_type_and_hosting_device_info(
+            self.add_type_and_hosting_device_info(
                 e_context, router, r_hd_binding_db, schedule=False)
             l3_cfg_notifier = self.agent_notifiers.get(AGENT_TYPE_L3_CFG)
             if l3_cfg_notifier:
@@ -121,7 +121,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
             raise routertypeawarescheduler.RouterNotHostedByHostingDevice(
                 router_id=router_id, hosting_device_id=hosting_device_id)
         router = self.get_router(context, router_id)
-        self._add_type_and_hosting_device_info(
+        self.add_type_and_hosting_device_info(
             e_context, router, r_hd_binding_db, schedule=False)
         # conditionally remove router from backlog ensure it does not get
         # scheduled automatically

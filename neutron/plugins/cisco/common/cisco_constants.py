@@ -136,6 +136,14 @@ NAMESPACE_ROUTER_TYPE = 'Namespace_Neutron_router'
 # as VRFs inside a CSR1kv VM instance.
 CSR1KV_ROUTER_TYPE = 'CSR1kv_router'
 
+# Router roles
+ROUTER_ROLE_GLOBAL = 'Global'
+
+# Prefix of name given to global routers
+ROLE_PREFIX = ROUTER_ROLE_GLOBAL + '-router'
+# Number of characters of hosting device id added to role name
+ROLE_ID_LEN = 17
+
 # The status of a Neutron Router created using the
 # Cisco service plugin is one of the following:
 # Created but not scheduled nor deployed

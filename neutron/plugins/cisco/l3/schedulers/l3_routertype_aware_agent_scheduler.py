@@ -35,7 +35,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
     namespace based routers to l3 agents.
     """
 
-    def get_unscheduled_routers(self, context, plugin):
+    def _get_unscheduled_routers(self, context, plugin):
         """Get routers with no agent binding."""
         # TODO(gongysh) consider the disabled agent's router
         no_agent_binding = ~sql.exists().where(
@@ -54,7 +54,7 @@ class L3RouterTypeAwareScheduler(l3_agent_scheduler.L3Scheduler):
                 context, filters={'id': unscheduled_router_ids})
         return []
 
-    def filter_unscheduled_routers(self, context, plugin, routers):
+    def _filter_unscheduled_routers(self, context, plugin, routers):
         """Filter from list of routers the ones that are not scheduled."""
         unscheduled_routers = []
         for router in routers:

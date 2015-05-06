@@ -54,7 +54,7 @@ def upgrade():
     )
     if migration.schema_has_table('cisco_router_mappings'):
         op.add_column('cisco_router_mappings',
-                      sa.Column('role', sa.String(255)))
+                      sa.Column('role', sa.String(255), nullable=True))
         op.add_column('cisco_router_mappings',
                       sa.Column('router_type_id', sa.String(length=36),
                                 nullable=False))

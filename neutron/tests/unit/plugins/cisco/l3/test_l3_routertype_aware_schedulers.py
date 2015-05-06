@@ -186,7 +186,7 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
             mock.patch.object(self.l3_plugin.l3agent_scheduler,
                               'schedule'),
             mock.patch('neutron.scheduler.l3_agent_scheduler.L3Scheduler.'
-                       'get_routers_can_schedule')) as (
+                       '_get_routers_can_schedule')) as (
                 router2, router3, scheduler_mock, auto_scheduler_mock):
             r2 = router2['router']
             r3 = router3['router']
@@ -232,6 +232,10 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
                 self.assertIn(r['id'], r_ids)
         self._remove_mgmt_nw_for_tests()
 
+    def test_check_ports_exist_on_l3agent_with_dhcp_enabled_subnets(self):
+        # overload to disable this test that fails as as it pertains to DVR
+        # which we don't support
+        pass
 
 class L3RoutertypeAwareChanceL3AgentSchedulerTestCase(
     test_l3_agent_scheduler.L3AgentChanceSchedulerTestCase,

@@ -66,7 +66,7 @@ class RouterHostingDeviceBinding(model_base.BASEV2):
         l3_db.Router,
         backref=orm.backref('hosting_info', cascade='all', uselist=False))
     # 'router_role' specifies the type of role the router serves in
-    role = sa.String(255)
+    role = sa.Column(sa.String(255), default=None)
     # 'router_type_id' is id of router type for this router
     router_type_id = sa.Column(
         sa.String(36),
