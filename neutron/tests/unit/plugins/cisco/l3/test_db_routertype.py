@@ -58,7 +58,7 @@ RT_SETTINGS = {
         'slot_need': TEST_SLOT_NEED,
         'scheduler': 'neutron.plugins.cisco.l3.schedulers.'
                      'l3_router_hosting_device_scheduler.'
-                     'L3RouterHostingDeviceScheduler',
+                     'L3RouterHostingDeviceLongestRunningScheduler',
         'driver': NOOP_RT_DRIVER,
         'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
         'cfg_agent_driver': NOOP_AGT_DRV},
@@ -66,7 +66,7 @@ RT_SETTINGS = {
         'slot_need': 200,
         'scheduler': 'neutron.plugins.cisco.l3.schedulers.'
                      'l3_router_hosting_device_scheduler.'
-                     'L3RouterHostingDeviceScheduler',
+                     'L3RouterHostingDeviceRandomScheduler',
         'driver': NOOP_RT_DRIVER,
         'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
         'cfg_agent_driver': NOOP_AGT_DRV}}
@@ -147,15 +147,17 @@ class RoutertypeTestCaseMixin(object):
 
     def _test_remove_routertypes(self, delete_routers=True):
         if delete_routers:
-            ha_redundancy_router_ids = set()
-            for r in self._list('routers')['routers']:
+            auto_deleted_router_ids = set()
+            routers = self._list('routers')['routers']
+            for r in routers:
                 # Exclude any redundancy routers as they are removed
                 # automatically when removing the user visible router
                 for rr_info in r.get(
                         ha.DETAILS,
                         {ha.REDUNDANCY_ROUTERS: []})[ha.REDUNDANCY_ROUTERS]:
-                    ha_redundancy_router_ids.add(rr_info['id'])
-                if r['id'] in ha_redundancy_router_ids:
+                    auto_deleted_router_ids.add(rr_info['id'])
+            for r in routers:
+                if r['id'] in auto_deleted_router_ids:
                     continue
                 # Remove any floatingips using the router
                 for fip in self._list(

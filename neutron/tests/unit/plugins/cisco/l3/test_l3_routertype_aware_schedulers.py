@@ -33,6 +33,8 @@ from neutron.plugins.common import constants as plugin_consts
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
+from neutron.plugins.cisco.db.l3 import ha_db
+from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
@@ -59,6 +61,7 @@ L3_PLUGIN_KLASS = (
 
 _uuid = uuidutils.generate_uuid
 HOSTING_DEVICE_ATTR = routerhostingdevice.HOSTING_DEVICE_ATTR
+
 
 class TestSchedulingL3RouterApplianceExtensionManager(
         test_db_routertype.L3TestRoutertypeExtensionManager):
@@ -92,7 +95,7 @@ class TestSchedulingCapableL3RouterServicePlugin(
         self.agent_notifiers.update(
             {constants.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotifyAPI(),
              c_const.AGENT_TYPE_L3_CFG:
-             l3_router_rpc_cfg_agent_api.L3RouterCfgAgentNotifyAPI(self)})#,
+             l3_router_rpc_cfg_agent_api.L3RouterCfgAgentNotifyAPI(self)})
         self.router_scheduler = importutils.import_object(
             cfg.CONF.routing.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
@@ -237,6 +240,7 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
         # which we don't support
         pass
 
+
 class L3RoutertypeAwareChanceL3AgentSchedulerTestCase(
     test_l3_agent_scheduler.L3AgentChanceSchedulerTestCase,
         L3RoutertypeAwareL3AgentSchedulerTestCase):
@@ -346,8 +350,14 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase(
         cfg.CONF.set_override('backlog_processing_interval', 100,
                               group='routing')
         self.adminContext = q_context.get_admin_context()
+        # tests need a predictable random.choice so we always return first
+        # item in the argument sequence
+        self.random_patch = mock.patch('random.choice')
+        random_mock = self.random_patch.start()
+        random_mock.side_effect = lambda seq: seq[0]
 
     def tearDown(self):
+        self.random_patch.stop()
         if self._old_config_files is None:
             test_lib.test_config.pop('config_files', None)
         else:
@@ -1066,3 +1076,63 @@ class HostingDeviceRouterL3CfgAgentNotifierTestCase(
                 mock_cast.assert_has_calls(calls, any_order=True)
                 self.assertEqual(len(back_log), 1)
                 self.assertIn(r3['id'], back_log)
+
+
+class TestHASchedulingL3RouterApplianceExtensionManager(
+        TestSchedulingL3RouterApplianceExtensionManager):
+
+    def get_resources(self):
+        # add ha attributes to router resource
+        l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
+            ha.EXTENDED_ATTRIBUTES_2_0['routers'])
+        # let our super class do the rest
+        return super(TestHASchedulingL3RouterApplianceExtensionManager,
+                     self).get_resources()
+
+
+# A scheduler-enabled routertype capable L3 routing service plugin class
+class TestSchedulingHACapableL3RouterServicePlugin(
+        ha_db.HA_db_mixin, TestSchedulingCapableL3RouterServicePlugin):
+
+    supported_extension_aliases = [
+        "router", routertype.ROUTERTYPE_ALIAS,
+        routertypeawarescheduler.ROUTERTYPE_AWARE_SCHEDULER_ALIAS,
+        constants.L3_AGENT_SCHEDULER_EXT_ALIAS,
+        ha.HA_ALIAS]
+
+
+class L3RouterHostingDeviceHARandomSchedulerTestCase(
+        L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase):
+
+    def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
+              ext_mgr=None):
+        if l3_plugin is None:
+            l3_plugin = ('neutron.tests.unit.plugins.cisco.l3.'
+                         'test_l3_routertype_aware_schedulers.'
+                         'TestSchedulingHACapableL3RouterServicePlugin')
+        if ext_mgr is None:
+            ext_mgr = TestHASchedulingL3RouterApplianceExtensionManager()
+        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
+        cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
+        super(L3RouterHostingDeviceHARandomSchedulerTestCase, self).setUp(
+            l3_plugin=l3_plugin, ext_mgr=ext_mgr)
+
+    def test_ha_routers_hosted_on_different_hosting_devices(self):
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            with self.router(external_gateway_info={
+                    'network_id': s['subnet']['network_id']}) as router:
+                r = router['router']
+                self.plugin._process_backlogged_routers()
+                r_after = self._show('routers', r['id'])['router']
+                self.assertIsNotNone(
+                    r_after[routerhostingdevice.HOSTING_DEVICE_ATTR])
+                hd_ids = {r_after[routerhostingdevice.HOSTING_DEVICE_ATTR]}
+                r_rs_after = [self._show('routers', rr['id'])['router']
+                              for rr in r[ha.DETAILS][ha.REDUNDANCY_ROUTERS]]
+                for rr in r_rs_after:
+                    hd_id = rr[routerhostingdevice.HOSTING_DEVICE_ATTR]
+                    self.assertIsNotNone(hd_id)
+                    self.assertNotIn(hd_id, hd_ids)
+                    hd_ids.add(hd_id)
+

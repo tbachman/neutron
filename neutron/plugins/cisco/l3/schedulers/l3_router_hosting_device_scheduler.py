@@ -12,8 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+
 from datetime import timedelta
 from operator import itemgetter
+import random
 
 from oslo_log import log as logging
 from sqlalchemy import func
@@ -29,10 +31,10 @@ LOG = logging.getLogger(__name__)
 EQUIVALENCE_TIME_DIFF = 7
 
 
-class L3RouterHostingDeviceScheduler(object):
+class L3RouterHostingDeviceBaseScheduler(object):
     """Slot-aware scheduler of Neutron routers on hosting devices."""
 
-    def schedule_router(self, plugin, context, r_hd_binding):
+    def get_candidates(self, plugin, context, r_hd_binding_db):
         """Schedules a Neutron router on a hosting device.
 
         Selection criteria: The longest running hosting device that...
@@ -67,12 +69,12 @@ class L3RouterHostingDeviceScheduler(object):
         # GROUP BY hosting_device_id
         # HAVING sum(num_allocated) <= 8 OR sum(num_allocated) IS NULL
         # ORDER BY created_at;
-        router = r_hd_binding['router']
+        router = r_hd_binding_db.router
         tenant_id = router['tenant_id']
-        router_type = r_hd_binding['router_type']
-        template_id = router_type['template_id']
-        template = router_type['template']
-        slot_threshold = template['slot_capacity'] - router_type['slot_need']
+        router_type_db = r_hd_binding_db.router_type
+        template_id = router_type_db['template_id']
+        template_db = router_type_db.template
+        slot_threshold = template_db.slot_capacity - router_type_db.slot_need
 
         query = context.session.query(
             hd_models.HostingDevice.id, hd_models.HostingDevice.created_at,
@@ -84,7 +86,7 @@ class L3RouterHostingDeviceScheduler(object):
         query = query.filter(
             hd_models.HostingDevice.template_id == template_id,
             hd_models.HostingDevice.admin_state_up == expr.true())
-        if r_hd_binding['share_hosting_device']:
+        if r_hd_binding_db.share_hosting_device:
             query = query.filter(
                 expr.or_(hd_models.HostingDevice.tenant_bound == expr.null(),
                          hd_models.HostingDevice.tenant_bound == tenant_id))
@@ -108,23 +110,88 @@ class L3RouterHostingDeviceScheduler(object):
                 func.sum(hd_models.SlotAllocation.num_allocated ==
                          expr.null())))
         query = query.order_by(hd_models.HostingDevice.created_at)
-        candidates = query.all()
+        return query.all()
+
+    def schedule_router(self, plugin, context, r_hd_binding_db):
+        return
+
+    def unschedule_router(self, plugin, context, r_hd_binding_db):
+        return True
+
+
+class L3RouterHostingDeviceLongestRunningScheduler(
+        L3RouterHostingDeviceBaseScheduler):
+
+    def schedule_router(self, plugin, context, r_hd_binding_db):
+        candidates = self._filtered_candidates(plugin, context,
+                                               r_hd_binding_db)
         if len(candidates) == 0:
             # report unsuccessful scheduling
             return
-        else:
-            # determine oldest candidates considered equally old
-            oldest_candidates = []
-            minute_limit = timedelta(minutes=EQUIVALENCE_TIME_DIFF)
-            for candidate in candidates:
-                if candidate[1] - candidates[0][1] < minute_limit:
-                    oldest_candidates.append(candidate)
-                else:
-                    # we're only interested in the longest running devices
-                    break
-            # sort on least number of used slots
-            sorted_candidates = sorted(oldest_candidates, key=itemgetter(2))
-            return sorted_candidates[0]
+        # determine oldest candidates considered equally old
+        oldest_candidates = []
+        minute_limit = timedelta(minutes=EQUIVALENCE_TIME_DIFF)
+        for candidate in candidates:
+            if candidate[1] - candidates[0][1] < minute_limit:
+                oldest_candidates.append(candidate)
+            else:
+                # we're only interested in the longest running devices
+                break
+        # sort on least number of used slots
+        sorted_candidates = sorted(oldest_candidates, key=itemgetter(2))
+        return sorted_candidates[0]
 
-    def unschedule_router(self, plugin, context, r_hd_binding):
-        return True
+    def _filtered_candidates(self, plugin, context, r_hd_binding_db):
+        return self.get_candidates(plugin, context, r_hd_binding_db)
+
+
+class CandidatesHAFilter(object):
+
+    def _filtered_candidates(self, plugin, context, r_hd_binding_db):
+        candidates_dict = {c.id: c for c in self.get_candidates(
+            plugin, context, r_hd_binding_db)}
+        if candidates_dict:
+            r_b = r_hd_binding_db.router.redundancy_binding
+            if r_b:
+                # this is a redundancy router so we need to exclude the hosting
+                # devices of the user visible router and the other redundancy
+                # routers
+                if r_b.user_router.hosting_info.hosting_device_id:
+                    del candidates_dict[
+                        r_b.user_router.hosting_info.hosting_device_id]
+                for rr_b in r_b.user_router.redundancy_bindings:
+                    rr = rr_b.redundancy_router
+                    if (rr.id != r_b.redundancy_router_id and
+                            rr.hosting_info.hosting_device_id):
+                        del candidates_dict[rr.hosting_info.hosting_device_id]
+            for rr_b in r_hd_binding_db.router.redundancy_bindings:
+                # this is a user visible router so we need to exclude the
+                # hosting devices of its redundancy routers
+                rr = rr_b.redundancy_router
+                if rr.hosting_info.hosting_device_id:
+                    del candidates_dict[rr.hosting_info.hosting_device_id]
+        return candidates_dict.values()
+
+
+class L3RouterHostingDeviceHALongestRunningScheduler(
+        CandidatesHAFilter, L3RouterHostingDeviceLongestRunningScheduler):
+    pass
+
+
+class L3RouterHostingDeviceRandomScheduler(L3RouterHostingDeviceBaseScheduler):
+
+    def schedule_router(self, plugin, context, r_hd_binding_db):
+        candidates = self._filtered_candidates(plugin, context,
+                                               r_hd_binding_db)
+        if len(candidates) == 0:
+            # report unsuccessful scheduling
+            return
+        return random.choice(candidates)
+
+    def _filtered_candidates(self, plugin, context, r_hd_binding):
+        return self.get_candidates(plugin, context, r_hd_binding)
+
+
+class L3RouterHostingDeviceHARandomScheduler(
+        CandidatesHAFilter, L3RouterHostingDeviceRandomScheduler):
+    pass

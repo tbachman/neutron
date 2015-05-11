@@ -158,6 +158,11 @@ class RouterRedundancyBinding(model_base.BASEV2):
                                      sa.ForeignKey('routers.id',
                                                    ondelete='CASCADE'),
                                      primary_key=True)
+    redundancy_router = orm.relationship(
+        l3_db.Router,
+        primaryjoin='Router.id==RouterRedundancyBinding.redundancy_router_id',
+        backref=orm.backref('redundancy_binding', cascade='save-update, merge',
+                            passive_deletes='all', uselist=False))
     # 'priority' is the priority used in VRRP, HSRP, and GLBP
     priority = sa.Column(sa.Integer)
     # 'state' is the state of the redundancy router: HA_ACTIVE or HA_STANDBY
