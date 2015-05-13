@@ -139,8 +139,8 @@ class N1kvSyncDriver():
                 LOG.debug('Syncing bridge domains.')
                 vsm_bds = set(self._get_vsm_resource(
                     n1kv_const.BRIDGE_DOMAINS, vsm_ip=vsm_ip).keys())
-                neutron_nets = self._get_neutron_resource(n1kv_const.NETWORKS)
-                self._sync_bridge_domains((vsm_bds, neutron_nets),
+                neutron_vxlan_nets = n1kv_db.get_vxlan_networks()
+                self._sync_bridge_domains((vsm_bds, neutron_vxlan_nets),
                                           vsm_ip=vsm_ip)
             self.n1kvclient.send_sync_notification(n1kv_const.SYNC_END,
                                                    vsm_ip=vsm_ip)
@@ -401,9 +401,9 @@ class N1kvSyncDriver():
         :param vsm_ip: IP of the VSM being synced
         """
         # create missing BDs on VSM
-        (vsm_bds, neutron_nets) = combined_res_info
+        (vsm_bds, neutron_vxlan_nets) = combined_res_info
         need_bd_sync = False
-        for network in neutron_nets:
+        for network in neutron_vxlan_nets:
             bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             if bd_name not in vsm_bds:
                 binding = n1kv_db.get_network_binding(network['id'])
@@ -414,12 +414,13 @@ class N1kvSyncDriver():
                     self.n1kvclient.create_bridge_domain(network,
                                                          vsm_ip=vsm_ip)
                 except(n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
-                    LOG.warning(_LW('Sync Exception: Bridge domain creation '
-                                    'failed.'))
+                    LOG.warning(_LW('Sync Exception: Bridge domain '
+                                    'creation failed.'))
                     need_bd_sync = True
         # delete extraneous BDs from VSM
         neutron_bds = {net + n1kv_const.BRIDGE_DOMAIN_SUFFIX for net in
-                       self._get_uuids(n1kv_const.NETWORKS, neutron_nets)}
+                       self._get_uuids(n1kv_const.NETWORKS,
+                                       neutron_vxlan_nets)}
         for bd in vsm_bds - neutron_bds:
             try:
                 # delete this BD from VSM
