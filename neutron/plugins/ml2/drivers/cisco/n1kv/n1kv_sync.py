@@ -407,18 +407,16 @@ class N1kvSyncDriver():
             bd_name = network['id'] + n1kv_const.BRIDGE_DOMAIN_SUFFIX
             if bd_name not in vsm_bds:
                 binding = n1kv_db.get_network_binding(network['id'])
-                if binding.network_type == p_const.TYPE_VXLAN:
-                    network[providernet.SEGMENTATION_ID] = \
-                        binding.segmentation_id
-                    network[providernet.NETWORK_TYPE] = binding.network_type
-                    # create this BD on VSM
-                    try:
-                        self.n1kvclient.create_bridge_domain(network,
-                                                             vsm_ip=vsm_ip)
-                    except(n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
-                        LOG.warning(_LW('Sync Exception: Bridge domain '
-                                        'creation failed.'))
-                        need_bd_sync = True
+                network[providernet.SEGMENTATION_ID] = binding.segmentation_id
+                network[providernet.NETWORK_TYPE] = binding.network_type
+                # create this BD on VSM
+                try:
+                    self.n1kvclient.create_bridge_domain(network,
+                                                         vsm_ip=vsm_ip)
+                except(n1kv_exc.VSMConnectionFailed, n1kv_exc.VSMError):
+                    LOG.warning(_LW('Sync Exception: Bridge domain creation '
+                                    'failed.'))
+                    need_bd_sync = True
         # delete extraneous BDs from VSM
         neutron_bds = {net + n1kv_const.BRIDGE_DOMAIN_SUFFIX for net in
                        self._get_uuids(n1kv_const.NETWORKS, neutron_nets)}
