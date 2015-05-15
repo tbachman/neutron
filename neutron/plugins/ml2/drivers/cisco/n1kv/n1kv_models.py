@@ -62,7 +62,6 @@ class N1kvPortBinding(model_base.BASEV2):
                         sa.ForeignKey('ports.id', ondelete="CASCADE"),
                         primary_key=True)
     profile_id = sa.Column(sa.String(36),
-                           sa.ForeignKey('cisco_ml2_n1kv_policy_profiles.id'),
                            nullable=False)
 
 

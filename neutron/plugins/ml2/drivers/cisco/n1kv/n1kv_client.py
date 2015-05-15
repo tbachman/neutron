@@ -122,21 +122,14 @@ class Client(object):
         # Extract configuration parameters from the configuration file.
         self.username = cfg.CONF.ml2_cisco_n1kv.username
         self.password = cfg.CONF.ml2_cisco_n1kv.password
+        self.vsm_ips = config.get_vsm_hosts()
         self.action_prefix = 'http://%s/api/n1k'
         self.timeout = cfg.CONF.ml2_cisco_n1kv.http_timeout
         self.max_vsm_retries = cfg.CONF.ml2_cisco_n1kv.max_vsm_retries
-        required_opts = ('vsm_hosts', 'username', 'password')
+        required_opts = ('vsm_ips', 'username', 'password')
         for opt in required_opts:
             if not getattr(self, opt):
                 raise cfg.RequiredOptError(opt, 'ml2_cisco_n1kv')
-
-    @property
-    def vsm_hosts(self):
-        """Retrieve a list of VSM ip addresses.
-
-        :return: list of host ip addresses
-        """
-        return cfg.CONF.ml2_cisco_n1kv.n1kv_vsm_ips
 
     def send_sync_notification(self, msg, vsm_ip):
         """Send a start/end/no-change sync notification to the VSM.
@@ -476,7 +469,7 @@ class Client(object):
         if vsm_ip:
             hosts.append(vsm_ip)
         else:
-            hosts = self.vsm_hosts
+            hosts = config.get_vsm_hosts()
         # _get_auth_header() assumes all VSMs have the same credentials
         headers = self._get_auth_header()
         headers['Content-Type'] = headers['Accept'] = "application/json"

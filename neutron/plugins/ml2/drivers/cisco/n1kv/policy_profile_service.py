@@ -52,7 +52,7 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
     def _policy_profile_exists(self, id, vsm_ip=None):
         db_session = db.get_session()
         if vsm_ip is None:
-            return self._check_policy_profile_on_all_vsm(id, db_session)
+            return n1kv_db.get_policy_profile_by_uuid(id, db_session)
         else:
             return (db_session.query(n1kv_models.PolicyProfile).
                     filter_by(id=id, vsm_ip=vsm_ip).first())
@@ -252,19 +252,19 @@ class PolicyProfile_db_mixin(policy_profile.PolicyProfilePluginBase,
                                                           PolicyProfile,
                                                           context.tenant_id)
 
-        #uniquify the port profile ids
+        # uniquify the policy profile ids
         pp_ids = set(pp['id'] for pp in pp_list)
 
-        return [self._make_policy_profile_dict(self._get_policy_profile(
-                db_session, id)) for id in pp_ids
-                if (self._check_policy_profile_on_all_vsm(id, db_session))]
-
-    def _check_policy_profile_on_all_vsm(self, id, db_session=None):
-        """Checks if port profile is present on all VSM"""
-        db_session = db_session or db.get_session()
-        vsm_count = len(self.n1kvclient.vsm_hosts)
-        return (db_session.query(n1kv_models.PolicyProfile).
-                filter_by(id=id).count() == vsm_count)
+        # recreate the pp_list for unique profile ids
+        pp_list = []
+        for pp_id in pp_ids:
+            try:
+                pp_list.append(self._make_policy_profile_dict(
+                    self._get_policy_profile(db_session, pp_id)))
+            except n1kv_exc.PolicyProfileNotFound:
+                # Only return profiles on all VSMs
+                pass
+        return pp_list
 
     def _check_policy_profile_on_any_vsm(self, profile_id, db_session=None):
         """Checks if policy profile is present on any VSM"""
@@ -312,7 +312,7 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
 
     def _populate_policy_profiles(self):
         """Populate all the policy profiles from VSM."""
-        hosts = self.n1kvclient.vsm_hosts
+        hosts = config.get_vsm_hosts()
         for vsm_ip in hosts:
             try:
                 policy_profiles = self.n1kvclient.list_port_profiles(vsm_ip)
@@ -344,6 +344,7 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
             except (n1kv_exc.VSMError, n1kv_exc.VSMConnectionFailed):
                 with excutils.save_and_reraise_exception(reraise=False):
                     LOG.warning(_LW('No policy profile populated from VSM'))
+        self.sanitize_policy_profile_table()
 
     def get_policy_profiles(self, context, filters=None, fields=None):
         """Return Cisco N1KV policy profiles."""
@@ -363,3 +364,27 @@ class PolicyProfilePlugin(PolicyProfile_db_mixin):
         return super(PolicyProfilePlugin,
                      self).get_policy_profile_bindings(context, filters,
                                                        fields)
+
+    def sanitize_policy_profile_table(self):
+        """Clear policy profiles from stale VSM."""
+        db_session = db.get_session()
+        hosts = config.get_vsm_hosts()
+        vsm_info = db_session.query(
+            n1kv_models.PolicyProfile.vsm_ip).distinct()
+        vsm_ips = [vsm_ip[0] for vsm_ip in vsm_info if vsm_ip[0] not in hosts]
+        for vsm_ip in vsm_ips:
+            pprofiles = n1kv_db.get_policy_profiles_by_host(vsm_ip, db_session)
+            for pprofile in pprofiles:
+                # Do not delete profile if it is in use and if it
+                # is the only VSM to have it configured
+                pp_in_use = n1kv_db.policy_profile_in_use(pprofile['id'],
+                                                          db_session)
+                num_vsm_using_pp = db_session.query(
+                    n1kv_models.PolicyProfile).filter_by(
+                    id=pprofile['id']).count()
+                if (not pp_in_use) or (num_vsm_using_pp > 1):
+                    db_session.delete(pprofile)
+                    db_session.flush()
+                else:
+                    LOG.warning(_LW('Cannot delete policy profile %s '
+                                    'as it is in use.'), pprofile['id'])

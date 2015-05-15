@@ -62,8 +62,6 @@ def upgrade(active_plugins=None, options=None):
         sa.Column('port_id', sa.String(length=36), nullable=False),
         sa.Column('profile_id', sa.String(length=36), nullable=False),
         sa.ForeignKeyConstraint(['port_id'], ['ports.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['profile_id'],
-                                ['cisco_ml2_n1kv_policy_profiles.id']),
         sa.PrimaryKeyConstraint('port_id'),
     )
 

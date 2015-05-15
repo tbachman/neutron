@@ -14,9 +14,11 @@
 #    under the License.
 
 import sqlalchemy.orm.exc as sa_exc
+from sqlalchemy import sql
 
 from neutron import context as ncontext
 import neutron.db.api as db
+from neutron.plugins.ml2.drivers.cisco.n1kv import config
 from neutron.db import models_v2
 from neutron.plugins.common import constants as p_const
 from neutron.plugins.ml2.drivers.cisco.n1kv import exceptions as n1kv_exc
@@ -81,22 +83,29 @@ def remove_network_profile(netp_id, db_session=None):
 def get_policy_profile_by_name(name, db_session=None):
     """Retrieve policy profile by name."""
     db_session = db_session or db.get_session()
-    policy_profile = (db_session.query(n1kv_models.PolicyProfile).
-                      filter_by(name=name).first())
-    if policy_profile:
-        return policy_profile
+    vsm_hosts = config.get_vsm_hosts()
+    pp = n1kv_models.PolicyProfile
+    pprofiles = db_session.query(pp).filter(
+        sql.and_(pp.name == name, pp.vsm_ip.in_(vsm_hosts))).all()
+    if pprofiles and check_policy_profile_exists_on_all_vsm(pprofiles,
+                                                            vsm_hosts):
+        return pprofiles[0]
     else:
-        raise n1kv_exc.PolicyProfileNotFound(profile=id)
+        raise n1kv_exc.PolicyProfileNotFound(profile=name)
 
 
-def get_policy_profile_by_uuid(db_session, id):
+def get_policy_profile_by_uuid(db_session, pprofile_id):
     """Retrieve policy profile by its UUID."""
-    policy_profile = (db_session.query(n1kv_models.PolicyProfile).
-                      filter_by(id=id).first())
-    if policy_profile:
-        return policy_profile
+    vsm_hosts = config.get_vsm_hosts()
+    pp = n1kv_models.PolicyProfile
+    pprofiles = (db_session.query(pp).
+                 filter(sql.and_(pp.id == pprofile_id,
+                 pp.vsm_ip.in_(vsm_hosts))).all())
+    if pprofiles and check_policy_profile_exists_on_all_vsm(pprofiles,
+                                                            vsm_hosts):
+        return pprofiles[0]
     else:
-        raise n1kv_exc.PolicyProfileNotFound(profile=id)
+        raise n1kv_exc.PolicyProfileNotFound(profile=pprofile_id)
 
 
 def get_policy_profiles_by_host(vsm_ip, db_session=None):
@@ -109,17 +118,29 @@ def get_policy_profiles_by_host(vsm_ip, db_session=None):
         raise n1kv_exc.PolicyProfileNotFound(profile=vsm_ip)
 
 
-def policy_profile_in_use(profile_id):
+def policy_profile_in_use(profile_id, db_session=None):
     """
     Checks if a policy profile is being used in a port binding.
 
-    :param segment_id: UUID of the policy profile to be checked
+    :param profile_id: UUID of the policy profile to be checked
+    :param db_session: database session
     :returns: boolean
     """
-    db_session = db.get_session()
+    db_session = db_session or db.get_session()
     ret = (db_session.query(n1kv_models.N1kvPortBinding).
            filter_by(profile_id=profile_id).first())
     return bool(ret)
+
+
+def check_policy_profile_exists_on_all_vsm(pprofiles, vsm_hosts):
+    """Checks if policy profile is present on all VSM.
+
+    :param pprofiles: all the port profile rows for a particular profile
+    :param vsm_hosts: list of configured VSMs
+    :returns: boolean
+    """
+    return (len(pprofiles) == len(vsm_hosts) and
+            len(set(pprofile.id for pprofile in pprofiles)) == 1)
 
 
 def get_network_binding(network_id):
