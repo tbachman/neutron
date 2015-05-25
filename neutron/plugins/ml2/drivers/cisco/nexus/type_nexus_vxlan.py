@@ -14,7 +14,7 @@
 #    under the License.
 #
 
-from networking_cisco.plugins.ml2.drivers.cisco.nexus import type_nexus_vxlan
+from neutron.plugins.ml2.drivers.cisco.nexus import type_nexus_vxlan
 
 
 class NexusVxlanTypeDriver(type_nexus_vxlan.NexusVxlanTypeDriver):

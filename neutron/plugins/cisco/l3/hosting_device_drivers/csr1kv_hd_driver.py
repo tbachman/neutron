@@ -21,7 +21,7 @@ from oslo_utils import excutils
 from neutron.i18n import _LE
 from neutron import manager
 
-from networking_cisco.plugins.cisco.l3 import hosting_device_drivers
+from neutron.plugins.cisco.l3 import hosting_device_drivers
 
 LOG = logging.getLogger(__name__)
 

@@ -25,10 +25,10 @@ from oslo_config import cfg
 
 from neutron.i18n import _LE, _LI, _LW
 
-from networking_cisco.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
-from networking_cisco.plugins.cisco.cfg_agent.device_drivers import (
+from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
+from neutron.plugins.cisco.cfg_agent.device_drivers import (
     devicedriver_api)
-from networking_cisco.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 
 LOG = logging.getLogger(__name__)

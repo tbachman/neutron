@@ -17,7 +17,7 @@
 ML2 Mechanism Driver for Cisco Nexus1000V distributed virtual switches.
 """
 
-from networking_cisco.plugins.ml2.drivers.cisco.n1kv import mech_cisco_n1kv
+from neutron.plugins.ml2.drivers.cisco.n1kv import mech_cisco_n1kv
 
 
 class N1KVMechanismDriver(mech_cisco_n1kv.N1KVMechanismDriver):

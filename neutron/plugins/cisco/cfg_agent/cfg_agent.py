@@ -40,8 +40,8 @@ from neutron.openstack.common import periodic_task
 from neutron.openstack.common import service
 from neutron import service as neutron_service
 
-from networking_cisco.plugins.cisco.cfg_agent import device_status
-from networking_cisco.plugins.cisco.common import (
+from neutron.plugins.cisco.cfg_agent import device_status
+from neutron.plugins.cisco.common import (
     cisco_constants as c_constants)
 
 LOG = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class CiscoCfgAgent(manager.Manager):
                           "lets each service helper to process its neutron "
                           "resources.")),
         cfg.StrOpt('routing_svc_helper_class',
-           default='networking_cisco.plugins.cisco.cfg_agent.service_helpers'
+           default='neutron.plugins.cisco.cfg_agent.service_helpers'
            '.routing_svc_helper.RoutingServiceHelper',
            help=_("Path of the routing service helper class.")),
         cfg.StrOpt('fw_svc_helper_class',
@@ -348,7 +348,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             LOG.exception(_LE("Failed sending agent report!"))
 
 
-def main(manager='networking_cisco.plugins.cisco.cfg_agent.'
+def main(manager='neutron.plugins.cisco.cfg_agent.'
                  'cfg_agent.CiscoCfgAgentWithStateReport'):
     conf = cfg.CONF
     conf.register_opts(CiscoCfgAgent.OPTS, "cfg_agent")

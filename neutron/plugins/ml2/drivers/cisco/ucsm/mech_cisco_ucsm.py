@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from networking_cisco.plugins.ml2.drivers.cisco.ucsm import constants as const
-from networking_cisco.plugins.ml2.drivers.cisco.ucsm import ucsm_db
-from networking_cisco.plugins.ml2.drivers.cisco.ucsm import ucsm_network_driver
+from neutron.plugins.ml2.drivers.cisco.ucsm import constants as const
+from neutron.plugins.ml2.drivers.cisco.ucsm import ucsm_db
+from neutron.plugins.ml2.drivers.cisco.ucsm import ucsm_network_driver
 
 from oslo_log import log as logging
 

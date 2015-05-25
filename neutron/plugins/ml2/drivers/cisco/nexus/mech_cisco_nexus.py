@@ -17,7 +17,7 @@
 ML2 Mechanism Driver for Cisco Nexus platforms.
 """
 
-from networking_cisco.plugins.ml2.drivers.cisco.nexus import mech_cisco_nexus
+from neutron.plugins.ml2.drivers.cisco.nexus import mech_cisco_nexus
 
 
 class CiscoNexusMechanismDriver(mech_cisco_nexus.CiscoNexusMechanismDriver):

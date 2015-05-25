@@ -18,11 +18,11 @@
 from oslo_config import cfg
 from oslo_log import log
 
-from networking_cisco.plugins.ml2.drivers.cisco.n1kv import (
+from neutron.plugins.ml2.drivers.cisco.n1kv import (
     constants)
-from networking_cisco.plugins.ml2.drivers.cisco.n1kv import (
+from neutron.plugins.ml2.drivers.cisco.n1kv import (
     exceptions as n1kv_exc)
-from networking_cisco.plugins.ml2.drivers.cisco.n1kv import (
+from neutron.plugins.ml2.drivers.cisco.n1kv import (
     n1kv_db)
 
 from neutron.api import extensions as api_extensions

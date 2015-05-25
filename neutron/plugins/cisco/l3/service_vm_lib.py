@@ -21,7 +21,7 @@ from oslo_log import log as logging
 from neutron.i18n import _LE
 from neutron import manager
 
-from networking_cisco.plugins.cisco.common import (
+from neutron.plugins.cisco.common import (
     cisco_constants as c_constants)
 
 LOG = logging.getLogger(__name__)

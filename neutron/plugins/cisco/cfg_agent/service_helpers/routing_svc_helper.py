@@ -27,10 +27,10 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.i18n import _LE, _LI, _LW
 
-from networking_cisco.plugins.cisco.cfg_agent import cfg_exceptions
-from networking_cisco.plugins.cisco.cfg_agent.device_drivers import driver_mgr
-from networking_cisco.plugins.cisco.cfg_agent import device_status
-from networking_cisco.plugins.cisco.common import (
+from neutron.plugins.cisco.cfg_agent import cfg_exceptions
+from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
+from neutron.plugins.cisco.cfg_agent import device_status
+from neutron.plugins.cisco.common import (
     cisco_constants as c_constants)
 
 LOG = logging.getLogger(__name__)
