@@ -29,7 +29,7 @@ class PluginSidePluggingDriver(object):
 
     @abc.abstractmethod
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id,  mgmt_context, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         """Create resources for a hosting device in a plugin specific way.
 
         Called when a hosting device is to be created so resources like

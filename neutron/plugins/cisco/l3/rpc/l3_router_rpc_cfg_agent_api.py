@@ -13,8 +13,8 @@
 #    under the License.
 #
 
-from oslo import messaging
 from oslo_log import log as logging
+import oslo_messaging
 
 from neutron.common import constants
 from neutron.common import rpc as n_rpc
@@ -38,7 +38,7 @@ class L3RouterCfgAgentNotifyAPI(object):
 
     def __init__(self, l3plugin, topic=CFG_AGENT_L3_ROUTING):
         self._l3plugin = l3plugin
-        target = messaging.Target(topic, version='1.0')
+        target = oslo_messaging.Target(topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
     def _agent_notification(self, context, method, routers, operation,
@@ -52,7 +52,7 @@ class L3RouterCfgAgentNotifyAPI(object):
                     utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):
                 agents = dmplugin.get_cfg_agents_for_hosting_devices(
                     admin_context, [router['hosting_device']['id']],
-                    admin_state_up=True, active=True, schedule=True)
+                    admin_state_up=True, schedule=True)
             else:
                 continue
             for agent in agents:

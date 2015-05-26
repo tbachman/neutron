@@ -13,12 +13,13 @@
 #    under the License.
 
 from oslo_config import cfg
-from oslo_utils import timeutils
 from oslo_log import log as logging
+from oslo_utils import timeutils
 
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.db.device_manager.hd_models import HostingDevice
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 
 LOG = logging.getLogger(__name__)
@@ -53,28 +54,71 @@ class CfgAgentSchedulerDbMixin(
 
     def auto_schedule_hosting_devices(self, context, host):
         if self.cfg_agent_scheduler:
-            return self.cfg_agent_scheduler.auto_schedule_hosting_devices(
+            cfg_agent = self.cfg_agent_scheduler.auto_schedule_hosting_devices(
                 self, context, host)
-        return
+            if not cfg_agent:
+                return False
+            with context.session.begin(subtransactions=True):
+                query = context.session.query(HostingDevice)
+                query = query.filter_by(cfg_agent_id=None)
+                for hosting_device in query:
+                    self._bind_hosting_device_to_cfg_agent(
+                        context, hosting_device, cfg_agent)
+            return True
+        return False
 
-    def assign_hosting_device_to_cfg_agent(self, context, id,
+    def assign_hosting_device_to_cfg_agent(self, context, cfg_agent_id,
                                            hosting_device_id):
-        #TODO(bobmel): Implement the assign hd to cfg agent
-        pass
+        """Make config agent handle an (unassigned) hosting device."""
+        hd_db = self._get_hosting_device(context, hosting_device_id)
+        if hd_db.cfg_agent_id:
+            if hd_db.cfg_agent_id == cfg_agent_id:
+                return
+            LOG.debug('Hosting device %(hd_id)s has already been assigned to '
+                      'Cisco cfg agent %(agent_id)s',
+                      {'hd_id': hosting_device_id, 'agent_id': cfg_agent_id})
+            raise ciscocfgagentscheduler.HostingDeviceAssignedToCfgAgent(
+                hosting_device_id=hosting_device_id, agent_id=cfg_agent_id)
+        cfg_agent_db = self._get_agent(context, cfg_agent_id)
+        if (cfg_agent_db.agent_type != c_constants.AGENT_TYPE_CFG or
+                cfg_agent_db.admin_state_up is not True):
+            raise ciscocfgagentscheduler.InvalidCfgAgent(agent_id=cfg_agent_id)
+        self._bind_hosting_device_to_cfg_agent(context, hd_db, cfg_agent_db)
+        cfg_notifier = self.agent_notifiers.get(c_constants.AGENT_TYPE_CFG)
+        if cfg_notifier:
+            cfg_notifier.hosting_devices_assigned_to_cfg_agent(
+                context, [hosting_device_id], cfg_agent_db.host)
 
-    def unassign_hosting_device_from_cfg_agent(self, context, id,
+    def unassign_hosting_device_from_cfg_agent(self, context, cfg_agent_id,
                                                hosting_device_id):
-        #TODO(bobmel): Implement the un-assign hd from cfg agent
-        pass
+        """Make config agent handle an (unassigned) hosting device."""
+        hd_db = self._get_hosting_device(context, hosting_device_id)
+        if hd_db.cfg_agent_id is None and cfg_agent_id is None:
+            return
+        elif hd_db.cfg_agent_id != cfg_agent_id:
+            LOG.debug('Hosting device %(hd_id)s is not assigned to Cisco '
+                      'cfg agent %(agent_id)s',
+                      {'hd_id': hosting_device_id,
+                       'agent_id': cfg_agent_id})
+            raise ciscocfgagentscheduler.HostingDeviceNotAssignedToCfgAgent(
+                hosting_device_id=hosting_device_id, agent_id=cfg_agent_id)
+        cfg_agent_db = self._get_agent(context, cfg_agent_id)
+        cfg_notifier = self.agent_notifiers.get(c_constants.AGENT_TYPE_CFG)
+        if cfg_notifier:
+            cfg_notifier.hosting_devices_unassigned_from_cfg_agent(
+                context, [hosting_device_id], cfg_agent_db.host)
+        self._bind_hosting_device_to_cfg_agent(context, hd_db, None)
 
-    def list_hosting_devices_handled_by_cfg_agent(self, context, id):
-        #TODO(bobmel): Change so it returns correct hosting devices
-        return {'hosting_devices': []}
+    def list_hosting_devices_handled_by_cfg_agent(self, context, cfg_agent_id):
+        return {'hosting_devices': self.get_hosting_devices(
+            context, filters={'cfg_agent_id': [cfg_agent_id]})}
 
     def list_cfg_agents_handling_hosting_device(self, context,
                                                 hosting_device_id):
-        #TODO(bobmel): Change so it returns correct agent
-        return {'cfg_agents': []}
+        hd = self.get_hosting_device(context, hosting_device_id)
+        cfg_agents = [self.get_agent(context, hd['cfg_agent_id'])] if hd[
+            'cfg_agent_id'] else []
+        return {'agents': cfg_agents}
 
     def get_cfg_agents(self, context, active=None, filters=None):
         query = context.session.query(agents_db.Agent)
@@ -95,28 +139,42 @@ class CfgAgentSchedulerDbMixin(
         return cfg_agents
 
     def get_cfg_agents_for_hosting_devices(self, context, hosting_device_ids,
-                                           admin_state_up=None, active=None,
+                                           admin_state_up=None,
                                            schedule=False):
         if not hosting_device_ids:
             return []
-        query = self.get_hosting_devices_qry(context, hosting_device_ids)
-        if admin_state_up is not None:
-            query = query.filter(
-                agents_db.Agent.admin_state_up == admin_state_up)
-        if schedule:
+        with context.session.begin(subtransactions=True):
+            query = self.get_hosting_devices_qry(context, hosting_device_ids)
+            if admin_state_up is not None:
+                query = query.filter(
+                    agents_db.Agent.admin_state_up == admin_state_up)
             agents = []
             for hosting_device in query:
-                if hosting_device.cfg_agent is None:
-                    agent = self.cfg_agent_scheduler.schedule_hosting_device(
-                        self, context, hosting_device)
-                    if agent is not None:
-                        agents.append(agent)
+                current_agent = hosting_device.cfg_agent
+                if (current_agent and self.is_agent_down(
+                        current_agent['heartbeat_timestamp']) and schedule):
+                    # hosting device is handled by dead cfg agent so we'll try
+                    # to reassign it to another cfg agent
+                    current_agent = None
+                if current_agent is None:
+                    if schedule:
+                        # only active cfg agents are considered by scheduler
+                        agent = (
+                            self.cfg_agent_scheduler.schedule_hosting_device(
+                                self, context, hosting_device))
+                        if agent is not None:
+                            self._bind_hosting_device_to_cfg_agent(
+                                context, hosting_device, agent)
+                            agents.append(agent)
                 else:
                     agents.append(hosting_device.cfg_agent)
-        else:
-            agents = [hosting_device.cfg_agent for hosting_device in query
-                      if hosting_device.cfg_agent is not None]
-        if active is not None:
-            agents = [agent for agent in agents if not
-                      self.is_agent_down(agent['heartbeat_timestamp'])]
-        return agents
+            return agents
+
+    def _bind_hosting_device_to_cfg_agent(self, context, hosting_device_db,
+                                          cfg_agent_db):
+        with context.session.begin(subtransactions=True):
+            if not hosting_device_db:
+                LOG.debug('Hosting device to schedule not specified')
+                return
+            hosting_device_db.cfg_agent = cfg_agent_db
+            context.session.add(hosting_device_db)

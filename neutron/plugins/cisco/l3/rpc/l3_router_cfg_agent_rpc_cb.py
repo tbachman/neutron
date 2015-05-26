@@ -12,9 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo import messaging
-from oslo_serialization import jsonutils
 from oslo_log import log as logging
+import oslo_messaging
+from oslo_serialization import jsonutils
 
 from neutron.common import constants
 from neutron.common import exceptions
@@ -29,7 +29,7 @@ LOG = logging.getLogger(__name__)
 class L3RouterCfgRpcCallback(object):
     """Cisco cfg agent rpc support in L3 routing service plugin."""
 
-    target = messaging.Target(version='1.0')
+    target = oslo_messaging.Target(version='1.0')
 
     def __init__(self, l3plugin):
         self._l3plugin = l3plugin

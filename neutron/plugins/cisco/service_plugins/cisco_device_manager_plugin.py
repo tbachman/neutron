@@ -27,9 +27,9 @@ from neutron.plugins.cisco.db.scheduler import (cfg_agentschedulers_db as
                                                 agt_sched_db)
 from neutron.plugins.cisco.device_manager.rpc import (devices_cfgagent_rpc_cb
                                                       as devices_rpc)
+from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
-from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 
 
 class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
@@ -76,4 +76,3 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
         except AttributeError:
             self._plugin = manager.NeutronManager.get_plugin()
             return self._plugin
-

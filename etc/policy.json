@@ -188,13 +188,13 @@
     "update_routertype": "rule:admin_only",
     "delete_routertype": "rule:admin_only",
 
-    "create_l3-router-device": "rule:admin_only",
-    "delete_l3-router-device": "rule:admin_only",
-    "get_l3-router-devices": "rule:admin_only",
-    "get_l3-hosting-devices": "rule:admin_only",
+    "create_hosting-device-l3-router": "rule:admin_only",
+    "delete_hosting-device-l3-router": "rule:admin_only",
+    "get_hosting-device-l3-routers": "rule:admin_only",
+    "get_l3-router-hosting-devices": "rule:admin_only",
 
-    "create_hosting_device": "rule:admin_only",
-    "delete_hosting_device": "rule:admin_only",
-    "get_hosting_devices": "rule:admin_only",
-    "get_cfg-agents": "rule:admin_only"
+    "create_cfg-agent-hosting-device": "rule:admin_only",
+    "delete_cfg-agent-hosting-device": "rule:admin_only",
+    "get_cfg-agent-hosting-devices": "rule:admin_only",
+    "get_hosting-device-cfg-agents": "rule:admin_only"
 }

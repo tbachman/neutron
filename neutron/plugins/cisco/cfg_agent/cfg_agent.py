@@ -18,12 +18,13 @@ import pprint
 import sys
 import time
 
+from oslo_concurrency import lockutils
 from oslo_config import cfg
-from oslo import messaging
+from oslo_log import log as logging
+import oslo_messaging
 from oslo_utils import importutils
 from oslo_utils import timeutils
-from oslo_concurrency import lockutils
-from oslo_log import log as logging
+
 
 from neutron.agent.common import config
 from neutron.agent.linux import external_process
@@ -54,7 +55,7 @@ class CiscoDeviceManagementApi(object):
 
     def __init__(self, topic, host):
         self.host = host
-        target = messaging.Target(topic=topic, version='1.0')
+        target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
     def report_dead_hosting_devices(self, context, hd_ids=None):
@@ -94,7 +95,7 @@ class CiscoCfgAgent(manager.Manager):
     The main entry points in this class are the `process_services()` and
     `_backlog_task()` .
     """
-    target = messaging.Target(version='1.1')
+    target = oslo_messaging.Target(version='1.1')
 
     OPTS = [
         cfg.IntOpt('rpc_loop_interval', default=10,
@@ -221,6 +222,41 @@ class CiscoCfgAgent(manager.Manager):
             self.devmgr_rpc.report_dead_hosting_devices(context,
                                                         hd_ids=res['dead'])
 
+    def agent_updated(self, context, payload):
+        """Deal with agent updated RPC message."""
+        try:
+            if payload['admin_state_up']:
+                #TODO(hareeshp): implement agent updated handling
+                pass
+        except KeyError as e:
+            LOG.error(_LE("Invalid payload format for received RPC message "
+                          "`agent_updated`. Error is %(error)s. Payload is "
+                          "%(payload)s"), {'error': e, 'payload': payload})
+
+    def hosting_devices_assigned_to_cfg_agent(self, context, payload):
+        """Deal with hosting devices assigned to this config agent."""
+        try:
+            if payload['hosting_device_ids']:
+                #TODO(hareeshp): implement assignment of hosting devices
+                pass
+        except KeyError as e:
+            LOG.error(_LE("Invalid payload format for received RPC message "
+                          "`hosting_devices_assigned_to_cfg_agent`. Error is "
+                          "%(error)s. Payload is %(payload)s"),
+                      {'error': e, 'payload': payload})
+
+    def hosting_devices_unassigned_from_cfg_agent(self, context, payload):
+        """Deal with hosting devices unassigned from this config agent."""
+        try:
+            if payload['hosting_device_ids']:
+                #TODO(hareeshp): implement unassignment of hosting devices
+                pass
+        except KeyError as e:
+            LOG.error(_LE("Invalid payload format for received RPC message "
+                          "`hosting_devices_unassigned_from_cfg_agent`. Error "
+                          "is %(error)s. Payload is %(payload)s"),
+                      {'error': e, 'payload': payload})
+
     def hosting_devices_removed(self, context, payload):
         """Deal with hosting device removed RPC message."""
         try:
@@ -300,11 +336,14 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         """
         LOG.debug("Report state task started")
         configurations = {}
+        service_agents = []
         if self.routing_service_helper:
+            service_agents.append(c_constants.AGENT_TYPE_L3_CFG)
             configurations = self.routing_service_helper.collect_state(
                 self.agent_state['configurations'])
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
+        configurations['service_agents'] = service_agents
         self.agent_state['configurations'] = configurations
         self.agent_state['local_time'] = str(timeutils.utcnow())
         LOG.debug("State report data: %s", pprint.pformat(self.agent_state))

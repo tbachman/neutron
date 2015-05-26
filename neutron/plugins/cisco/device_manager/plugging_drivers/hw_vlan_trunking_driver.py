@@ -14,13 +14,13 @@
 
 import eventlet
 
-from oslo_utils import excutils
 from oslo_log import log as logging
+from oslo_utils import excutils
 from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as n_exc
 from neutron.common import constants as l3_constants
+from neutron.common import exceptions as n_exc
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI, _LW
@@ -208,5 +208,5 @@ class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         LOG.error(_LE('Invalid network to interface mapping '
                                       '%(key)s, %(value)s in configuration '
                                       'file for device = %(dev)s'),
-                                      {'key': k, 'value': v, 'dev': hd_uuid})
+                                  {'key': k, 'value': v, 'dev': hd_uuid})
             cls._device_network_interface_map = temp

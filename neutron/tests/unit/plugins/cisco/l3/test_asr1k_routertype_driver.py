@@ -99,7 +99,6 @@ class Asr1kRouterTypeDriverTestCase(
             self.assertEqual(len(t_rtrs), 1)
             t_rtr = t_rtrs[0]
             self.assertEqual(t_rtr['id'], r['id'])
-            hd_id = t_rtr[routerhostingdevice.HOSTING_DEVICE_ATTR]
             # global routers
             q_p = 'role=%s' % cisco_constants.ROUTER_ROLE_GLOBAL
             g_rtrs = self._list('routers', query_params=q_p)['routers']
@@ -164,7 +163,7 @@ class Asr1kRouterTypeDriverTestCase(
                 hd_id = r1_after[routerhostingdevice.HOSTING_DEVICE_ATTR]
                 # should now have one global router
                 self._verify_updated_routers(r_ids, hd_id)
-                r2_after = self._update('routers', r2['id'], r_spec)['router']
+                self._update('routers', r2['id'], r_spec)
                 # should still have only one global router
                 self._verify_updated_routers(r_ids, hd_id)
 
@@ -200,10 +199,10 @@ class Asr1kRouterTypeDriverTestCase(
                 # should have one global router now
                 self._verify_updated_routers(r_ids, hd_id, 0)
                 r_spec = {'router': {l3.EXTERNAL_GW_INFO: None}}
-                r1_last = self._update('routers', r1['id'], r_spec)['router']
+                self._update('routers', r1['id'], r_spec)
                 # should still have one global router
                 self._verify_updated_routers(r_ids, hd_id, 0)
-                r2_after = self._update('routers', r2['id'], r_spec)['router']
+                self._update('routers', r2['id'], r_spec)
                 # should have no global router now
                 self._verify_updated_routers(r_ids)
 

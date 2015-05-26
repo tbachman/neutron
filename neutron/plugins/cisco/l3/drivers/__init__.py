@@ -200,7 +200,6 @@ class L3RouterBaseDriver(object):
     def remove_router_interface_postcommit(self, context, r_port_context):
         pass
 
-
     @abc.abstractmethod
     def update_floatingip_precommit(self, context, fip_context):
         """Perform operations specific to the routertype in preparation for

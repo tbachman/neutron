@@ -13,12 +13,12 @@
 #    under the License.
 
 import collections
-
 import eventlet
 import netaddr
-from oslo import messaging
-from oslo_utils import excutils
+
 from oslo_log import log as logging
+import oslo_messaging
+from oslo_utils import excutils
 
 from neutron.common import constants as l3_constants
 from neutron.common import rpc as n_rpc
@@ -90,7 +90,7 @@ class CiscoRoutingPluginApi(object):
 
     def __init__(self, topic, host):
         self.host = host
-        target = messaging.Target(topic=topic, version='1.0')
+        target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
     def get_routers(self, context, router_ids=None, hd_ids=None):
@@ -290,7 +290,7 @@ class RoutingServiceHelper(object):
             if device_ids:
                 return self.plugin_rpc.get_routers(self.context,
                                                    hd_ids=device_ids)
-        except messaging.MessagingException:
+        except oslo_messaging.MessagingException:
             LOG.exception(_LE("RPC Error in fetching routers from plugin"))
             self.fullsync = True
 
@@ -460,7 +460,7 @@ class RoutingServiceHelper(object):
         except cfg_exceptions.DriverException as e:
             with excutils.save_and_reraise_exception():
                 self.updated_routers.update([ri.router_id])
-                LOG.error(_LE(e))
+                LOG.error(e)
 
     def _process_router_floating_ips(self, ri, ex_gw_port):
         """Process a router's floating ips.
@@ -548,7 +548,7 @@ class RoutingServiceHelper(object):
         ri = self.router_info.get(router_id)
         if ri is None:
             LOG.warning(_LW("Info for router %s was not found. "
-                       "Skipping router removal"), router_id)
+                            "Skipping router removal"), router_id)
             return
         ri.router['gw_port'] = None
         ri.router[l3_constants.INTERFACE_KEY] = []
@@ -563,7 +563,8 @@ class RoutingServiceHelper(object):
             self.removed_routers.discard(router_id)
         except cfg_exceptions.DriverException:
             LOG.warning(_LW("Router remove for router_id: %s was incomplete. "
-                       "Adding the router to removed_routers list"), router_id)
+                            "Adding the router to removed_routers list"),
+                        router_id)
             self.removed_routers.add(router_id)
             # remove this router from updated_routers if it is there. It might
             # end up there too if exception was thrown earlier inside

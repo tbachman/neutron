@@ -21,9 +21,11 @@ from neutron.api import extensions
 from neutron.api.v2 import base
 from neutron.api.v2 import resource
 from neutron.common import exceptions
+from neutron.common import rpc as n_rpc
 from neutron.extensions import agent
 from neutron.i18n import _LE
 from neutron import manager
+from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 from neutron import policy
 from neutron import wsgi
@@ -32,29 +34,30 @@ LOG = logging.getLogger(__name__)
 
 
 class InvalidCfgAgent(agent.AgentNotFound):
-    message = _("Agent %(id)s is not a Cfg Agent or has been disabled")
+    message = _("Agent %(agent_id)s is not a Cisco cfg agent or has been "
+                "disabled")
 
 
-class HostingDeviceHandledByCfgAgent(exceptions.Conflict):
-    message = _("The hosting device %(device_id)s is already handled"
-                " by the Cisco cfg agent %(agent_id)s.")
+class HostingDeviceAssignedToCfgAgent(exceptions.Conflict):
+    message = _("The hosting device %(hosting_device_id)s is already assigned "
+                "to Cisco cfg agent %(agent_id)s.")
 
 
 class HostingDeviceSchedulingFailed(exceptions.Conflict):
-    message = _("Failed scheduling hosting device %(device_id)s to"
-                " the Cisco cfg Agent %(agent_id)s.")
+    message = _("Failed to assign hosting device %(hosting_device_id)s to "
+                "Cisco cfg agent %(agent_id)s.")
 
 
-class HostingDeviceNotHandledByCfgAgent(exceptions.Conflict):
-    message = _("The hosting device %(device_id)s is not handled"
-                " by Cisco cfg agent %(agent_id)s.")
+class HostingDeviceNotAssignedToCfgAgent(exceptions.NotFound):
+    message = _("The hosting device %(hosting_device_id)s is currently not "
+                "assigned to Cisco cfg agent %(agent_id)s.")
 
 
 CFG_AGENT_SCHEDULER_ALIAS = 'cisco-cfg-agent-scheduler'
-HOSTING_DEVICE = 'hosting_device'
-HOSTING_DEVICES = HOSTING_DEVICE + 's'
-CFG_AGENT = 'cfg-agent'
-CFG_AGENTS = CFG_AGENT + 's'
+CFG_AGENT_HOSTING_DEVICE = 'cfg-agent-hosting-device'
+CFG_AGENT_HOSTING_DEVICES = CFG_AGENT_HOSTING_DEVICE + 's'
+HOSTING_DEVICE_CFG_AGENT = 'hosting-device-cfg-agent'
+HOSTING_DEVICE_CFG_AGENTS = HOSTING_DEVICE_CFG_AGENT + 's'
 
 
 class HostingDeviceSchedulerController(wsgi.Controller):
@@ -70,21 +73,34 @@ class HostingDeviceSchedulerController(wsgi.Controller):
 
     def index(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "get_%s" % HOSTING_DEVICES, {})
+        policy.enforce(request.context, "get_%s" % CFG_AGENT_HOSTING_DEVICES,
+                       {})
         return plugin.list_hosting_devices_handled_by_cfg_agent(
             request.context, kwargs['agent_id'])
 
     def create(self, request, body, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "create_%s" % HOSTING_DEVICE, {})
-        return plugin.assign_hosting_device_to_cfg_agent(
-            request.context, kwargs['agent_id'], body['hosting_device_id'])
+        policy.enforce(request.context, "create_%s" % CFG_AGENT_HOSTING_DEVICE,
+                       {})
+        cfg_agent_id = kwargs['agent_id']
+        hosting_device_id = body['hosting_device_id']
+        result = plugin.assign_hosting_device_to_cfg_agent(
+            request.context, cfg_agent_id, hosting_device_id)
+        notify(request.context, 'agent.hosting_device.add', hosting_device_id,
+               cfg_agent_id)
+        return result
 
-    def delete(self, request, hosting_device_id, **kwargs):
+    def delete(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "delete_%s" % HOSTING_DEVICE, {})
-        return plugin.unassign_hosting_device_from_cfg_agent(
-            request.context, kwargs['agent_id'], hosting_device_id)
+        policy.enforce(request.context, "delete_%s" % CFG_AGENT_HOSTING_DEVICE,
+                       {})
+        cfg_agent_id = kwargs['agent_id']
+        hosting_device_id = kwargs['id']
+        result = plugin.unassign_hosting_device_from_cfg_agent(
+            request.context, cfg_agent_id, hosting_device_id)
+        notify(request.context, 'agent.hosting_device.remove',
+               hosting_device_id, cfg_agent_id)
+        return result
 
 
 class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
@@ -100,7 +116,8 @@ class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
 
     def index(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "get_%s" % CFG_AGENTS, {})
+        policy.enforce(request.context, "get_%s" % HOSTING_DEVICE_CFG_AGENTS,
+            {})
         return plugin.list_cfg_agents_handling_hosting_device(
             request.context, kwargs['hosting_device_id'])
 
@@ -136,14 +153,14 @@ class Ciscocfgagentscheduler(extensions.ExtensionDescriptor):
                       collection_name="agents")
         controller = resource.Resource(HostingDeviceSchedulerController(),
                                        base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(HOSTING_DEVICES, controller,
-                                                 parent))
-        parent = dict(member_name=HOSTING_DEVICE,
-                      collection_name=HOSTING_DEVICES)
+        exts.append(extensions.ResourceExtension(CFG_AGENT_HOSTING_DEVICES,
+                                                 controller, parent))
+        parent = dict(member_name=ciscohostingdevicemanager.DEVICE,
+                      collection_name=ciscohostingdevicemanager.DEVICES)
         controller = resource.Resource(
             CfgAgentsHandlingHostingDeviceController(), base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(CFG_AGENTS, controller,
-                                                 parent))
+        exts.append(extensions.ResourceExtension(HOSTING_DEVICE_CFG_AGENTS,
+                                                 controller, parent))
         return exts
 
     def get_extended_resources(self, version):
@@ -173,3 +190,9 @@ class CfgAgentSchedulerPluginBase(object):
     def list_cfg_agents_handling_hosting_device(self, context,
                                                 hosting_device_id):
         pass
+
+
+def notify(context, action, hosting_device_id, cfg_agent_id):
+    info = {'id': cfg_agent_id, 'hosting_device_id': hosting_device_id}
+    notifier = n_rpc.get_notifier('hosting_device')
+    notifier.info(context, action, {'cfg_agent': info})

@@ -14,8 +14,8 @@
 
 
 from oslo_db import exception as db_exc
-from oslo_utils import excutils
 from oslo_log import log as logging
+from oslo_utils import excutils
 from sqlalchemy import exc as sql_exc
 from sqlalchemy.orm import exc
 

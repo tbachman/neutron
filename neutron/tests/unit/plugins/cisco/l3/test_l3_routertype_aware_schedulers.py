@@ -25,21 +25,22 @@ from webob import exc
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.common import constants
 from neutron.common import test_lib
-from neutron import context as q_context
+from neutron import context as n_context
 from neutron.extensions import agent
 from neutron.extensions import l3
 from neutron import manager
-from neutron.plugins.common import constants as plugin_consts
 from neutron.plugins.cisco.common import cisco_constants as c_const
+from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.db.scheduler import (
     l3_routertype_aware_schedulers_db as router_sch_db)
-from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.l3.rpc import l3_router_rpc_cfg_agent_api
+from neutron.plugins.common import constants as plugin_consts
 from neutron.tests import fake_notifier
+from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
 from neutron.tests.unit.plugins.cisco.device_manager import (
@@ -48,7 +49,6 @@ from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
 from neutron.tests.unit.plugins.cisco.l3 import test_l3_router_appliance_plugin
 from neutron.tests.unit.plugins.openvswitch import test_agent_scheduler
-from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.scheduler import test_l3_agent_scheduler
 
 LOG = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class TestSchedulingL3RouterApplianceExtensionManager(
         # most of the resources are added in our super class
         res = super(TestSchedulingL3RouterApplianceExtensionManager,
                     self).get_resources()
-        # add the router scheduling resources
+        # add the router to hosting device scheduler resources
         ext_mgr = routertypeawarescheduler.Routertypeawarescheduler()
         for item in ext_mgr.get_resources():
             res.append(item)
@@ -135,7 +135,7 @@ class L3RoutertypeAwareL3AgentSchedulerTestCase(
         cfg.CONF.set_override('default_router_type',
                               c_const.NAMESPACE_ROUTER_TYPE, group='routing')
 
-        self.adminContext = q_context.get_admin_context()
+        self.adminContext = n_context.get_admin_context()
         self.plugin = manager.NeutronManager.get_plugin()
         self.l3_plugin = manager.NeutronManager.get_service_plugins().get(
             plugin_consts.L3_ROUTER_NAT)
@@ -267,9 +267,7 @@ class L3RoutertypeAwareLeastRoutersL3AgentSchedulerTestCase(
               self).setUp()
 
 
-#TODO(bobmel): Activate unit tests for DVR
-
-#TODO(bobmel): Add unit tests for HA in Cisco devices (not Linux namespaces)
+#TODO(bobmel): Activate unit tests for DVR when we support DVR
 
 class RouterHostingDeviceSchedulerTestMixIn(
         test_agent_scheduler.AgentSchedulerTestMixIn):
@@ -278,7 +276,7 @@ class RouterHostingDeviceSchedulerTestMixIn(
                                                expected_code=exc.HTTPOk.code,
                                                admin_context=True):
         path = "/dev_mgr/hosting_devices/%s/%s.%s" % (
-            hosting_device_id, routertypeawarescheduler.L3_ROUTER_DEVICES,
+            hosting_device_id, routertypeawarescheduler.DEVICE_L3_ROUTERS,
             self.fmt)
         return self._request_list(path, expected_code=expected_code,
                                   admin_context=admin_context)
@@ -286,9 +284,8 @@ class RouterHostingDeviceSchedulerTestMixIn(
     def _list_hosting_devices_hosting_router(self, router_id,
                                              expected_code=exc.HTTPOk.code,
                                              admin_context=True):
-        path = "/routers/%s/%s.%s" % (router_id,
-                                      routertypeawarescheduler.L3_DEVICES,
-                                      self.fmt)
+        path = "/routers/%s/%s.%s" % (
+            router_id, routertypeawarescheduler.L3_ROUTER_DEVICES, self.fmt)
         return self._request_list(path, expected_code=expected_code,
                                   admin_context=admin_context)
 
@@ -296,7 +293,7 @@ class RouterHostingDeviceSchedulerTestMixIn(
                                       expected_code=exc.HTTPCreated.code,
                                       admin_context=True):
         path = "/dev_mgr/hosting_devices/%s/%s.%s" % (
-            hosting_device_id, routertypeawarescheduler.L3_ROUTER_DEVICES,
+            hosting_device_id, routertypeawarescheduler.DEVICE_L3_ROUTERS,
             self.fmt)
         req = self._path_create_request(path,
                                         {'router_id': router_id},
@@ -308,7 +305,7 @@ class RouterHostingDeviceSchedulerTestMixIn(
             self, hosting_device_id, router_id,
             expected_code=exc.HTTPNoContent.code, admin_context=True):
         path = "/dev_mgr/hosting_devices/%s/%s/%s.%s" % (
-            hosting_device_id, routertypeawarescheduler.L3_ROUTER_DEVICES,
+            hosting_device_id, routertypeawarescheduler.DEVICE_L3_ROUTERS,
             router_id, self.fmt)
         req = self._path_delete_request(path, admin_context=admin_context)
         res = req.get_response(self.ext_api)
@@ -349,7 +346,7 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase(
         # _process_backlogged_routers function directly in the tests
         cfg.CONF.set_override('backlog_processing_interval', 100,
                               group='routing')
-        self.adminContext = q_context.get_admin_context()
+        self.adminContext = n_context.get_admin_context()
         # tests need a predictable random.choice so we always return first
         # item in the argument sequence
         self.random_patch = mock.patch('random.choice')
@@ -483,14 +480,14 @@ class L3RoutertypeAwareHostingDeviceSchedulerBaseTestCase(
         arg_list = (routertype.TYPE_ATTR, )
         kwargs = {routertype.TYPE_ATTR: test_db_routertype.NS_ROUTERTYPE_NAME}
         # namespace-based routers
-        r1 = self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
-                               **kwargs)['router']
+        self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
+                          **kwargs)
         # hw routers
         with contextlib.nested(self.router(name='router2'),
                                self.router(name='router3')) as (r2, r3):
             # router 4
-            r4 = self._make_router(self.fmt, _uuid(), 'router4',
-                                   arg_list=arg_list, **kwargs)['router']
+            self._make_router(self.fmt, _uuid(), 'router4', arg_list=arg_list,
+                              **kwargs)
             routers = self.plugin.get_sync_data_ext(self.adminContext)
             r_ids = set(r['id'] for r in routers)
             self.assertEqual(len(r_ids), 2)
@@ -616,9 +613,9 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
                              '00000000-0000-0000-0000-000000000001')
             self._add_router_to_hosting_device(
                 '00000000-0000-0000-0000-000000000001', r['id'])
-            r_after = self._show('routers', r['id'])['router']
-            self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
-            self.assertEqual(r_after[HOSTING_DEVICE_ATTR],
+            r_final = self._show('routers', r['id'])['router']
+            self.assertEqual(r_final[routertype.TYPE_ATTR], rt_id)
+            self.assertEqual(r_final[HOSTING_DEVICE_ATTR],
                              '00000000-0000-0000-0000-000000000001')
 
     def test_router_remove_from_hosting_device(self):
@@ -664,7 +661,7 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             self.assertEqual(r_after[routertype.TYPE_ATTR], rt_id)
             self.assertIsNone(r_after[HOSTING_DEVICE_ATTR])
 
-    def test_router_policy(self):
+    def test_router_scheduling_policy(self):
         with contextlib.nested(self.router(), self.router()) as (router1,
                                                                  router2):
             r1 = router1['router']
@@ -675,8 +672,9 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             self._list_routers_hosted_by_hosting_device(
                 hd_id, expected_code=exc.HTTPForbidden.code,
                 admin_context=False)
-            self._add_router_to_hosting_device(hd_id, r2['id'],
-                expected_code=exc.HTTPForbidden.code, admin_context=False)
+            self._add_router_to_hosting_device(
+                hd_id, r2['id'], expected_code=exc.HTTPForbidden.code,
+                admin_context=False)
             self._remove_router_from_hosting_device(
                 hd_id, r1['id'], expected_code=exc.HTTPForbidden.code,
                 admin_context=False)
@@ -1042,8 +1040,8 @@ class HostingDeviceRouterL3CfgAgentNotifierTestCase(
             # namespace-based router
             kwargs = {
                 routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000001'}
-            r1 = self._make_router(self.fmt, _uuid(), 'router1',
-                                   arg_list=arg_list, **kwargs)['router']
+            self._make_router(self.fmt, _uuid(), 'router1', arg_list=arg_list,
+                              **kwargs)
             # router that should be successfully hosted
             kwargs = {
                 routertype.TYPE_ATTR: '00000000-0000-0000-0000-000000000006'}
@@ -1135,4 +1133,3 @@ class L3RouterHostingDeviceHARandomSchedulerTestCase(
                     self.assertIsNotNone(hd_id)
                     self.assertNotIn(hd_id, hd_ids)
                     hd_ids.add(hd_id)
-

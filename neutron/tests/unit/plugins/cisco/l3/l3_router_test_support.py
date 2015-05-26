@@ -13,16 +13,13 @@
 #    under the License.
 
 import mock
-from oslo_config import cfg
 from oslo_log import log as logging
 
 from neutron.api.v2 import attributes
-from neutron.common import constants
 from neutron.common import test_lib
 from neutron.db import common_db_mixin
 from neutron.extensions import l3
 import neutron.plugins
-from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import l3_router_appliance_db
 from neutron.plugins.cisco.db.l3 import routertype_db
 from neutron.plugins.cisco.db.scheduler import (
@@ -41,7 +38,7 @@ L3_PLUGIN_KLASS = (
 extensions_path = neutron.plugins.__path__[0] + '/cisco/extensions'
 
 
-class L3RouterTestSupportMixin:
+class L3RouterTestSupportMixin(object):
 
     def _mock_get_routertype_scheduler_always_none(self):
         self.get_routertype_scheduler_fcn_p = mock.patch(
@@ -49,25 +46,6 @@ class L3RouterTestSupportMixin:
             'L3RouterApplianceDBMixin._get_router_type_scheduler',
             mock.Mock(return_value=None))
         self.get_routertype_scheduler_fcn_p.start()
-
-    def _mock_cfg_agent_notifier(self, plugin):
-        # Mock notifications to l3 agent and Cisco config agent
-        self._l3_agent_mock = mock.MagicMock()
-        self._cfg_agent_mock = mock.MagicMock()
-        plugin.agent_notifiers = {
-            constants.AGENT_TYPE_L3: self._l3_agent_mock,
-            cisco_constants.AGENT_TYPE_L3_CFG: self._cfg_agent_mock}
-
-    def _define_keystone_authtoken(self):
-        test_opts = [
-            cfg.StrOpt('auth_uri', default='http://localhost:35357/v2.0/'),
-            cfg.StrOpt('identity_uri', default='http://localhost:5000'),
-            #cfg.StrOpt('admin_user', default='neutron'),
-            cfg.StrOpt('username', default='neutron'),
-            #cfg.StrOpt('admin_password', default='secrete'),
-            cfg.StrOpt('password', default='secrete'),
-            cfg.StrOpt('project_name', default='service')]
-        cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
     def _add_router_plugin_ini_file(self):
         # includes config file for router service plugin

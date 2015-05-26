@@ -12,13 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo import messaging
+import oslo_messaging
 
 
 class DeviceMgrCfgRpcCallback(object):
     """Cisco cfg agent rpc support in Device mgr service plugin."""
 
-    target = messaging.Target(version='1.0')
+    target = oslo_messaging.Target(version='1.0')
 
     def __init__(self, plugin):
         self._dmplugin = plugin
@@ -44,7 +44,7 @@ class DeviceMgrCfgRpcCallback(object):
 
         @param: context - contains user information
         @param: host - originator of callback
-        @return: True if succesfully registered, False if not successfully
+        @return: True if successfully registered, False if not successfully
                  registered, None if no handler found
                  If unsuccessful the agent should retry registration a few
                  seconds later

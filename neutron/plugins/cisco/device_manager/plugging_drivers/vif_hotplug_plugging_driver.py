@@ -1,3 +1,20 @@
+# Copyright 2015 Cisco Systems, Inc.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+from functools import wraps
+import time
+
 from oslo_log import log as logging
 from sqlalchemy.sql import expression as expr
 
@@ -6,7 +23,7 @@ from neutron.common import exceptions as n_exc
 from neutron.db import models_v2
 from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
-import neutron.plugins.cisco.device_manager.plugging_drivers as plug
+from neutron.plugins.cisco.device_manager import plugging_drivers
 from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
@@ -15,11 +32,8 @@ LOG = logging.getLogger(__name__)
 DELETION_ATTEMPTS = 4
 SECONDS_BETWEEN_DELETION_ATTEMPTS = 3
 
-import time
-from functools import wraps
 
-
-class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
+class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver):
     """Driver class for service VMs used with Neutron plugins supporting
     VIF hotplug.
     """
@@ -34,8 +48,8 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
             exceptions to check
         :param tries: number of times to try (not retry) before giving up
         :param delay: initial delay between retries in seconds
-        :param backoff: backoff multiplier e.g. value of 2 will double the delay
-            each retry
+        :param backoff: backoff multiplier e.g. value of 2 will double the
+                        delay each retry
         """
 
         def deco_retry(f):
@@ -45,7 +59,7 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
                 while mtries > 1:
                     try:
                         return f(*args, **kwargs)
-                    except ExceptionToCheck, e:
+                    except ExceptionToCheck as e:
                         LOG.error(_LE('%(ex)s. Retrying in %(delay)d '
                                       'seconds.'),
                                   {'ex': str(e), 'delay': mdelay})
@@ -68,7 +82,7 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
             svc_constants.DEVICE_MANAGER)
 
     def create_hosting_device_resources(self, context, complementary_id,
-                                        tenant_id,  mgmt_context, max_hosted):
+                                        tenant_id, mgmt_context, max_hosted):
         """Create resources for a hosting device in a plugin specific way."""
         mgmt_port = None
         if mgmt_context and mgmt_context.get('mgmt_nw_id') and tenant_id:
@@ -99,7 +113,6 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
     def get_hosting_device_resources(self, context, id, complementary_id,
                                      tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device."""
-        ports, nets, subnets = [], [], []
         mgmt_port = None
         # Ports for hosting device may not yet have 'device_id' set to
         # Nova assigned uuid of VM instance. However, those ports will still
@@ -127,7 +140,7 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
         if mgmt_port is not None:
             try:
                 self._delete_resource_port(context, mgmt_port['id'])
-            except n_exc.NeutronException, e:
+            except n_exc.NeutronException as e:
                 LOG.error(_LE('Unable to delete port:%(port)s after %(tries)d '
                               'attempts due to exception %(exception)s. '
                               'Skipping it.'),
@@ -148,7 +161,8 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
         """Establishes connectivity for a logical port.
 
         This is done by hot plugging the interface(VIF) of the service VM
-        to a Neutron port."""
+        to a Neutron port.
+        """
         l3admin_tenant_id = self._dev_mgr.l3_tenant_id()
         # Clear device_owner and device_id and set tenant_id to L3AdminTenant
         # to let interface-attach succeed
@@ -192,9 +206,6 @@ class VIFHotPlugPluggingDriver(plug.PluginSidePluggingDriver):
                           "error %(str(e))"), {'p_id': port_db['id'],
                                                'hd_id': hosting_device_id,
                                                'error': e})
-
-
-
 
     def extend_hosting_port_info(self, context, port_db,
                                  hosting_device, hosting_info):

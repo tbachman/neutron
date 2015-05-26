@@ -14,11 +14,11 @@
 
 from neutron.extensions import l3
 from neutron import manager
-from neutron.plugins.common import constants
 from neutron.plugins.cisco.common import cisco_constants
-from neutron.plugins.cisco.l3 import drivers
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
+from neutron.plugins.cisco.l3 import drivers
+from neutron.plugins.common import constants
 
 
 class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
@@ -48,9 +48,9 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             # if router is hosted and router has gateway port:
             #    if global router does not exist for hosting device of router:
             #        create global router on that hosting device
-            #    if global router doesn't have port on router's external network:
+            #    if global router doesn't have port on router's external
+            #    network:
             #        create port on external network for global router
-            pass
 
     def delete_router_precommit(self, context, router_context):
         pass

@@ -247,4 +247,3 @@ class TestRoutertypeDBPlugin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
     def _test_delete_routertype_in_use(self):
         #TODO(bobmel): Implement this unit test
         pass
-

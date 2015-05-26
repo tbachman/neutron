@@ -20,15 +20,14 @@ from oslo_log import log as logging
 import webob.exc
 
 import neutron
+from neutron.common import constants as l3_constants
 from neutron import context
 from neutron.extensions import extraroute
 from neutron.extensions import l3
-from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import ha_db
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routertype
-from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
 from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
@@ -229,7 +228,7 @@ class HAL3RouterApplianceVMTestCase(
     def test_create_non_gateway_ha_router_fails(self):
         kwargs = {ha.ENABLED: True}
         res = self._create_router(self.fmt, _uuid(), 'ha_router1',
-                                  arg_list=(ha.ENABLED,),  **kwargs)
+                                  arg_list=(ha.ENABLED,), **kwargs)
         self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
 
     def test_create_ha_router_with_disabled_ha_type_fails(self):
@@ -318,7 +317,7 @@ class HAL3RouterApplianceVMTestCase(
                                   subnet['id'], port['network_id'],
                                   port['fixed_ips'][0]['subnet_id'])
         ha_disabled_settings = self._get_ha_defaults(ha_enabled=False)
-        redundancy_routers =  []
+        redundancy_routers = []
         # verify redundancy routers
         for rr_info in router[ha.DETAILS][ha.REDUNDANCY_ROUTERS]:
             rr = self._show('routers', rr_info['id'])
@@ -585,7 +584,6 @@ class HAL3RouterApplianceVMTestCase(
             else:
                 self.assertTrue(new_rr_ids.issubset(old_rr_ids))
 
-
         with self.subnet(cidr='10.0.1.0/24') as s:
             self._set_net_external(s['subnet']['network_id'])
             with self.router(external_gateway_info={
@@ -639,7 +637,7 @@ class L3CfgAgentHARouterApplianceTestCase(
 
     def _test_notify_op_agent(self, target_func, *args):
         kargs = [item for item in args]
-        kargs.append(self._cfg_agent_mock)
+        kargs.append(self._l3_cfg_agent_mock)
         target_func(*kargs)
 
     def test_l3_cfg_agent_query_ha_router_with_fips(self):
@@ -744,5 +742,5 @@ class L3CfgAgentHARouterApplianceTestCase(
             else:
                 ha_port_id = ha_info[ha_db.HA_PORT]['id']
                 self.assertIsNotNone(ports_dict.get(ha_port_id))
-                self.assertEquals(ha_info[ha_db.HA_GROUP],
-                                  ha_groups_dict[ha_port_id])
+                self.assertEqual(ha_info[ha_db.HA_GROUP],
+                                ha_groups_dict[ha_port_id])

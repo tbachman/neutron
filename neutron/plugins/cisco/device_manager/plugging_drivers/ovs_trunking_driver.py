@@ -45,7 +45,7 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 'tenant_id': tenant_id,
                 'admin_state_up': True,
                 'name': 'mgmt',
-                'network_id':  mgmt_context['mgmt_nw_id'],
+                'network_id': mgmt_context['mgmt_nw_id'],
                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
                 'fixed_ips': self._mgmt_subnet_spec(context, mgmt_context),
                 'security_groups': [mgmt_context['mgmt_sec_grp_id']],

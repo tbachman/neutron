@@ -16,8 +16,8 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from sqlalchemy import sql
 
-from neutron.common import topics
 from neutron.api.v2 import attributes
+from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
 from neutron.db import models_v2
@@ -64,8 +64,8 @@ class L3RouterTypeAwareSchedulerDbMixin(
     def validate_hosting_device_router_combination(self, context, binding_info,
                                                    hosting_device_id):
         #TODO(bobmel): Perform proper hosting device validation
-        target_hd_db =  self._dev_mgr._get_hosting_device(context,
-                                                          hosting_device_id)
+        target_hd_db = self._dev_mgr._get_hosting_device(context,
+                                                         hosting_device_id)
         if target_hd_db.admin_state_up is False:
             raise routertypeawarescheduler.InvalidHostingDevice(
                 hosting_device_id=hosting_device_id)

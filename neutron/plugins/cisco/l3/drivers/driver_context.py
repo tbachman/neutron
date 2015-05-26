@@ -17,7 +17,7 @@
 
 
 class L3ContextBase(object):
-    
+
     def __init__(self):
         # this is used to pass parameters from precommit() to postcommit()
         self._params = None

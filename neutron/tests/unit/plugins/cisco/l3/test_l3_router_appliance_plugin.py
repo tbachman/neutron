@@ -31,14 +31,14 @@ from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron.tests.unit.extensions import test_extraroute
+from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
 from neutron.tests.unit.plugins.cisco.device_manager import (
     test_db_device_manager)
 from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
 from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
-from neutron.tests.unit.extensions import test_extraroute
-from neutron.tests.unit.extensions import test_l3
 
 LOG = logging.getLogger(__name__)
 
@@ -249,8 +249,7 @@ class L3RouterApplianceRouterTypeDriverTestCase(test_l3.L3NatTestCaseMixin,
             scheduler_mock.return_value.schedule_router.return_value = (
                 [hd['id']])
             acquire_mock.return_value = True
-            with self.router() as router:
-                r = router['router']
+            with self.router():
                 self.plugin._process_backlogged_routers()
                 pre_mock.assert_has_calls([mock.call(mock.ANY, mock.ANY)])
                 post_mock.assert_has_calls([mock.call(mock.ANY, mock.ANY)])
@@ -357,5 +356,5 @@ class L3CfgAgentRouterApplianceTestCase(L3RouterApplianceTestCaseBase,
 
     def _test_notify_op_agent(self, target_func, *args):
         kargs = [item for item in args]
-        kargs.append(self._cfg_agent_mock)
+        kargs.append(self._l3_cfg_agent_mock)
         target_func(*kargs)

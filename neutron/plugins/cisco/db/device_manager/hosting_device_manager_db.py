@@ -19,10 +19,10 @@ import threading
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from oslo_config import cfg
+from oslo_log import log as logging
 from oslo_utils import excutils
 from oslo_utils import importutils
 from oslo_utils import timeutils
-from oslo_log import log as logging
 
 from sqlalchemy import func
 from sqlalchemy.orm import exc
@@ -92,7 +92,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     _cfgagent_scheduler = None
 
     # Service VM manager object that interacts with Nova
-    _svc_vm_mgr_obj= None
+    _svc_vm_mgr_obj = None
 
     # Flag indicating is needed Nova services are reported as up.
     _nova_running = False
@@ -158,7 +158,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                   'Please assign one.'))
                     return
                 elif num_subnets > 1:
-                    LOG.info(_LE('The management network has %d subnets. The '
+                    LOG.info(_LI('The management network has %d subnets. The '
                                  'first one will be used.'), num_subnets)
                 cls._mgmt_nw_uuid = net[0].get('id')
             elif len(net) > 1:
@@ -468,11 +468,11 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                                                  cfg_agent)
 
     def get_device_info_for_agent(self, context, hosting_device):
-        """ Returns information about <hosting_device> needed by config agent.
+        """Returns information about <hosting_device> needed by config agent.
 
-            Convenience function that service plugins can use to populate
-            their resources with information about the device hosting their
-            logical resource.
+           Convenience function that service plugins can use to populate
+           their resources with information about the device hosting their
+           logical resource.
         """
         template = hosting_device.template
         if hosting_device.management_port is None:
@@ -745,7 +745,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             context, hosting_device['id'], hosting_device['complementary_id'],
             self.l3_tenant_id(), self.mgmt_nw_id())
         if not self.svc_vm_mgr.delete_service_vm(context,
-                                                  hosting_device['id']):
+                                                 hosting_device['id']):
             LOG.error(_LE('Failed to delete hosting device %s service VM. '
                           'Will un-register it anyway.'),
                       hosting_device['id'])

@@ -99,7 +99,7 @@ class TestPluggingDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                          attempts)
             # Remove anything created.
             if mgmt_port is not None:
-                ml = set([mgmt_port['id']])
+                ml = {mgmt_port['id']}
                 self._delete_resources(context, "management port",
                                        self._core_plugin.delete_port,
                                        n_exc.PortNotFound, ml)
@@ -121,10 +121,12 @@ class TestPluggingDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                               'for service vm due to %(err)s'),
                           {'resource_name': name, 'net_id': item_id, 'err': e})
 
-    def setup_logical_port_connectivity(self, context, port_db):
+    def setup_logical_port_connectivity(self, context, port_db,
+                                        hosting_device_id):
         pass
 
-    def teardown_logical_port_connectivity(self, context, port_db):
+    def teardown_logical_port_connectivity(self, context, port_db,
+                                           hosting_device_id):
         pass
 
     def extend_hosting_port_info(self, context, port_db, hosting_device,

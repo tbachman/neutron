@@ -121,7 +121,6 @@ class SlotAllocation(model_base.BASEV2):
     """Tracks allocation of slots in hosting devices."""
     __tablename__ = 'cisco_slot_allocations'
 
-
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('cisco_hosting_device_templates.id'),
                             nullable=False)

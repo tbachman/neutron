@@ -24,9 +24,9 @@ from neutron.common import config
 from neutron import context as n_context
 from neutron.manager import NeutronManager
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
                                                      as hdm_db)
+from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants
 from neutron.tests.unit.db import test_db_base_plugin_v2
@@ -523,7 +523,7 @@ class TestDeviceManagerDBPlugin(
                          is_admin=False):
         with self.hosting_device_template() as hdt:
             context = self._get_test_context(
-                tenant_id= hdt['hosting_device_template']['tenant_id'],
+                tenant_id=hdt['hosting_device_template']['tenant_id'],
                 is_admin=is_admin)
             driver_getter = getattr(self._devmgr, get_method)
             template_id = id or hdt['hosting_device_template']['id']
@@ -582,7 +582,7 @@ class TestDeviceManagerDBPlugin(
                         tenant_id=hdt['hosting_device_template']['tenant_id'],
                         is_admin=is_admin)
                     hd_db = self._devmgr._get_hosting_device(
-                            context, hd['hosting_device']['id'])
+                        context, hd['hosting_device']['id'])
                     with mock.patch.object(
                             hdm_db.HostingDeviceManagerMixin,
                             '_dispatch_pool_maintenance_job') as pm_mock:
@@ -596,7 +596,7 @@ class TestDeviceManagerDBPlugin(
                             expected_bind, resource['tenant_id'])
                         self.assertEqual(hd_db.tenant_bound, expected_bind)
                         if pool_maintenance_expected:
-                            pm_mock.assert_called_once()
+                            pm_mock.assert_called_once_with(mock.ANY)
                             num_calls = 1
                         else:
                             pm_mock.assert_not_called()
@@ -803,14 +803,14 @@ class TestDeviceManagerDBPlugin(
                                     context, hdt0_id))
                             (self._devmgr.
                              delete_all_hosting_devices_by_template(
-                                context, template, force_delete))
+                                 context, template, force_delete))
                         else:
                             template = (
                                 self._devmgr._get_hosting_device_template(
                                     context, hdt1_id))
                             (self._devmgr.
                              delete_all_hosting_devices_by_template(
-                                context, template, force_delete))
+                                 context, template, force_delete))
                         result_hds = self._list('hosting_devices')[
                             'hosting_devices']
                         self.assertEqual(len(result_hds),
@@ -842,27 +842,29 @@ class TestDeviceManagerDBPlugin(
             with self.port(subnet=self._mgmt_subnet,
                            no_delete=no_delete) as mgmt_port:
                 with self.hosting_device(
-                                template_id=hdt_id,
-                                management_port_id=mgmt_port['port']['id'],
-                                auto_delete=auto_delete,
-                                no_delete=no_delete) as hd:
+                        template_id=hdt_id,
+                        management_port_id=mgmt_port['port']['id'],
+                        auto_delete=auto_delete, no_delete=no_delete) as hd:
                     with mock.patch('neutron.manager.NeutronManager.'
                                     'get_service_plugins'):
+                        hd_id = hd['hosting_device']['id']
                         m2 = mock.MagicMock()
                         self._devmgr.agent_notifiers = {
                             c_constants.AGENT_TYPE_CFG: m2}
                         context = self._get_test_context()
                         self._devmgr.handle_non_responding_hosting_devices(
-                            context, None, [hd['hosting_device']['id']])
+                            context, None, [hd_id])
                         result_hds = self._list('hosting_devices')[
                             'hosting_devices']
                         self.assertEqual(len(result_hds),
                                          expected_num_remaining)
                         l3mock = (NeutronManager.get_service_plugins().get().
                                   handle_non_responding_hosting_devices)
-                        l3mock.assert_called_once()
+                        l3mock.assert_called_once_with(mock.ANY, mock.ANY,
+                                                       {hd_id: {}})
                         if expected_num_remaining == 0:
-                            m2.hosting_devices_removed.assert_called_once()
+                            m2.hosting_devices_removed.assert_called_once_with(
+                                mock.ANY, {hd_id: {}}, False, None)
 
     # handled failed hosting device tests
     def test_failed_managed_vm_based_hosting_device_gets_deleted(self):
@@ -908,7 +910,7 @@ class TestDeviceManagerDBPlugin(
                                                                    template)
                         result_hds = self._list(
                             'hosting_devices')['hosting_devices']
-                        self.assertEqual(len(result_hds)*slot_capacity,
+                        self.assertEqual(len(result_hds) * slot_capacity,
                                          expected)
             self._devmgr.delete_all_hosting_devices(context, True)
 

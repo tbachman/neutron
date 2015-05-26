@@ -21,6 +21,7 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
+from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes as attrs
 from neutron.common import constants as l3_constants
@@ -79,7 +80,7 @@ router_appliance_opts = [
     cfg.StrOpt('default_ping_interval', default=DEFAULT_PING_INTERVAL,
                help=_("Time (in seconds) between probes for high-availability "
                       "connectivity probing if user does not specify it")),
-    ]
+]
 
 cfg.CONF.register_opts(router_appliance_opts, "ha")
 
@@ -150,7 +151,8 @@ class RouterHAGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class RouterRedundancyBinding(model_base.BASEV2):
     """Represents binding between an HA enabled router and its
-    redundancy routers."""
+    redundancy routers.
+    """
     __tablename__ = 'cisco_router_redundancy_bindings'
 
     # 'redundancy_router_id' is id of a redundancy router
@@ -359,9 +361,10 @@ class HA_db_mixin(object):
                                 user_visible_router, ports=None,
                                 ha_settings=None, create_ha_group=True):
         """Creates a redundancy router and its interfaces on
-        the specified subnets."""
+        the specified subnets.
+        """
         priority = (DEFAULT_MASTER_PRIORITY +
-                    max(0, start_index - 1)*PRIORITY_INCREASE_STEP)
+                    max(0, start_index - 1) * PRIORITY_INCREASE_STEP)
         r = copy.deepcopy(user_visible_router)
         # No tenant_id so redundancy routers are hidden from user
         r['tenant_id'] = ''
@@ -394,7 +397,8 @@ class HA_db_mixin(object):
     def _remove_redundancy_routers(self, context, router_ids, ports,
                                    delete_ha_groups=False):
         """Deletes all interfaces of the specified redundancy routers
-        and then the redundancy routers themselves."""
+        and then the redundancy routers themselves.
+        """
         e_context = context.elevated()
         subnets_info = [{'subnet_id': port['fixed_ips'][0]['subnet_id']}
                         for port in ports]
@@ -516,7 +520,8 @@ class HA_db_mixin(object):
     def _populate_ha_information(self, context, router):
         """To be called when router information, including router interface
         list, (for the l3_cfg_agent) has been collected so it is extended
-        with ha information."""
+        with ha information.
+        """
         r_r_b = self._get_redundancy_router_bindings(
             context, redundancy_router_id=router['id'])
         if not r_r_b:
@@ -589,7 +594,7 @@ class HA_db_mixin(object):
         query = query.filter(RouterHASetting.router_id == router_id)
         try:
             r_ha_s = query.one()
-        except exc.NoResultFound, exc.MultipleResultsFound:
+        except (exc.NoResultFound, exc.MultipleResultsFound):
             return
         return r_ha_s
 
@@ -598,7 +603,7 @@ class HA_db_mixin(object):
         query = query.filter(RouterHAGroup.ha_port_id == port_id)
         try:
             r_ha_g = query.one()
-        except exc.NoResultFound, exc.MultipleResultsFound:
+        except (exc.NoResultFound, exc.MultipleResultsFound):
             return
         return r_ha_g
 
@@ -680,7 +685,7 @@ class HA_db_mixin(object):
             RouterRedundancyBinding.redundancy_router_id ==
             l3_db.RouterPort.router_id)
         routerport_qry = routerport_qry.filter(
-            RouterRedundancyBinding.redundancy_router_id == None)
+            RouterRedundancyBinding.redundancy_router_id == expr.null())
 
 #        router_port = routerport_qry.first()
 

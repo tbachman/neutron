@@ -15,8 +15,8 @@
 import netaddr
 
 from oslo_config import cfg
-from oslo_utils import excutils
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from neutron.i18n import _LE
 from neutron import manager

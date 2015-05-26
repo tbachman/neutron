@@ -14,11 +14,11 @@
 
 import copy
 
+from oslo_concurrency import lockutils
 from oslo_config import cfg
+from oslo_log import log as logging
 from oslo_utils import excutils
 from oslo_utils import importutils
-from oslo_concurrency import lockutils
-from oslo_log import log as logging
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import expression as expr
@@ -44,8 +44,8 @@ from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.device_manager import config
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routerhostingdevice
-from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.extensions import routertype
+from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.l3.drivers import driver_context
 from neutron.plugins.common import constants as svc_constants
 
@@ -235,8 +235,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         e_context = context.elevated()
         old_router = self._make_router_dict(old_router_db)
         if old_ext_gw is not None and old_ext_gw != new_ext_gw:
-#            old_router = self._make_router_dict(old_router_db,
-#                                                process_extensions=False)
             # no need to schedule now since we're only doing this to tear-down
             # connectivity and there won't be any if not already scheduled
             self.add_type_and_hosting_device_info(
@@ -272,7 +270,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         try:
             ns_routertype_id = self.get_namespace_router_type_id(context)
             router_type_id = self.get_router_type_id(context, router_id)
-        except AttributeError, n_exc.NeutronException:
+        except (AttributeError, n_exc.NeutronException):
             return
         if router_type_id != ns_routertype_id:
             LOG.debug('Router %(r_id)s is of type %(t_id)s which is not '
@@ -333,7 +331,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 LOG.exception(_LE("Deletion of router %s failed. It will be "
                                   "re-hosted."), router_id)
                 if was_hosted is True or r_hd_binding_db.auto_schedule is True:
-                    LOG.info(_LE("Router %s will be re-hosted."), router_id)
+                    LOG.info(_LI("Router %s will be re-hosted."), router_id)
                     self.backlog_router(context, r_hd_binding_db)
 
     def notify_router_interface_action(
@@ -716,7 +714,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 return
         return self._namespace_router_type_id
 
-#    @lockutils.synchronized('routers', 'neutron-')
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def backlog_router(self, context, binding_info_db):
         # Ensure we get latest state from DB in case it was updated while
@@ -737,7 +734,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                      'later'), binding_info_db.router_id)
         self._backlogged_routers.add(binding_info_db.router_id)
 
- #   @lockutils.synchronized('routers', 'neutron-')
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def remove_router_from_backlog(self, router_id):
         # call unsynchronized version to actually remove from backlog
@@ -848,7 +844,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                       attributes.ATTR_NOT_SPECIFIED)
         if router_type_name is attributes.ATTR_NOT_SPECIFIED:
             router_type_name = cfg.CONF.routing.default_router_type
-        namespace_router_type_id= self.get_namespace_router_type_id(context)
+        namespace_router_type_id = self.get_namespace_router_type_id(context)
         router_type_id = self.get_routertype_by_id_name(
             context, router_type_name)['id']
         if (router_type_id != namespace_router_type_id and
@@ -862,8 +858,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             normal = self._make_routertype_dict(hosting_info.router_type)
             if hosting_device:
                 rt_info = self.get_routertypes(
-                    context, filters={'template_id':
-                                          [hosting_device.template_id]})
+                    context,
+                    filters={'template_id': [hosting_device.template_id]})
                 if (not rt_info or rt_info[0]['id'] ==
                         hosting_info.router_type_id):
                     effective = normal

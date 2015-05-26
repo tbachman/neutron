@@ -65,10 +65,10 @@ class RouterHostingDeviceMismatch(exceptions.Conflict):
 
 
 ROUTERTYPE_AWARE_SCHEDULER_ALIAS = 'routertype-aware-scheduler'
-L3_ROUTER_DEVICE = 'l3-router-device'
+DEVICE_L3_ROUTER = 'hosting-device-l3-router'
+DEVICE_L3_ROUTERS = DEVICE_L3_ROUTER + 's'
+L3_ROUTER_DEVICE = 'l3-router-hosting-device'
 L3_ROUTER_DEVICES = L3_ROUTER_DEVICE + 's'
-L3_DEVICE = 'l3-hosting-device'
-L3_DEVICES = L3_DEVICE + 's'
 AUTO_SCHEDULE_ATTR = ROUTERTYPE_AWARE_SCHEDULER_ALIAS + ':auto_schedule'
 SHARE_HOST_ATTR = ROUTERTYPE_AWARE_SCHEDULER_ALIAS + ':share_hosting_device'
 
@@ -86,13 +86,13 @@ class RouterHostingDeviceSchedulerController(wsgi.Controller):
 
     def index(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "get_%s" % L3_ROUTER_DEVICES, {})
+        policy.enforce(request.context, "get_%s" % DEVICE_L3_ROUTERS, {})
         return plugin.list_routers_on_hosting_device(
             request.context, kwargs['hosting_device_id'])
 
     def create(self, request, body, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "create_%s" % L3_ROUTER_DEVICE, {})
+        policy.enforce(request.context, "create_%s" % DEVICE_L3_ROUTER, {})
         hosting_device_id = kwargs['hosting_device_id']
         router_id = body['router_id']
         result = plugin.add_router_to_hosting_device(
@@ -103,9 +103,9 @@ class RouterHostingDeviceSchedulerController(wsgi.Controller):
 
     def delete(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "delete_%s" % L3_ROUTER_DEVICE, {})
-        router_id = kwargs['id']
+        policy.enforce(request.context, "delete_%s" % DEVICE_L3_ROUTER, {})
         hosting_device_id = kwargs['hosting_device_id']
+        router_id = kwargs['id']
         result = plugin.remove_router_from_hosting_device(
             request.context, hosting_device_id, router_id)
         notify(request.context, 'hosting_device.router.remove', router_id,
@@ -126,7 +126,7 @@ class HostingDevicesHostingRouterController(wsgi.Controller):
 
     def index(self, request, **kwargs):
         plugin = self.get_plugin()
-        policy.enforce(request.context, "get_%s" % L3_DEVICES, {})
+        policy.enforce(request.context, "get_%s" % L3_ROUTER_DEVICES, {})
         return plugin.list_hosting_devices_hosting_router(request.context,
                                                           kwargs['router_id'])
 
@@ -179,14 +179,14 @@ class Routertypeawarescheduler(extensions.ExtensionDescriptor):
         controller = resource.Resource(
             RouterHostingDeviceSchedulerController(), base.FAULT_MAP)
         exts.append(extensions.ResourceExtension(
-            L3_ROUTER_DEVICES, controller, parent,
+            DEVICE_L3_ROUTERS, controller, parent,
             path_prefix=svc_constants.COMMON_PREFIXES[
                 svc_constants.DEVICE_MANAGER]))
         parent = dict(member_name="router",
                       collection_name=l3.ROUTERS)
         controller = resource.Resource(
             HostingDevicesHostingRouterController(), base.FAULT_MAP)
-        exts.append(extensions.ResourceExtension(L3_DEVICES, controller,
+        exts.append(extensions.ResourceExtension(L3_ROUTER_DEVICES, controller,
                                                  parent))
         return exts
 

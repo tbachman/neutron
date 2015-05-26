@@ -294,7 +294,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                          attempts)
             # Remove anything created.
             if mgmt_port is not None:
-                ml = set([mgmt_port['id']])
+                ml = {mgmt_port['id']}
                 self._delete_resources(context, "management port",
                                        self._core_plugin.delete_port,
                                        n_exc.PortNotFound, ml)
@@ -332,7 +332,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             context, port_db, 'Adding', n1kv.SEGMENT_ADD)
 
     def teardown_logical_port_connectivity(self, context, port_db,
-                                        hosting_device_id):
+                                           hosting_device_id):
         # Remove the VLAN from the VLANs that the hosting port trunks.
         self._perform_logical_port_connectivity_action(
             context, port_db, 'Removing', n1kv.SEGMENT_DEL)
@@ -449,6 +449,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         name = (n1kv_const.T2_PORT_NAME if network_type == 'vlan'
                 else n1kv_const.T1_PORT_NAME)
         attempts = 0
+        res = []
         while True:
             # mysql> SELECT * FROM ports WHERE device_id = 'hd_id1' AND
             # id NOT IN (SELECT hosting_port_id FROM hostedhostingportbindings)

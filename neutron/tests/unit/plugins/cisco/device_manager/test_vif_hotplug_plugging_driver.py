@@ -1,3 +1,17 @@
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 import contextlib
 import mock
 from oslo_log import log as logging
@@ -44,9 +58,8 @@ class TestVIFHotPlugPluggingDriver(base.BaseTestCase):
                                '_core_plugin') as plugin:
             plugin.__get__ = mock.MagicMock(return_value=mocked_plugin)
             plugging_driver = VIFHotPlugPluggingDriver()
-            plugging_driver._delete_resource_port(mock_ctx,
-                                                          mgmt_port_id)
-            self.assertEquals(3, mocked_plugin.delete_port.call_count)
+            plugging_driver._delete_resource_port(mock_ctx, mgmt_port_id)
+            self.assertEqual(3, mocked_plugin.delete_port.call_count)
 
     def test_delete_resource_port_handle_port_not_found(self):
         mgmt_port_id = 'fake_port_id'
@@ -58,9 +71,8 @@ class TestVIFHotPlugPluggingDriver(base.BaseTestCase):
                                '_core_plugin') as plugin:
             plugin.__get__ = mock.MagicMock(return_value=mocked_plugin)
             plugging_driver = VIFHotPlugPluggingDriver()
-            plugging_driver._delete_resource_port(mock_ctx,
-                                                          mgmt_port_id)
-            self.assertEquals(1, mocked_plugin.delete_port.call_count)
+            plugging_driver._delete_resource_port(mock_ctx, mgmt_port_id)
+            self.assertEqual(1, mocked_plugin.delete_port.call_count)
 
     def test_setup_logical_port_connectivity(self):
         mock_portdb = {'id': 'fake_port_id',
@@ -82,7 +94,7 @@ class TestVIFHotPlugPluggingDriver(base.BaseTestCase):
                 mock_ctx, mock_portdb, hosting_device_id)
             plugin.update_port.assert_called_once_with(
                 mock.ANY, mock_portdb['id'],
-                {'port': {'device_owner': '',  'device_id': '',
+                {'port': {'device_owner': '', 'device_id': '',
                           'tenant_id': l3_admin_tenant}})
             self.assertEqual(mock_ctx.elevated.call_count, 1)
             dev_mgr.svc_vm_mgr.interface_attach.assert_called_once_with(

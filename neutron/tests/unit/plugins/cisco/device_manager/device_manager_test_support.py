@@ -23,12 +23,12 @@ from oslo_utils import importutils
 from oslo_utils import timeutils
 
 from neutron.api.v2 import attributes
-from neutron.common import exceptions as n_exc
+from neutron.common import constants as common_constants
 from neutron.common import test_lib
 from neutron import context as n_context
-from neutron.i18n import _LE
 from neutron.db import agents_db
 from neutron.extensions import agent
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import uuidutils
 import neutron.plugins
@@ -36,10 +36,11 @@ from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hosting_device_manager_db
 from neutron.plugins.cisco.db.scheduler import cfg_agentschedulers_db
 from neutron.plugins.cisco.device_manager.rpc import devices_cfgagent_rpc_cb
-from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
+from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
+from neutron.plugins.cisco.extensions import (ciscocfgagentscheduler as
+                                              cfgagtscheduler)
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
-from neutron.plugins.cisco.device_manager.rpc import devmgr_rpc_cfgagent_api
 from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit.extensions import test_l3
@@ -59,7 +60,7 @@ L3_CFG_HOST_B = 'host_b'
 L3_CFG_HOST_C = 'host_c'
 
 
-class DeviceManagerTestSupportMixin:
+class DeviceManagerTestSupportMixin(object):
 
     @property
     def _core_plugin(self):
@@ -158,7 +159,7 @@ class DeviceManagerTestSupportMixin:
         # Mock GreenPool's spawn_n to execute the specified function directly
         self._greenpool_mock = mock.MagicMock()
         self._greenpool_mock.return_value.spawn_n = (
-            lambda f, *args,  **kwargs: f(*args, **kwargs))
+            lambda f, *args, **kwargs: f(*args, **kwargs))
         _eventlet_greenpool_fcn_p = mock.patch(
             'neutron.plugins.cisco.db.device_manager.hosting_device_manager_db'
             '.eventlet.GreenPool', self._greenpool_mock)
@@ -190,6 +191,27 @@ class DeviceManagerTestSupportMixin:
         return n_context.Context(user_id, tenant_id, is_admin,
                                  load_admin_roles=True)
 
+    def _mock_cfg_agent_notifier(self, plugin):
+        # Mock notifications to l3 agent and Cisco config agent
+        self._l3_agent_mock = mock.MagicMock()
+        self._cfg_agent_mock = mock.MagicMock()
+        self._l3_cfg_agent_mock = mock.MagicMock()
+        plugin.agent_notifiers = {
+            common_constants.AGENT_TYPE_L3: self._l3_agent_mock,
+            cisco_constants.AGENT_TYPE_CFG: self._cfg_agent_mock,
+            cisco_constants.AGENT_TYPE_L3_CFG: self._l3_cfg_agent_mock}
+
+    def _define_keystone_authtoken(self):
+        test_opts = [
+            cfg.StrOpt('auth_uri', default='http://localhost:35357/v2.0/'),
+            cfg.StrOpt('identity_uri', default='http://localhost:5000'),
+            #cfg.StrOpt('admin_user', default='neutron'),
+            cfg.StrOpt('username', default='neutron'),
+            #cfg.StrOpt('admin_password', default='secrete'),
+            cfg.StrOpt('password', default='secrete'),
+            cfg.StrOpt('project_name', default='service')]
+        cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
+
     def _add_device_manager_plugin_ini_file(self):
         # includes config files for device manager service plugin
         cfg_file = (
@@ -209,6 +231,7 @@ class DeviceManagerTestSupportMixin:
             'host': L3_CFG_HOST_A,
             'topic': cisco_constants.CFG_AGENT,
             'configurations': {
+                'service_agents': [cisco_constants.AGENT_TYPE_L3_CFG],
                 'total routers': 0,
                 'total ex_gw_ports': 0,
                 'total interfaces': 0,
@@ -255,6 +278,9 @@ class TestDeviceManagerExtensionManager(object):
         # add agent resource
         for item in agent.Agent.get_resources():
             res.append(item)
+        # add hosting device to cfg agent scheduler resources
+        for item in cfgagtscheduler.Ciscocfgagentscheduler.get_resources():
+            res.append(item)
         # Add the resources to the global attribute map
         # This is done here as the setup process won't
         # initialize the main API router which extends
@@ -278,7 +304,7 @@ class TestCorePlugin(test_l3.TestNoL3NatPlugin,
 
     supported_extension_aliases = [
         "agent", "external-net",
-        ciscocfgagentscheduler.CFG_AGENT_SCHEDULER_ALIAS,
+        cfgagtscheduler.CFG_AGENT_SCHEDULER_ALIAS,
         ciscodevmgr.HOSTING_DEVICE_MANAGER_ALIAS]
 
     def __init__(self):

@@ -176,7 +176,7 @@ class ServiceVMManager(object):
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
-            files = hosting_device_drv.create_config(context, mgmt_port)
+            hosting_device_drv.create_config(context, mgmt_port)
         except IOError:
             return
 

@@ -13,8 +13,8 @@
 #    under the License.
 #
 
-from oslo import messaging
 from oslo_log import log as logging
+import oslo_messaging
 
 from neutron.common import rpc as n_rpc
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -30,18 +30,15 @@ class DeviceMgrCfgAgentNotifyAPI(object):
     """API for Device manager service plugin to notify Cisco cfg agent."""
 
     def __init__(self, devmgr_plugin, topic=c_constants.CFG_AGENT):
-        self.topic = topic
-        target = messaging.Target(topic=topic, version='1.0')
-        self.client = n_rpc.get_client(target)
         self._dmplugin = devmgr_plugin
+        target = oslo_messaging.Target(topic=topic, version='1.0')
+        self.client = n_rpc.get_client(target)
 
-    def _host_notification(self, context, method, payload, host,
-                           topic=None):
+    def _host_notification(self, context, method, payload, host):
         """Notify the cfg agent that is handling the hosting device."""
         LOG.debug('Notify Cisco cfg agent at %(host)s the message '
                   '%(method)s', {'host': host, 'method': method})
-        topic_to_use = self.topic if topic is None else topic
-        cctxt = self.client.prepare(topic=topic_to_use, server=host)
+        cctxt = self.client.prepare(server=host)
         cctxt.cast(context, method, payload=payload)
 
     def _agent_notification(self, context, method, hosting_devices, operation):
@@ -49,8 +46,8 @@ class DeviceMgrCfgAgentNotifyAPI(object):
         admin_context = context.is_admin and context or context.elevated()
         for hosting_device in hosting_devices:
             agents = self._dmplugin.get_cfg_agents_for_hosting_devices(
-                    admin_context, hosting_device['id'], admin_state_up=True,
-                    active=True, schedule=True)
+                admin_context, hosting_device['id'], admin_state_up=True,
+                schedule=True)
             for agent in agents:
                 LOG.debug('Notify %(agent_type)s at %(topic)s.%(host)s the '
                           'message %(method)s',
@@ -58,21 +55,8 @@ class DeviceMgrCfgAgentNotifyAPI(object):
                            'topic': agent.topic,
                            'host': agent.host,
                            'method': method})
-                cctxt = self.client.prepare(topic=agent.topic,
-                                            server=agent.host,
-                                            version='1.0')
+                cctxt = self.client.prepare(server=agent.host)
                 cctxt.cast(context, method)
-
-    # def _notification_fanout(self, context, method, router_id):
-    #     """Fanout the deleted router to all L3 agents."""
-    #     LOG.debug('Fanout notify agent at %(topic)s the message '
-    #               '%(method)s on router %(router_id)s',
-    #               {'topic': topics.DHCP_AGENT,
-    #                'method': method,
-    #                'router_id': router_id})
-    #     self.fanout_cast(context,
-    #                      self.make_msg(method, router_id=router_id),
-    #                      topic=topics.L3_AGENT)
 
     def agent_updated(self, context, admin_state_up, host):
         """Updates cfg agent on <host> to enable or disable it."""
@@ -85,7 +69,8 @@ class DeviceMgrCfgAgentNotifyAPI(object):
         This notification relieves the cfg agent in <host> of responsibility
         to monitor and configure hosting devices with id specified in <ids>.
         """
-        self._host_notification(context, 'devices_unassigned_from_cfg_agent',
+        self._host_notification(context,
+                                'hosting_devices_unassigned_from_cfg_agent',
                                 {'hosting_device_ids': ids}, host)
 
     def hosting_devices_assigned_to_cfg_agent(self, context, ids, host):
@@ -94,7 +79,8 @@ class DeviceMgrCfgAgentNotifyAPI(object):
         This notification relieves the cfg agent in <host> of responsibility
         to monitor and configure hosting devices with id specified in <ids>.
         """
-        self._host_notification(context, 'devices_assigned_to_cfg_agent',
+        self._host_notification(context,
+                                'hosting_devices_assigned_to_cfg_agent',
                                 {'hosting_device_ids': ids}, host)
 
     def hosting_devices_removed(self, context, hosting_data, deconfigure,

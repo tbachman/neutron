@@ -24,10 +24,10 @@ from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
 from neutron.tests.unit.plugins.cisco.device_manager import (
     test_db_device_manager)
-from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
-from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
 from neutron.tests.unit.plugins.cisco.l3 import (
     test_l3_routertype_aware_schedulers)
+from neutron.tests.unit.plugins.cisco.l3 import l3_router_test_support
+from neutron.tests.unit.plugins.cisco.l3 import test_db_routertype
 from neutron.tests.unit.plugins.openvswitch import test_agent_scheduler
 
 
