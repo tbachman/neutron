@@ -218,7 +218,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 port_db,
                 r_hd_binding.hosting_device_id)
         info = (super(L3RouterApplianceDBMixin, self).remove_router_interface(
-            context, router_id, interface_info))
+            e_context, router_id, interface_info))
         self.notify_router_interface_action(context, info, routers, 'remove')
         return info
 
