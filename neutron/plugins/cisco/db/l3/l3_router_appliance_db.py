@@ -65,6 +65,10 @@ ROUTER_APPLIANCE_OPTS = [
                help=_("Name of router type used for Linux network namespace "
                       "routers (i.e., Neutron's legacy routers in Network "
                       "nodes).")),
+    cfg.StrOpt('hardware_router_type_name',
+               default=cisco_constants.HARDWARE_ROUTER_TYPE,
+               help=_("Name of router type used for physical hardware routers "
+                      "(e.g., ASR1K routers).")),
     cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
@@ -98,6 +102,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     # Id of router type used to represent Neutron's "legacy" Linux network
     # namespace routers
     _namespace_router_type_id = None
+
+    # Id of router type used to represent physical routers
+    _hardware_router_type_id = None
 
     # Set of ids of routers for which new scheduling attempts should
     # be made and the refresh setting and heartbeat for that.
@@ -188,10 +195,17 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_type_id = self._ensure_create_routertype_compliant(context, r)
         is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
                  router_type_id != self.get_namespace_router_type_id(context))
+        is_hardware_router = router_type_id == self.get_hardware_router_type_id(context)
+        role = None
         if is_ha:
             # Ensure create spec is compliant with any HA
             ha_spec = self._ensure_create_ha_compliant(r)
         auto_schedule, share_host = self._ensure_router_scheduling_compliant(r)
+        # Don't schedule hardware user-visible routers, they aren't
+        # assigned to a hosting device
+        if is_ha and is_hardware_router is False:
+            auto_schedule = False
+            role = cisco_constants.ROUTER_ROLE_LOGICAL
         with context.session.begin(subtransactions=True):
             router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
@@ -201,6 +215,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 inflated_slot_need=0,
                 auto_schedule=auto_schedule,
                 share_hosting_device=share_host,
+                role=role,
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
         router_created[routertype.TYPE_ATTR] = router_type_id
@@ -211,6 +226,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             # process any HA
             self._create_redundancy_routers(context, router_created, ha_spec,
                                             r_hd_b_db.router)
+        driver = self._get_router_type_driver(context,
+                                              r_hd_b_db.router_type_id)
+        if driver:
+            router_ctxt = driver_context.RouterContext(self._make_router_dict(r_hd_b_db.router))
+            driver.create_router_postcommit(context, router_ctxt)
         if auto_schedule is True:
             # backlog so this new router gets scheduled asynchronously
             self.backlog_router(context, r_hd_b_db)
@@ -286,6 +306,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router = self._make_router_dict(router_db)
         e_context = context.elevated()
         r_hd_binding_db = router_db.hosting_info
+        driver = self._get_router_type_driver(context,
+                                              r_hd_binding_db.router_type_id)
+        router_ctxt = driver_context.RouterContext(router)
         # disable scheduling now since router is to be deleted and we're only
         # doing this to tear-down connectivity in case it is already scheduled
         self.add_type_and_hosting_device_info(
@@ -324,6 +347,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self._delete_redundancy_routers(context, router_db)
             super(L3RouterApplianceDBMixin, self).delete_router(context,
                                                                 router_id)
+            if driver:
+                driver.delete_router_postcommit(context, router_ctxt)
         except n_exc.NeutronException:
             with excutils.save_and_reraise_exception():
                 # put router back in backlog if deletion failed so that it
@@ -726,6 +751,20 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 return
         return self._namespace_router_type_id
 
+    def get_hardware_router_type_id(self, context):
+        if self._hardware_router_type_id is None:
+            # This should normally only happen once so we register router types
+            # defined in config file here.
+            self._create_router_types_from_config()
+            try:
+                self._hardware_router_type_id = (
+                    self.get_routertype_by_id_name(
+                        context,
+                        cfg.CONF.routing.hardware_router_type_name)['id'])
+            except n_exc.NeutronException:
+                return
+        return self._hardware_router_type_id
+
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def backlog_router(self, context, binding_info_db):
         # Ensure we get latest state from DB in case it was updated while
@@ -802,7 +841,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             l3_models.RouterHostingDeviceBinding.router_type_id !=
             type_to_exclude,
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
-            expr.null())
+            expr.null(),
+            l3_models.RouterHostingDeviceBinding.role !=
+            cisco_constants.ROUTER_ROLE_LOGICAL,
+            l3_models.RouterHostingDeviceBinding.role !=
+            cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
