@@ -33,22 +33,33 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         pass
 
     def create_router_postcommit(self, context, router_context):
+        self._ensure_logical_global_router_exists(context)
         current = router_context.current
         if current['gw_port_id']:
             ext_nw_id = current['external_gateway_info']['network_id']
-            #self._conditionally_add_logical_global_gw_port(context,
-            #                                               ext_nw_id)
+            self._conditionally_add_logical_global_gw_port(context,
+                                                           ext_nw_id)
         return
 
     def update_router_precommit(self, context, router_context):
         pass
 
-    def update_router_postcommit(self, context, router_context, old_ext_nw_id=None):
+    def update_router_postcommit(self, context, router_context, old_ext_nw_id=None, new_ext_nw_id=None):
         # Whenever a gateway is added to, or removed from, a router hosted on
         # a hosting device, we must ensure that a global router is running
         # (for add operation) or not running (for remove operation) on that
         # hosting device.
+        self._ensure_logical_global_router_exists(context)
         current = router_context.current
+
+        if old_ext_nw_id != new_ext_nw_id:
+            if old_ext_nw_id != None:
+                self._conditionally_remove_logical_global_port(context,
+                                                               old_ext_nw_id)
+            if new_ext_nw_id != None:
+                self._conditionally_add_logical_global_gw_port(context,
+                                                               old_ext_nw_id)
+
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if hd_id is None:
             return
@@ -66,8 +77,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
     def delete_router_precommit(self, context, router_context):
         pass
 
-    def delete_router_postcommit(self, context, router_context):
-        pass
+    def delete_router_postcommit(self, context, router_context, old_ext_nw_id=None):
+        self._ensure_logical_global_router_exists(context)
+        self._conditionally_remove_logical_global_port(context, old_ext_nw_id)
+        return
 
     def schedule_router_precommit(self, context, router_context):
         pass

@@ -282,7 +282,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                               r_hd_binding_db.router_type_id)
         if driver:
             router_ctxt = driver_context.RouterContext(routers[0], old_router)
-            driver.update_router_postcommit(context, router_ctxt)
+            driver.update_router_postcommit(context, router_ctxt, old_ext_gw, new_ext_gw)
         self.add_type_and_hosting_device_info(e_context, routers[0])
         for ni in self.get_notifiers(context, routers):
             if ni['notifier']:
@@ -310,6 +310,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router = self._make_router_dict(router_db)
         e_context = context.elevated()
         r_hd_binding_db = router_db.hosting_info
+        old_ext_nw_id = None
         driver = self._get_router_type_driver(context,
                                               r_hd_binding_db.router_type_id)
         router_ctxt = driver_context.RouterContext(router)
@@ -318,6 +319,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self.add_type_and_hosting_device_info(
             e_context, router, r_hd_binding_db, schedule=False)
         if router_db.gw_port is not None:
+            old_ext_nw_id = (router_db.gw_port or {}).get('network_id')
             p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
                 e_context,
                 (router['hosting_device'] or {}).get('template_id'))
@@ -352,7 +354,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).delete_router(context,
                                                                 router_id)
             if driver:
-                driver.delete_router_postcommit(context, router_ctxt)
+                driver.delete_router_postcommit(context, router_ctxt, old_ext_nw_id)
         except n_exc.NeutronException:
             with excutils.save_and_reraise_exception():
                 # put router back in backlog if deletion failed so that it
