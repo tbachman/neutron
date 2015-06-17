@@ -192,11 +192,22 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         return router_created
 
     def create_router(self, context, router):
+        """
+        If HA is enabled, the user router will be marked as a logical router
+        and will not be scheduled onto a device (auto_schedule = False)
+
+        After the user router has been created, each redundant (physical)
+        router will be created.  Each redundant router will have
+        ha_spec[ha.ENABLED] == False
+        """
         r = router['router']
         router_type_id = self._ensure_create_routertype_compliant(context, r)
         is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
                  router_type_id != self.get_namespace_router_type_id(context))
-        is_hardware_router = router_type_id == self.get_hardware_router_type_id(context)
+
+        is_hardware_router = \
+            (router_type_id == self.get_hardware_router_type_id(context))
+
         role = None
         if is_ha:
             # Ensure create spec is compliant with any HA
@@ -204,8 +215,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         auto_schedule, share_host = self._ensure_router_scheduling_compliant(r)
         # Don't schedule hardware user-visible routers, they aren't
         # assigned to a hosting device
-        # LOG.debug("QQQQQQQQ create_router, router: %s" % pprint.pformat(router))
-        # LOG.debug("QQQQQQQQ create_router, ha_spec: %s, enabled: %s" % (pprint.pformat(ha_spec), ha_spec[ha.ENABLED]))
+        # LOG.debug("QQQQQQQQ create_router, router: %s" % \
+        #            pprint.pformat(router))
+        # LOG.debug("QQQQQQQQ create_router, ha_spec: %s, enabled: %s" % \
+        #           (pprint.pformat(ha_spec), ha_spec[ha.ENABLED]))
         if is_ha and ha_spec[ha.ENABLED] and is_hardware_router is True:
             role = cisco_constants.ROUTER_ROLE_LOGICAL
         with context.session.begin(subtransactions=True):
@@ -231,7 +244,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         driver = self._get_router_type_driver(context,
                                               r_hd_b_db.router_type_id)
         if driver:
-            router_ctxt = driver_context.RouterContext(self._make_router_dict(r_hd_b_db.router))
+            router_ctxt = \
+                driver_context.RouterContext(
+                    self._make_router_dict(r_hd_b_db.router))
+
             driver.create_router_postcommit(context, router_ctxt)
         if is_ha and ha_spec[ha.ENABLED] and is_hardware_router is True:
             auto_schedule = False
