@@ -12,6 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from neutron.extensions import l3
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants
@@ -24,7 +26,9 @@ from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.plugins.cisco.db.l3 import l3_models
 
+LOG = logging.getLogger(__name__)
 
+import pprint
 
 
 class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
@@ -91,31 +95,21 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             hosting_device_id[-cisco_constants.ROLE_ID_LEN:])
 
     def _get_logical_router_with_ext_nw_count(self, context, ext_nw_id):
-        #qry = context.session.query(l3_db.Router)
-        #qry = qry.join(l3_db.Router.gw_port_id,
-        #               models_v2.Port.id)
-        #qry = qry.filter(models_v2.Port.network_id == ext_nw_id)
-        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
-        #               l3_db.Router.id)
-        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL)
         qry = context.session.query(l3_db.Router, models_v2.Port, l3_models.RouterHostingDeviceBinding)
-        #qry = qry.join(l3_db.Router.gw_port_id,
-        #               models_v2.Port.id)
         qry = qry.filter(models_v2.Port.network_id == ext_nw_id)
-        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
-        #               l3_db.Router.id)
+        qry = qry.filter(l3_db.Router.gw_port_id == models_v2.Port.id)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id == l3_db.Router.id)
         return qry.count()
     
     def _get_logical_global_router_gw_port_id(self, context, ext_nw_id):
-        #qry = context.session.query(l3_models.RouterHostingDeviceBinding)
-        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
-        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
-        #               l3_db.Router.id)
         qry = context.session.query(l3_models.RouterHostingDeviceBinding, l3_db.Router)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
-        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id == l3_db.Router.id)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id == l3_db.Router.id)
         rhdb_db, router_db = qry.first()
+        LOG.debug("ZZZZZZZZZZ rhdb_db: %s, router_db: %s, qry.count(): %s" % (pprint.pformat(rhdb_db),
+                                                                              pprint.pformat(router_db),
+                                                                              qry.count()))
         return router_db.id, router_db.gw_port_id
 
     def _ensure_logical_global_router_exists(self, context):
@@ -136,6 +130,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
     def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
         router_id, gw_port_id = self._get_logical_global_router_gw_port_id(context, ext_nw_id)
+        LOG.debug("QQQQQQ condition add logical global port: router_id: %s, gw_port_id: %s" % (router_id, gw_port_id))
         if gw_port_id == None:
             ext_gw_info = {"network_id": ext_nw_id}
             self._l3_plugin._update_router_gw_info(context, router_id, ext_gw_info)
