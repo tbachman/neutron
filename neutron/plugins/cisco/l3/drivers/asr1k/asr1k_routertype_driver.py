@@ -62,7 +62,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                                                old_ext_nw_id)
             if new_ext_nw_id != None:
                 self._conditionally_add_logical_global_gw_port(context,
-                                                               old_ext_nw_id)
+                                                               new_ext_nw_id)
 
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if hd_id is None:
