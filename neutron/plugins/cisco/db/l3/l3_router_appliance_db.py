@@ -51,6 +51,7 @@ from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
+import pprint
 
 AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
 AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
@@ -203,8 +204,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         auto_schedule, share_host = self._ensure_router_scheduling_compliant(r)
         # Don't schedule hardware user-visible routers, they aren't
         # assigned to a hosting device
-        if is_ha and is_hardware_router is False:
-            auto_schedule = False
+        # LOG.debug("QQQQQQQQ create_router, router: %s" % pprint.pformat(router))
+        # LOG.debug("QQQQQQQQ create_router, ha_spec: %s, enabled: %s" % (pprint.pformat(ha_spec), ha_spec[ha.ENABLED]))
+        if is_ha and ha_spec[ha.ENABLED] and is_hardware_router is True:
             role = cisco_constants.ROUTER_ROLE_LOGICAL
         with context.session.begin(subtransactions=True):
             router_created = (super(L3RouterApplianceDBMixin, self).
@@ -231,6 +233,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if driver:
             router_ctxt = driver_context.RouterContext(self._make_router_dict(r_hd_b_db.router))
             driver.create_router_postcommit(context, router_ctxt)
+        if is_ha and ha_spec[ha.ENABLED] and is_hardware_router is True:
+            auto_schedule = False
         if auto_schedule is True:
             # backlog so this new router gets scheduled asynchronously
             self.backlog_router(context, r_hd_b_db)
