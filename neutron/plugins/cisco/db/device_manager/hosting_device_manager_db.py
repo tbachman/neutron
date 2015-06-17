@@ -103,9 +103,16 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
     #        u_name = cfg.CONF.keystone_authtoken.admin_user
     #        pw = cfg.CONF.keystone_authtoken.admin_password
-            u_name = cfg.CONF.keystone_authtoken.username
-            pw = cfg.CONF.keystone_authtoken.password
+
+    #        u_name = cfg.CONF.keystone_authtoken.username
+    #        pw = cfg.CONF.keystone_authtoken.password
             tenant = cfg.CONF.general.l3_admin_tenant
+
+            # start hack for now - NH
+            u_name = "admin"
+            pw = "admin123"
+            # end hack
+
             self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
                 user=u_name, passwd=pw, l3_admin_tenant=tenant,
                 auth_url=auth_url)
@@ -118,12 +125,12 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             # This should normally only happen once so we register hosting
             # device templates defined in config file here.
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-#            user = cfg.CONF.keystone_authtoken.admin_user
-#            pw = cfg.CONF.keystone_authtoken.admin_password
-#           tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
-            user = cfg.CONF.keystone_authtoken.username
-            pw = cfg.CONF.keystone_authtoken.password
-            tenant = cfg.CONF.keystone_authtoken.project_name
+            user = cfg.CONF.keystone_authtoken.admin_user
+            pw = cfg.CONF.keystone_authtoken.admin_password
+            tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
+#            user = cfg.CONF.keystone_authtoken.username
+#            pw = cfg.CONF.keystone_authtoken.password
+#            tenant = cfg.CONF.keystone_authtoken.project_name
             keystone = k_client.Client(username=user, password=pw,
                                        tenant_name=tenant,
                                        auth_url=auth_url)
