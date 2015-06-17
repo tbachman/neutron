@@ -91,26 +91,36 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             hosting_device_id[-cisco_constants.ROLE_ID_LEN:])
 
     def _get_logical_router_with_ext_nw_count(self, context, ext_nw_id):
-        qry = context.session.query(l3_db.Router)
-        qry = qry.join(l3_db.Router.gw_port_id,
-                       models_v2.Port)
+        #qry = context.session.query(l3_db.Router)
+        #qry = qry.join(l3_db.Router.gw_port_id,
+        #               models_v2.Port.id)
+        #qry = qry.filter(models_v2.Port.network_id == ext_nw_id)
+        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
+        #               l3_db.Router.id)
+        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL)
+        qry = context.session.query(l3_db.Router, models_v2.Port, l3_models.RouterHostingDeviceBinding)
+        #qry = qry.join(l3_db.Router.gw_port_id,
+        #               models_v2.Port.id)
         qry = qry.filter(models_v2.Port.network_id == ext_nw_id)
-        qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
-                       l3_db.Router)
+        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
+        #               l3_db.Router.id)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL)
         return qry.count()
     
     def _get_logical_global_router_gw_port_id(self, context, ext_nw_id):
-        qry = context.session.query(l3_models.RouterHostingDeviceBinding)
-        qry = qry.filter(l3_models.RouterHostingDeviceBinding == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
-        qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
-                       l3_db.Router)
-        router_db = qry.first()
+        #qry = context.session.query(l3_models.RouterHostingDeviceBinding)
+        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+        #qry = qry.join(l3_models.RouterHostingDeviceBinding.router_id,
+        #               l3_db.Router.id)
+        qry = context.session.query(l3_models.RouterHostingDeviceBinding, l3_db.Router)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+        #qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id == l3_db.Router.id)
+        rhdb_db, router_db = qry.first()
         return router_db.id, router_db.gw_port_id
 
     def _ensure_logical_global_router_exists(self, context):
         qry = context.session.query(l3_models.RouterHostingDeviceBinding)
-        qry = qry.filter(l3_models.RouterHostingDeviceBinding == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.role == cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
         if qry.count() < 1:
             r_spec = {'router': {
                 # global routers are not tied to any tenant
