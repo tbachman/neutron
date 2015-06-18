@@ -372,7 +372,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         return port['device_owner'] in hsrp_types
 
     def _is_global_router(self, ri):
-        return ri.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
+        return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
 
     def _is_port_v6(self, port):
         return netaddr.IPNetwork(port['subnet']['cidr']).version == 6
