@@ -223,7 +223,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
-            self._conditionally_add_global_router(context, hd_id, current)
+            self._ensure_logical_global_router_exists(context)
+            logical_global_router_id, lgr_gw_port_id = self._get_logical_global_router_gw_port_id(context)
+            self._conditionally_add_global_router(context, hd_id, current,
+                                                  logical_global_router_id)
 
     def unschedule_router_precommit(self, context, router_context):
         pass
