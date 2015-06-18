@@ -157,6 +157,17 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
 
+
+            r_ha_s = ha_db.RouterHASetting(router_id=r['id'],
+                                           ha_type='HSRP',
+                                           redundancy_level=2,
+                                           priority=ha_db.DEFAULT_MASTER_PRIORITY,
+                                           probe_connectivity=False,
+                                           probe_target=None,
+                                           probe_interval=5)
+
+            context.session.add(r_ha_s)
+
     def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
 
         router_id, gw_port_id = self._get_logical_global_router_gw_port_id(
@@ -169,6 +180,9 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             self._l3_plugin._update_router_gw_info(context,
                                                    router_id,
                                                    ext_gw_info)
+            router_db = self._l3_plugin._get_router(context, router_id)
+            ha_settings = self._l3_plugin._get_ha_settings_by_router_id(context, router_id)
+            self._l3_plugin._create_ha_group(context, router_id, router_db.gw_port, ha_settings)
         return
 
     def _conditionally_remove_logical_global_port(self, context, ext_nw_id):
