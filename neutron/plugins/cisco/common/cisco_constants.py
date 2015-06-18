@@ -151,6 +151,8 @@ ROUTER_ROLE_LOGICAL_GLOBAL = 'LogicalGlobal'
 ROLE_PREFIX = ROUTER_ROLE_GLOBAL + '-router'
 # Number of characters of hosting device id added to role name
 ROLE_ID_LEN = 17
+# Number of characters of hosting device id used for HA priority calculation
+HA_PRIORITY_ID_LEN = 12
 
 # The status of a Neutron Router created using the
 # Cisco service plugin is one of the following:

@@ -23,6 +23,7 @@ from neutron.plugins.common import constants
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.plugins.cisco.db.l3 import l3_models
+from neutron.plugins.cisco.db.l3 import ha_db
 
 
 
@@ -49,7 +50,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # a hosting device, we must ensure that a global router is running
         # (for add operation) or not running (for remove operation) on that
         # hosting device.
-        self._ensure_logical_global_router_exists(context)
+        logical_global_router_id = self._ensure_logical_global_router_exists(context)
         current = router_context.current
 
         if old_ext_nw_id != new_ext_nw_id:
@@ -64,7 +65,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         if hd_id is None:
             return
         if current['gw_port_id']:
-            self._conditionally_add_global_router(context, hd_id, current)
+            self._conditionally_add_global_router(context, hd_id, current, logical_global_router_id)
         else:
             self._conditionally_remove_global_router(context, hd_id, True)
             # if router is hosted and router has gateway port:
@@ -89,6 +90,9 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         return '%s-%s' % (
             cisco_constants.ROLE_PREFIX,
             hosting_device_id[-cisco_constants.ROLE_ID_LEN:])
+
+    def _global_router_index_from_hosting_device_id(self, hosting_device_id):
+        return int(hosting_device_id[-cisco_constants.HA_PRIORITY_ID_LEN:])
 
     def _get_logical_router_with_ext_nw_count(self, context, ext_nw_id):
         qry = context.session.query(l3_db.Router)
@@ -124,6 +128,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
 
+            return r['id']
+        else:
+            return qry.first().id
+
     def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
         router_id, gw_port_id = self._get_logical_global_router_gw_port_id(context, ext_nw_id)
         if gw_port_id == None:
@@ -139,7 +147,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         return
 
     def _conditionally_add_global_router(self, context, hosting_device_id,
-                                         router):
+                                         router, logical_global_router_id):
         filters = {
             routerhostingdevice.HOSTING_DEVICE_ATTR: [hosting_device_id],
             'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
@@ -159,6 +167,15 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 hosting_device_id, cisco_constants.ROUTER_ROLE_GLOBAL)
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
+
+            priority = ha_db.DEFAULT_MASTER_PRIORITY
+            global_router_idx = self._global_router_index_from_hosting_device_id(hosting_device_id)
+            priority += global_router_idx * ha_db.PRIORITY_INCREASE_STEP
+            rrb_db = ha_db.RouterRedundancyBinding(redundancy_router_id=r['id'],
+                                                   priority=priority,
+                                                   user_router_id=logical_global_router_id)
+            context.session.add(rrb_db)
+
             for ni in self._l3_plugin.get_notifiers(context, [r]):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'])
