@@ -121,7 +121,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                          l3_db.Router.id)
         return qry.count()
 
-    def _get_logical_global_router_gw_port_id(self, context, ext_nw_id):
+    def _get_logical_global_router_gw_port_id(self, context):
         qry = context.session.query(l3_models.RouterHostingDeviceBinding,
                                     l3_db.Router)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role ==
