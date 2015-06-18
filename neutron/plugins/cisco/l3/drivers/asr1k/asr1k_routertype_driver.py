@@ -63,7 +63,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # a hosting device, we must ensure that a global router is running
         # (for add operation) or not running (for remove operation) on that
         # hosting device.
-        logical_global_router_id = self._ensure_logical_global_router_exists(context)
+        self._ensure_logical_global_router_exists(context)
+        logical_global_router_id, lgr_gw_port_id = self._get_logical_global_router_gw_port_id(context)
         current = router_context.current
 
         if old_ext_nw_id != new_ext_nw_id:
@@ -155,10 +156,6 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
-
-            return r['id']
-        else:
-            return qry.first().id
 
     def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
 
