@@ -39,7 +39,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
     # ============== Public functions ==============
 
     def internal_network_added(self, ri, port):
-        gw_ip = port['subnet']['gateway_ip']
+        gw_ip = port['subnets'][0]['gateway_ip']
         if self._is_port_v6(port):
             LOG.debug("Adding IPv6 internal network port: %s for router %s" % (
                       port, ri['id']))
@@ -62,7 +62,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         if self._is_global_router(ri):
             self._remove_sub_interface(ext_gw_port)
         else:
-            ex_gw_ip = ext_gw_port['subnet']['gateway_ip']
+            ex_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
             if (ex_gw_ip and
                     ext_gw_port['device_owner'] == DEVICE_OWNER_ROUTER_GW):
                 # LOG.debug("REMOVE ROUTE PORT %s" % ex_gw_port)
@@ -104,10 +104,12 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         return True
 
     def _get_virtual_gw_port_for_ext_net(self, ri, ex_gw_port):
-        subnet_id = ex_gw_port['subnet']['id']
+        # TODO: Follow up with an approach to handle multiple subnets
+        # associated with a port
+        subnet_id = ex_gw_port['subnets'][0]['id']
         gw_ports = ri.router.get(constants.HA_GW_KEY, [])
         for gw_port in gw_ports:
-            if gw_port['subnet']['id'] == subnet_id:
+            if gw_port['subnets'][0]['id'] == subnet_id:
                 if gw_port['device_owner'] == constants.DEVICE_OWNER_ROUTER_GW:
                     return gw_port
         return None
@@ -130,7 +132,10 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         # Default routes are mapped to VRFs tenant routers). Global Router
         # is not aware of tenant routers with ext network assigned. Thus,
         # default route must be handled per tenant router.
-        ex_gw_ip = ext_gw_port['subnet']['gateway_ip']
+
+        # TODO: Follow up with an approach to handle multiple subnets
+        # associated with a port
+        ex_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         sub_interface = self._get_interface_name_from_hosting_port(ext_gw_port)
         vlan_id = self._get_interface_vlan_from_hosting_port(ext_gw_port)
         if (self._fullsync and
@@ -218,7 +223,9 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         if self._fullsync and router_id in self._existing_cfg_dict['routes']:
             LOG.debug("Default route already exists, skipping")
             return
-        ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
+        # TODO: Follow up with an approach to handle multiple subnets
+        # associated with a port
+        ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
             conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
@@ -230,7 +237,9 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  self.target_asr['name'])
 
     def _remove_default_route(self, ri, ext_gw_port):
-        ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
+        # TODO: Follow up with an approach to handle multiple subnets
+        # associated with a port
+        ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
             conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
@@ -375,4 +384,4 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
 
     def _is_port_v6(self, port):
-        return netaddr.IPNetwork(port['subnet']['cidr']).version == 6
+        return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
