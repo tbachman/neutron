@@ -160,8 +160,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
     def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
 
         router_id, gw_port_id = self._get_logical_global_router_gw_port_id(
-                                                                     context,
-                                                                     ext_nw_id)
+                                                                     context)
 
         LOG.debug("QQQQQQ condition add logical global port: router_id: %s,"
                   " gw_port_id: %s" % (router_id, gw_port_id))
@@ -174,7 +173,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
     def _conditionally_remove_logical_global_port(self, context, ext_nw_id):
         if self._get_logical_router_with_ext_nw_count(context, ext_nw_id) < 1:
-            router_id, gw_port_id = self._get_logical_global_router_gw_port_id(context, ext_nw_id)
+            router_id, gw_port_id = self._get_logical_global_router_gw_port_id(context)
             ext_gw_info = {"network_id": None}
             self._l3_plugin._update_router_gw_info(context,
                                                    router_id,
