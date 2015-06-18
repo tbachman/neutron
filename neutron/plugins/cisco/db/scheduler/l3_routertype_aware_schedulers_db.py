@@ -165,6 +165,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
     def list_active_sync_routers_on_hosting_devices(self, context, host,
                                                     router_ids=None,
                                                     hosting_device_ids=None):
+        LOG.debug("++++ list_active_sync_routers invoked")
         agent = self._get_agent_by_type_and_host(context, AGENT_TYPE_CFG, host)
         if not agent.admin_state_up:
             return []

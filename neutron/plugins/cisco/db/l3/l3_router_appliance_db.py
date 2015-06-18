@@ -605,6 +605,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         Adds information about hosting device as well as trunking.
         """
         # ensure that routers of namespace type are not returned
+        LOG.debug("++++ invoked get_sync_data_ext")
         router_ids = self._get_relevant_router_ids(context, router_ids)
         sync_data = self._get_sync_data(context, router_ids, active)
         for router in sync_data:
