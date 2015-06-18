@@ -550,7 +550,10 @@ class HA_db_mixin(object):
         modified_interfaces = []
         e_context = context.elevated()
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
-        for itfc in router.get(l3_constants.INTERFACE_KEY, []):
+        itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
+        if r_r_b and router['gw_port'] is not None:
+            itfc_list.append(router['gw_port'])
+        for itfc in itfc_list:
             hag = hags[itfc['fixed_ips'][0]['subnet_id']]
             if router['id'] == user_router_id:
                 router_port = self._core_plugin.get_port(e_context,
