@@ -33,8 +33,11 @@ from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.extensions import ha
+from neutron.plugins.cisco.common import cisco_constants
 
 LOG = logging.getLogger(__name__)
+
+import pprint
 
 HA_INFO = 'ha_info'
 HA_GROUP = 'group'
@@ -551,8 +554,13 @@ class HA_db_mixin(object):
         e_context = context.elevated()
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
         itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
-        if r_r_b and router['gw_port'] is not None:
+        if router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL and router['gw_port'] is not None:
             itfc_list.append(router['gw_port'])
+        # LOG.debug("PPPPPPPPPP r_r_b: %s, user_router_id: %s, router_id: %s, router: %s" % (
+        #    pprint.pformat(r_r_b),
+        #    user_router_id,
+        #    router['id'],
+        #    pprint.pformat(router)))
         for itfc in itfc_list:
             hag = hags[itfc['fixed_ips'][0]['subnet_id']]
             if router['id'] == user_router_id:
