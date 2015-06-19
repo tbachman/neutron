@@ -25,11 +25,14 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     csr1kv_routing_driver as csr1kv_driver)
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.extensions import ha
+
 
 LOG = logging.getLogger(__name__)
 
 
 DEVICE_OWNER_ROUTER_GW = constants.DEVICE_OWNER_ROUTER_GW
+HA_INFO = 'ha_info'
 
 
 class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
@@ -177,7 +180,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         # Default routes are mapped to VRFs tenant routers). Global Router
         # is not aware of tenant routers with ext network assigned. Thus,
         # default route must be handled per tenant router.
-        ex_gw_ip = ext_gw_port['subnet']['gateway_ip']
+        ex_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         sub_interface = self._get_interface_name_from_hosting_port(ext_gw_port)
         vlan_id = self._get_interface_vlan_from_hosting_port(ext_gw_port)
         if (self._fullsync and
@@ -186,7 +189,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                       "interface")
         else:
             LOG.debug("Adding IPv4 external network port: %s for tenant "
-                      "router %s" % (ext_gw_port['id'], ri['id']))
+                      "router %s" % (ext_gw_port['id'], ri.id))
             self._create_ext_sub_interface_enable_only(sub_interface)
         if ex_gw_ip:
             # Set default route via this network's gateway ip
@@ -209,7 +212,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         self._do_create_sub_interface(sub_interface, vlan, vrf_name, hsrp_ip,
                                       net_mask, is_external)
         # Always do HSRP
-        self._add_ha_hsrp(ri, port, gw_ip, is_external)
+        #self._add_ha_hsrp(ri, port, gw_ip, is_external)
+        self._add_ha_hsrp(ri, port)
 
     def _do_create_sub_interface(self, sub_interface, vlan_id, vrf_name, ip,
                                  mask, is_external=False):
@@ -233,7 +237,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _set_nat_pool(self, ri, gw_port, is_delete):
         vrf_name = self._get_vrf_name(ri)
-        pool_ip = gw_port['fixed_ips'][0]['ip_address']
+        ha_port = gw_port['ha_info']['ha_port']
+        pool_ip = ha_port['fixed_ips'][0]['ip_address']
         pool_name = "%s_nat_pool" % (vrf_name)
         pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
 
@@ -259,11 +264,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                           "%s"), cse)
 
     def _add_default_route(self, ri, ext_gw_port):
-        router_id = self._get_short_router_id_from_port(ext_gw_port)
+        # router_id = self._get_short_router_id_from_port(ext_gw_port)
         if self._fullsync and router_id in self._existing_cfg_dict['routes']:
             LOG.debug("Default route already exists, skipping")
             return
-        ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
+        ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
             conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
@@ -275,7 +280,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  self.target_asr['name'])
 
     def _remove_default_route(self, ri, ext_gw_port):
-        ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
+        ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
             conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
@@ -287,7 +292,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  self.target_asr['name'])
 
     def _add_ha_hsrp(self, ri, port):
-        priority = ri[ha.DETAILS][ha.PRIORITY]
+        priority = ri.router[ha.DETAILS][ha.PRIORITY]
         port_ha_info = port[HA_INFO]
         group = port_ha_info['group']
         ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
@@ -295,20 +300,6 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             vrf_name = self._get_vrf_name(ri)
             sub_interface = self._get_interface_name_from_hosting_port(port)
             self._do_set_ha_hsrp(sub_interface, vrf_name, priority, group, ip)
-
-    def _add_ha_hsrp(self, ri, port, ip, is_external=False):
-        vlan = self._get_interface_vlan_from_hosting_port(port)
-        # group = vlan
-        if is_external:
-            group = self._get_hsrp_grp_num_from_net_id(port['network_id'])
-        else:
-            group = self._get_hsrp_grp_num_from_ri(ri)
-        vrf_name = self._get_vrf_name(ri)
-        asr_ent = self.target_asr
-        priority = asr_ent['order']
-        sub_interface = self._get_interface_name_from_hosting_port(port)
-        self._do_set_ha_hsrp(sub_interface, vrf_name, priority, group, vlan,
-                             ip, is_external)
 
     def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group, ip):
         if vrf_name not in self._get_vrfs():
@@ -318,8 +309,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
         self._edit_running_config(conf_str, action)
 
-    def _do_set_ha_hsrp(self, subinterface, vrf_name, priority, group, vlan,
-                        ip, is_external=False):
+    def _do_set_ha_hsrp2(self, subinterface, vrf_name, priority, group, vlan,
+                         ip, is_external=False):
         try:
             confstr = asr1k_snippets.REMOVE_INTC_ASR_HSRP_PREEMPT % (
                 subinterface, group)
@@ -420,3 +411,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _is_port_v6(self, port):
         return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
+
+
+    def _get_hsrp_grp_num_from_ri(self, ri):
+        return ri.router['ha_info']['group']
