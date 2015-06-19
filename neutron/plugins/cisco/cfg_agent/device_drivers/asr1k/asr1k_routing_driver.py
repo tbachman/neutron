@@ -14,6 +14,7 @@
 
 import logging
 import netaddr
+import pprint
 
 from neutron.i18n import _LE, _LI
 from neutron.common import constants
@@ -45,9 +46,18 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                       port, ri.id))
             self._create_sub_interface_v6(ri, port, False, gw_ip)
         else:
-            LOG.debug("Adding IPv4 internal network port: %s for router %s" % (
-                      port, ri.id))
-            self._create_sub_interface(ri, port, False, gw_ip)
+            # IPv4 handling
+            if self._is_global_router(ri):
+                # The global router is modeled as the default vrf
+                # in the ASR.  When an external gateway is configured,
+                # a normal "internal" interface is created in the default
+                # vrf that is in the same subnet as the ext-net.
+                LOG.debug("++++ global router handling")
+                self.external_gateway_added(ri, port)
+            else:
+                LOG.debug("Adding IPv4 internal network port: %s"
+                          " for router %s" % (port, ri.id))
+                self._create_sub_interface(ri, port, False, gw_ip)
 
     def external_gateway_added(self, ri, ext_gw_port):
         # global router handles IP assignment, HSRP setup
@@ -92,25 +102,59 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             params = {'key': e}
             raise cfg_exc.DriverExpectedKeyNotSetException(**params)
 
-    def _get_interface_name_from_hosting_port(self, port):
-        asr_ent = self.target_asr
-        vlan = self._get_interface_vlan_from_hosting_port(port)
-        subinterface = asr_ent['target_intf']
-        intfc_name = "%s.%s" % (subinterface, vlan)
-        return intfc_name
+#    def _get_interface_name_from_hosting_port(self, port):
+#        asr_ent = self.target_asr
+#        vlan = self._get_interface_vlan_from_hosting_port(port)
+#        subinterface = asr_ent['target_intf']
+#        intfc_name = "%s.%s" % (subinterface, vlan)
+#        return intfc_name
 
     def _enable_itfcs(self, conn):
         """For ASR we don't need to do anything"""
         return True
 
-    def _get_virtual_gw_port_for_ext_net(self, ri, ex_gw_port):
-        subnet_id = ex_gw_port['subnets'][0]['id']
-        gw_ports = ri.router.get(constants.HA_GW_KEY, [])
-        for gw_port in gw_ports:
-            if gw_port['subnet']['id'] == subnet_id:
-                if gw_port['device_owner'] == constants.DEVICE_OWNER_ROUTER_GW:
-                    return gw_port
-        return None
+    def _get_virtual_gw_port_for_ext_net(self, ri, ext_port):
+        """
+        For the physical gw port (the port connecting to the external network),
+        lookup the virtualized port containing the VIP and return it.
+
+        If none is found, return None
+        """
+        LOG.debug("++++ _get_virtual_gw_port_for_ext_net invoked")
+
+        ret_virt_port = None
+        ha_port = None
+
+        # TODO: Follow up with an approach to handle multiple subnets
+        # associated with a port
+        subnet_id = ext_port['ha_info']['ha_port']['subnets'][0]['id']
+
+        global_router_interfaces = ri.router.get("_interfaces", None)
+
+        # iterate through all the interfaces associated on the
+        # physical global router and find the matching port
+        # associated wit the ext_port
+
+        for interface in global_router_interfaces:
+            ha_info = interface.get("ha_info", None)
+            if (ha_info is not None):
+                ha_port = ha_info.get("ha_port", None)
+
+                if (ha_port is not None):
+                    for subnet in ha_port.get("subnets"):
+                        if subnet['id'] == subnet_id:
+                            if ha_port['device_owner'] == \
+                                constants.DEVICE_OWNER_ROUTER_INTF:
+                                ret_virt_port = ha_port
+                                found = True
+                                break
+
+            if found is True:
+                break
+
+        if (ret_virt_port is None):
+            LOG.debug("++++ returning Null ret_gw_port")
+        return ret_virt_port
 
     def _handle_external_gateway_added_global_router(self, ri, ext_gw_port):
         # TODO(bobmel): Get the HA virtual IP correctly
@@ -119,11 +163,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         sub_itfc_ip = virtual_gw_port['fixed_ips'][0]['ip_address']
         if self._is_port_v6(ext_gw_port):
             LOG.debug("Adding IPv6 external network port: %s for global "
-                      "router %s" % (ext_gw_port['id'], ri['id']))
+                      "router %s" % (ext_gw_port['id'], ri.id))
             self._create_sub_interface_v6(ri, ext_gw_port, True, sub_itfc_ip)
         else:
             LOG.debug("Adding IPv4 external network port: %s for global "
-                      "router %s" % (ext_gw_port['id'], ri['id']))
+                      "router %s" % (ext_gw_port['id'], ri.id))
             self._create_sub_interface(ri, ext_gw_port, True, sub_itfc_ip)
 
     def _handle_external_gateway_added_normal_router(self, ri, ext_gw_port):
@@ -372,7 +416,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         return port['device_owner'] in hsrp_types
 
     def _is_global_router(self, ri):
-        return ri.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
+        # LOG.debug("++++ ri.router = %s " % (pprint.pformat(ri.router)))
+        return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
 
     def _is_port_v6(self, port):
         return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
