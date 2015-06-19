@@ -554,13 +554,15 @@ class HA_db_mixin(object):
         e_context = context.elevated()
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
         itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
-        if r_r_b and router['gw_port'] is not None:
-            if router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL:
-                itfc_list.append(router['gw_port'])
-            else:
+        
+        if r_r_b and 'gw_port' in router:
+            if router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
+               router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
                 ha_port = user_router_db['gw_port']
                 ha_g_info = {HA_PORT: ha_port}
                 router['gw_port'][HA_INFO] = ha_g_info
+        
+        LOG.debug("PPPPPPPPPP logical router: %s" % pprint.pformat(router))
 
         # LOG.debug("PPPPPPPPPP r_r_b: %s, user_router_id: %s, router_id: %s, router: %s" % (
         #    pprint.pformat(r_r_b),

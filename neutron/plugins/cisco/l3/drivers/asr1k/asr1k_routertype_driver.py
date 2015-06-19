@@ -21,6 +21,8 @@ from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.l3 import drivers
 from neutron.plugins.common import constants
+from neutron.common import constants as common_constants
+
 
 from neutron.db import l3_db
 from neutron.db import models_v2
@@ -50,8 +52,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         if current['gw_port_id']:
             ext_nw_id = current['external_gateway_info']['network_id']
-            self._conditionally_add_logical_global_gw_port(context,
-                                                           ext_nw_id)
+            self._conditionally_add_logical_global_ext_nw_port(context,
+                                                               ext_nw_id)
         return
 
     def update_router_precommit(self, context, router_context):
@@ -64,22 +66,23 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # (for add operation) or not running (for remove operation) on that
         # hosting device.
         self._ensure_logical_global_router_exists(context)
-        logical_global_router_id, lgr_gw_port_id = self._get_logical_global_router_gw_port_id(context)
+        logical_global_router = self._get_logical_global_router(context)
+
         current = router_context.current
 
         if old_ext_nw_id != new_ext_nw_id:
             if old_ext_nw_id is not None:
-                self._conditionally_remove_logical_global_port(context,
-                                                               old_ext_nw_id)
+                self._conditionally_remove_logical_global_ext_nw_port(context,
+                                                                      old_ext_nw_id)
             if new_ext_nw_id is not None:
-                self._conditionally_add_logical_global_gw_port(context,
-                                                               new_ext_nw_id)
+                self._conditionally_add_logical_global_ext_nw_port(context,
+                                                                   new_ext_nw_id)
 
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if hd_id is None:
             return
         if current['gw_port_id']:
-            self._conditionally_add_global_router(context, hd_id, current, logical_global_router_id)
+            self._conditionally_add_global_router(context, hd_id, current, logical_global_router.id)
         else:
             self._conditionally_remove_global_router(context, hd_id, True)
             # if router is hosted and router has gateway port:
@@ -95,7 +98,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
     def delete_router_postcommit(self, context, router_context,
                                  old_ext_nw_id=None):
         self._ensure_logical_global_router_exists(context)
-        self._conditionally_remove_logical_global_port(context, old_ext_nw_id)
+        self._conditionally_remove_logical_global_ext_nw_port(context, old_ext_nw_id)
         return
 
     def schedule_router_precommit(self, context, router_context):
@@ -121,7 +124,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                          l3_db.Router.id)
         return qry.count()
 
-    def _get_logical_global_router_gw_port_id(self, context):
+    def _get_logical_global_router(self, context):
         qry = context.session.query(l3_models.RouterHostingDeviceBinding,
                                     l3_db.Router)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role ==
@@ -133,7 +136,13 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                   (pprint.pformat(rhdb_db),
                   pprint.pformat(router_db),
                   qry.count()))
-        return router_db.id, router_db.gw_port_id
+        return router_db
+
+    def _get_global_router_ext_nw_intf(self, context, ext_nw_id, router_id):
+        qry = context.session.query(models_v2.Port)
+        qry = qry.filter(models_v2.Port.device_id == router_id)
+        qry = qry.filter(models_v2.Port.network_id == ext_nw_id)
+        return qry.first()
 
     def _ensure_logical_global_router_exists(self, context):
         qry = context.session.query(l3_models.RouterHostingDeviceBinding)
@@ -157,7 +166,6 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
 
-
             r_ha_s = ha_db.RouterHASetting(router_id=r['id'],
                                            ha_type='HSRP',
                                            redundancy_level=2,
@@ -168,31 +176,30 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
             context.session.add(r_ha_s)
 
-    def _conditionally_add_logical_global_gw_port(self, context, ext_nw_id):
+    def _add_global_router_ext_nw_intf(self, context, ext_nw_id, router_id):
+        global_port = self._l3_plugin._create_hidden_port(context, ext_nw_id, router_id)
+        router_port = l3_db.RouterPort(router_id=router_id,
+                                       port_id=global_port['id'],
+                                       port_type=common_constants.DEVICE_OWNER_ROUTER_INTF)
+        context.session.add(router_port)
+        return global_port
 
-        router_id, gw_port_id = self._get_logical_global_router_gw_port_id(
-                                                                     context)
+    def _conditionally_add_logical_global_ext_nw_port(self, context, ext_nw_id):
+        router = self._get_logical_global_router(context)
+        ext_port = self._get_global_router_ext_nw_intf(context, ext_nw_id, router.id)
 
-        LOG.debug("QQQQQQ condition add logical global port: router_id: %s,"
-                  " gw_port_id: %s" % (router_id, gw_port_id))
-        if gw_port_id is None:
-            ext_gw_info = {"network_id": ext_nw_id}
-            self._l3_plugin._update_router_gw_info(context,
-                                                   router_id,
-                                                   ext_gw_info)
-            router_db = self._l3_plugin._get_router(context, router_id)
-            ha_settings = self._l3_plugin._get_ha_settings_by_router_id(context, router_id)
-            self._l3_plugin._create_ha_group(context, router_id, router_db.gw_port, ha_settings)
-        return
+        LOG.debug("QQQQQQ condition add logical global ext nw port: router_id: %s,"
+                  " ext_port: %s" % (router.id, ext_port))
+        if ext_port is None:
+            new_ext_port = self._add_global_router_ext_nw_intf(context, ext_nw_id, router.id)
+            ha_settings = self._l3_plugin._get_ha_settings_by_router_id(context, router.id)
+            self._l3_plugin._create_ha_group(context, router.id, new_ext_port, ha_settings)
 
-    def _conditionally_remove_logical_global_port(self, context, ext_nw_id):
+    def _conditionally_remove_logical_global_ext_nw_port(self, context, ext_nw_id):
         if self._get_logical_router_with_ext_nw_count(context, ext_nw_id) < 1:
-            router_id, gw_port_id = self._get_logical_global_router_gw_port_id(context)
-            ext_gw_info = {"network_id": None}
-            self._l3_plugin._update_router_gw_info(context,
-                                                   router_id,
-                                                   ext_gw_info)
-        return
+            router = self._get_logical_global_router(context)
+            ext_port = self._get_global_router_ext_nw_intf(context, ext_nw_id, router.id)
+            self._l3_plugin.delete_port(context, ext_port.id)
 
     def _conditionally_add_global_router(self, context, hosting_device_id,
                                          router, logical_global_router_id):
@@ -208,13 +215,15 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 # global routers are not tied to any tenant
                 'tenant_id': '',
                 'name': self._global_router_name(hosting_device_id),
-                'admin_state_up': True,
-                l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
+                'admin_state_up': True}}
+                # l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
             r = self._l3_plugin.do_create_router(
                 context, r_spec, router[routertype.TYPE_ATTR], False, True,
                 hosting_device_id, cisco_constants.ROUTER_ROLE_GLOBAL)
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
+
+            self._add_global_router_ext_nw_intf(context, ext_nw, r['id'])
 
             priority = ha_db.DEFAULT_MASTER_PRIORITY
             global_router_idx = self._global_router_index_from_hosting_device_id(hosting_device_id)
@@ -237,9 +246,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
             self._ensure_logical_global_router_exists(context)
-            logical_global_router_id, lgr_gw_port_id = self._get_logical_global_router_gw_port_id(context)
+            logical_global_router = self._get_logical_global_router(context)
+
             self._conditionally_add_global_router(context, hd_id, current,
-                                                  logical_global_router_id)
+                                                  logical_global_router.id)
 
     def unschedule_router_precommit(self, context, router_context):
         pass
