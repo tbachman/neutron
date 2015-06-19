@@ -36,6 +36,9 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def __init__(self, **device_params):
         super(ASR1kRoutingDriver, self).__init__(**device_params)
+        self._fullsync = False
+        self._deployment_id = "zxy"
+        self.target_asr = {"name": "NULL_ASR_NAME"}
 
     # ============== Public functions ==============
 
@@ -194,8 +197,6 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                 self._add_default_route(ri, ext_gw_port)
 
     def _create_sub_interface(self, ri, port, is_external=False, gw_ip=""):
-        if not self._port_needs_config(port):
-            return
         vlan = self._get_interface_vlan_from_hosting_port(port)
         if (self._fullsync and
                 int(vlan) in self._existing_cfg_dict['interfaces']):
@@ -214,11 +215,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  mask, is_external=False):
         if is_external is True:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_EXTERNAL_WITH_ID % (
-                sub_interface, self._asr_config.deployment_id, vlan_id, ip,
+                sub_interface, self._deployment_id, vlan_id, ip,
                 mask)
         else:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_WITH_ID % (
-                sub_interface, self._asr_config.deployment_id, vlan_id,
+                sub_interface, self._deployment_id, vlan_id,
                 vrf_name, ip, mask)
         self._edit_running_config(conf_str, '%s CREATE_sub_interface' %
                                   self.target_asr['name'])
@@ -296,8 +297,6 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             self._do_set_ha_hsrp(sub_interface, vrf_name, priority, group, ip)
 
     def _add_ha_hsrp(self, ri, port, ip, is_external=False):
-        if not self._port_needs_config(port):
-            return
         vlan = self._get_interface_vlan_from_hosting_port(port)
         # group = vlan
         if is_external:
@@ -354,11 +353,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                    ip_cidr, is_external=False):
         if is_external is True:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_V6_NO_VRF_WITH_ID % (
-                sub_interface, self._asr_config.deployment_id, vlan_id,
+                sub_interface, self._deployment_id, vlan_id,
                 ip_cidr)
         else:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_V6_WITH_ID % (
-                sub_interface, self._asr_config.deployment_id, vlan_id,
+                sub_interface, self._deployment_id, vlan_id,
                 vrf_name, ip_cidr)
         self._edit_running_config(conf_str, '%s CREATE_SUBINTERFACE_V6' %
                                   self.target_asr['name'])
