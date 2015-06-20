@@ -304,8 +304,13 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
     def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group, ip):
         if vrf_name not in self._get_vrfs():
             LOG.error(_LE("VRF %s not present"), vrf_name)
-        conf_str = snippets.SET_INTC_HSRP % (sub_interface, vrf_name, group,
-                                             priority, group, ip)
+        #conf_str = snippets.SET_INTC_HSRP % (sub_interface, vrf_name, group,
+        #                                     priority, group, ip)
+        conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (sub_interface,
+                                                                group, priority,
+                                                                group, ip,
+                                                                group,
+                                                                group, group, group)
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
         self._edit_running_config(conf_str, action)
 
@@ -412,6 +417,54 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
     def _is_port_v6(self, port):
         return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
 
-
     def _get_hsrp_grp_num_from_ri(self, ri):
         return ri.router['ha_info']['group']
+
+    def _nat_rules_for_internet_access(self, acl_no, network,
+                                       netmask,
+                                       inner_itfc,
+                                       outer_itfc,
+                                       vrf_name):
+        """Configure the NAT rules for an internal network.
+
+        Configuring NAT rules in the CSR1kv is a three step process. First
+        create an ACL for the IP range of the internal network. Then enable
+        dynamic source NATing on the external interface of the CSR for this
+        ACL and VRF of the neutron router. Finally enable NAT on the
+        interfaces of the CSR where the internal and external networks are
+        connected.
+
+        :param acl_no: ACL number of the internal network.
+        :param network: internal network
+        :param netmask: netmask of the internal network.
+        :param inner_itfc: (name of) interface connected to the internal
+        network
+        :param outer_itfc: (name of) interface connected to the external
+        network
+        :param vrf_name: VRF corresponding to this virtual router
+        :return: True if configuration succeeded
+        :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
+        CSR1kvConfigException
+        """
+        conn = self._get_connection()
+        # Duplicate ACL creation throws error, so checking
+        # it first. Remove it in future as this is not common in production
+        acl_present = self._check_acl(acl_no, network, netmask)
+        if not acl_present:
+            conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
+            rpc_obj = conn.edit_config(target='running', config=conf_str)
+            self._check_response(rpc_obj, 'CREATE_ACL')
+
+        pool_name = "%s_nat_pool" % (vrf_name)
+        conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
+                                                          vrf_name)
+        rpc_obj = conn.edit_config(target='running', config=conf_str)
+        self._check_response(rpc_obj, 'CREATE_DYN_NAT')
+
+        conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
+        rpc_obj = conn.edit_config(target='running', config=conf_str)
+        self._check_response(rpc_obj, 'SET_NAT')
+
+        conf_str = snippets.SET_NAT % (outer_itfc, 'outside')
+        rpc_obj = conn.edit_config(target='running', config=conf_str)
+        self._check_response(rpc_obj, 'SET_NAT')
