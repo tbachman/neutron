@@ -446,6 +446,17 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self.notify_router_interface_action(context, info, routers, 'remove')
         return info
 
+    def _floating_ip_ha_notification_helper(self, context, router, router_list):
+        ''' only call this after hosting_device_info is added'''
+        if utils.is_extension_supported(self, ha.HA_ALIAS):
+            if router['role'] == cisco_constants.ROUTER_ROLE_LOGICAL:
+                rr_id_list = self._get_redundancy_router_ids(context, router['id'])
+                for rr_id in rr_id_list:
+                    rrouter = self.get_router(context, rr_id)
+                    self.add_type_and_hosting_device_info(context, rrouter)
+                    router_list.append(rrouter)
+
+
     def create_floatingip(
             self, context, floatingip,
             initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
@@ -455,6 +466,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, info['router_id'])]
             self.add_type_and_hosting_device_info(context.elevated(),
                                                   routers[0])
+            self._floating_ip_ha_notification_helper(context, routers[0], routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
@@ -478,6 +490,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             router = self.get_router(context, r_id)
             self.add_type_and_hosting_device_info(context.elevated(), router)
             routers.append(router)
+            self._floating_ip_ha_notification_helper(context, router, routers)
         for ni in self.get_notifiers(context, routers):
             if ni['notifier']:
                 ni['notifier'].routers_updated(context, ni['routers'],
@@ -493,6 +506,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, router_id)]
             self.add_type_and_hosting_device_info(context.elevated(),
                                                   routers[0])
+            self._floating_ip_ha_notification_helper(context, routers[0], routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
@@ -508,6 +522,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self.add_type_and_hosting_device_info(context.elevated(),
                                                       router)
                 routers.append(router)
+                self._floating_ip_ha_notification_helper(context, router, routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
