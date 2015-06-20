@@ -30,10 +30,12 @@ from neutron.common import utils
 from neutron.db import l3_db
 from neutron.db import model_base
 from neutron.db import models_v2
+
 from neutron.extensions import l3
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.db.l3 import l3_models
 
 LOG = logging.getLogger(__name__)
 
@@ -520,6 +522,16 @@ class HA_db_mixin(object):
                 # ensure any router details are removed
                 router_res.pop(ha.DETAILS, None)
 
+    def _get_logical_global_router(self, context):
+        qry = context.session.query(l3_models.RouterHostingDeviceBinding,
+                                    l3_db.Router)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.role ==
+                         cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id ==
+                         l3_db.Router.id)
+        rhdb_db, router_db = qry.first()
+        return router_db
+
     def _populate_ha_information(self, context, router):
         """To be called when router information, including router interface
         list, (for the l3_cfg_agent) has been collected so it is extended
@@ -558,8 +570,14 @@ class HA_db_mixin(object):
         if r_r_b and 'gw_port' in router:
             if router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
                router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
+                
+                logical_global_router = self._get_logical_global_router(context)
+                lgr_hags = self._get_subnet_id_indexed_ha_groups(context, logical_global_router.id)
+
                 ha_port = user_router_db['gw_port']
-                ha_g_info = {HA_PORT: ha_port}
+                hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
+                ha_g_info = {HA_PORT: ha_port,
+                             HA_GROUP: hag.group_identity}
                 router['gw_port'][HA_INFO] = ha_g_info
         
         LOG.debug("PPPPPPPPPP logical router: %s" % pprint.pformat(router))
