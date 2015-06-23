@@ -23,6 +23,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import expression as expr
 from sqlalchemy.sql import false as sql_false
+from sqlalchemy import or_
 
 from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
@@ -879,11 +880,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             l3_models.RouterHostingDeviceBinding.router_type_id !=
             type_to_exclude,
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
-            expr.null(),
-            l3_models.RouterHostingDeviceBinding.role !=
-            cisco_constants.ROUTER_ROLE_LOGICAL,
-            l3_models.RouterHostingDeviceBinding.role !=
-            cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+            expr.null())
+        excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL,
+                          cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
+        query = query.filter(or_(l3_models.RouterHostingDeviceBinding.role == expr.null(),
+                                 ~l3_models.RouterHostingDeviceBinding.role.in_(excluded_roles)))
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
