@@ -582,7 +582,7 @@ class HA_db_mixin(object):
                 hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
                 ha_g_info = {HA_PORT: ha_port,
                              HA_GROUP: hag.group_identity}
-                router['gw_port'][HA_INFO] = ha_g_info
+                router['gw_port']['nat_pool_info'] = ha_g_info
         
         LOG.debug("PPPPPPPPPP logical router: %s" % pprint.pformat(router))
 

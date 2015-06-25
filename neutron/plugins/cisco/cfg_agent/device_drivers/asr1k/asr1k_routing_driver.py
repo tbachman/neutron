@@ -238,7 +238,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _set_nat_pool(self, ri, gw_port, is_delete):
         vrf_name = self._get_vrf_name(ri)
-        ha_port = gw_port['ha_info']['ha_port']
+        ha_port = gw_port['nat_pool_info']['ha_port']
         pool_ip = ha_port['fixed_ips'][0]['ip_address']
         pool_name = "%s_nat_pool" % (vrf_name)
         pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
