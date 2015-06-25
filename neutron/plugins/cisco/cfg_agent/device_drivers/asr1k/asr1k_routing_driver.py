@@ -101,6 +101,10 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
     # ============== Internal "preparation" functions  ==============
 
     def _get_interface_name_from_hosting_port(self, port):
+        """
+        generates the underlying subinterface name for a port
+        e.g. Port-channel10.200
+        """
         try:
             vlan = port['hosting_info']['segmentation_id']
             int_prefix = port['hosting_info']['physical_interface']
@@ -108,13 +112,6 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         except KeyError as e:
             params = {'key': e}
             raise cfg_exc.DriverExpectedKeyNotSetException(**params)
-
-#    def _get_interface_name_from_hosting_port(self, port):
-#        asr_ent = self.target_asr
-#        vlan = self._get_interface_vlan_from_hosting_port(port)
-#        subinterface = asr_ent['target_intf']
-#        intfc_name = "%s.%s" % (subinterface, vlan)
-#        return intfc_name
 
     def _enable_itfcs(self, conn):
         """For ASR we don't need to do anything"""
