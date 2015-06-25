@@ -566,15 +566,19 @@ class HA_db_mixin(object):
         e_context = context.elevated()
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
         itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
-        
-        if r_r_b and 'gw_port' in router:
+
+        if 'gw_port' in router and (r_r_b or router[ha.ENABLED]) :
             if router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
                router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
                 
                 logical_global_router = self._get_logical_global_router(context)
                 lgr_hags = self._get_subnet_id_indexed_ha_groups(context, logical_global_router.id)
 
-                ha_port = user_router_db['gw_port']
+                if r_r_b:
+                    ha_port = user_router_db['gw_port']
+                else:
+                    ha_port = copy.deepcopy(router['gw_port'])
+
                 hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
                 ha_g_info = {HA_PORT: ha_port,
                              HA_GROUP: hag.group_identity}
