@@ -250,8 +250,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     self._make_router_dict(r_hd_b_db.router))
 
             driver.create_router_postcommit(context, router_ctxt)
-        if is_ha and ha_spec[ha.ENABLED] and is_hardware_router is True:
-            auto_schedule = False
+        # if role == cisco_constants.ROUTER_ROLE_LOGICAL:
+        #    auto_schedule = False
         if auto_schedule is True:
             # backlog so this new router gets scheduled asynchronously
             self.backlog_router(context, r_hd_b_db)
@@ -881,8 +881,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             type_to_exclude,
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             expr.null())
-        excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL,
-                          cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
+        # excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL,
+        #                   cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
+        excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
         query = query.filter(or_(l3_models.RouterHostingDeviceBinding.role == expr.null(),
                                  ~l3_models.RouterHostingDeviceBinding.role.in_(excluded_roles)))
         self._backlogged_routers = set(binding.router_id for binding in query)
