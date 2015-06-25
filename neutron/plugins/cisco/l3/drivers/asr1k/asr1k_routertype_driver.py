@@ -84,7 +84,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         if current['gw_port_id']:
             self._conditionally_add_global_router(context, hd_id, current, logical_global_router.id)
         else:
-            self._conditionally_remove_global_router(context, hd_id, True)
+            #self._conditionally_remove_global_router(context, hd_id, True)
+            self._conditionally_remove_global_router_ext_nw(context,
+                                                            hd_id,
+                                                            old_ext_nw_id)
             # if router is hosted and router has gateway port:
             #    if global router does not exist for hosting device of router:
             #        create global router on that hosting device
@@ -132,11 +135,12 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id ==
                          l3_db.Router.id)
         rhdb_db, router_db = qry.first()
-        LOG.debug("ZZZZZZZZZZ rhdb_db: %s, router_db: %s, qry.count(): %s" %
-                  (pprint.pformat(rhdb_db),
-                  pprint.pformat(router_db),
-                  qry.count()))
+        # LOG.debug("ZZZZZZZZZZ rhdb_db: %s, router_db: %s, qry.count(): %s" %
+        #          (pprint.pformat(rhdb_db),
+        #          pprint.pformat(router_db),
+        #          qry.count()))
         return router_db
+
 
     def _get_global_router_ext_nw_intf(self, context, ext_nw_id, router_id):
         qry = context.session.query(models_v2.Port)
@@ -203,14 +207,15 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
     def _conditionally_add_global_router(self, context, hosting_device_id,
                                          router, logical_global_router_id):
+        # Ensure that a global router exists on hosting_device_id
         filters = {
             routerhostingdevice.HOSTING_DEVICE_ATTR: [hosting_device_id],
             'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
         global_routers = self._l3_plugin.get_routers(context,
                                                      filters=filters)
+        ext_nw = router[l3.EXTERNAL_GW_INFO]['network_id']
         if not global_routers:
             # must create global router on hosting device
-            ext_nw = router[l3.EXTERNAL_GW_INFO]['network_id']
             r_spec = {'router': {
                 # global routers are not tied to any tenant
                 'tenant_id': '',
@@ -222,13 +227,24 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 hosting_device_id, cisco_constants.ROUTER_ROLE_GLOBAL)
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
+            global_router = r
+        else:
+            global_router = global_routers[0]
 
-            self._add_global_router_ext_nw_intf(context, ext_nw, r['id'])
+        # Add an ext_nw interface to global_router if none exist
+        ext_port = self._get_global_router_ext_nw_intf(context,
+                                                       ext_nw,
+                                                       global_router['id'])
+        tenant_ext_nw_count = self._get_logical_router_with_ext_nw_count(context,
+                                                                         ext_nw)
+
+        if ext_port is None and tenant_ext_nw_count > 0:
+            self._add_global_router_ext_nw_intf(context, ext_nw, global_router['id'])
 
             priority = ha_db.DEFAULT_MASTER_PRIORITY
             global_router_idx = self._global_router_index_from_hosting_device_id(hosting_device_id)
             priority += global_router_idx * ha_db.PRIORITY_INCREASE_STEP
-            rrb_db = ha_db.RouterRedundancyBinding(redundancy_router_id=r['id'],
+            rrb_db = ha_db.RouterRedundancyBinding(redundancy_router_id=global_router['id'],
                                                    priority=priority,
                                                    user_router_id=logical_global_router_id)
             context.session.add(rrb_db)
@@ -273,6 +289,25 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 self._l3_plugin.delete_router(
                     context, global_routers[0]['id'], unschedule=False)
 
+    def _conditionally_remove_global_router_ext_nw(self, context, hosting_device_id, ext_nw_id):
+        filters = {
+            routerhostingdevice.HOSTING_DEVICE_ATTR: [hosting_device_id],
+            'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
+        global_routers = self._l3_plugin.get_routers(context,
+                                                     filters=filters)
+        if global_routers:
+            global_router = global_routers[0]
+            ext_nw_intf_count = self._get_logical_router_with_ext_nw_count(context,
+                                                                           ext_nw_id)
+            if ext_nw_intf_count < 1:
+                global_ext_nw_intf = self._get_global_router_ext_nw_intf(context,
+                                                                         ext_nw_id,
+                                                                         global_router['id'])
+                if global_ext_nw_intf:
+                    self._l3_plugin.delete_port(context, global_ext_nw_intf.id)
+
+        
+
     def unschedule_router_postcommit(self, context, router_context):
         # When there is no longer any router with external gateway hosted on
         # a hosting device, the global router on that hosting device can also
@@ -280,7 +315,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
-            self._conditionally_remove_global_router(context, hd_id)
+            pass
+            # self._conditionally_remove_global_router(context, hd_id)
 
     def add_router_interface_precommit(self, context, r_port_context):
         pass
