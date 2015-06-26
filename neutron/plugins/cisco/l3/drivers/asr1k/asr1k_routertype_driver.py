@@ -50,6 +50,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         """
         self._ensure_logical_global_router_exists(context)
         current = router_context.current
+        LOG.debug("XXXXXXXXXX current: %s" % current)
         if current['gw_port_id']:
             ext_nw_id = current['external_gateway_info']['network_id']
             self._conditionally_add_logical_global_ext_nw_port(context,
@@ -255,8 +256,18 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             self._l3_plugin.add_type_and_hosting_device_info(
                 context.elevated(), r)
             global_router = r
+
+            priority = ha_db.DEFAULT_MASTER_PRIORITY
+            global_router_idx = self._global_router_index_from_hosting_device_id(hosting_device_id)
+            priority += global_router_idx * ha_db.PRIORITY_INCREASE_STEP
+            rrb_db = ha_db.RouterRedundancyBinding(redundancy_router_id=global_router['id'],
+                                                   priority=priority,
+                                                   user_router_id=logical_global_router_id)
+            context.session.add(rrb_db)
         else:
             global_router = global_routers[0]
+            self._l3_plugin.add_type_and_hosting_device_info(
+                context.elevated(), global_router)
 
         # Add an ext_nw interface to global_router if none exist
         ext_port = self._get_global_router_ext_nw_intf(context,
@@ -268,15 +279,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                                          tenant_ext_nw_count))
 
         if ext_port is None and tenant_ext_nw_count > 0:
+            LOG.error("AAAAAAAAAAAAAAA TRACE global_router: %s" % global_router)
             self._add_global_router_ext_nw_intf(context, ext_nw, global_router['id'])
-
-            priority = ha_db.DEFAULT_MASTER_PRIORITY
-            global_router_idx = self._global_router_index_from_hosting_device_id(hosting_device_id)
-            priority += global_router_idx * ha_db.PRIORITY_INCREASE_STEP
-            rrb_db = ha_db.RouterRedundancyBinding(redundancy_router_id=global_router['id'],
-                                                   priority=priority,
-                                                   user_router_id=logical_global_router_id)
-            context.session.add(rrb_db)
 
             for ni in self._l3_plugin.get_notifiers(context, [global_router]):
                 if ni['notifier']:
@@ -288,6 +292,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # also run on the hosting device (outside of any VRF) to enable the
         # connectivity.
         current = router_context.current
+        LOG.error("ZZZZZ schedule_router_post_commit: %s" % current)
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
             self._ensure_logical_global_router_exists(context)
