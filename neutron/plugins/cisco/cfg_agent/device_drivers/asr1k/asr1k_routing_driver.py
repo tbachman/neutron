@@ -238,7 +238,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         ha_port = gw_port['nat_pool_info']['ha_port']
         pool_ip = ha_port['fixed_ips'][0]['ip_address']
         pool_name = "%s_nat_pool" % (vrf_name)
-        pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
+        pool_net = netaddr.IPNetwork(gw_port['subnets'][0]['cidr'])
 
         if self._fullsync and pool_ip in self._existing_cfg_dict['pools']:
             LOG.info(_LI("Pool already exists, skipping"))
@@ -250,20 +250,26 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             if is_delete:
                 conf_str = asr1k_snippets.DELETE_NAT_POOL % (
                     pool_name, pool_ip, pool_ip, pool_net.netmask)
-                self._edit_running_config(conf_str, '%s DELETE_NAT_POOL' %
-                                          self.target_asr['name'])
+                #self._edit_running_config(conf_str, '%s DELETE_NAT_POOL' %
+                #                          self.target_asr['name'])
+                # TODO: update so that hosting device name is passed down
+                self._edit_running_config(conf_str, 'DELETE_NAT_POOL')
+
             else:
                 conf_str = asr1k_snippets.CREATE_NAT_POOL % (
                     pool_name, pool_ip, pool_ip, pool_net.netmask)
-                self._edit_running_config(conf_str, '%s CREATE_NAT_POOL' %
-                                          self.target_asr['name'])
+                #self._edit_running_config(conf_str, '%s CREATE_NAT_POOL' %
+                #                          self.target_asr['name'])
+                # TODO: update so that hosting device name is passed down
+                self._edit_running_config(conf_str, 'CREATE_NAT_POOL')
         except cfg_exc.CSR1kvConfigException as cse:
             LOG.error(_LE("Temporary disable NAT_POOL exception handling: "
                           "%s"), cse)
 
     def _add_default_route(self, ri, ext_gw_port):
         # router_id = self._get_short_router_id_from_port(ext_gw_port)
-        if self._fullsync and router_id in self._existing_cfg_dict['routes']:
+        if self._fullsync and \
+           ri.router_id in self._existing_cfg_dict['routes']:
             LOG.debug("Default route already exists, skipping")
             return
         ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
@@ -298,18 +304,23 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         if ip and group and priority:
             vrf_name = self._get_vrf_name(ri)
             sub_interface = self._get_interface_name_from_hosting_port(port)
-            self._do_set_ha_hsrp(sub_interface, vrf_name, priority, group, ip, vlan)
+            self._do_set_ha_hsrp(sub_interface, vrf_name,
+                                 priority, group, ip, vlan)
 
-    def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group, ip, vlan):
+    def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group,
+                        ip, vlan):
+
         if vrf_name not in self._get_vrfs():
             LOG.error(_LE("VRF %s not present"), vrf_name)
         #conf_str = snippets.SET_INTC_HSRP % (sub_interface, vrf_name, group,
         #                                     priority, group, ip)
-        conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (sub_interface,
-                                                                group, priority,
-                                                                group, ip,
-                                                                group,
-                                                                group, group, vlan)
+        conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % \
+            (sub_interface,
+             group, priority,
+             group, ip,
+             group,
+             group, group, vlan)
+
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
         self._edit_running_config(conf_str, action)
 
