@@ -40,6 +40,7 @@ from neutron.plugins.cisco.db.l3 import l3_models
 LOG = logging.getLogger(__name__)
 
 import pprint
+import rpdb
 
 HA_INFO = 'ha_info'
 HA_GROUP = 'group'
@@ -267,16 +268,36 @@ class HA_db_mixin(object):
         updated in DB.
         """
         current = self.get_router(context, router_id)
+        LOG.debug("++++ router = %s " % (pprint.pformat(router)))
+        LOG.debug("++++ current (router) = %s " % (pprint.pformat(current)))
+
         requested_ha_details = router.pop(ha.DETAILS, {})
         # if ha_details are given then ha is assumed to be enabled even if
         # it is not explicitly specified
         requested_ha_enabled = router.pop(
             ha.ENABLED, True if requested_ha_details else False)
+
+        if len(requested_ha_details) == 0 and requested_ha_enabled is False:
+            # try again with current db
+            requested_ha_details = current.get(ha.DETAILS, {})
+            requested_ha_enabled = \
+                current.get(ha.ENABLED, False)
+
         res = {}
         # Note: must check for 'is True' as None implies attribute not given
         if requested_ha_enabled is True or current.get(ha.ENABLED, False):
-            has_gateway = router.get(EXTERNAL_GW_INFO,
-                                     current[EXTERNAL_GW_INFO] is not None)
+            # has_gateway = router.get(EXTERNAL_GW_INFO,
+            #                         current[EXTERNAL_GW_INFO] is not None)
+            has_gateway = router.get(EXTERNAL_GW_INFO, None)
+
+            if (has_gateway is not None and len(has_gateway) == 0):
+                has_gateway = current[EXTERNAL_GW_INFO]
+            elif (has_gateway is None):
+                has_gateway = current[EXTERNAL_GW_INFO]
+
+            LOG.debug("++++ has_gateway = %s" %
+                      (pprint.pformat(has_gateway)))
+
             if not cfg.CONF.ha.ha_support_enabled:
                 raise ha.HADisabled()
             elif not has_gateway:

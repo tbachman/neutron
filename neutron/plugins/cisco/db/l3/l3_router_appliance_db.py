@@ -53,7 +53,7 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 import pprint
-# import rpdb
+import rpdb
 
 AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
 AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
@@ -293,6 +293,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).update_router(
                 context, router_id, router))
         if is_ha:
+            # rpdb.set_trace(addr="127.0.0.1", port=4444)
             # process any HA
             self._update_redundancy_routers(context, router_updated, router,
                                             req_ha_settings, old_router_db)

@@ -31,6 +31,7 @@ from neutron.plugins.cisco.cfg_agent import cfg_exceptions
 from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
+from neutron.plugins.cisco.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
@@ -84,6 +85,11 @@ class RouterInfo(object):
 
     def router_name(self):
         return N_ROUTER_PREFIX + self.router_id
+
+    @property
+    def ha_enabled(self):
+        ha_enabled = self.router.get(ha.ENABLED, False)
+        return ha_enabled
 
 
 class CiscoRoutingPluginApi(object):
