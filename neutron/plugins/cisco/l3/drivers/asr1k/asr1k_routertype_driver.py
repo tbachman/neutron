@@ -81,13 +81,23 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if hd_id is None:
             return
-        if current['gw_port_id']:
-            self._conditionally_add_global_router(context, hd_id, current, logical_global_router.id)
-        else:
-            #self._conditionally_remove_global_router(context, hd_id, True)
-            self._conditionally_remove_global_router_ext_nw(context,
-                                                            hd_id,
-                                                            old_ext_nw_id)
+
+        if old_ext_nw_id != new_ext_nw_id:
+            if old_ext_nw_id is not None:
+                self._conditionally_remove_global_router_ext_nw(context,
+                                                                hd_id,
+                                                                old_ext_nw_id)
+            if new_ext_nw_id is not None:
+                self._conditionally_add_global_router(context,
+                                                      hd_id,
+                                                      current,
+                                                      logical_global_router.id)
+
+        # if current['gw_port_id']:
+        #     self._conditionally_add_global_router(context, hd_id, current, logical_global_router.id)
+        # else:
+            # self._conditionally_remove_global_router(context, hd_id, True)
+
             # if router is hosted and router has gateway port:
             #    if global router does not exist for hosting device of router:
             #        create global router on that hosting device
