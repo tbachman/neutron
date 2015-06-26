@@ -70,6 +70,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
 
         current = router_context.current
 
+
         if old_ext_nw_id != new_ext_nw_id:
             if old_ext_nw_id is not None:
                 self._conditionally_remove_logical_global_ext_nw_port(context,
@@ -112,6 +113,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                  old_ext_nw_id=None):
         self._ensure_logical_global_router_exists(context)
         self._conditionally_remove_logical_global_ext_nw_port(context, old_ext_nw_id)
+        self._conditionally_remove_global_router_ext_nw(context, None, old_ext_nw_id)
         return
 
     def schedule_router_precommit(self, context, router_context):
@@ -138,6 +140,20 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         return qry.count()
 
     def _get_logical_global_router(self, context):
+        qry = context.session.query(l3_models.RouterHostingDeviceBinding,
+                                    l3_db.Router)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.role ==
+                         cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL)
+        qry = qry.filter(l3_models.RouterHostingDeviceBinding.router_id ==
+                         l3_db.Router.id)
+        rhdb_db, router_db = qry.first()
+        # LOG.debug("ZZZZZZZZZZ rhdb_db: %s, router_db: %s, qry.count(): %s" %
+        #          (pprint.pformat(rhdb_db),
+        #          pprint.pformat(router_db),
+        #          qry.count()))
+        return router_db
+
+    def _get_global_routers(self, context):
         qry = context.session.query(l3_models.RouterHostingDeviceBinding,
                                     l3_db.Router)
         qry = qry.filter(l3_models.RouterHostingDeviceBinding.role ==
@@ -213,7 +229,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         if self._get_logical_router_with_ext_nw_count(context, ext_nw_id) < 1:
             router = self._get_logical_global_router(context)
             ext_port = self._get_global_router_ext_nw_intf(context, ext_nw_id, router.id)
-            self._l3_plugin.delete_port(context, ext_port.id)
+            self._l3_plugin._delete_ha_group(context, ext_port.id)
+            self._l3_plugin._core_plugin.delete_port(context, ext_port.id, l3_port_check=False)
 
     def _conditionally_add_global_router(self, context, hosting_device_id,
                                          router, logical_global_router_id):
@@ -247,6 +264,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                                        global_router['id'])
         tenant_ext_nw_count = self._get_logical_router_with_ext_nw_count(context,
                                                                          ext_nw)
+        LOG.error("AAAA ext_port: %s, tenant_enc: %s" % (ext_port,
+                                                         tenant_ext_nw_count))
 
         if ext_port is None and tenant_ext_nw_count > 0:
             self._add_global_router_ext_nw_intf(context, ext_nw, global_router['id'])
@@ -259,7 +278,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                                    user_router_id=logical_global_router_id)
             context.session.add(rrb_db)
 
-            for ni in self._l3_plugin.get_notifiers(context, [r]):
+            for ni in self._l3_plugin.get_notifiers(context, [global_router]):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'])
 
@@ -300,21 +319,30 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                     context, global_routers[0]['id'], unschedule=False)
 
     def _conditionally_remove_global_router_ext_nw(self, context, hosting_device_id, ext_nw_id):
-        filters = {
-            routerhostingdevice.HOSTING_DEVICE_ATTR: [hosting_device_id],
-            'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
+        if hosting_device_id:
+            filters = {
+                routerhostingdevice.HOSTING_DEVICE_ATTR: [hosting_device_id],
+                'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
+        else:
+            filters = {'role': [cisco_constants.ROUTER_ROLE_GLOBAL]}
+
         global_routers = self._l3_plugin.get_routers(context,
                                                      filters=filters)
-        if global_routers:
-            global_router = global_routers[0]
-            ext_nw_intf_count = self._get_logical_router_with_ext_nw_count(context,
-                                                                           ext_nw_id)
-            if ext_nw_intf_count < 1:
+
+        ext_nw_intf_count = self._get_logical_router_with_ext_nw_count(context,
+                                                                       ext_nw_id)
+        LOG.error("AAAA ext_nw_intf_count: %s" % ext_nw_intf_count)
+        if ext_nw_intf_count < 1:
+            LOG.error("AAAA global routers: %s" % global_routers)
+            for global_router in global_routers:
+                # global_router = global_routers[0]
+                
                 global_ext_nw_intf = self._get_global_router_ext_nw_intf(context,
                                                                          ext_nw_id,
                                                                          global_router['id'])
+                LOG.error("AAAA g_ext_nw_intf: %s" % global_ext_nw_intf)
                 if global_ext_nw_intf:
-                    self._l3_plugin.delete_port(context, global_ext_nw_intf.id)
+                    self._l3_plugin._core_plugin.delete_port(context, global_ext_nw_intf.id, l3_port_check=False)
 
         
 
