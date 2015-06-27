@@ -378,7 +378,11 @@ class HA_db_mixin(object):
                                              ha_settings_db, False)
             # Notify redundancy routers about changes
             for r_id in rr_ids:
-                self.update_router(context.elevated(), r_id, {'router': {}})
+                # original router update request is supplied
+                self.update_router(context.elevated(),
+                                   r_id,
+                                   update_specification)
+
         # Ensure we get latest state from DB
         context.session.expire(updated_router_db)
         self._extend_router_dict_ha(updated_router, updated_router_db)
