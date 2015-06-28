@@ -23,7 +23,7 @@ CREATE_SUBINTERFACE_WITH_ID = """
 <config>
         <cli-config-data>
             <cmd>interface %s</cmd>
-            <cmd>description OPENSTACK_NEUTRON_INTF</cmd>
+            <cmd>description OPENSTACK_NEUTRON-%s_INTF</cmd>
             <cmd>encapsulation dot1Q %s</cmd>
             <cmd>vrf forwarding %s</cmd>
             <cmd>ip address %s %s</cmd>
@@ -41,7 +41,7 @@ CREATE_SUBINTERFACE_EXTERNAL_WITH_ID = """
 <config>
         <cli-config-data>
             <cmd>interface %s</cmd>
-            <cmd>description OPENSTACK_NEUTRON_INTF</cmd>
+            <cmd>description OPENSTACK_NEUTRON-%s_INTF</cmd>
             <cmd>encapsulation dot1Q %s</cmd>
             <cmd>ip address %s %s</cmd>
         </cli-config-data>
@@ -86,7 +86,7 @@ SET_INTC_ASR_HSRP_EXTERNAL = """
             <cmd>standby %s priority %s</cmd>
             <cmd>standby %s ip %s</cmd>
             <cmd>standby %s timers 1 3</cmd>
-            <cmd>standby %s name neutron-hsrp-%s-%s</cmd>
+            <cmd>standby %s name neutron-hsrp-grp-%s-%s</cmd>
         </cli-config-data>
 </config>
 """
@@ -96,12 +96,12 @@ SET_INTC_ASR_HSRP_EXTERNAL = """
 # Syntax: ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> redundancy <hsrp group name>
 # eg: $(config)ip nat inside source static 192.168.0.1 121.158.0.5
-#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-305
+#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-grp-305
 # ==========================================================================
 SET_STATIC_SRC_TRL_NO_VRF_MATCH = """
 <config>
         <cli-config-data>
-            <cmd>ip nat inside source static %s %s vrf %s redundancy neutron-hsrp-%s-%s</cmd> # NOQA
+            <cmd>ip nat inside source static %s %s vrf %s redundancy neutron-hsrp-grp-%s-%s</cmd>
         </cli-config-data>
 </config>
 """
@@ -111,12 +111,12 @@ SET_STATIC_SRC_TRL_NO_VRF_MATCH = """
 # Syntax: no ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> redundancy <hsrp group name>
 # eg: $(config)no ip nat inside source static 192.168.0.1 121.158.0.5
-#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-305
+#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-grp-305
 # ==========================================================================
 REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH = """
 <config>
         <cli-config-data>
-            <cmd>no ip nat inside source static %s %s vrf %s redundancy neutron-hsrp-%s-%s</cmd> # NOQA
+            <cmd>no ip nat inside source static %s %s vrf %s redundancy neutron-hsrp-grp-%s-%s</cmd>
         </cli-config-data>
 </config>
 """
@@ -233,7 +233,7 @@ SET_INTC_ASR_HSRP_V6 = """
             <cmd>standby %s preempt</cmd>
             <cmd>standby %s authentication OPEN</cmd>
             <cmd>standby %s timers 1 3</cmd>
-            <cmd>standby %s name neutron-hsrp-%s-%s</cmd>
+            <cmd>standby %s name neutron-hsrp-grp-%s</cmd>
         </cli-config-data>
 </config>
 """

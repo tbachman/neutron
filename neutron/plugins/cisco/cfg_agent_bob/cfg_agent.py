@@ -74,13 +74,6 @@ class CiscoDeviceManagementApi(object):
         cctxt = self.client.prepare()
         return cctxt.call(context, 'register_for_duty', host=self.host)
 
-    def get_hosting_devices_for_agent(self, context):
-        """Get a list of hosting devices assigned to this agent."""
-        cctxt = self.client.prepare()
-        return cctxt.call(context,
-                          'get_hosting_devices_for_agent',
-                          host=self.host)
-
 
 class CiscoCfgAgent(manager.Manager):
     """Cisco Cfg Agent.
@@ -242,11 +235,10 @@ class CiscoCfgAgent(manager.Manager):
 
     def hosting_devices_assigned_to_cfg_agent(self, context, payload):
         """Deal with hosting devices assigned to this config agent."""
-        LOG.debug("ZZZZZ Got hosting device assigned, payload: %s" % payload)
         try:
             if payload['hosting_device_ids']:
                 #TODO(hareeshp): implement assignment of hosting devices
-                self.routing_service_helper.fullsync = True
+                pass
         except KeyError as e:
             LOG.error(_LE("Invalid payload format for received RPC message "
                           "`hosting_devices_assigned_to_cfg_agent`. Error is "
@@ -276,11 +268,6 @@ class CiscoCfgAgent(manager.Manager):
                         "`hosting_devices_removed`. Error is %(error)s. "
                         "Payload is %(payload)s"),
                       {'error': e, 'payload': payload})
-
-    def get_assigned_hosting_devices(self):
-        context = n_context.get_admin_context_without_session()
-        res = self.devmgr_rpc.get_hosting_devices_for_agent(context)
-        return res
 
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):

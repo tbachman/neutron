@@ -13,15 +13,12 @@
 #    under the License.
 
 import collections
-import copy
 import eventlet
 import netaddr
-import pprint
 
 from oslo_log import log as logging
 import oslo_messaging
 from oslo_utils import excutils
-
 
 from neutron.common import constants as l3_constants
 from neutron.common import rpc as n_rpc
@@ -30,27 +27,13 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.i18n import _LE, _LI, _LW
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
-    import asr1k_cfg_syncer
 from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
-from neutron.plugins.cisco.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
 N_ROUTER_PREFIX = 'nrouter-'
-
-
-TEMP_ASR_ROUTER_TYPE = {
-    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers."
-                        "asr1k.asr1k_routing_driver.ASR1kRoutingDriver",
-    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent."
-                                "service_helpers.routing_svc_helper."
-                                "RoutingServiceHelper",
-    "id": "00000000-0000-0000-0000-000000000003",
-    "name": "Hardware_Neutron_router"
-}
 
 
 class RouterInfo(object):
@@ -101,11 +84,6 @@ class RouterInfo(object):
     def router_name(self):
         return N_ROUTER_PREFIX + self.router_id
 
-    @property
-    def ha_enabled(self):
-        ha_enabled = self.router.get(ha.ENABLED, False)
-        return ha_enabled
-
 
 class CiscoRoutingPluginApi(object):
     """RoutingServiceHelper(Agent) side of the  routing RPC API."""
@@ -127,13 +105,6 @@ class CiscoRoutingPluginApi(object):
         return cctxt.call(context, 'cfg_sync_routers', host=self.host,
                           router_ids=router_ids, hosting_device_ids=hd_ids)
 
-    def get_hardware_router_type_id(self, context):
-        """Get the ID for the ASR1k hardware router type."""
-        cctxt = self.client.prepare()
-        return cctxt.call(context,
-                          'get_hardware_router_type_id',
-                          host=self.host)
-
 
 class RoutingServiceHelper(object):
 
@@ -151,9 +122,6 @@ class RoutingServiceHelper(object):
         self.sync_devices = set()
         self.fullsync = True
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
-
-        self.hardware_router_type = None
-        self.hardware_router_type_id = None
 
         self._setup_rpc()
 
@@ -201,7 +169,6 @@ class RoutingServiceHelper(object):
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
             LOG.debug("Routing service processing started")
-            self._init_hardware_router_type()
             resources = {}
             routers = []
             removed_routers = []
@@ -211,19 +178,16 @@ class RoutingServiceHelper(object):
                 # Setting all_routers_flag and clear the global full_sync flag
                 all_routers_flag = True
                 self.fullsync = False
-                self.router_info = {}
                 self.updated_routers.clear()
                 self.removed_routers.clear()
                 self.sync_devices.clear()
                 routers = self._fetch_router_info(all_routers=True)
-                self._cleanup_invalid_cfg(routers)
             else:
                 if self.updated_routers:
                     router_ids = list(self.updated_routers)
                     LOG.debug("Updated routers:%s", router_ids)
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
-                    LOG.debug("++++ routers = %s " % (pprint.pformat(routers)))
                 if device_ids:
                     LOG.debug("Adding new devices:%s", device_ids)
                     self.sync_devices = set(device_ids) | self.sync_devices
@@ -258,8 +222,6 @@ class RoutingServiceHelper(object):
             for device_id, resources in hosting_devices.items():
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
-                if routers is None:
-                    routers = []
                 pool.spawn_n(self._process_routers, routers, removed_routers,
                              device_id, all_routers=all_routers_flag)
             pool.waitall()
@@ -308,33 +270,6 @@ class RoutingServiceHelper(object):
         return configurations
 
     # Routing service helper internal methods
-
-    def _init_hardware_router_type(self):
-        if self.hardware_router_type_id is None:
-            self.hardware_router_type_id = \
-                self.plugin_rpc.get_hardware_router_type_id(self.context)
-
-            self.hardware_router_type = copy.deepcopy(TEMP_ASR_ROUTER_TYPE)
-            self.hardware_router_type['id'] = self.hardware_router_type_id
-
-    def _cleanup_invalid_cfg(self, routers):
-        cfg_syncers = []
-        hds = self.cfg_agent.get_assigned_hosting_devices()
-        LOG.debug("HOSTING DEVICES: %s" % hds)
-        for hd in hds['hosting_devices']:
-            if hd['template_id'] != self.hardware_router_type_id:
-                continue
-            temp_res = {"id": hd['id'],
-                        "hosting_device": hd,
-                        "router_type": self.hardware_router_type}
-            driver = self._drivermgr.set_driver(temp_res)
-            cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers,
-                                                       driver,
-                                                       hd)
-            cfg_syncers.append(cfg_syncer)
-
-        for cfg_syncer in cfg_syncers:
-            cfg_syncer.delete_invalid_cfg()
 
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):
@@ -406,17 +341,6 @@ class RoutingServiceHelper(object):
                 hosting_devices[hd_id].setdefault(key, []).append(r)
         return hosting_devices
 
-    def _adjust_router_list(self, routers):
-        """
-        Pushes 'Global' routers to the end of
-        the router list, so that deleting default route
-        occurs before deletion of external nw subintf
-        """
-        for r in routers:
-            if r['role'] == c_constants.ROUTER_ROLE_GLOBAL:
-                routers.remove(r)
-                routers.append(r)
-
     def _process_routers(self, routers, removed_routers,
                          device_id=None, all_routers=False):
         """Process the set of routers.
@@ -449,26 +373,7 @@ class RoutingServiceHelper(object):
                 prev_router_ids = set(self.router_info) & set(
                     [router['id'] for router in routers])
             cur_router_ids = set()
-            deleted_id_list = []
-
             for r in routers:
-                if not r['admin_state_up']:
-                        continue
-                cur_router_ids.add(r['id'])
-
-            # identify and remove routers that no longer exist
-            for router_id in prev_router_ids - cur_router_ids:
-                self._router_removed(router_id)
-                deleted_id_list.append(router_id)
-            if removed_routers:
-                for router in removed_routers:
-                    self._router_removed(router['id'])
-                    deleted_id_list.append(router['id'])
-
-            self._adjust_router_list(routers)
-            for r in routers:
-                if r['id'] in deleted_id_list:
-                    continue
                 try:
                     if not r['admin_state_up']:
                         continue
@@ -492,6 +397,12 @@ class RoutingServiceHelper(object):
                                     "Error is %(e)s"), {'id': r['id'], 'e': e})
                     self.updated_routers.update([r['id']])
                     continue
+            # identify and remove routers that no longer exist
+            for router_id in prev_router_ids - cur_router_ids:
+                self._router_removed(router_id)
+            if removed_routers:
+                for router in removed_routers:
+                    self._router_removed(router['id'])
         except Exception:
             LOG.exception(_LE("Exception in processing routers on device:%s"),
                           device_id)
@@ -514,14 +425,9 @@ class RoutingServiceHelper(object):
         if the configuration operation fails.
         """
         try:
-            LOG.debug("++++ ri = %s " % (pprint.pformat(ri)))
             ex_gw_port = ri.router.get('gw_port')
-            LOG.debug("++++ ex_gw_port = %s " % (pprint.pformat(ex_gw_port)))
             ri.ha_info = ri.router.get('ha_info', None)
             internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
-
-            LOG.debug("++++ internal ports = %s " %
-                      (pprint.pformat(internal_ports)))
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
             current_port_ids = set([p['id'] for p in internal_ports
                                     if p['admin_state_up']])
@@ -530,9 +436,6 @@ class RoutingServiceHelper(object):
                          p['id'] in (current_port_ids - existing_port_ids)]
             old_ports = [p for p in ri.internal_ports
                          if p['id'] not in current_port_ids]
-
-            LOG.debug("++++ new_ports = %s " % (pprint.pformat(new_ports)))
-            LOG.debug("++++ old_ports = %s " % (pprint.pformat(old_ports)))
 
             for p in new_ports:
                 self._set_subnet_info(p)
@@ -654,8 +557,7 @@ class RoutingServiceHelper(object):
             if deconfigure:
                 self._process_router(ri)
                 driver = self._drivermgr.get_driver(router_id)
-                #driver.router_removed(ri, deconfigure)
-                driver.router_removed(ri)
+                driver.router_removed(ri, deconfigure)
                 self._drivermgr.remove_driver(router_id)
             del self.router_info[router_id]
             self.removed_routers.discard(router_id)
@@ -679,7 +581,7 @@ class RoutingServiceHelper(object):
         driver = self._drivermgr.get_driver(ri.id)
         driver.internal_network_removed(ri, port)
         if ri.snat_enabled and ex_gw_port:
-            driver.disable_internal_network_NAT(ri, port, ex_gw_port, True)
+            driver.disable_internal_network_NAT(ri, port, ex_gw_port)
 
     def _external_gateway_added(self, ri, ex_gw_port):
         driver = self._drivermgr.get_driver(ri.id)
@@ -741,19 +643,5 @@ class RoutingServiceHelper(object):
         if len(ips) > 1:
             LOG.error(_LE("Ignoring multiple IPs on router port %s"),
                       port['id'])
-
-        port_subnets = port['subnets']
-
-        num_subnets_on_port = len(port_subnets)
-        LOG.debug("number of subnets associated with port = %d" %
-                  num_subnets_on_port)
-        # TODO(What should we do if multiple subnets are somehow associated)
-        # TODO(with a port?)
-        if (num_subnets_on_port > 1):
-            LOG.error(_LE("Ignoring port with multiple subnets associated"))
-            raise Exception(("Multiple subnets configured on port.  %s") %
-                            pprint.pformat(port_subnets))
-        else:
-            subnet = port_subnets[0]
-            prefixlen = netaddr.IPNetwork(subnet['cidr']).prefixlen
-            port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
+        prefixlen = netaddr.IPNetwork(port['subnet']['cidr']).prefixlen
+        port['ip_cidr'] = "%s/%s" % (ips[0]['ip_address'], prefixlen)
