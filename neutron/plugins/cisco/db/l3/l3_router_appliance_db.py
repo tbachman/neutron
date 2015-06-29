@@ -289,20 +289,31 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 p_drv.teardown_logical_port_connectivity(
                     e_context, old_router_db.gw_port,
                     r_hd_binding_db.hosting_device_id)
+
+        if is_ha and req_ha_settings.get(ha.ENABLED, False):
+            redundancy_router_req = copy.deepcopy(router)
+        else:
+            redundancy_router_req = router
+
         router_updated = (
             super(L3RouterApplianceDBMixin, self).update_router(
                 context, router_id, router))
         if is_ha:
-            # rpdb.set_trace(addr="127.0.0.1", port=4444)
             # process any HA
-            self._update_redundancy_routers(context, router_updated, router,
+            self._update_redundancy_routers(context, router_updated,
+                                            redundancy_router_req,
                                             req_ha_settings, old_router_db)
+
         routers = [copy.deepcopy(router_updated)]
         driver = self._get_router_type_driver(context,
                                               r_hd_binding_db.router_type_id)
         if driver:
             router_ctxt = driver_context.RouterContext(routers[0], old_router)
-            driver.update_router_postcommit(context, router_ctxt, old_ext_gw, new_ext_gw)
+            driver.update_router_postcommit(context,
+                                            router_ctxt,
+                                            old_ext_gw,
+                                            new_ext_gw)
+
         self.add_type_and_hosting_device_info(e_context, routers[0])
         for ni in self.get_notifiers(context, routers):
             if ni['notifier']:
