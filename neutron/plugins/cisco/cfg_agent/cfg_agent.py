@@ -74,6 +74,11 @@ class CiscoDeviceManagementApi(object):
         cctxt = self.client.prepare()
         return cctxt.call(context, 'register_for_duty', host=self.host)
 
+    def get_hosting_devices_for_agent(self, context):
+        """Get a list of hosting devices assigned to this agent."""
+        cctxt = self.client.prepare()
+        return cctxt.call(context, 'get_assigned_hosting_devices', host=self.host)
+
 
 class CiscoCfgAgent(manager.Manager):
     """Cisco Cfg Agent.
