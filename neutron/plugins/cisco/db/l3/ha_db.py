@@ -379,6 +379,10 @@ class HA_db_mixin(object):
             # Notify redundancy routers about changes
             for r_id in rr_ids:
                 # original router update request is supplied
+                LOG.debug("++++ invoking update_router for redundant "
+                          "router %s with update_spec %s " %
+                          (pprint.pformat(r_id),
+                          (pprint.pformat(update_specification))))
                 self.update_router(context.elevated(),
                                    r_id,
                                    update_specification)
