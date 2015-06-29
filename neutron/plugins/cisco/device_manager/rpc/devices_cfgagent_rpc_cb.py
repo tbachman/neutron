@@ -12,8 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 import oslo_messaging
 
+LOG = logging.getLogger(__name__)
 
 class DeviceMgrCfgRpcCallback(object):
     """Cisco cfg agent rpc support in Device mgr service plugin."""
@@ -53,10 +56,11 @@ class DeviceMgrCfgRpcCallback(object):
         return self._dmplugin.auto_schedule_hosting_devices(context, host)
 
     def get_hosting_devices_for_agent(self, context, host):
-        filters = {"host": host}
+        filters = {"host": [host]}
         cfg_agents = self._dmplugin.get_cfg_agents(context,
                                                    active=True,
                                                    filters=filters)
+        # LOG.error("HHHHHHHH host: %s cfg_agents: %s" % (host, cfg_agents))
         if cfg_agents:
             cfg_agent = cfg_agents[0]
             return self._dmplugin.list_hosting_devices_handled_by_cfg_agent(context,

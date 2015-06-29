@@ -77,7 +77,7 @@ class CiscoDeviceManagementApi(object):
     def get_hosting_devices_for_agent(self, context):
         """Get a list of hosting devices assigned to this agent."""
         cctxt = self.client.prepare()
-        return cctxt.call(context, 'get_assigned_hosting_devices', host=self.host)
+        return cctxt.call(context, 'get_hosting_devices_for_agent', host=self.host)
 
 
 class CiscoCfgAgent(manager.Manager):
@@ -274,6 +274,10 @@ class CiscoCfgAgent(manager.Manager):
                         "Payload is %(payload)s"),
                       {'error': e, 'payload': payload})
 
+    def get_assigned_hosting_devices(self):
+        context = n_context.get_admin_context_without_session()
+        res = self.devmgr_rpc.get_hosting_devices_for_agent(context)
+        return res
 
 class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
