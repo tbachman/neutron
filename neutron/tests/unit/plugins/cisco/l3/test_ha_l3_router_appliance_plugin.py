@@ -229,7 +229,8 @@ class HAL3RouterApplianceVMTestCase(
                                   **kwargs)
             self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
 
-    def test_create_ha_router_with_ha_specification_invalid_HA_type_fails(self):
+    def test_create_ha_router_with_ha_specification_invalid_HA_type_fails(
+            self):
         with self.subnet() as s:
             self._set_net_external(s['subnet']['network_id'])
             ha_settings = self._get_ha_defaults(redundancy_level=3,

@@ -24,6 +24,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     csr1kv_routing_driver as csr1kv_driver)
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             params = {'key': e}
             raise cfg_exc.DriverExpectedKeyNotSetException(**params)
 
-    def _get_interface_name_from_hosting_port(self, port):
+    def _get_interface_name_from_hosting_port_1C_VERSION(self, port):
         asr_ent = self.target_asr
         vlan = self._get_interface_vlan_from_hosting_port(port)
         subinterface = asr_ent['target_intf']
@@ -243,7 +244,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _add_ha_hsrp(self, ri, port):
         priority = ri[ha.DETAILS][ha.PRIORITY]
-        port_ha_info = port[HA_INFO]
+        port_ha_info = port[ha.HA_INFO]
         group = port_ha_info['group']
         ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
         if ip and group and priority:
@@ -251,7 +252,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             sub_interface = self._get_interface_name_from_hosting_port(port)
             self._do_set_ha_hsrp(sub_interface, vrf_name, priority, group, ip)
 
-    def _add_ha_hsrp(self, ri, port, ip, is_external=False):
+    def _add_ha_hsrp_1C_VERSION(self, ri, port, ip, is_external=False):
         if not self._port_needs_config(port):
             return
         vlan = self._get_interface_vlan_from_hosting_port(port)
@@ -275,8 +276,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         action = "SET_INTC_HSRP (Group: %s, Priority: % s)" % (group, priority)
         self._edit_running_config(conf_str, action)
 
-    def _do_set_ha_hsrp(self, subinterface, vrf_name, priority, group, vlan,
-                        ip, is_external=False):
+    def _do_set_ha_hsrp_1C_VERSION(self, subinterface, vrf_name, priority,
+                                   group, vlan, ip, is_external=False):
         try:
             confstr = asr1k_snippets.REMOVE_INTC_ASR_HSRP_PREEMPT % (
                 subinterface, group)

@@ -59,7 +59,7 @@ def upgrade():
         sa.Column('subnet_id', sa.String(36), nullable=True),
         sa.Column('user_router_id', sa.String(36), nullable=True),
         sa.Column('timers_config', sa.String(255), nullable=True),
-        sa.Column('tracking_config',sa.String(255), nullable=True),
+        sa.Column('tracking_config', sa.String(255), nullable=True),
         sa.Column('other_config', sa.String(255), nullable=True),
         sa.ForeignKeyConstraint(['ha_port_id'], ['ports.id'],
                                 ondelete='CASCADE'),

@@ -77,7 +77,6 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
     def get_hosting_device_resources(self, context, id, complementary_id,
                                      tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device."""
-        ports, nets, subnets = [], [], []
         mgmt_port = None
         # Ports for hosting device may not yet have 'device_id' set to
         # Nova assigned uuid of VM instance. However, those ports will still
@@ -101,7 +100,7 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
         if mgmt_port is not None:
             try:
                 self._delete_resource_port(context, mgmt_port['id'])
-            except n_exc.NeutronException, e:
+            except n_exc.NeutronException as e:
                 LOG.error(_LE("Unable to delete port:%(port)s after %(tries)d "
                               "attempts due to exception %(exception)s. "
                               "Skipping it"),
@@ -122,11 +121,13 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
                                         hosting_device_id):
         """Establishes connectivity for a logical port."""
         l3admin_tenant_id = self._dev_mgr.l3_tenant_id()
+        # Note(bobmel); Enable the following lines when lines at the end of
+        # this function are enabled.
         # Clear device_owner and device_id and set tenant_id to L3AdminTenant
         # to let interface-attach succeed
-        original_tenant_id = port_db['tenant_id']
-        original_device_id = port_db['device_id']
-        original_device_owner = port_db['device_owner']
+        # original_tenant_id = port_db['tenant_id']
+        # original_device_id = port_db['device_id']
+        # original_device_owner = port_db['device_owner']
         self._core_plugin.update_port(
             context.elevated(),
             port_db['id'],

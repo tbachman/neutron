@@ -18,12 +18,12 @@ import netaddr
 from xml.dom import minidom
 import xml.etree.ElementTree as ET
 
-from neutron.i18n import _LE, _LI, _LW
+from neutron.i18n import _LI
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    csr1kv_routing_driver as driver)
-from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+    csr1kv_routing_driver as driver)
 
 LOG = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class CSR1kvHotPlugRoutingDriver(driver.CSR1kvRoutingDriver):
             return interface_name
 
     def _get_VNIC_mapping(self):
-        """ Returns a dict of mac addresses(EUI format) and interface names"""
+        """Returns a dict of mac addresses(EUI format) and interface names"""
         conn = self._get_connection()
         rpc_obj = conn.get(filter=snippets.GET_VNIC_MAPPING)
         raw_xml = etree.fromstring(rpc_obj.xml)
@@ -111,7 +111,8 @@ class CSR1kvHotPlugRoutingDriver(driver.CSR1kvRoutingDriver):
         raw_list = raw_value.rstrip().split('\n')
         response_dict = {}
         for i in raw_list:
-            if 'GigabitEthernet' in i:# We got a vnic mapping line
+            if 'GigabitEthernet' in i:
+                # We got a vnic mapping line
                 tags = i.split()
                 response_dict[netaddr.EUI(tags[2])] = tags[0]
         return response_dict

@@ -69,7 +69,7 @@ class TestL3RouterBaseExtensionManager(object):
         # first, add hosting device attribute to router resource
         l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
             routerhostingdevice.EXTENDED_ATTRIBUTES_2_0['routers'])
-         # also add role attribute to router resource
+        # also add role attribute to router resource
         l3.RESOURCE_ATTRIBUTE_MAP['routers'].update(
             routerrole.EXTENDED_ATTRIBUTES_2_0['routers'])
         # also add routertype attribute to router resource

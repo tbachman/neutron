@@ -480,7 +480,7 @@ class HA_db_mixin(object):
             timers_cfg = driver.get_ha_group_timers_parameters(
                 context, router, port, ha_settings_db, ha_group_uuid)
             tracking_cfg = driver.get_ha_group_tracking_parameters(
-                context, router, port,ha_settings_db, ha_group_uuid)
+                context, router, port, ha_settings_db, ha_group_uuid)
             other_cfg = driver.get_other_ha_group_parameters(
                 context, router, port, ha_settings_db, ha_group_uuid)
             if driver.ha_interface_ip_address_needed(

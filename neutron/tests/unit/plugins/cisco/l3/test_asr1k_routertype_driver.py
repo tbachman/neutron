@@ -27,9 +27,9 @@ from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.tests.unit.plugins.cisco.l3 import (
-    test_l3_routertype_aware_schedulers as cisco_test_case)
-from neutron.tests.unit.plugins.cisco.l3 import (
     test_ha_l3_router_appliance_plugin as cisco_ha_test)
+from neutron.tests.unit.plugins.cisco.l3 import (
+    test_l3_routertype_aware_schedulers as cisco_test_case)
 
 
 _uuid = uuidutils.generate_uuid
@@ -405,8 +405,8 @@ class L3CfgAgentAsr1kRouterTypeDriverTestCase(
                 hd_id = r_after[HOSTING_DEVICE_ATTR]
                 id_r_ha_backup = r_after[ha.DETAILS][
                     ha.REDUNDANCY_ROUTERS][0]['id']
-                r_ha_backup_after = self._show(
-                    'routers',  id_r_ha_backup)['router']
+                r_ha_backup_after = self._show('routers',
+                                               id_r_ha_backup)['router']
                 ha_backup_hd_id = r_ha_backup_after[HOSTING_DEVICE_ATTR]
                 # logical global router for global routers HA
                 q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_LOGICAL_GLOBAL)

@@ -13,8 +13,8 @@
 #    under the License.
 
 
-import time
 from functools import wraps
+import time
 
 from oslo_log import log as logging
 
@@ -48,7 +48,7 @@ def retry(ExceptionToCheck, tries=MAX_ATTEMPTS, delay=SECONDS_BETWEEN_ATTEMPTS,
             while mtries > 1:
                 try:
                     return f(*args, **kwargs)
-                except ExceptionToCheck, e:
+                except ExceptionToCheck as e:
                     LOG.debug("%(ex)s. Retrying in %(sec)d seconds.",
                               {'ex': str(e), 'sec': mdelay})
                     time.sleep(mdelay)
