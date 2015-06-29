@@ -51,3 +51,15 @@ class DeviceMgrCfgRpcCallback(object):
         """
         # schedule any non-handled hosting devices
         return self._dmplugin.auto_schedule_hosting_devices(context, host)
+
+    def get_hosting_devices_for_agent(self, context, host):
+        filters = {"host": host}
+        cfg_agents = self._dmplugin.get_cfg_agents(context,
+                                                   active=True,
+                                                   filters=filters)
+        if cfg_agents:
+            cfg_agent = cfg_agents[0]
+            return self._dmplugin.list_hosting_devices_handled_by_cfg_agent(context,
+                                                                            cfg_agent.id)
+
+        return {"hosting_devices": []}
