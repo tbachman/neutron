@@ -100,6 +100,9 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     # ============== Internal "preparation" functions  ==============
 
+    def _get_acl_name_from_vlan(self, vlan):
+        return "neutron_acl_%s" % vlan
+
     def _get_interface_name_from_hosting_port(self, port):
         """
         generates the underlying subinterface name for a port

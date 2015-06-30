@@ -155,10 +155,13 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _remove_ha(self, ri, port):
         pass
 
+    def _get_acl_name_from_vlan(self, vlan):
+        return "acl_%s" % vlan
+
     def _add_internal_nw_nat_rules(self, ri, port, ext_port):
         vrf_name = self._get_vrf_name(ri)
         in_vlan = self._get_interface_vlan_from_hosting_port(port)
-        acl_no = 'acl_' + str(in_vlan)
+        acl_no = self._get_acl_name_from_vlan(in_vlan)
         internal_cidr = port['ip_cidr']
         internal_net = netaddr.IPNetwork(internal_cidr).network
         net_mask = netaddr.IPNetwork(internal_cidr).hostmask
@@ -174,7 +177,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         for port in ports:
             in_itfc_name = self._get_interface_name_from_hosting_port(port)
             inner_vlan = self._get_interface_vlan_from_hosting_port(port)
-            acls.append("acl_" + str(inner_vlan))
+            acls.append(self._get_acl_name_from_vlan(inner_vlan))
             self._remove_interface_nat(in_itfc_name, 'inside')
         # wait for two seconds
         LOG.debug("Sleep for 2 seconds before clearing NAT rules")
