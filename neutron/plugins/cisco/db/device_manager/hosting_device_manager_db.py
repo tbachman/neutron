@@ -916,6 +916,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 is_create = True
             kv_dict['id'] = hd_uuid
             kv_dict['tenant_id'] = self.l3_tenant_id()
+            # make sure we keep using same config agent if it has been assigned
+            kv_dict['cfg_agent_id'] = old_hd.get('cfg_agent_id')
             # make sure we keep using management port if it exists
             kv_dict['management_port_id'] = old_hd.get('management_port_id')
             config.verify_resource_dict(kv_dict, True, attr_info)
