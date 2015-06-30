@@ -7,9 +7,10 @@ from neutron.plugins.cisco.common import cisco_constants
 
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
-from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
     asr1k_snippets as asr_snippets)
-from neutron.openstack.common import log as logging
+
+from oslo_log import log as logging
 
 LOG = logging.getLogger(__name__)
 
@@ -125,12 +126,15 @@ class ConfigSyncer(object):
             
         return router_id_dict, interface_segment_dict, segment_nat_dict
 
-    def delete_invalid_cfg(self, conn):
+    def delete_invalid_cfg(self):
         router_id_dict = self.router_id_dict
         intf_segment_dict = self.intf_segment_dict
         segment_nat_dict = self.segment_nat_dict
 
+        conn = self.driver._get_connection()
+
         LOG.info("*************************")
+        
 
         for router_id, router in router_id_dict.iteritems():
             #LOG.info("ROUTER ID: %s   DATA: %s\n\n" % (router_id, router))
@@ -195,7 +199,7 @@ class ConfigSyncer(object):
     def clean_vrfs(self, conn, router_id_dict, parsed_cfg):
         
         ostk_router_ids = self.get_ostk_router_ids(router_id_dict)
-        rconf_ids, invalid_routers = self.get_running_config_router_ids(parsed_cfg)
+        rconf_ids = self.get_running_config_router_ids(parsed_cfg)
         
         source_set = set(ostk_router_ids)
         dest_set = set(rconf_ids)

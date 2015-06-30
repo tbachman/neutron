@@ -67,7 +67,7 @@ class DeviceMgrCfgRpcCallback(object):
                                                                            cfg_agent.id)
             for hd in hds['hosting_devices']:
                 hd_db = self._dmplugin._get_hosting_device(context, hd['id'])
-                creds = self._dmplugin._get_credentials(context, hd_db)
+                creds = self._dmplugin._get_credentials(hd_db)
                 hd['credentials'] = creds
                 
             return hds
