@@ -643,3 +643,25 @@ class HostingDeviceConfigAgentNotifierTestCase(
                 notifications = fake_notifier.NOTIFICATIONS
                 expected_event_type = 'agent.hosting_device.remove'
                 self._assert_notify(notifications, expected_event_type)
+
+    def test_hosting_device_assign_from_cfg_agent_notification_when_schedule(
+            self):
+        cfg_notifier = self.plugin.agent_notifiers[c_const.AGENT_TYPE_CFG]
+        with contextlib.nested(
+            mock.patch.object(cfg_notifier.client, 'prepare',
+                              return_value=cfg_notifier.client),
+            mock.patch.object(cfg_notifier.client, 'cast'),
+            self.hosting_device_template(
+                host_category=self.host_category)) as (
+                mock_prepare, mock_cast, hosting_device_template):
+            hdt = hosting_device_template['hosting_device_template']
+            self._setup_cfg_agents()
+            with self.hosting_device(template_id=hdt['id']) as hosting_device:
+                hd = hosting_device['hosting_device']
+                self.plugin.get_cfg_agents_for_hosting_devices(
+                        self.adminContext, [hd['id']], schedule=True)
+                mock_prepare.assert_called_with(
+                    server=L3_CFG_HOST_A)
+                mock_cast.assert_called_with(
+                    mock.ANY, 'hosting_devices_assigned_to_cfg_agent',
+                    payload={'hosting_device_ids': [hd['id']]})

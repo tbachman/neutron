@@ -149,6 +149,7 @@ class CfgAgentSchedulerDbMixin(
                 query = query.filter(
                     agents_db.Agent.admin_state_up == admin_state_up)
             agents = []
+            cfg_notifier = self.agent_notifiers.get(c_constants.AGENT_TYPE_CFG)
             for hosting_device in query:
                 current_agent = hosting_device.cfg_agent
                 if (current_agent and self.is_agent_down(
@@ -162,10 +163,14 @@ class CfgAgentSchedulerDbMixin(
                         agent = (
                             self.cfg_agent_scheduler.schedule_hosting_device(
                                 self, context, hosting_device))
-                        if agent is not None:
-                            self._bind_hosting_device_to_cfg_agent(
-                                context, hosting_device, agent)
-                            agents.append(agent)
+                        if agent is None:
+                            continue
+                        self._bind_hosting_device_to_cfg_agent(
+                            context, hosting_device, agent)
+                        agents.append(agent)
+                        if cfg_notifier:
+                            cfg_notifier.hosting_devices_assigned_to_cfg_agent(
+                                context, [hosting_device['id']], agent['host'])
                 else:
                     agents.append(hosting_device.cfg_agent)
             return agents
