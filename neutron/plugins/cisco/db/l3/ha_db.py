@@ -608,6 +608,8 @@ class HA_db_mixin(object):
                 else:
                     ha_port = copy.deepcopy(router['gw_port'])
 
+                self._populate_subnets_for_ports(context, [ha_port])
+
                 hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
                 ha_g_info = {HA_PORT: ha_port,
                              HA_GROUP: hag.group_identity}
