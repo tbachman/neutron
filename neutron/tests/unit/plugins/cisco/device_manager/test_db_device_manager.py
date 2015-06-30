@@ -274,7 +274,9 @@ class TestDeviceManagerDBPlugin(
         self._create_mgmt_nw_for_tests(self.fmt)
         self._devmgr = NeutronManager.get_service_plugins()[
             constants.DEVICE_MANAGER]
-        self._devmgr._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
+        # in unit tests we don't use keystone so we mock that session
+        self._devmgr._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
+            keystone_session=mock.MagicMock())
         self._mock_svc_vm_create_delete(self._devmgr)
         self._other_tenant_id = device_manager_test_support._uuid()
 
@@ -669,14 +671,12 @@ class TestDeviceManagerDBPlugin(
     def test_acquire_with_slot_deficit_in_owned_hosting_device_fails(self):
         self._test_slots(expected_result=False, expected_bind=REQUESTER,
                          expected_allocation=0, initial_bind=REQUESTER,
-                         num_requested=VM_SLOT_CAPACITY + 1,
-                         pool_maintenance_expected=False)
+                         num_requested=VM_SLOT_CAPACITY + 1)
 
     def test_acquire_with_slot_deficit_in_shared_hosting_device_fails(self):
         self._test_slots(expected_result=False, expected_bind=UNBOUND,
                          expected_allocation=0,
-                         num_requested=VM_SLOT_CAPACITY + 1,
-                         pool_maintenance_expected=False)
+                         num_requested=VM_SLOT_CAPACITY + 1)
 
     def test_acquire_with_slot_deficit_in_other_owned_hosting_device_fails(
             self):

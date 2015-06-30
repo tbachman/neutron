@@ -203,13 +203,15 @@ class DeviceManagerTestSupportMixin(object):
 
     def _define_keystone_authtoken(self):
         test_opts = [
-            cfg.StrOpt('auth_uri', default='http://localhost:35357/v2.0/'),
+            cfg.StrOpt('auth_url', default='http://localhost:35357/v2.0/'),
             cfg.StrOpt('identity_uri', default='http://localhost:5000'),
             #cfg.StrOpt('admin_user', default='neutron'),
             cfg.StrOpt('username', default='neutron'),
             #cfg.StrOpt('admin_password', default='secrete'),
             cfg.StrOpt('password', default='secrete'),
-            cfg.StrOpt('project_name', default='service')]
+            cfg.StrOpt('project_name', default='service'),
+            cfg.StrOpt('project_domain_id', default='default'),
+            cfg.StrOpt('user_domain_id', default='default')]
         cfg.CONF.register_opts(test_opts, 'keystone_authtoken')
 
     def _add_device_manager_plugin_ini_file(self):

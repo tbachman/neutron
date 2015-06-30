@@ -122,7 +122,9 @@ class HostingDeviceConfigAgentSchedulerTestCaseBase(
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
-        self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager()
+        # in unit tests we don't use keystone so we mock that session
+        self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
+            keystone_session=mock.MagicMock())
         self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
         if self.mock_cfg_agent_notifiers is True:
