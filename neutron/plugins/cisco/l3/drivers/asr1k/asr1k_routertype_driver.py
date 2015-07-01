@@ -405,6 +405,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                     self._l3_plugin._core_plugin.delete_port(context,
                                                              global_ext_nw_intf.id,
                                                              l3_port_check=False)
+                    self._l3_plugin.add_type_and_hosting_device_info(
+                        context.elevated(), global_router)
                     for ni in self._l3_plugin.get_notifiers(context, [global_router]):
                         if ni['notifier']:
                             ni['notifier'].routers_updated(context, ni['routers'])
