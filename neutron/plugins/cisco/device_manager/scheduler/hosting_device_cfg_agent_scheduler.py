@@ -62,3 +62,32 @@ class HostingDeviceCfgAgentScheduler(object):
             # will be scheduled to it.
             return
         return random.choice(active_cfg_agents)
+
+
+class StingyHostingDeviceCfgAgentScheduler(HostingDeviceCfgAgentScheduler):
+    """
+    This scheduler will assign a hosting device to an agent that has
+    the fewest hosting devices associated to it
+    """
+    def schedule_hosting_device(self, plugin, context, hosting_device):
+        active_cfg_agents = plugin.get_cfg_agents(context, active=True)
+        if not active_cfg_agents:
+            LOG.warn(_LW('There are no active Cisco cfg agents'))
+            return
+        else:
+            cfg_agent_hosting_devices = []
+            for active_cfg_agent in active_cfg_agents:
+                hosting_devices = (
+                    plugin.list_hosting_devices_handled_by_cfg_agent(
+                        context, active_cfg_agent.id))
+                LOG.debug("Cfg agent %s now handling %d hosting devices" % (
+                    active_cfg_agent.id,
+                    len(hosting_devices.get('hosting_devices'))))
+                num_hosting_devices = len(hosting_devices.get(
+                    'hosting_devices'))
+                cfg_agent_hosting_devices.append((active_cfg_agent,
+                                                  num_hosting_devices))
+            cfg_agent_hosting_devices = sorted(
+                cfg_agent_hosting_devices,
+                key=lambda agent_hosting_device: agent_hosting_device[1])
+            return cfg_agent_hosting_devices.pop(0)[0]

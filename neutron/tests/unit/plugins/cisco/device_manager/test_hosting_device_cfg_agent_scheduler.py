@@ -665,3 +665,68 @@ class HostingDeviceConfigAgentNotifierTestCase(
                 mock_cast.assert_called_with(
                     mock.ANY, 'hosting_devices_assigned_to_cfg_agent',
                     payload={'hosting_device_ids': [hd['id']]})
+
+
+class HostingDeviceToCfgAgentRandomSchedulerTestCase(
+        HostingDeviceConfigAgentSchedulerTestCaseBase):
+
+    def test_random_scheduling(self):
+        random_patch = mock.patch('random.choice')
+        random_mock = random_patch.start()
+
+        def side_effect(seq):
+            return seq[0]
+        random_mock.side_effect = side_effect
+
+        self._setup_cfg_agents(True, True)
+        with self.hosting_device_template(
+                host_category=self.host_category) as hosting_device_template:
+            hdt = hosting_device_template['hosting_device_template']
+            with self.hosting_device(template_id=hdt['id']) as (
+                    hosting_device_1):
+                hd1 = hosting_device_1['hosting_device']
+                agents = self.plugin.get_cfg_agents_for_hosting_devices(
+                    self.adminContext, [hd1['id']], schedule=True)
+                self.assertEqual(len(agents), 1)
+                self.assertEqual(random_mock.call_count, 1)
+                with self.hosting_device(template_id=hdt['id']) as (
+                        hosting_device_2):
+                    hd2 = hosting_device_2['hosting_device']
+                    agents = self.plugin.get_cfg_agents_for_hosting_devices(
+                        self.adminContext, [hd2['id']], schedule=True)
+                    self.assertEqual(random_mock.call_count, 2)
+        random_patch.stop()
+
+
+class HostingDeviceToCfgAgentStingySchedulerTestCase(
+        HostingDeviceConfigAgentSchedulerTestCaseBase):
+
+    def setUp(self, core_plugin=None, dm_plugin=None, ext_mgr=None):
+        cfg.CONF.set_override('configuration_agent_scheduler_driver',
+                              'neutron.plugins.cisco.device_manager.scheduler.'
+                              'hosting_device_cfg_agent_scheduler.'
+                              'StingyHostingDeviceCfgAgentScheduler',
+                              'general')
+        super(HostingDeviceToCfgAgentStingySchedulerTestCase, self).setUp(
+            core_plugin=core_plugin, dm_plugin=dm_plugin, ext_mgr=ext_mgr)
+
+    def test_stingy_scheduling(self):
+        self._setup_cfg_agents(True, True, True)
+        with self.hosting_device_template(
+                host_category=self.host_category) as hosting_device_template:
+            hdt = hosting_device_template['hosting_device_template']
+            with contextlib.nested(
+                self.hosting_device(template_id=hdt['id']),
+                self.hosting_device(template_id=hdt['id']),
+                self.hosting_device(template_id=hdt['id'])) as (
+                    hosting_device_1, hosting_device_2, hosting_device_3):
+                hd1 = hosting_device_1['hosting_device']
+                hd2 = hosting_device_2['hosting_device']
+                hd3 = hosting_device_3['hosting_device']
+                hd_ids = [hd1['id'], hd2['id'], hd3['id']]
+                agents = self.plugin.get_cfg_agents_for_hosting_devices(
+                    self.adminContext, hd_ids, schedule=True)
+                self.assertEqual(len(agents), 3)
+                self.assertNotEqual(agents[0]['id'], agents[1]['id'])
+                self.assertNotEqual(agents[0]['id'], agents[2]['id'])
+                self.assertNotEqual(agents[1]['id'], agents[2]['id'])
