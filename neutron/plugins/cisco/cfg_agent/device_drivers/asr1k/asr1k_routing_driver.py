@@ -237,10 +237,10 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _set_nat_pool(self, ri, gw_port, is_delete):
         vrf_name = self._get_vrf_name(ri)
-        ha_port = gw_port['nat_pool_info']['ha_port']
-        pool_ip = ha_port['fixed_ips'][0]['ip_address']
+        pool_info = gw_port['nat_pool_info']
+        pool_ip = pool_info['pool_ip']
         pool_name = "%s_nat_pool" % (vrf_name)
-        pool_net = netaddr.IPNetwork(gw_port['subnets'][0]['cidr'])
+        pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
 
         if self._fullsync and pool_ip in self._existing_cfg_dict['pools']:
             LOG.info(_LI("Pool already exists, skipping"))
@@ -465,8 +465,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         # **** acl_present = self._check_acl(acl_no, network, netmask)
         # if not acl_present:
         conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
         try:
+            rpc_obj = conn.edit_config(target='running', config=conf_str)
             self._check_response(rpc_obj, 'CREATE_ACL')
         except Exception as acl_e:
             LOG.error("Got exception while creating ACL: %s" % acl_e)

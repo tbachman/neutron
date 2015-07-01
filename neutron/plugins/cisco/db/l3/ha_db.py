@@ -609,24 +609,19 @@ class HA_db_mixin(object):
                 if r_r_b:
                     ha_port = user_router_db['gw_port']
                 else:
-                    ha_port = copy.deepcopy(router['gw_port'])
-                if 'fixed_ips' not in ha_port:
-                    LOG.error("ONECLOUD fixed_ips missing from port: %s" % ha_port)
+                    ha_port = router['gw_port']
                 
                 self._populate_subnets_for_ports(context, [ha_port])
 
-                hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
-                ha_g_info = {HA_PORT: ha_port,
-                             HA_GROUP: hag.group_identity}
-                router['gw_port']['nat_pool_info'] = ha_g_info
-        
-        LOG.debug("PPPPPPPPPP logical router: %s" % pprint.pformat(router))
+                pool_ip = ha_port['fixed_ips'][0]['ip_address']
+                pool_cidr = ha_port['subnets'][0]['cidr']
 
-        # LOG.debug("PPPPPPPPPP r_r_b: %s, user_router_id: %s, router_id: %s, router: %s" % (
-        #    pprint.pformat(r_r_b),
-        #    user_router_id,
-        #    router['id'],
-        #    pprint.pformat(router)))
+                hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
+                pool_info = {'pool_ip': pool_ip,
+                             'pool_cidr': pool_cidr,
+                             HA_GROUP: hag.group_identity}
+                router['gw_port']['nat_pool_info'] = pool_info
+
         for itfc in itfc_list:
             hag = hags[itfc['fixed_ips'][0]['subnet_id']]
             if router['id'] == user_router_id:
@@ -638,11 +633,6 @@ class HA_db_mixin(object):
                 ha_port = itfc
             else:
                 ha_port = self._core_plugin.get_port(context, hag.ha_port_id)
-                ha_port2 = self._core_plugin.get_port(e_context, hag.ha_port_id)
-                if 'fixed_ips' not in ha_port:
-                    LOG.error("ONECLOUD fixed_ips missing from port: %s" % ha_port)
-                    LOG.error("ONECLOUD ha_port2: %s" % ha_port2)
-                
                 self._populate_subnets_for_ports(context, [ha_port])
                 router_port = itfc
             ha_g_info = {
