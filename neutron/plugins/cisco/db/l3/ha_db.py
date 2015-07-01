@@ -607,7 +607,9 @@ class HA_db_mixin(object):
                     ha_port = user_router_db['gw_port']
                 else:
                     ha_port = copy.deepcopy(router['gw_port'])
-
+                if 'fixed_ips' not in ha_port:
+                    LOG.error("ONECLOUD fixed_ips missing from port: %s" % ha_port)
+                
                 self._populate_subnets_for_ports(context, [ha_port])
 
                 hag = lgr_hags[ha_port['fixed_ips'][0]['subnet_id']]
@@ -633,6 +635,11 @@ class HA_db_mixin(object):
                 ha_port = itfc
             else:
                 ha_port = self._core_plugin.get_port(context, hag.ha_port_id)
+                ha_port2 = self._core_plugin.get_port(e_context, hag.ha_port_id)
+                if 'fixed_ips' not in ha_port:
+                    LOG.error("ONECLOUD fixed_ips missing from port: %s" % ha_port)
+                    LOG.error("ONECLOUD ha_port2: %s" % ha_port2)
+                
                 self._populate_subnets_for_ports(context, [ha_port])
                 router_port = itfc
             ha_g_info = {

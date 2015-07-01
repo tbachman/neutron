@@ -466,7 +466,10 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         if not acl_present:
             conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
             rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, 'CREATE_ACL')
+            try:
+                self._check_response(rpc_obj, 'CREATE_ACL')
+            except Exception as cfg_e:
+                LOG.error("Got exception for CREATE_ACL: %s" % cfg_e)
 
         pool_name = "%s_nat_pool" % (vrf_name)
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
