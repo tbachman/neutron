@@ -201,17 +201,18 @@ class HA_db_mixin(object):
                ha.DETAILS: details}
 
         if not is_attr_set(res[ha.ENABLED]):
-            res[ha.ENABLED] = (cfg.CONF.ha.ha_enabled_by_default
-                               if router.get(EXTERNAL_GW_INFO) else False)
+            res[ha.ENABLED] = (cfg.CONF.ha.ha_enabled_by_default)
         if res[ha.ENABLED] and not cfg.CONF.ha.ha_support_enabled:
             raise ha.HADisabled()
         if not res[ha.ENABLED]:
             return res
+        """
         if router.get(EXTERNAL_GW_INFO) is None:
             #TODO(bobmel): Consider removing this gateway requirement
             raise ha.HAOnlyForGatewayRouters(
                 msg="HA is only supported for routers with gateway. "
                     "Please specify %s" % EXTERNAL_GW_INFO)
+        """
         if not is_attr_set(details.get(ha.TYPE, ATTR_NOT_SPECIFIED)):
             details[ha.TYPE] = cfg.CONF.ha.default_ha_mechanism
         if details[ha.TYPE] in cfg.CONF.ha.disabled_ha_mechanisms:
@@ -300,6 +301,7 @@ class HA_db_mixin(object):
 
             if not cfg.CONF.ha.ha_support_enabled:
                 raise ha.HADisabled()
+            # consider disabling this
             elif not has_gateway:
                 raise ha.HAOnlyForGatewayRouters(
                     msg="Cannot clear gateway when HA is enabled.")
@@ -411,8 +413,9 @@ class HA_db_mixin(object):
             r['name'] = name + REDUNDANCY_ROUTER_SUFFIX + str(i)
             # Ensure ip address is not specified as it cannot be same as
             # visible router's ip address.
-            r[EXTERNAL_GW_INFO]['external_fixed_ips'][0].pop('ip_address',
-                                                             None)
+            if (r[EXTERNAL_GW_INFO]):
+                r[EXTERNAL_GW_INFO]['external_fixed_ips'][0].pop('ip_address',
+                                                                 None)
             r = self.create_router(context.elevated(), {'router': r})
             LOG.debug("Created redundancy router %(index)d with router id "
                       "%(r_id)s", {'index': i, 'r_id': r['id']})

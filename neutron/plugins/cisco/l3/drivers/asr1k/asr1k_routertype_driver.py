@@ -32,7 +32,6 @@ from neutron.plugins.cisco.db.l3 import ha_db
 LOG = logging.getLogger(__name__)
 
 import pprint
-# import rpdb
 
 
 class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):

@@ -266,7 +266,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                  r_hd_binding_db.router_type_id !=
                  self.get_namespace_router_type_id(context))
         if is_ha:
-            # rpdb.set_trace(addr="127.0.0.1", port=4444)
             # Ensure update is compliant with any HA
             req_ha_settings = self._ensure_update_ha_compliant(
                 context, router_id, r)
