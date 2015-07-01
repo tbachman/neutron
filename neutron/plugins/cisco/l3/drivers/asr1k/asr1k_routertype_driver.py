@@ -404,8 +404,11 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 LOG.error("AAAA g_ext_nw_intf: %s" % global_ext_nw_intf)
                 if global_ext_nw_intf:
                     self._l3_plugin._core_plugin.delete_port(context,
-                                                       global_ext_nw_intf.id,
-                                                       l3_port_check=False)
+                                                             global_ext_nw_intf.id,
+                                                             l3_port_check=False)
+                    for ni in self._l3_plugin.get_notifiers(context, [global_router]):
+                        if ni['notifier']:
+                            ni['notifier'].routers_updated(context, ni['routers'])
 
     def unschedule_router_postcommit(self, context, router_context):
         # When there is no longer any router with external gateway hosted on
