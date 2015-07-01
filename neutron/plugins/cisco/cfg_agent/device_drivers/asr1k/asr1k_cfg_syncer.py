@@ -105,7 +105,8 @@ class ConfigSyncer(object):
                 segment_id = hosting_info['segmentation_id']
                 if segment_id not in interface_segment_dict:
                     interface_segment_dict[segment_id] = []
-                    segment_nat_dict[segment_id] = False
+                    if segment_id not in segment_nat_dict:
+                        segment_nat_dict[segment_id] = False
                 interface['is_external'] = (router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL)
                 interface_segment_dict[segment_id].append(interface)
 
@@ -123,7 +124,9 @@ class ConfigSyncer(object):
                                 intf_segment_id = intf['hosting_info']['segmentation_id']
                                 segment_nat_dict[gw_segment_id] = True
                                 segment_nat_dict[intf_segment_id] = True
-            
+                                # LOG.info("SET SEGMENT_NAT_DICT, gwid: %s, intfid: %s" % (gw_segment_id, intf_segment_id))
+
+        # LOG.info("segment_nat_dict: %s" % segment_nat_dict)
         return router_id_dict, interface_segment_dict, segment_nat_dict
 
     def delete_invalid_cfg(self):
@@ -243,7 +246,7 @@ class ConfigSyncer(object):
                 LOG.info("router has no gw_port, pool is invalid, deleting")
                 delete_pool_list.append(pool.text)
                 continue
-                        
+
             # Check IPs and netmask
             gw_port = router['gw_port']['nat_pool_info']['ha_port']
             gw_ip = gw_port['fixed_ips'][0]['ip_address']
@@ -712,11 +715,7 @@ class ConfigSyncer(object):
                 
                 # check for VRF mismatch
                 match_obj = re.match(VRF_INTF_REGEX_NEW, vrf_cfg.text)
-                router_id, dep_id = match_obj.group(1,2)
-                if dep_id != self.dep_id:
-                    LOG.info("Deployment ID mismatch, deleting intf")
-                    pending_delete_list.append(intf)
-                    continue
+                router_id = match_obj.group(1)
                 if router_id != db_intf["device_id"][0:6]:
                     LOG.info("Internal network VRF mismatch, deleting intf, router_id: %s, db_intf_dev_id: %s" % (router_id, db_intf["device_id"]))
                     pending_delete_list.append(intf)
@@ -724,7 +723,7 @@ class ConfigSyncer(object):
 
             # self.existing_cfg_dict['interfaces'][intf.segment_id] = intf
 
-            correct_grp_num = db_intf['ha_info']['group']
+            correct_grp_num = int(db_intf['ha_info']['group'])
             
             if intf.has_ipv6 == False:
                 if self.clean_interfaces_nat_check(intf, segment_nat_dict) == False:
