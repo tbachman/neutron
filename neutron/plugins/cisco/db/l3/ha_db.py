@@ -628,6 +628,7 @@ class HA_db_mixin(object):
                 router_port = self._core_plugin.get_port(e_context,
                                                          hag.extra_port_id)
                 self._populate_subnets_for_ports(e_context, [router_port])
+                router_port['device_id'] = itfc['device_id']
                 modified_interfaces.append(router_port)
                 ha_port = itfc
             else:
