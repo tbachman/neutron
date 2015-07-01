@@ -40,6 +40,12 @@ def get_nexusvlan_binding(vlan_id, switch_ip):
     return _lookup_all_nexus_bindings(vlan_id=vlan_id, switch_ip=switch_ip)
 
 
+def get_nexusport_switch_bindings(switch_ip):
+    """Lists all Nexus port switch bindings."""
+    LOG.debug(_("get_nexusport_switch_bindings() called"))
+    return _lookup_all_nexus_bindings(switch_ip=switch_ip)
+
+
 def add_nexusport_binding(port_id, vlan_id, switch_ip, instance_id):
     """Adds a nexusport binding."""
     LOG.debug(_("add_nexusport_binding() called"))

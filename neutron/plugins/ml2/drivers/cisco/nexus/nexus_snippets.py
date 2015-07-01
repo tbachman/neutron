@@ -34,6 +34,18 @@ EXEC_CONF_SNIPPET = """
       </config>
 """
 
+EXEC_GET_INTF_SNIPPET = """
+    <cmd>show running-config interface %s %s</cmd>
+"""
+
+EXEC_GET_VERSION_SNIPPET = """
+    <cmd>show version</cmd>
+"""
+
+EXEC_GET_INVENTORY_SNIPPET = """
+    <cmd>show inventory</cmd>
+"""
+
 CMD_VLAN_CONF_SNIPPET = """
             <vlan>
               <vlan-id-create-delete>
