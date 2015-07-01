@@ -220,11 +220,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  mask, is_external=False):
         if is_external is True:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_EXTERNAL_WITH_ID % (
-                sub_interface, self._deployment_id, vlan_id, ip,
+                sub_interface, vlan_id, ip,
                 mask)
         else:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_WITH_ID % (
-                sub_interface, self._deployment_id, vlan_id,
+                sub_interface, vlan_id,
                 vrf_name, ip, mask)
         self._edit_running_config(conf_str, '%s CREATE_sub_interface' %
                                   self.target_asr['name'])
