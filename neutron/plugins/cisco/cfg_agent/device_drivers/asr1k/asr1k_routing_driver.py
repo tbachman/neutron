@@ -95,8 +95,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def disable_internal_network_NAT(self, ri, port, ext_gw_port,
                                      itfc_delete=False):
-        self._remove_internal_nw_nat_rules(ri, [port], ext_gw_port,
-                                           itfc_delete)
+        self._remove_internal_nw_nat_rules(ri, [port], ext_gw_port)
 
     # ============== Internal "preparation" functions  ==============
 
