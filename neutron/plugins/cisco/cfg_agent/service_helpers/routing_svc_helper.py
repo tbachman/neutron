@@ -375,6 +375,15 @@ class RoutingServiceHelper(object):
                 hosting_devices[hd_id].setdefault(key, []).append(r)
         return hosting_devices
 
+    def _adjust_router_list(self, routers):
+        """Pushes 'Global' routers to the end of
+        the router list, so that deleting default route
+        occurs before deletion of external nw subintf"""
+        for r in routers:
+            if r['role'] == c_constants.ROUTER_ROLE_GLOBAL:
+                routers.remove(r)
+                routers.append(r)
+
     def _process_routers(self, routers, removed_routers,
                          device_id=None, all_routers=False):
         """Process the set of routers.
@@ -407,6 +416,7 @@ class RoutingServiceHelper(object):
                 prev_router_ids = set(self.router_info) & set(
                     [router['id'] for router in routers])
             cur_router_ids = set()
+            self._adjust_router_list(routers)
             for r in routers:
                 try:
                     if not r['admin_state_up']:

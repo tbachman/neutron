@@ -95,8 +95,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def disable_internal_network_NAT(self, ri, port, ext_gw_port,
                                      itfc_delete=False):
-        self._remove_internal_nw_nat_rules(ri, [port], ext_gw_port,
-                                           itfc_delete)
+        self._remove_internal_nw_nat_rules(ri, [port], ext_gw_port)
 
     # ============== Internal "preparation" functions  ==============
 
@@ -462,14 +461,15 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         conn = self._get_connection()
         # Duplicate ACL creation throws error, so checking
         # it first. Remove it in future as this is not common in production
-        acl_present = self._check_acl(acl_no, network, netmask)
-        if not acl_present:
-            conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            try:
-                self._check_response(rpc_obj, 'CREATE_ACL')
-            except Exception as cfg_e:
-                LOG.error("Got exception for CREATE_ACL: %s" % cfg_e)
+        # **** Disable this for ASR, ACL checking is slow, just log exceptions
+        # **** acl_present = self._check_acl(acl_no, network, netmask)
+        # if not acl_present:
+        conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
+        rpc_obj = conn.edit_config(target='running', config=conf_str)
+        try:
+            self._check_response(rpc_obj, 'CREATE_ACL')
+        except Exception as acl_e:
+            LOG.error("Got exception while creating ACL: %s" % acl_e)
 
         pool_name = "%s_nat_pool" % (vrf_name)
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
@@ -484,6 +484,41 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         conf_str = snippets.SET_NAT % (outer_itfc, 'outside')
         rpc_obj = conn.edit_config(target='running', config=conf_str)
         self._check_response(rpc_obj, 'SET_NAT')
+
+    def _remove_internal_nw_nat_rules(self, ri, ports, ext_port):
+        acls = []
+        # first disable nat in all inner ports
+        for port in ports:
+            in_itfc_name = self._get_interface_name_from_hosting_port(port)
+            inner_vlan = self._get_interface_vlan_from_hosting_port(port)
+            acls.append(self._get_acl_name_from_vlan(inner_vlan))
+            self._remove_interface_nat(in_itfc_name, 'inside')
+        # **** Don't wait and clear NAT for ASR, too slow and can disrupt traffic for
+        # **** other tenants
+        # wait for two seconds
+        # LOG.debug("Sleep for 2 seconds before clearing NAT rules")
+        # time.sleep(2)
+        # clear the NAT translation table
+        # self._remove_dyn_nat_translations()
+        # remove dynamic nat rules and acls
+        vrf_name = self._get_vrf_name(ri)
+        ext_itfc_name = self._get_interface_name_from_hosting_port(ext_port)
+        for acl in acls:
+            self._remove_dyn_nat_rule(acl, ext_itfc_name, vrf_name)
+
+    def _remove_dyn_nat_rule(self, acl_no, outer_itfc_name, vrf_name):
+        conn = self._get_connection()
+        try:
+            pool_name = "%s_nat_pool" % (vrf_name)
+            confstr = asr1k_snippets.REMOVE_DYN_SRC_TRL_POOL % (acl_no, pool_name, vrf_name)
+            rpc_obj = conn.edit_config(target='running', config=confstr)
+            self._check_response(rpc_obj, '%s REMOVE_DYN_SRC_TRL_POOL' % self.target_asr['name'])
+        except cfg_exc.CSR1kvConfigException as cse:
+            LOG.error("temporary disable REMOVE_DYN_SRC_TRL_POOL exception handling: %s" % (cse))
+
+        conf_str = snippets.REMOVE_ACL % acl_no
+        rpc_obj = conn.edit_config(target='running', config=conf_str)
+        self._check_response(rpc_obj, 'REMOVE_ACL')
 
     def _asr_add_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
         """

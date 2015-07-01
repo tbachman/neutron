@@ -655,9 +655,10 @@ class Dnsmasq(DhcpLocalProcess):
 
             # Add host routes for isolated network segments
 
-            if (isolated_subnets[subnet.id] and
-                    self.conf.enable_isolated_metadata and
-                    subnet.ip_version == 4):
+            # if (isolated_subnets[subnet.id] and
+            #        self.conf.enable_isolated_metadata and
+            #        subnet.ip_version == 4):
+            if True:
                 subnet_dhcp_ip = subnet_to_interface_ip[subnet.id]
                 host_routes.append(
                     '%s/32,%s' % (METADATA_DEFAULT_IP, subnet_dhcp_ip)
@@ -816,6 +817,7 @@ class Dnsmasq(DhcpLocalProcess):
         providing access to the metadata service via logical routers built
         with 3rd party backends.
         """
+        return True
         if conf.enable_metadata_network and conf.enable_isolated_metadata:
             # check if the network has a metadata subnet
             meta_cidr = netaddr.IPNetwork(METADATA_DEFAULT_CIDR)
