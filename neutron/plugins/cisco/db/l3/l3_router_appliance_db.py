@@ -52,9 +52,6 @@ from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
-import pprint
-import rpdb
-
 AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
 AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
 
@@ -384,7 +381,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).delete_router(context,
                                                                 router_id)
             if driver:
-                driver.delete_router_postcommit(context, router_ctxt, old_ext_nw_id)
+                driver.delete_router_postcommit(context,
+                                                router_ctxt,
+                                                old_ext_nw_id)
         except n_exc.NeutronException:
             with excutils.save_and_reraise_exception():
                 # put router back in backlog if deletion failed so that it
@@ -460,27 +459,34 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         self.notify_router_interface_action(context, info, routers, 'remove')
         return info
 
-    def _floating_ip_ha_notification_helper(self, context, router, router_list):
+    def _floating_ip_ha_notification_helper(self,
+                                            context,
+                                            router,
+                                            router_list):
         ''' only call this after hosting_device_info is added'''
         if utils.is_extension_supported(self, ha.HA_ALIAS):
             if router['role'] == cisco_constants.ROUTER_ROLE_LOGICAL:
-                rr_id_list = self._get_redundancy_router_ids(context, router['id'])
+                rr_id_list = self._get_redundancy_router_ids(context,
+                                                             router['id'])
                 for rr_id in rr_id_list:
                     rrouter = self.get_router(context, rr_id)
                     self.add_type_and_hosting_device_info(context, rrouter)
                     router_list.append(rrouter)
 
-
-    def create_floatingip(
-            self, context, floatingip,
-            initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
+    def create_floatingip(self,
+                        context,
+                        floatingip,
+                        initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
         info = super(L3RouterApplianceDBMixin, self).create_floatingip(
             context, floatingip)
+
         if info['router_id']:
             routers = [self.get_router(context, info['router_id'])]
             self.add_type_and_hosting_device_info(context.elevated(),
                                                   routers[0])
-            self._floating_ip_ha_notification_helper(context, routers[0], routers)
+            self._floating_ip_ha_notification_helper(context,
+                                                     routers[0],
+                                                     routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
@@ -520,7 +526,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             routers = [self.get_router(context, router_id)]
             self.add_type_and_hosting_device_info(context.elevated(),
                                                   routers[0])
-            self._floating_ip_ha_notification_helper(context, routers[0], routers)
+            self._floating_ip_ha_notification_helper(context,
+                                                     routers[0],
+                                                     routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
@@ -536,7 +544,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self.add_type_and_hosting_device_info(context.elevated(),
                                                       router)
                 routers.append(router)
-                self._floating_ip_ha_notification_helper(context, router, routers)
+                self._floating_ip_ha_notification_helper(context,
+                                                         router,
+                                                         routers)
             for ni in self.get_notifiers(context, routers):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'],
@@ -897,8 +907,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL,
         #                   cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
         excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
-        query = query.filter(or_(l3_models.RouterHostingDeviceBinding.role == expr.null(),
-                                 ~l3_models.RouterHostingDeviceBinding.role.in_(excluded_roles)))
+        query = \
+            query.filter(or_(l3_models.RouterHostingDeviceBinding.role ==
+                expr.null(),
+                ~l3_models.RouterHostingDeviceBinding.role.in_(
+                                                        excluded_roles)))
+
         self._backlogged_routers = set(binding.router_id for binding in query)
         self._refresh_router_backlog = False
 
