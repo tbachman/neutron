@@ -910,6 +910,42 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCase(
             self.plugin.list_active_sync_routers_on_hosting_devices,
             self.adminContext, 'bogus_host')
 
+    def test_list_all_routers_on_hosting_devices(self):
+        with contextlib.nested(self.router(name='router1'),
+                               self.router(name='router2'),
+                               self.router(name='router3')) as (
+                router1, router2, router3):
+            r1 = router1['router']
+            r3 = router3['router']
+            hd1_id = '00000000-0000-0000-0000-000000000001'
+            self._add_router_to_hosting_device(hd1_id, r1['id'])
+            hd2_id = '00000000-0000-0000-0000-000000000002'
+            self._add_router_to_hosting_device(hd2_id, r3['id'])
+            template_id = '00000000-0000-0000-0000-000000000005'
+            with contextlib.nested(self.hosting_device(template_id,
+                                                       no_delete=True),
+                                   self.router(name='router4'),
+                                   self.router(name='router5')) as (
+                    h_d3, router4, router5):
+                hd3 = h_d3['hosting_device']
+                r4 = router4['router']
+                r5 = router5['router']
+                self._add_router_to_hosting_device(hd3['id'], r4['id'])
+                self._add_router_to_hosting_device(hd3['id'], r5['id'])
+                r_l = self.plugin.list_all_routers_on_hosting_devices(
+                    self.adminContext)
+                r_set = {r1['id'], r3['id'], r4['id'], r5['id']}
+                self.assertEqual(len(r_l), len(r_set))
+                hds = {}
+                for r in r_l:
+                    self.assertEqual(r['id'] in r_set, True)
+                    router_host = r[HOSTING_DEVICE_ATTR]
+                    self.assertIsNotNone(router_host)
+                    # assert that router's hosting device exists
+                    if router_host not in hds:
+                        hd = self._show('hosting_devices', router_host)
+                        hds[router_host] = hd['hosting_device']
+
     def test_router_reschedule_from_dead_hosting_device(self):
         with contextlib.nested(
             mock.patch.object(self.plugin, '_backlogged_routers'),

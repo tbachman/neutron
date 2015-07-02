@@ -29,7 +29,9 @@ LOG = logging.getLogger(__name__)
 class L3RouterCfgRpcCallback(object):
     """Cisco cfg agent rpc support in L3 routing service plugin."""
 
-    target = oslo_messaging.Target(version='1.0')
+    # 1.0 L3PluginCfgAgentApi BASE_RPC_API_VERSION
+    # 1.1 Added 'cfg_sync_all_hosted_routers' method
+    target = oslo_messaging.Target(version='1.1')
 
     def __init__(self, l3plugin):
         self._l3plugin = l3plugin
@@ -42,6 +44,7 @@ class L3RouterCfgRpcCallback(object):
             self._plugin = manager.NeutronManager.get_plugin()
             return self._plugin
 
+    # version 1.0 API
     def cfg_sync_routers(self, context, host, router_ids=None,
                          hosting_device_ids=None):
         """Sync routers according to filters to a specific Cisco cfg agent.
@@ -68,6 +71,18 @@ class L3RouterCfgRpcCallback(object):
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
+    # version 1.1 API
+    def cfg_sync_all_hosted_routers(self, context, host):
+        adm_context = neutron_context.get_admin_context()
+        try:
+            routers = (
+                self._l3plugin.list_all_routers_on_hosting_devices(
+                    adm_context))
+        except AttributeError:
+            routers = []
+        return routers
+
+    # version 1.0 API
     def report_status(self, context, host, status_list):
         """Report status of a particular Neutron router by Cisco cfg agent.
 

@@ -57,19 +57,18 @@ class CiscoRoutingPluginRPC(object):
 
     def __init__(self, topic, host):
         self.host = host
-        target = oslo_messaging.Target(topic=topic, version='1.0')
+        target = oslo_messaging.Target(topic=topic, version='1.1')
         self.client = n_rpc.get_client(target)
 
-    def get_all_routers(self, context):
-        """Make a remote process call to retrieve the sync data for routers.
+    def get_all_hosted_routers(self, context):
+        """Make a remote process call to retrieve the sync data for
+           routers that have been scheduled to a hosting device.
 
         :param context: session context
-        :param router_ids: list of  routers to fetch
-        :param hd_ids : hosting device ids, only routers assigned to these
-                        hosting devices will be returned.
         """
         cctxt = self.client.prepare()
-        return cctxt.call(context, 'cfg_sync_all_routers', host=self.host)
+        return cctxt.call(context, 'cfg_sync_all_hosted_routers',
+                          host=self.host)
 
     def get_hardware_router_type_id(self, context):
         """Get the ID for the ASR1k hardware router type."""
@@ -107,7 +106,7 @@ def main():
     hardware_router_type_id = plugin_rpc.get_hardware_router_type_id(context)
     print("Hardware router type ID: %s" % hardware_router_type_id)
 
-    routers = plugin_rpc.get_all_routers(context)
+    routers = plugin_rpc.get_all_hosted_routers(context)
     hosting_devs = devmgr_rpc.get_all_hosting_devices(context)
 
     print("ROUTERS: %s" % pprint.pformat(routers))

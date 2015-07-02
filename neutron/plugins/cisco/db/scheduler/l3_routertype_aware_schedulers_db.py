@@ -15,6 +15,7 @@
 from oslo_config import cfg
 from oslo_log import log as logging
 from sqlalchemy import sql
+from sqlalchemy.sql import expression as expr
 
 from neutron.api.v2 import attributes
 from neutron.common import topics
@@ -247,3 +248,16 @@ class L3RouterTypeAwareSchedulerDbMixin(
                  self._agent_state_filter(check_active,
                                           row.heartbeat_timestamp)]
         return hosts
+
+    def list_all_routers_on_hosting_devices(self, context):
+        query = context.session.query(
+            l3_models.RouterHostingDeviceBinding.router_id)
+        query = query.filter(
+            l3_models.RouterHostingDeviceBinding.hosting_device_id !=
+            expr.null())
+        router_ids = [item[0] for item in query]
+        if router_ids:
+            return self.get_sync_data_ext(context, router_ids=router_ids,
+                                          active=True)
+        else:
+            return []
