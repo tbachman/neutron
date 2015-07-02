@@ -14,7 +14,6 @@
 
 import logging
 import netaddr
-import pprint
 
 from neutron.i18n import _LE, _LI
 from neutron.common import constants
@@ -493,7 +492,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             inner_vlan = self._get_interface_vlan_from_hosting_port(port)
             acls.append(self._get_acl_name_from_vlan(inner_vlan))
             self._remove_interface_nat(in_itfc_name, 'inside')
-        # **** Don't wait and clear NAT for ASR, too slow and can disrupt traffic for
+        # **** Don't wait and clear NAT for ASR,
+        #      too slow and can disrupt traffic for
         # **** other tenants
         # wait for two seconds
         # LOG.debug("Sleep for 2 seconds before clearing NAT rules")
@@ -510,11 +510,15 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         conn = self._get_connection()
         try:
             pool_name = "%s_nat_pool" % (vrf_name)
-            confstr = asr1k_snippets.REMOVE_DYN_SRC_TRL_POOL % (acl_no, pool_name, vrf_name)
+            confstr = asr1k_snippets.REMOVE_DYN_SRC_TRL_POOL % \
+                (acl_no, pool_name, vrf_name)
             rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj, '%s REMOVE_DYN_SRC_TRL_POOL' % self.target_asr['name'])
+            self._check_response(rpc_obj,
+                                 '%s REMOVE_DYN_SRC_TRL_POOL' %
+                                 self.target_asr['name'])
         except cfg_exc.CSR1kvConfigException as cse:
-            LOG.error("temporary disable REMOVE_DYN_SRC_TRL_POOL exception handling: %s" % (cse))
+            LOG.error("temporary disable REMOVE_DYN_SRC_TRL_POOL"
+                      " exception handling: %s" % (cse))
 
         conf_str = snippets.REMOVE_ACL % acl_no
         rpc_obj = conn.edit_config(target='running', config=conf_str)
@@ -522,41 +526,49 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _asr_add_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
         """
-        To implement a floating ip, an ip static nat is configured in the underlying router
-        ex_gw_port contains data to derive the vlan associated with related subnet for the
-        fixed ip.  The vlan in turn is applied to the redundancy parameter for setting the
-        IP NAT.
+        To implement a floating ip, an ip static nat is configured in the
+        underlying router ex_gw_port contains data to derive the vlan
+        associated with related subnet for the fixed ip.  The vlan in turn
+        is applied to the redundancy parameter for setting the IP NAT.
         """
         conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
         hsrp_grp = ex_gw_port['nat_pool_info']['group']
 
-        LOG.debug("add floating_ip: %s, fixed_ip: %s, vrf: %s, ex_gw_port: %s" % (floating_ip,
-                                                                                  fixed_ip,
-                                                                                  vrf,
-                                                                                  ex_gw_port))
-        
-        confstr = asr1k_snippets.SET_STATIC_SRC_TRL_NO_VRF_MATCH % (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
+        LOG.debug("add floating_ip: %s, fixed_ip: %s, vrf: %s, ex_gw_port: %s"
+                  % (floating_ip, fixed_ip, vrf, ex_gw_port))
+
+        confstr = asr1k_snippets.SET_STATIC_SRC_TRL_NO_VRF_MATCH % \
+            (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
         rpc_obj = conn.edit_config(target='running', config=confstr)
-        self._check_response(rpc_obj, '%s SET_STATIC_SRC_TRL' % self.target_asr['name'])
+        self._check_response(rpc_obj,
+                             '%s SET_STATIC_SRC_TRL' %
+                             self.target_asr['name'])
 
     def _remove_floating_ip(self, ri, ext_gw_port, floating_ip, fixed_ip):
         vrf_name = self._get_vrf_name(ri)
-        out_itfc_name = self._get_interface_name_from_hosting_port(ext_gw_port)
+        self._get_interface_name_from_hosting_port(ext_gw_port)
         # first remove NAT from outer interface
         # self._remove_interface_nat(out_itfc_name, 'outside')
         # clear the NAT translation table
         # self._remove_dyn_nat_translations()
         # remove the floating ip
-        self._asr_do_remove_floating_ip(floating_ip, fixed_ip, vrf_name, ext_gw_port)
+        self._asr_do_remove_floating_ip(floating_ip,
+                                        fixed_ip,
+                                        vrf_name,
+                                        ext_gw_port)
         # enable NAT on outer interface
         # self._add_interface_nat(out_itfc_name, 'outside')
 
-    def _asr_do_remove_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
+    def _asr_do_remove_floating_ip(self, floating_ip,
+                                   fixed_ip, vrf, ex_gw_port):
         conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
         hsrp_grp = ex_gw_port['nat_pool_info']['group']
 
-        confstr = asr1k_snippets.REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH % (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
+        confstr = asr1k_snippets.REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH % \
+            (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
         rpc_obj = conn.edit_config(target='running', config=confstr)
-        self._check_response(rpc_obj, '%s REMOVE_STATIC_SRC_TRL' % self.target_asr['name'])
+        self._check_response(rpc_obj,
+                             '%s REMOVE_STATIC_SRC_TRL' %
+                             self.target_asr['name'])
