@@ -248,16 +248,16 @@ class ConfigSyncer(object):
                 continue
 
             # Check IPs and netmask
-            gw_port = router['gw_port']['nat_pool_info']['ha_port']
-            gw_ip = gw_port['fixed_ips'][0]['ip_address']
-            pool_net = netaddr.IPNetwork(gw_port['subnets'][0]['cidr'])
+            pool_info = router['gw_port']['nat_pool_info']
+            pool_ip = pool_info['pool_ip']
+            pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
             
-            if start_ip != gw_ip:
+            if start_ip != pool_ip:
                 LOG.info("start IP for pool does not match, deleting")
                 delete_pool_list.append(pool.text)
                 continue
 
-            if end_ip != gw_ip:
+            if end_ip != pool_ip:
                 LOG.info("end IP for pool does not match, deleting")
                 delete_pool_list.append(pool.text)
                 continue
@@ -268,7 +268,7 @@ class ConfigSyncer(object):
                 delete_pool_list.append(pool.text)
                 continue
             
-            self.existing_cfg_dict['pools'][gw_ip] = pool
+            self.existing_cfg_dict['pools'][pool_ip] = pool
 
 
         for pool_cfg in delete_pool_list:
