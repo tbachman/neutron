@@ -32,7 +32,8 @@ from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ha
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import asr1k_cfg_syncer
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
+    import asr1k_cfg_syncer
 
 LOG = logging.getLogger(__name__)
 
@@ -40,9 +41,9 @@ N_ROUTER_PREFIX = 'nrouter-'
 
 
 TEMP_ASR_ROUTER_TYPE = {
-    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers.asr1k.asr1k_routing_driver.ASR1kRoutingDriver", 
-    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper.RoutingServiceHelper", 
-    "id": "00000000-0000-0000-0000-000000000003", 
+    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers.asr1k.asr1k_routing_driver.ASR1kRoutingDriver",
+    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper.RoutingServiceHelper",
+    "id": "00000000-0000-0000-0000-000000000003",
     "name": "Hardware_Neutron_router"
 }
 
