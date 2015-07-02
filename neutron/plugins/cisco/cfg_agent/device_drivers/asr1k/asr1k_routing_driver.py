@@ -555,7 +555,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
     def _asr_do_remove_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
         conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
-        hsrp_grp = ex_gw_port['ha_info']['group']
+        hsrp_grp = ex_gw_port['nat_pool_info']['group']
 
         confstr = asr1k_snippets.REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH % (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
         rpc_obj = conn.edit_config(target='running', config=confstr)
