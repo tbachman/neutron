@@ -469,7 +469,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             rpc_obj = conn.edit_config(target='running', config=conf_str)
             self._check_response(rpc_obj, 'CREATE_ACL')
         except Exception as acl_e:
-            LOG.error("Ignore exception while creating ACL: %s" % acl_e)
+            LOG.error("Ignore exception for CREATE_ACL: %s" % acl_e)
 
         pool_name = "%s_nat_pool" % (vrf_name)
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
@@ -478,7 +478,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             rpc_obj = conn.edit_config(target='running', config=conf_str)
             self._check_response(rpc_obj, 'CREATE_DYN_NAT')
         except Exception as dyn_nat_e:
-            LOG.error("Ignore exception while creating DYN_NAT: %s" % dyn_nat_e)
+            LOG.error("Ignore exception for CREATE_DYN_NAT: %s" % dyn_nat_e)
 
         conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
         rpc_obj = conn.edit_config(target='running', config=conf_str)
