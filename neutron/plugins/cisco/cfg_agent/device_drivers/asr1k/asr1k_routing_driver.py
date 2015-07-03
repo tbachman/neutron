@@ -263,7 +263,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                 #                          self.target_asr['name'])
                 # TODO: update so that hosting device name is passed down
                 self._edit_running_config(conf_str, 'CREATE_NAT_POOL')
-        except cfg_exc.CSR1kvConfigException as cse:
+        #except cfg_exc.CSR1kvConfigException as cse:
+        except Exception as cse:
             LOG.error(_LE("Temporary disable NAT_POOL exception handling: "
                           "%s"), cse)
 
