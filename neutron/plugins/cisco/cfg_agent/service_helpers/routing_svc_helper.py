@@ -41,8 +41,11 @@ N_ROUTER_PREFIX = 'nrouter-'
 
 
 TEMP_ASR_ROUTER_TYPE = {
-    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers.asr1k.asr1k_routing_driver.ASR1kRoutingDriver",
-    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent.service_helpers.routing_svc_helper.RoutingServiceHelper",
+    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers."
+                        "asr1k.asr1k_routing_driver.ASR1kRoutingDriver",
+    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent."
+                                "service_helpers.routing_svc_helper."
+                                "RoutingServiceHelper",
     "id": "00000000-0000-0000-0000-000000000003",
     "name": "Hardware_Neutron_router"
 }
@@ -204,15 +207,18 @@ class RoutingServiceHelper(object):
                 hds = self.cfg_agent.get_assigned_hosting_devices()
                 LOG.error("\n\n\nHHHHHHHOSTING DEVICES: %s\n\n\n" % hds)
                 for hd in hds['hosting_devices']:
-                    if hd['template_id'] == '00000000-0000-0000-0000-000000000001':
+                    if hd['template_id'] == \
+                        '00000000-0000-0000-0000-000000000001':
                         continue
                     temp_res = {"id": hd['id'],
                                 "hosting_device": hd,
                                 "router_type": TEMP_ASR_ROUTER_TYPE}
                     driver = self._drivermgr.set_driver(temp_res)
-                    cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers, driver, hd)
+                    cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers,
+                                                               driver,
+                                                               hd)
                     cfg_syncers.append(cfg_syncer)
-                
+
                 for cfg_syncer in cfg_syncers:
                     cfg_syncer.delete_invalid_cfg()
 

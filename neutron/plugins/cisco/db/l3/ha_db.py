@@ -40,7 +40,6 @@ from neutron.plugins.cisco.db.l3 import l3_models
 LOG = logging.getLogger(__name__)
 
 import pprint
-import rpdb
 
 HA_INFO = 'ha_info'
 HA_GROUP = 'group'
@@ -599,18 +598,21 @@ class HA_db_mixin(object):
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
         itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
 
-        if 'gw_port' in router and (r_r_b or router[ha.ENABLED]) :
+        if 'gw_port' in router and (r_r_b or router[ha.ENABLED]):
             if router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
-               router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
-                
-                logical_global_router = self._get_logical_global_router(context)
-                lgr_hags = self._get_subnet_id_indexed_ha_groups(context, logical_global_router.id)
+                router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
+
+                logical_global_router = \
+                    self._get_logical_global_router(context)
+                lgr_hags = \
+                    self._get_subnet_id_indexed_ha_groups(context,
+                        logical_global_router.id)
 
                 if r_r_b:
                     ha_port = user_router_db['gw_port']
                 else:
                     ha_port = router['gw_port']
-                
+
                 self._populate_subnets_for_ports(context, [ha_port])
 
                 pool_ip = ha_port['fixed_ips'][0]['ip_address']

@@ -18,6 +18,7 @@ import oslo_messaging
 
 LOG = logging.getLogger(__name__)
 
+
 class DeviceMgrCfgRpcCallback(object):
     """Cisco cfg agent rpc support in Device mgr service plugin."""
 
@@ -63,13 +64,16 @@ class DeviceMgrCfgRpcCallback(object):
         # LOG.error("HHHHHHHH host: %s cfg_agents: %s" % (host, cfg_agents))
         if cfg_agents:
             cfg_agent = cfg_agents[0]
-            hds = self._dmplugin.list_hosting_devices_handled_by_cfg_agent(context,
-                                                                           cfg_agent.id)
+            hds = \
+                self._dmplugin.list_hosting_devices_handled_by_cfg_agent(
+                                                                  context,
+                                                                  cfg_agent.id)
+
             for hd in hds['hosting_devices']:
                 hd_db = self._dmplugin._get_hosting_device(context, hd['id'])
                 creds = self._dmplugin._get_credentials(hd_db)
                 hd['credentials'] = creds
-                
+
             return hds
 
         return {"hosting_devices": []}

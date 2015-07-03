@@ -104,7 +104,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                                                       logical_global_router.id)
 
         # if current['gw_port_id']:
-        #     self._conditionally_add_global_router(context, hd_id, current, logical_global_router.id)
+        #     self._conditionally_add_global_router(context, hd_id, current,
+        #                                           logical_global_router.id)
         # else:
             # self._conditionally_remove_global_router(context, hd_id, True)
 
@@ -121,8 +122,11 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
     def delete_router_postcommit(self, context, router_context,
                                  old_ext_nw_id=None):
         self._ensure_logical_global_router_exists(context)
-        self._conditionally_remove_logical_global_ext_nw_port(context, old_ext_nw_id)
-        self._conditionally_remove_global_router_ext_nw(context, None, old_ext_nw_id)
+        self._conditionally_remove_logical_global_ext_nw_port(context,
+                                                              old_ext_nw_id)
+        self._conditionally_remove_global_router_ext_nw(context,
+                                                        None,
+                                                        old_ext_nw_id)
         return
 
     def schedule_router_precommit(self, context, router_context):
@@ -403,13 +407,15 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 LOG.error("AAAA g_ext_nw_intf: %s" % global_ext_nw_intf)
                 if global_ext_nw_intf:
                     self._l3_plugin._core_plugin.delete_port(context,
-                                                             global_ext_nw_intf.id,
-                                                             l3_port_check=False)
+                                                        global_ext_nw_intf.id,
+                                                        l3_port_check=False)
                     self._l3_plugin.add_type_and_hosting_device_info(
                         context.elevated(), global_router)
-                    for ni in self._l3_plugin.get_notifiers(context, [global_router]):
+                    for ni in self._l3_plugin.get_notifiers(context,
+                                                            [global_router]):
                         if ni['notifier']:
-                            ni['notifier'].routers_updated(context, ni['routers'])
+                            ni['notifier'].routers_updated(context,
+                                                           ni['routers'])
 
     def unschedule_router_postcommit(self, context, router_context):
         # When there is no longer any router with external gateway hosted on
