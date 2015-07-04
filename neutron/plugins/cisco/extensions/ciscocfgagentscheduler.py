@@ -25,8 +25,8 @@ from neutron.common import rpc as n_rpc
 from neutron.extensions import agent
 from neutron.i18n import _LE
 from neutron import manager
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
-from neutron.plugins.common import constants as svc_constants
 from neutron import policy
 from neutron import wsgi
 
@@ -63,7 +63,7 @@ HOSTING_DEVICE_CFG_AGENTS = HOSTING_DEVICE_CFG_AGENT + 's'
 class HostingDeviceSchedulerController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            cisco_constants.DEVICE_MANAGER)
         if not plugin:
             LOG.error(_LE('No Device manager service plugin registered to '
                           'handle hosting device scheduling'))
@@ -106,7 +106,7 @@ class HostingDeviceSchedulerController(wsgi.Controller):
 class CfgAgentsHandlingHostingDeviceController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            cisco_constants.DEVICE_MANAGER)
         if not plugin:
             LOG.error(_LE('No device manager service plugin registered to '
                           'handle hosting device scheduling'))

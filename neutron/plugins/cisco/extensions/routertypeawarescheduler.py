@@ -26,6 +26,7 @@ from neutron.common import rpc as n_rpc
 from neutron.extensions import l3
 from neutron.i18n import _LE
 from neutron import manager
+from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.common import constants as svc_constants
 from neutron import policy
@@ -173,6 +174,9 @@ class Routertypeawarescheduler(extensions.ExtensionDescriptor):
     @classmethod
     def get_resources(cls):
         """Returns Ext Resources."""
+        #NOTE(bobmel): Adding URL prefix for device manager here to
+        # avoid having to add it to core neutron.
+        svc_constants.COMMON_PREFIXES[c_constants.DEVICE_MANAGER] = "/dev_mgr"
         exts = []
         parent = dict(member_name=ciscohostingdevicemanager.DEVICE,
                       collection_name=ciscohostingdevicemanager.DEVICES)
@@ -181,7 +185,7 @@ class Routertypeawarescheduler(extensions.ExtensionDescriptor):
         exts.append(extensions.ResourceExtension(
             DEVICE_L3_ROUTERS, controller, parent,
             path_prefix=svc_constants.COMMON_PREFIXES[
-                svc_constants.DEVICE_MANAGER]))
+                c_constants.DEVICE_MANAGER]))
         parent = dict(member_name="router",
                       collection_name=l3.ROUTERS)
         controller = resource.Resource(

@@ -639,7 +639,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _edit_running_config(self, conf_str, snippet):
         conn = self._get_connection()
-        LOG.warn("Config generated for %(snip)s is:%(conf)s",
+        LOG.warn(_LW("Config generated for %(snip)s is:%(conf)s"),
                  {'snip': snippet, 'conf': conf_str})
         rpc_obj = conn.edit_config(target='running', config=conf_str)
         self._check_response(rpc_obj, snippet, conf_str=conf_str)

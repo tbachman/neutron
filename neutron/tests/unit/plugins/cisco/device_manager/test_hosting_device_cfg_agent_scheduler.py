@@ -25,6 +25,7 @@ from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
+from neutron.plugins.common import constants as svc_constants
 from neutron.tests import fake_notifier
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron.tests.unit.plugins.cisco.device_manager import (
@@ -91,6 +92,12 @@ class HostingDeviceConfigAgentSchedulerTestCaseBase(
     dev_mgr_test_support.DeviceManagerTestSupportMixin,
         HostingDeviceCfgAgentSchedulerTestMixIn):
 
+    #NOTE(bobmel): Work-around to make these unit tests to work since we
+    # let the core plugin implement the device manager service.
+    # The device manager service should map to hosting device extension
+    svc_constants.EXT_TO_SERVICE_MAPPING[
+        ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS] = (
+        c_const.DEVICE_MANAGER)
     resource_prefix_map = (test_db_device_manager.TestDeviceManagerDBPlugin
                            .resource_prefix_map)
     mock_cfg_agent_notifiers = True

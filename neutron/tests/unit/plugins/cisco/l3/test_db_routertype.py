@@ -200,7 +200,7 @@ class TestRoutertypeDBPlugin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
                              RoutertypeTestCaseMixin,
                              DeviceManagerTestCaseMixin):
     resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
+        (k, constants.COMMON_PREFIXES[c_constants.DEVICE_MANAGER])
         for k in ciscodevmgr.RESOURCE_ATTRIBUTE_MAP.keys())
 
     def setUp(self, core_plugin=None, l3_plugin=None,

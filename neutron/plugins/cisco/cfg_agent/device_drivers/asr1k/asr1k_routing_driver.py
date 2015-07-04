@@ -474,7 +474,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             # self._check_response(rpc_obj, 'CREATE_ACL')
             self._edit_running_config(conf_str, 'CREATE_ACL')
         except Exception as acl_e:
-            LOG.debug(_LE("Ignore exception for CREATE_ACL: %s"), acl_e)
+            LOG.debug("Ignore exception for CREATE_ACL: %s", acl_e)
 
         pool_name = "%s_nat_pool" % vrf_name
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,

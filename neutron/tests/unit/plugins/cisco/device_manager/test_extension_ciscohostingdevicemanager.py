@@ -18,8 +18,8 @@ import mock
 from webob import exc
 
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
-from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
 from neutron.tests.unit.extensions import base as test_extensions_base
@@ -37,7 +37,7 @@ class CiscoHostingDeviceManagerTestCase(
         self._setUpExtension(
             'neutron.plugins.cisco.extensions.ciscohostingdevicemanager.'
             'CiscoHostingDevicePluginBase',
-            constants.DEVICE_MANAGER,
+            cisco_constants.DEVICE_MANAGER,
             ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP,
             ciscohostingdevicemanager.Ciscohostingdevicemanager, 'dev_mgr')
 

@@ -48,7 +48,6 @@ from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.l3.drivers import driver_context
-from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -961,7 +960,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     @property
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            cisco_constants.DEVICE_MANAGER)
 
     def _get_router_binding_info(self, context, id, load_hd_info=True):
         query = context.session.query(l3_models.RouterHostingDeviceBinding)

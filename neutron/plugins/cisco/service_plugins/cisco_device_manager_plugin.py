@@ -17,7 +17,6 @@ from oslo_config import cfg
 from oslo_utils import importutils
 
 from neutron.common import rpc as n_rpc
-from neutron.common import topics
 from neutron import manager
 import neutron.plugins
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -61,7 +60,7 @@ class CiscoDeviceManagerPlugin(dev_mgr_db.HostingDeviceManagerMixin,
 
     def setup_rpc(self):
         # RPC support
-        self.topic = topics.DEVICE_MANAGER_PLUGIN
+        self.topic = c_constants.DEVICE_MANAGER_PLUGIN
         self.conn = n_rpc.create_connection(new=True)
         self.agent_notifiers[c_constants.AGENT_TYPE_CFG] = (
             devmgr_rpc_cfgagent_api.DeviceMgrCfgAgentNotifyAPI(self))

@@ -20,9 +20,9 @@ from neutron.common import exceptions as n_exc
 from neutron.db import models_v2
 from neutron.i18n import _LE, _LW
 from neutron import manager
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.device_manager import plugging_drivers
 from neutron.plugins.cisco.device_manager.plugging_drivers import utils
-from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
     @property
     def _dev_mgr(self):
         return manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            cisco_constants.DEVICE_MANAGER)
 
     def create_hosting_device_resources(self, context, complementary_id,
                                         tenant_id, mgmt_context, max_hosted):

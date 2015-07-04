@@ -41,7 +41,6 @@ from neutron.plugins.cisco.extensions import (ciscocfgagentscheduler as
                                               cfgagtscheduler)
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
-from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit.extensions import test_l3
 
@@ -179,7 +178,7 @@ class DeviceManagerTestSupportMixin(object):
     def _test_remove_all_hosting_devices(self):
         """Removes all hosting devices created during a test."""
         devmgr = manager.NeutronManager.get_service_plugins()[
-            constants.DEVICE_MANAGER]
+            cisco_constants.DEVICE_MANAGER]
         context = n_context.get_admin_context()
         devmgr.delete_all_hosting_devices(context, True)
 
@@ -245,7 +244,7 @@ class DeviceManagerTestSupportMixin(object):
         agent_callback = agents_db.AgentExtRpcCallback()
         dev_mgr_callback = devices_cfgagent_rpc_cb.DeviceMgrCfgRpcCallback(
             manager.NeutronManager.get_service_plugins()[
-                constants.DEVICE_MANAGER])
+                cisco_constants.DEVICE_MANAGER])
         if host_a_active is True:
             agent_callback.report_state(
                 self.adminContext,

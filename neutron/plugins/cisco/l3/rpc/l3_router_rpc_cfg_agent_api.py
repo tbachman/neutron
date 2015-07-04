@@ -23,7 +23,6 @@ from neutron.common import utils
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ciscocfgagentscheduler
-from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ class L3RouterCfgAgentNotifyAPI(object):
         """Notify individual Cisco cfg agents."""
         admin_context = context.is_admin and context or context.elevated()
         dmplugin = manager.NeutronManager.get_service_plugins().get(
-            svc_constants.DEVICE_MANAGER)
+            cisco_constants.DEVICE_MANAGER)
         for router in routers:
             if (router['hosting_device'] is not None and
                     utils.is_extension_supported(dmplugin, CFGAGENT_SCHED)):

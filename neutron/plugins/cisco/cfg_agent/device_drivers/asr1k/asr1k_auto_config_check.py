@@ -12,25 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import pprint
+import sys
+
 from ncclient import manager
+from oslo_config import cfg
+import oslo_messaging
 
 from neutron.common import config as common_config
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
-
 from neutron import context as ctxt
-
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
-    import asr1k_cfg_syncer
-
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
-    import asr1k_cfg_validator
-
-from oslo_config import cfg
-import oslo_messaging
-
-import pprint
-import sys
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
+    asr1k_cfg_syncer)
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
+    asr1k_cfg_validator)
+from neutron.plugins.cisco.common import cisco_constants
 
 # USAGE:
 # python asr1k_auto_config_check.py --config-file /etc/neutron/neutron.conf
@@ -97,7 +94,7 @@ def main():
     conf(project='neutron')
 
     host = conf.host
-    devmgr_rpc = CiscoDevMgrRPC(topics.DEVICE_MANAGER_PLUGIN, host)
+    devmgr_rpc = CiscoDevMgrRPC(cisco_constants.DEVICE_MANAGER_PLUGIN, host)
     plugin_rpc = CiscoRoutingPluginRPC(topics.L3PLUGIN, host)
 
     context = ctxt.Context('', '')

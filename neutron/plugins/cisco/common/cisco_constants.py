@@ -104,6 +104,16 @@ N1KV_VLAN_RESERVED_MAX = 4047
 N1KV_VXLAN_MIN = 4096
 N1KV_VXLAN_MAX = 16000000
 
+
+# Constants related to device manager
+# ===================================
+# Service type for device manager plugin
+DEVICE_MANAGER = "DEVICE_MANAGER"
+
+# RPC topic for device manager
+DEVICE_MANAGER_PLUGIN = 'n-devmgr-plugin'
+
+
 # Type and topic for Cisco cfg agent
 # ==================================
 AGENT_TYPE_CFG = 'Cisco cfg agent'

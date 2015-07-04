@@ -21,7 +21,8 @@ from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexception
-from neutron.plugins.common import constants
+from neutron.plugins.cisco.common import cisco_constants as constants
+from neutron.plugins.common import constants as svc_constants
 from neutron.services.service_base import ServicePluginBase
 
 
@@ -243,6 +244,9 @@ class Ciscohostingdevicemanager(extensions.ExtensionDescriptor):
     @classmethod
     def get_resources(cls):
         """Returns Ext Resources."""
+        #NOTE(bobmel): Adding URL prefix for device manager here to
+        # avoid having to add it to core neutron.
+        svc_constants.COMMON_PREFIXES[constants.DEVICE_MANAGER] = "/dev_mgr"
         plural_mappings = resource_helper.build_plural_mappings(
             {}, RESOURCE_ATTRIBUTE_MAP)
         attr.PLURALS.update(plural_mappings)

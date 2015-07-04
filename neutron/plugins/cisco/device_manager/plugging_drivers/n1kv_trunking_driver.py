@@ -26,13 +26,13 @@ from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 import neutron.plugins.cisco.device_manager.plugging_drivers as plug
 from neutron.plugins.cisco.device_manager.plugging_drivers import (
     n1kv_plugging_constants as n1kv_const)
 from neutron.plugins.cisco.device_manager.plugging_drivers import utils
 from neutron.plugins.cisco.extensions import n1kv
-from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver,
     def _get_profile_id(cls, p_type, resource, name):
         try:
             tenant_id = manager.NeutronManager.get_service_plugins()[
-                constants.DEVICE_MANAGER].l3_tenant_id()
+                cisco_constants.DEVICE_MANAGER].l3_tenant_id()
         except AttributeError:
             return
         if tenant_id is None:

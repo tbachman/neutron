@@ -244,8 +244,9 @@ class TestDeviceManagerDBPlugin(
     DeviceManagerTestCaseMixin,
         device_manager_test_support.DeviceManagerTestSupportMixin):
 
+    constants.COMMON_PREFIXES[c_constants.DEVICE_MANAGER] = "/dev_mgr"
     resource_prefix_map = dict(
-        (k, constants.COMMON_PREFIXES[constants.DEVICE_MANAGER])
+        (k, constants.COMMON_PREFIXES[c_constants.DEVICE_MANAGER])
         for k in ciscohostingdevicemanager.RESOURCE_ATTRIBUTE_MAP.keys())
 
     def setUp(self, core_plugin=None, dm_plugin=None, ext_mgr=None):
@@ -266,14 +267,14 @@ class TestDeviceManagerDBPlugin(
             self.plugin = importutils.import_object(dm_plugin)
             ext_mgr = api_ext.PluginAwareExtensionManager(
                 device_manager_test_support.extensions_path,
-                {constants.DEVICE_MANAGER: self.plugin})
+                {c_constants.DEVICE_MANAGER: self.plugin})
             app = config.load_paste_app('extensions_test_app')
             self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)
 
         self._mock_l3_admin_tenant()
         self._create_mgmt_nw_for_tests(self.fmt)
         self._devmgr = NeutronManager.get_service_plugins()[
-            constants.DEVICE_MANAGER]
+            c_constants.DEVICE_MANAGER]
         # in unit tests we don't use keystone so we mock that session
         self._devmgr._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
             keystone_session=mock.MagicMock())
