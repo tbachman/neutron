@@ -20,6 +20,7 @@ from neutron.common import constants
 from neutron.common import exceptions
 from neutron.common import utils
 from neutron import context as neutron_context
+from neutron.extensions import l3
 from neutron.extensions import portbindings
 from neutron import manager
 
@@ -30,8 +31,9 @@ class L3RouterCfgRpcCallback(object):
     """Cisco cfg agent rpc support in L3 routing service plugin."""
 
     # 1.0 L3PluginCfgAgentApi BASE_RPC_API_VERSION
-    # 1.1 Added 'cfg_sync_all_hosted_routers' method
-    target = oslo_messaging.Target(version='1.1')
+    # 1.1 Added 'update_floatingip_statuses' method
+    # 1.2 Added 'cfg_sync_all_hosted_routers' method
+    target = oslo_messaging.Target(version='1.2')
 
     def __init__(self, l3plugin):
         self._l3plugin = l3plugin
@@ -50,9 +52,9 @@ class L3RouterCfgRpcCallback(object):
         """Sync routers according to filters to a specific Cisco cfg agent.
 
         @param context: contains user information
-        @param host - originator of callback
-        @param router_ids - list of router ids to return information about
-        @param hosting_device_ids - list of hosting device ids to get
+        @param host: originator of callback
+        @param router_ids: list of router ids to return information about
+        @param hosting_device_ids: list of hosting device ids to get
         routers for.
         @return: a list of routers
                  with their hosting devices, interfaces and floating_ips
@@ -71,7 +73,7 @@ class L3RouterCfgRpcCallback(object):
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
-    # version 1.1 API
+    # version 1.2 API
     def cfg_sync_all_hosted_routers(self, context, host):
         adm_context = neutron_context.get_admin_context()
         try:
@@ -91,7 +93,7 @@ class L3RouterCfgRpcCallback(object):
         for multiple routers in one message.
 
         @param context: contains user information
-        @param host - originator of callback
+        @param host: originator of callback
         @param status_list: list of status dicts for routers
                             Each list item is
                             {'router_id': <router_id>,
@@ -108,6 +110,37 @@ class L3RouterCfgRpcCallback(object):
         # or by maintaining timers on routers in SCHEDULING|PENDING_* states.
         LOG.debug("Config agent %(host)s reported status for Neutron"
                   "routers: %(routers)s", {'host': host, 'routers': []})
+
+    # version 1.1 API
+    def update_floatingip_statuses_cfg(self, context, router_id, fip_statuses):
+        """Update operational status for one or several floating IPs.
+
+        This is called by Cisco cfg agent to update the status of one or
+        several floatingips.
+
+        @param context: contains user information
+        @param router_id: id of router associated with the floatingips
+        @param router_id: dict with floatingip_id as key and status as value
+        """
+        with context.session.begin(subtransactions=True):
+            for (floatingip_id, status) in fip_statuses.iteritems():
+                LOG.debug(_("New status for floating IP %(floatingip_id)s: "
+                            "%(status)s"), {'floatingip_id': floatingip_id,
+                                            'status': status})
+                try:
+                    self._l3plugin.update_floatingip_status(
+                        context, floatingip_id, status)
+                except l3.FloatingIPNotFound:
+                    LOG.debug(_("Floating IP: %s no longer present."),
+                              floatingip_id)
+            known_router_fips = self._l3plugin.get_floatingips(
+                context, {'last_known_router_id': [router_id]})
+            fips_to_disable = (fip['id'] for fip in known_router_fips
+                               if not fip['router_id'])
+            for fip_id in fips_to_disable:
+                LOG.debug("update_fip_statuses: disable: %s", fip_id)
+                self._l3plugin.update_floatingip_status(
+                    context, fip_id, constants.FLOATINGIP_STATUS_DOWN)
 
     def _ensure_host_set_on_ports(self, context, host, routers):
         for router in routers:

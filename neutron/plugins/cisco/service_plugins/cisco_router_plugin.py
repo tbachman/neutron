@@ -21,6 +21,8 @@ from neutron.common import constants as neutron_constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import common_db_mixin
+
+from neutron.common import constants as l3_constants
 #from neutron.db import l3_gwmode_db
 from neutron import manager
 import neutron.plugins
@@ -105,6 +107,21 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         return ("Cisco Router Service Plugin for basic L3 forwarding"
                 " between (L2) Neutron networks and access to external"
                 " networks via a NAT gateway.")
+
+    def create_floatingip(self, context, floatingip):
+        """Create floating IP.
+
+        :param context: Neutron request context
+        :param floatingip: data for the floating IP being created
+        :returns: A floating IP object on success
+
+        As the l3 router plugin asynchronously creates floating IPs
+        leveraging the l3 agent and l3 cfg agent, the initial status for the
+        floating IP object will be DOWN.
+        """
+        return super(CiscoRouterPlugin, self).create_floatingip(
+            context, floatingip,
+            initial_status=l3_constants.FLOATINGIP_STATUS_DOWN)
 
     @property
     def _core_plugin(self):

@@ -118,9 +118,9 @@ class CiscoRoutingPluginApi(object):
     def get_routers(self, context, router_ids=None, hd_ids=None):
         """Make a remote process call to retrieve the sync data for routers.
 
-        :param context: session context
-        :param router_ids: list of  routers to fetch
-        :param hd_ids : hosting device ids, only routers assigned to these
+        @param context: session context
+        @param router_ids: list of  routers to fetch
+        @param hd_ids : hosting device ids, only routers assigned to these
                         hosting devices will be returned.
         """
         cctxt = self.client.prepare()
@@ -133,6 +133,21 @@ class CiscoRoutingPluginApi(object):
         return cctxt.call(context,
                           'get_hardware_router_type_id',
                           host=self.host)
+
+    def update_floatingip_statuses(self, context, router_id, fip_statuses):
+        """Make a remote process call to update operational status for one or
+        several floating IPs.
+
+        @param context: contains user information
+        @param router_id: id of router associated with the floatingips
+        @param router_id: dict with floatingip_id as key and status as value
+        """
+        """Call the plugin update floating IPs's operational status."""
+        return self.call(context,
+                         self.make_msg('update_floatingip_statuses_cfg',
+                                       router_id=router_id,
+                                       fip_statuses=fip_statuses),
+                         version='1.1')
 
 
 class RoutingServiceHelper(object):
@@ -559,10 +574,12 @@ class RoutingServiceHelper(object):
     def _process_router_floating_ips(self, ri, ex_gw_port):
         """Process a router's floating ips.
 
-        Compare current floatingips (in ri.floating_ips) with the router's
-        updated floating ips (in ri.router.floating_ips) and detect
-        flaoting_ips which were added or removed. Notify driver of
-        the change via `floating_ip_added()` or `floating_ip_removed()`.
+        Compare floatingips configured in device (i.e., those fips in
+        the ri.floating_ips "cache") with the router's updated floating ips
+        (in ri.router.floating_ips) and determine floating_ips which were
+        added or removed. Notify driver of the change via
+        `floating_ip_added()` or `floating_ip_removed()`. Also update plugin
+        with status of fips.
 
         :param ri:  RouterInfo object of the router being processed.
         :param ex_gw_port: Port dict of the external gateway port.
@@ -571,46 +588,86 @@ class RoutingServiceHelper(object):
         if the configuration operation fails.
         """
 
-        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
-        existing_floating_ip_ids = set(
-            [fip['id'] for fip in ri.floating_ips])
-        cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
+        # fips that exist in neutron db (i.e., the desired "truth")
+        current_fips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+        # ids of fips that exist in neutron db
+        current_fip_ids = {fip['id'] for fip in current_fips}
+        # ids of fips that are configured in device
+        configured_fip_ids = {fip['id'] for fip in ri.floating_ips}
 
-        id_to_fip_map = {}
+        id_to_current_fip_map = {}
 
-        for fip in floating_ips:
-            if fip['port_id']:
-                # store to see if floatingip was remapped
-                id_to_fip_map[fip['id']] = fip
-                if fip['id'] not in existing_floating_ip_ids:
-                    ri.floating_ips.append(fip)
-                    self._floating_ip_added(ri, ex_gw_port,
-                                            fip['floating_ip_address'],
-                                            fip['fixed_ip_address'])
+        fips_to_add = []
+        # iterate of fips that exist in neutron db
+        for configured_fip in current_fips:
+            if configured_fip['port_id']:
+                # store to later check if this fip has been remapped
+                id_to_current_fip_map[configured_fip['id']] = configured_fip
+                if configured_fip['id'] not in configured_fip_ids:
+                    # Ensure that we add only after remove, in case same
+                    # fixed_ip is mapped to different floating_ip within
+                    # the same loop cycle. If add occurs before first,
+                    # cfg will fail because of existing entry with
+                    # identical fixed_ip
+                    fips_to_add.append(configured_fip)
 
-        floating_ip_ids_to_remove = (existing_floating_ip_ids -
-                                     cur_floating_ip_ids)
-        for fip in ri.floating_ips:
-            if fip['id'] in floating_ip_ids_to_remove:
-                ri.floating_ips.remove(fip)
-                self._floating_ip_removed(ri, ri.ex_gw_port,
-                                          fip['floating_ip_address'],
-                                          fip['fixed_ip_address'])
+        fip_ids_to_remove = configured_fip_ids - current_fip_ids
+        LOG.debug("fip_ids_to_add: %s" % fips_to_add)
+        LOG.debug("fip_ids_to_remove: %s" % fip_ids_to_remove)
+
+        fips_to_remove = []
+        fip_statuses = {}
+        # iterate over fips that are configured in device
+        for configured_fip in ri.floating_ips:
+            if configured_fip['id'] in fip_ids_to_remove:
+                fips_to_remove.append(configured_fip)
+                self._floating_ip_removed(
+                    ri, ri.ex_gw_port, configured_fip['floating_ip_address'],
+                    configured_fip['fixed_ip_address'])
+                fip_statuses[configured_fip['id']] = (
+                    l3_constants.FLOATINGIP_STATUS_DOWN)
+                LOG.debug("Add to fip_statuses DOWN id:%s fl_ip:%s fx_ip:%s",
+                          configured_fip['id'],
+                          configured_fip['floating_ip_address'],
+                          configured_fip['fixed_ip_address'])
             else:
-                # handle remapping of a floating IP
-                new_fip = id_to_fip_map[fip['id']]
-                new_fixed_ip = new_fip['fixed_ip_address']
-                existing_fixed_ip = fip['fixed_ip_address']
-                if (new_fixed_ip and existing_fixed_ip and
-                        new_fixed_ip != existing_fixed_ip):
-                    floating_ip = fip['floating_ip_address']
+                # handle possibly required remapping of a fip
+                # ip address that fip currently is configured for
+                configured_fixed_ip = configured_fip['fixed_ip_address']
+                new_fip = id_to_current_fip_map[configured_fip['id']]
+                # ip address that fip should be configured for
+                current_fixed_ip = new_fip['fixed_ip_address']
+                if (current_fixed_ip and configured_fixed_ip and
+                        current_fixed_ip != configured_fixed_ip):
+                    floating_ip = configured_fip['floating_ip_address']
                     self._floating_ip_removed(ri, ri.ex_gw_port,
-                                              floating_ip,
-                                              existing_fixed_ip)
-                    self._floating_ip_added(ri, ri.ex_gw_port,
-                                            floating_ip, new_fixed_ip)
-                    ri.floating_ips.remove(fip)
-                    ri.floating_ips.append(new_fip)
+                                              floating_ip, configured_fixed_ip)
+                    fip_statuses[configured_fip['id']] = (
+                        l3_constants.FLOATINGIP_STATUS_DOWN)
+                    fips_to_remove.append(configured_fip)
+                    fips_to_add.append(new_fip)
+
+        for configured_fip in fips_to_remove:
+            # remove fip from "cache" of fips configured in device
+            ri.floating_ips.remove(configured_fip)
+
+        for configured_fip in fips_to_add:
+            self._floating_ip_added(ri, ex_gw_port,
+                                    configured_fip['floating_ip_address'],
+                                    configured_fip['fixed_ip_address'])
+            # add fip to "cache" of fips configured in device
+            ri.floating_ips.append(configured_fip)
+            fip_statuses[configured_fip['id']] = (
+                l3_constants.FLOATINGIP_STATUS_ACTIVE)
+            LOG.debug("Add to fip_statuses ACTIVE id:%s fl_ip:%s fx_ip:%s",
+                      configured_fip['id'],
+                      configured_fip['floating_ip_address'],
+                      configured_fip['fixed_ip_address'])
+
+        if fip_statuses:
+            LOG.debug("Sending floatingip_statuses_update: %s", fip_statuses)
+            self.plugin_rpc.update_floatingip_statuses(
+                self.context, ri.router_id, fip_statuses)
 
     def _router_added(self, router_id, router):
         """Operations when a router is added.

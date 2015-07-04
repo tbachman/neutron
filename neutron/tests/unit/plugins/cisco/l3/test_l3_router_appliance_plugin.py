@@ -28,6 +28,7 @@ from neutron.extensions import providernet as pnet
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.device_manager import service_vm_lib
+from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2
@@ -216,6 +217,12 @@ class L3RouterApplianceRouterTypeDriverTestCase(test_l3.L3NatTestCaseMixin,
     #TODO(bobmel): Add unit tests for the other driver methods when those are
     # actually called
 
+    #NOTE(bobmel): Work-around to make these unit tests to work since we
+    # let the core plugin implement the device manager service.
+    # The device manager service should map to hosting device extension
+    service_constants.EXT_TO_SERVICE_MAPPING[
+        ciscohostingdevicemanager.HOSTING_DEVICE_MANAGER_ALIAS] = (
+        c_const.DEVICE_MANAGER)
     routertype = test_db_routertype.HW_ROUTERTYPE_NAME
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,

@@ -419,7 +419,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             self, context, floatingip,
             initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
         info = super(L3RouterApplianceDBMixin, self).create_floatingip(
-            context, floatingip)
+            context, floatingip, initial_status)
         if info['router_id']:
             routers = [self.get_router(context, info['router_id'])]
             self.add_type_and_hosting_device_info(context.elevated(),
