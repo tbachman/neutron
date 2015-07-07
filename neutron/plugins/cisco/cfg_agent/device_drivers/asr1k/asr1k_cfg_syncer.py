@@ -475,12 +475,14 @@ class ConfigSyncer(object):
 
             # Check that router has internal network interface on segment_id
             intf_match_found = False
-            for intf in router['_interfaces']:
-                if intf['device_owner'] == constants.DEVICE_OWNER_ROUTER_INTF:
-                    intf_segment_id = intf['hosting_info']['segmentation_id']
-                    if intf_segment_id == segment_id:
-                        intf_match_found = True
-                        break
+            if '_interfaces' in router:
+                for intf in router['_interfaces']:
+                    if intf['device_owner'] == constants.DEVICE_OWNER_ROUTER_INTF:
+                        intf_segment_id = intf['hosting_info']['segmentation_id']
+                        if intf_segment_id == segment_id:
+                            intf_match_found = True
+                            break
+
             if intf_match_found is False:
                 LOG.info("router does not have this internal network"
                          " assigned, deleting rule")
