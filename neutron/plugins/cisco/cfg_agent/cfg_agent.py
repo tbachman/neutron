@@ -245,6 +245,7 @@ class CiscoCfgAgent(manager.Manager):
         try:
             if payload['hosting_device_ids']:
                 #TODO(hareeshp): implement assignment of hosting devices
+                self.routing_service_helper.fullsync = True
                 pass
         except KeyError as e:
             LOG.error(_LE("Invalid payload format for received RPC message "
