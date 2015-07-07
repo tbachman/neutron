@@ -166,6 +166,9 @@ class CfgAgentSchedulerDbMixin(
                             self._bind_hosting_device_to_cfg_agent(
                                 context, hosting_device, agent)
                             agents.append(agent)
+                            self.assign_hosting_device_to_cfg_agent(context,
+                                                                    agent['id'],
+                                                                    hosting_device['id'])
                 else:
                     agents.append(hosting_device.cfg_agent)
             return agents
