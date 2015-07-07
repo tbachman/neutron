@@ -35,3 +35,4 @@ oslo.serialization>=1.4.0,<1.5.0               # Apache-2.0
 oslo.utils>=1.4.0,<1.5.0                       # Apache-2.0
 
 python-novaclient>=2.22.0,<2.24.0
+ciscoconfparse>=1.2.19
