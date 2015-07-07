@@ -789,6 +789,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             router = self.get_router(context, r_id)
             self.add_type_and_hosting_device_info(context.elevated(), router)
             routers.append(router)
+
+        if utils.is_extension_supported(self, ha.HA_ALIAS):
+            for router in routers:
+                self._floating_ip_ha_notification_helper(context, router, routers)
+
         for ni in self.get_notifiers(context, routers):
             if ni['notifier']:
                 ni['notifier'].routers_updated(context, ni['routers'],
