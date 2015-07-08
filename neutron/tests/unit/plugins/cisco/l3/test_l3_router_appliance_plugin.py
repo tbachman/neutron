@@ -185,8 +185,9 @@ class L3RouterApplianceTestCaseBase(
         attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
 
     def tearDown(self):
-        self._test_remove_routertypes()
-        self._test_remove_hosting_device_templates()
+        if self.configure_routertypes is True:
+            self._test_remove_routertypes()
+            self._test_remove_hosting_device_templates()
         self._remove_mgmt_nw_for_tests()
         TestApplianceL3RouterServicePlugin._router_schedulers = {}
         TestApplianceL3RouterServicePlugin._router_drivers = {}
