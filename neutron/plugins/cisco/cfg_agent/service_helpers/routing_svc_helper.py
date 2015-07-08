@@ -424,8 +424,26 @@ class RoutingServiceHelper(object):
                 prev_router_ids = set(self.router_info) & set(
                     [router['id'] for router in routers])
             cur_router_ids = set()
+            deleted_id_list = []
+
+            for r in routers:
+                if not r['admin_state_up']:
+                        continue
+                cur_router_ids.add(r['id'])
+
+            # identify and remove routers that no longer exist
+            for router_id in prev_router_ids - cur_router_ids:
+                self._router_removed(router_id)
+                deleted_id_list.append(router_id)
+            if removed_routers:
+                for router in removed_routers:
+                    self._router_removed(router['id'])
+                    deleted_id_list.append(router['id'])
+
             self._adjust_router_list(routers)
             for r in routers:
+                if r['id'] in deleted_id_list:
+                    continue
                 try:
                     if not r['admin_state_up']:
                         continue
@@ -449,12 +467,6 @@ class RoutingServiceHelper(object):
                                     "Error is %(e)s"), {'id': r['id'], 'e': e})
                     self.updated_routers.update([r['id']])
                     continue
-            # identify and remove routers that no longer exist
-            for router_id in prev_router_ids - cur_router_ids:
-                self._router_removed(router_id)
-            if removed_routers:
-                for router in removed_routers:
-                    self._router_removed(router['id'])
         except Exception:
             LOG.exception(_LE("Exception in processing routers on device:%s"),
                           device_id)
