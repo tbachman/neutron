@@ -198,6 +198,7 @@ class RoutingServiceHelper(object):
                 # Setting all_routers_flag and clear the global full_sync flag
                 all_routers_flag = True
                 self.fullsync = False
+                self.router_info = {}
                 self.updated_routers.clear()
                 self.removed_routers.clear()
                 self.sync_devices.clear()
