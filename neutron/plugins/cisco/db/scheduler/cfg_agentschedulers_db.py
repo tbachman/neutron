@@ -70,6 +70,8 @@ class CfgAgentSchedulerDbMixin(
     def assign_hosting_device_to_cfg_agent(self, context, cfg_agent_id,
                                            hosting_device_id):
         """Make config agent handle an (unassigned) hosting device."""
+        LOG.debug("assign hosting device, agent_id: %s, hd_id: %s" % (cfg_agent_id,
+                                                                      hosting_device_id))
         hd_db = self._get_hosting_device(context, hosting_device_id)
         if hd_db.cfg_agent_id:
             if hd_db.cfg_agent_id == cfg_agent_id:
@@ -149,6 +151,7 @@ class CfgAgentSchedulerDbMixin(
                 query = query.filter(
                     agents_db.Agent.admin_state_up == admin_state_up)
             agents = []
+            cfg_notifier = self.agent_notifiers.get(c_constants.AGENT_TYPE_CFG)
             for hosting_device in query:
                 current_agent = hosting_device.cfg_agent
                 if (current_agent and self.is_agent_down(
@@ -166,9 +169,9 @@ class CfgAgentSchedulerDbMixin(
                             self._bind_hosting_device_to_cfg_agent(
                                 context, hosting_device, agent)
                             agents.append(agent)
-                            self.assign_hosting_device_to_cfg_agent(context,
-                                                                    agent['id'],
-                                                                    hosting_device['id'])
+                            if cfg_notifier:
+                                cfg_notifier.hosting_devices_assigned_to_cfg_agent(
+                                    context, [hosting_device['id']], agent['host'])
                 else:
                     agents.append(hosting_device.cfg_agent)
             return agents
