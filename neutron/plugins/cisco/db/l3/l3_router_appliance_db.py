@@ -789,10 +789,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             router = self.get_router(context, r_id)
             self.add_type_and_hosting_device_info(context.elevated(), router)
             routers.append(router)
-
-        if utils.is_extension_supported(self, ha.HA_ALIAS):
-            for router in routers:
-                self._floating_ip_ha_notification_helper(context, router, routers)
+            self._floating_ip_ha_notification_helper(context, router, routers)
 
         for ni in self.get_notifiers(context, routers):
             if ni['notifier']:
@@ -1276,3 +1273,19 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                         l3_constants.INTERFACE_KEY, [])
                     router_interfaces.append(interface)
                     router[l3_constants.INTERFACE_KEY] = router_interfaces
+
+
+    def _get_router_for_floatingip(self, context, internal_port,
+                                   internal_subnet_id,
+                                   external_network_id):
+        if utils.is_extension_supported(self, ha.HA_ALIAS):
+            return self._ha_get_router_for_floatingip(context,
+                                                      internal_port,
+                                                      internal_subnet_id,
+                                                      external_network_id)
+        else:
+            return (super(L3RouterApplianceDBMixin, self).
+                    _get_router_for_floatingip(context,
+                                               internal_port,
+                                               internal_subnet_id,
+                                               external_network_id))

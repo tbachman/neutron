@@ -187,7 +187,6 @@ class RouterRedundancyBinding(model_base.BASEV2):
         'confirm_deleted_rows': False
     }
 
-
 class HA_db_mixin(object):
     """Mixin class to support VRRP, HSRP, and GLBP based HA for routing."""
 
@@ -727,9 +726,9 @@ class HA_db_mixin(object):
     def _get_default_other_config(self, router):
         return ''
 
-    def _get_router_for_floatingip(self, context, internal_port,
-                                   internal_subnet_id,
-                                   external_network_id):
+    def _ha_get_router_for_floatingip(self, context, internal_port,
+                                      internal_subnet_id,
+                                      external_network_id):
         """We need to over-load this function so that we only return the
         user visible router and never its redundancy routers (as they never
         have floatingips associated with them).
@@ -761,6 +760,7 @@ class HA_db_mixin(object):
             l3_db.RouterPort.router_id)
         routerport_qry = routerport_qry.filter(
             RouterRedundancyBinding.redundancy_router_id == expr.null())
+
         for router_port in routerport_qry:
             router_id = router_port.router.id
             router_gw_qry = context.session.query(models_v2.Port)
