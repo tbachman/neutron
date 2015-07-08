@@ -71,7 +71,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver,
                              utils.PluggingDriverUtilsMixin):
     """Driver class for service VMs used with the N1kv plugin.
 
-    The driver makes use N1kv plugin's VLAN trunk feature.
+    The driver makes use of the N1kv plugin's VLAN trunk feature.
     """
     _mgmt_port_profile_id = None
     _t1_port_profile_id = None
@@ -264,16 +264,18 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver,
         # have 'device_owner' attribute set to complementary_id. Hence, we
         # use both attributes in the query to ensure we find all ports.
         query = context.session.query(models_v2.Port)
+        query = query.filter_by(tenant_id=tenant_id)
         query = query.filter(expr.or_(
-            models_v2.Port.device_id == id,
+            expr.and_(models_v2.Port.device_id != '',
+                      models_v2.Port.device_id == id),
             models_v2.Port.device_owner == complementary_id))
-        for port in query:
-            if port['network_id'] != mgmt_nw_id:
-                ports.append(port)
-                nets.append({'id': port['network_id']})
-                subnets.append({'id': port['fixed_ips'][0]['subnet_id']})
+        for port_db in query:
+            if port_db.network_id != mgmt_nw_id:
+                ports.append({'id': port_db.id})
+                nets.append({'id': port_db.network_id})
+                subnets.append({'id': port_db.fixed_ips[0].subnet_id})
             else:
-                mgmt_port = port
+                mgmt_port = {'id': port_db.id}
         return {'mgmt_port': mgmt_port,
                 'ports': ports, 'networks': nets, 'subnets': subnets}
 
@@ -386,7 +388,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver,
             LOG.debug('n1kv_trunking_driver: Could not allocate hosting port')
             return
         if network_type == 'vxlan':
-            # For VLXAN we choose the (link local) VLAN tag
+            # For VXLAN we choose the (link local) VLAN tag
             used_tags = set(trunk_mappings.values())
             allocated_vlan = min(sorted(FULL_VLAN_SET - used_tags))
         else:
@@ -414,14 +416,14 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver,
             [n1kv.PROFILE_ID])
         if np_id_t_nw.get(n1kv.PROFILE_ID) == self.t1_network_profile_id():
             # for vxlan trunked segment, id:s end with ':'link local vlan tag
-            trunk_spec = (port_db['network_id'] + ':' +
+            trunk_spec = (port_db.network_id + ':' +
                           str(port_db.hosting_info.segmentation_id))
         else:
-            trunk_spec = port_db['network_id']
+            trunk_spec = port_db.network_id
         LOG.info(_LI('Updating trunk: %(action)s VLAN %(tag)d for network_id '
                      '%(id)s'), {'action': action,
                                  'tag': port_db.hosting_info.segmentation_id,
-                                 'id': port_db['network_id']})
+                                 'id': port_db.network_id})
         #TODO(bobmel): enable statement below when N1kv does not trunk all
         if False:
             self._core_plugin.update_network(

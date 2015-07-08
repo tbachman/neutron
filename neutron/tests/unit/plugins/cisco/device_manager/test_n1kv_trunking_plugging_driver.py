@@ -26,6 +26,8 @@ from neutron.extensions import providernet as pr_net
 from neutron.plugins.cisco.device_manager.plugging_drivers.\
     n1kv_ml2_trunking_driver import N1kvML2TrunkingPlugDriver
 from neutron.plugins.cisco.device_manager.plugging_drivers.\
+    n1kv_trunking_driver import N1kvTrunkingPlugDriver
+from neutron.plugins.cisco.device_manager.plugging_drivers.\
     n1kv_ml2_trunking_driver import MIN_LL_VLAN_TAG
 from neutron.plugins.cisco.device_manager.plugging_drivers import (
     n1kv_plugging_constants as n1kv_const)
@@ -43,6 +45,8 @@ class TestN1kvTrunkingPluggingDriver(
     # we use router types defined in .ini file.
     configure_routertypes = False
     router_type = 'CSR1kv_Neutron_router'
+
+    test_driver = N1kvML2TrunkingPlugDriver
 
     def setUp(self):
         super(TestN1kvTrunkingPluggingDriver, self).setUp()
@@ -73,7 +77,7 @@ class TestN1kvTrunkingPluggingDriver(
     def test__get_profile_id(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         p_id = plugging_driver._get_profile_id('port_profile', 'N1kv port '
                                                'profile', 'the_profile')
         self.assertEqual(p_id, 'profile_uuid1')
@@ -82,7 +86,7 @@ class TestN1kvTrunkingPluggingDriver(
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'},
                                           {'id': 'profile_uuid2'}])
         self.core_plugin.get_policy_profiles = m1
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         p_id = plugging_driver._get_profile_id('port_profile', 'N1kv port '
                                                'profile', 'the_profile')
         self.assertEqual(p_id, None)
@@ -90,7 +94,7 @@ class TestN1kvTrunkingPluggingDriver(
     def test__get_profile_id_no_match(self):
         m1 = mock.MagicMock(return_value=[])
         self.core_plugin.get_policy_profiles = m1
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         p_id = plugging_driver._get_profile_id('port_profile', 'N1kv port '
                                                'profile', 'the_profile')
         self.assertEqual(p_id, None)
@@ -110,10 +114,13 @@ class TestN1kvTrunkingPluggingDriver(
 
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
@@ -128,10 +135,13 @@ class TestN1kvTrunkingPluggingDriver(
     def test_create_hosting_device_resources_no_mgmt_context(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, None, 2)
         self.assertIsNone(res['mgmt_port'], res)
@@ -140,7 +150,7 @@ class TestN1kvTrunkingPluggingDriver(
         self.assertEqual(len(res['ports']), 0)
 
     def test__create_resources(self):
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         tenant_id = 'tenant_uuid1'
         ctx = context.Context('', tenant_id, is_admin=True)
         n_spec = {'network': {
@@ -170,9 +180,14 @@ class TestN1kvTrunkingPluggingDriver(
             # ports even before Nova has set device_id attribute.
             'device_owner': "some_id"}}
         t1_n, t1_sn, t1_p = [], [], []
-        plugging_driver._create_resources(ctx, 'T1', 0, n_spec, 't1_n:', t1_n,
-                                          s_spec, 't1_sn:', t1_sn, p_spec,
-                                          't1_p:', 'profile_id', t1_p)
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            plugging_driver._create_resources(
+                ctx, 'T1', 0, n_spec, 't1_n:', 'net_profile_id', t1_n,
+                s_spec, 't1_sn:', t1_sn, p_spec, 't1_p:', 'profile_id', t1_p)
+        else:
+            plugging_driver._create_resources(
+                ctx, 'T1', 0, n_spec, 't1_n:', t1_n, s_spec, 't1_sn:', t1_sn,
+                p_spec, 't1_p:', 'profile_id', t1_p)
         self.assertEqual(len(t1_n), 1)
         self.assertEqual(t1_n[0]['name'], 't1_n:1')
         self.assertEqual(len(t1_sn), 1)
@@ -184,10 +199,13 @@ class TestN1kvTrunkingPluggingDriver(
     def test_get_hosting_device_resources_by_complementary_id(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 1)
@@ -208,10 +226,13 @@ class TestN1kvTrunkingPluggingDriver(
     def test_get_hosting_device_resources_by_device_id(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 1)
@@ -240,11 +261,14 @@ class TestN1kvTrunkingPluggingDriver(
     def test_delete_hosting_device_resources(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
         nets = self._list('networks')
@@ -281,11 +305,14 @@ class TestN1kvTrunkingPluggingDriver(
 
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         real_delete_resources = plugging_driver._delete_resources
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
@@ -319,11 +346,14 @@ class TestN1kvTrunkingPluggingDriver(
     def test_delete_hosting_device_resources_finite_attempts(self):
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
         nets = self._list('networks')
@@ -360,7 +390,7 @@ class TestN1kvTrunkingPluggingDriver(
         hosting_device = mock.MagicMock()
         tenant_id = 'tenant_uuid1'
         ctx = context.Context('', tenant_id, is_admin=True)
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         plugging_driver.extend_hosting_port_info(ctx, fake_port_db_obj,
                                                  hosting_device, hosting_info)
         self.assertEqual(hosting_info['segmentation_id'], 50)
@@ -420,11 +450,14 @@ class TestN1kvTrunkingPluggingDriver(
 
         m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
         self.core_plugin.get_policy_profiles = m1
+        if self.test_driver == N1kvTrunkingPlugDriver:
+            m2 = mock.MagicMock(return_value=[{'id': 'profile_uuid2'}])
+            self.core_plugin.get_network_profiles = m2
         osn_subnet = self._list('subnets')['subnets'][0]
         tenant_id = osn_subnet['tenant_id']
         ctx = context.Context('', tenant_id, is_admin=True)
         mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = N1kvML2TrunkingPlugDriver()
+        plugging_driver = self.test_driver()
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
         plugging_driver.setup_logical_port_connectivity = mock.MagicMock()
@@ -563,7 +596,7 @@ class TestN1kvTrunkingPluggingDriver(
             with self.router(external_gateway_info=gw_info,
                              tenant_id=sn1['tenant_id']) as router1:
                 r1 = router1['router']
-                plugging_driver = N1kvML2TrunkingPlugDriver()
+                plugging_driver = self.test_driver()
                 u_ctx = context.Context('', r1['tenant_id'], is_admin=True)
                 gw_port_db = self.core_plugin._get_ports_query(
                         u_ctx, filters={'network_id': [ext_net_id]}).one()
@@ -582,3 +615,33 @@ class TestN1kvTrunkingPluggingDriver(
 
     def test_allocate_hosting_port_vxlan_network_no_port_found_failure(self):
         self._test_allocate_hosting_port_no_port_found_failure('vxlan')
+
+
+class TestMonolithicN1kvTrunkingPluggingDriver(TestN1kvTrunkingPluggingDriver):
+
+    test_driver = N1kvTrunkingPlugDriver
+
+    def test__get_network_profile_id(self):
+        m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'}])
+        self.core_plugin.get_network_profiles = m1
+        plugging_driver = self.test_driver()
+        p_id = plugging_driver._get_profile_id('net_profile', 'net profile',
+                                               'the_profile')
+        self.assertEqual(p_id, 'profile_uuid1')
+
+    def test__get_network_profile_id_multiple_match(self):
+        m1 = mock.MagicMock(return_value=[{'id': 'profile_uuid1'},
+                                          {'id': 'profile_uuid2'}])
+        self.core_plugin.get_network_profiles = m1
+        plugging_driver = self.test_driver()
+        p_id = plugging_driver._get_profile_id('net_profile', 'net profile',
+                                               'the_profile')
+        self.assertEqual(p_id, None)
+
+    def test__get_network_profile_id_no_match(self):
+        m1 = mock.MagicMock(return_value=[])
+        self.core_plugin.get_network_profiles = m1
+        plugging_driver = self.test_driver()
+        p_id = plugging_driver._get_profile_id('net_profile', 'net profile',
+                                               'the_profile')
+        self.assertEqual(p_id, None)
