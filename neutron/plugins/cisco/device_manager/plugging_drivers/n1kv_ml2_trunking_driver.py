@@ -88,12 +88,6 @@ class N1kvML2TrunkingPlugDriver(plug.PluginSidePluggingDriver,
         if tenant_id is None:
             return
         core_plugin = manager.NeutronManager.get_plugin()
-        # if p_type == 'net_profile':
-        #     profiles = core_plugin.get_network_profiles(
-        #         n_context.get_admin_context(),
-        #         {'tenant_id': [tenant_id], 'name': [name]},
-        #         ['id'])
-        # else:
         profiles = core_plugin.get_policy_profiles(
             n_context.get_admin_context(),
             {'tenant_id': [tenant_id], 'name': [name]}, ['id'])
