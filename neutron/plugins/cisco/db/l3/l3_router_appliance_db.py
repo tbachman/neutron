@@ -1079,19 +1079,19 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                       port_db['id'])
             return
         with context.session.begin(subtransactions=True):
-            h_info = hd_models.HostedHostingPortBinding(
+            h_info_db = hd_models.HostedHostingPortBinding(
                 logical_resource_id=router_id,
                 logical_port_id=port_db['id'],
                 network_type=network_type,
                 hosting_port_id=alloc['allocated_port_id'],
                 segmentation_id=alloc['allocated_vlan'])
-            context.session.add(h_info)
+            context.session.add(h_info_db)
             context.session.expire(port_db)
         # allocation succeeded so establish connectivity for logical port
-        context.session.expire(h_info)
+        context.session.expire(h_info_db)
         plugging_driver.setup_logical_port_connectivity(context, port_db,
                                                         hosting_device_id)
-        return h_info
+        return h_info_db
 
     def _get_router_port_db_on_subnet(self, router_db, subnet):
         for router_port in router_db.attached_ports:

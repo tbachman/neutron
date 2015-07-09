@@ -209,4 +209,4 @@ class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                                       '%(key)s, %(value)s in configuration '
                                       'file for device = %(dev)s'),
                                   {'key': k, 'value': v, 'dev': hd_uuid})
-            cls._device_network_interface_map = temp
+        cls._device_network_interface_map = temp
