@@ -101,17 +101,12 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     def svc_vm_mgr(self):
         if self._svc_vm_mgr_obj is None:
             auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-    #        u_name = cfg.CONF.keystone_authtoken.admin_user
-    #        pw = cfg.CONF.keystone_authtoken.admin_password
+            u_name = cfg.CONF.keystone_authtoken.admin_user
+            pw = cfg.CONF.keystone_authtoken.admin_password
 
     #        u_name = cfg.CONF.keystone_authtoken.username
     #        pw = cfg.CONF.keystone_authtoken.password
             tenant = cfg.CONF.general.l3_admin_tenant
-
-            # start hack for now - NH
-            u_name = "admin"
-            pw = "admin123"
-            # end hack
 
             self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
                 user=u_name, passwd=pw, l3_admin_tenant=tenant,
