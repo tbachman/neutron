@@ -16,6 +16,7 @@ import collections
 import eventlet
 import netaddr
 import pprint
+import copy
 
 from oslo_log import log as logging
 import oslo_messaging
@@ -143,6 +144,9 @@ class RoutingServiceHelper(object):
         self.fullsync = True
         self.topic = '%s.%s' % (c_constants.CFG_AGENT_L3_ROUTING, host)
 
+        self.hardware_router_type = None
+        self.hardware_router_type_id = None
+
         self._setup_rpc()
 
     def _setup_rpc(self):
@@ -189,6 +193,7 @@ class RoutingServiceHelper(object):
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
             LOG.debug("Routing service processing started")
+            self._init_hardware_router_type()
             resources = {}
             routers = []
             removed_routers = []
@@ -203,26 +208,7 @@ class RoutingServiceHelper(object):
                 self.removed_routers.clear()
                 self.sync_devices.clear()
                 routers = self._fetch_router_info(all_routers=True)
-
-                cfg_syncers = []
-                hds = self.cfg_agent.get_assigned_hosting_devices()
-                LOG.error("\n\n\nHHHHHHHOSTING DEVICES: %s\n\n\n" % hds)
-                for hd in hds['hosting_devices']:
-                    if hd['template_id'] == \
-                        '00000000-0000-0000-0000-000000000001':
-                        continue
-                    temp_res = {"id": hd['id'],
-                                "hosting_device": hd,
-                                "router_type": TEMP_ASR_ROUTER_TYPE}
-                    driver = self._drivermgr.set_driver(temp_res)
-                    cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers,
-                                                               driver,
-                                                               hd)
-                    cfg_syncers.append(cfg_syncer)
-
-                for cfg_syncer in cfg_syncers:
-                    cfg_syncer.delete_invalid_cfg()
-
+                self._cleanup_invalid_cfg(routers)
             else:
                 if self.updated_routers:
                     router_ids = list(self.updated_routers)
@@ -312,6 +298,31 @@ class RoutingServiceHelper(object):
         return configurations
 
     # Routing service helper internal methods
+
+    def _init_hardware_router_type(self):
+        if self.hardware_router_type_id is None:
+            self.hardware_router_type_id = self.cfg_agent.get_hardware_router_type_id()
+            self.hardware_router_type = copy.deepcopy(TEMP_ASR_ROUTER_TYPE)
+            self.hardware_router_type['id'] = self.hardware_router_type_id
+
+    def _cleanup_invalid_cfg(self, routers):
+        cfg_syncers = []
+        hds = self.cfg_agent.get_assigned_hosting_devices()
+        LOG.debug("HOSTING DEVICES: %s" % hds)
+        for hd in hds['hosting_devices']:
+            if hd['template_id'] != self.hardware_router_type_id:
+                continue
+            temp_res = {"id": hd['id'],
+                        "hosting_device": hd,
+                        "router_type": self.hardware_router_type}
+            driver = self._drivermgr.set_driver(temp_res)
+            cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers,
+                                                       driver,
+                                                       hd)
+            cfg_syncers.append(cfg_syncer)
+
+        for cfg_syncer in cfg_syncers:
+            cfg_syncer.delete_invalid_cfg()
 
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):

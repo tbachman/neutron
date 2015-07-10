@@ -77,3 +77,6 @@ class DeviceMgrCfgRpcCallback(object):
             return hds
 
         return {"hosting_devices": []}
+
+    def get_hardware_router_type_id(self, context, host):
+        return self._dmplugin.get_hardware_router_type_id(context)
