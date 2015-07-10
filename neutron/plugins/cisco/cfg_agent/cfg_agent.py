@@ -81,13 +81,6 @@ class CiscoDeviceManagementApi(object):
                           'get_hosting_devices_for_agent',
                           host=self.host)
 
-    def get_hardware_router_type_id(self, context):
-        """Get the ID for the ASR1k hardware router type."""
-        cctxt = self.client.prepare()
-        return cctxt.call(context,
-                          'get_hardware_router_type_id',
-                          host=self.host)
-
 
 class CiscoCfgAgent(manager.Manager):
     """Cisco Cfg Agent.
@@ -288,11 +281,6 @@ class CiscoCfgAgent(manager.Manager):
     def get_assigned_hosting_devices(self):
         context = n_context.get_admin_context_without_session()
         res = self.devmgr_rpc.get_hosting_devices_for_agent(context)
-        return res
-
-    def get_hardware_router_type_id(self):
-        context = n_context.get_admin_context_without_session()
-        res = self.devmgr_rpc.get_hardware_router_type_id(context)
         return res
 
 

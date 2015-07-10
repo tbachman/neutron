@@ -119,3 +119,6 @@ class L3RouterCfgRpcCallback(object):
                 LOG.debug("Port %(port)s not found while updating "
                           "agent binding for router %(router)s."
                           % {"port": port['id'], "router": router_id})
+
+    def get_hardware_router_type_id(self, context, host):
+        return self._l3plugin.get_hardware_router_type_id(context)

@@ -126,6 +126,13 @@ class CiscoRoutingPluginApi(object):
         return cctxt.call(context, 'cfg_sync_routers', host=self.host,
                           router_ids=router_ids, hosting_device_ids=hd_ids)
 
+    def get_hardware_router_type_id(self, context):
+        """Get the ID for the ASR1k hardware router type."""
+        cctxt = self.client.prepare()
+        return cctxt.call(context,
+                          'get_hardware_router_type_id',
+                          host=self.host)
+
 
 class RoutingServiceHelper(object):
 
@@ -301,7 +308,9 @@ class RoutingServiceHelper(object):
 
     def _init_hardware_router_type(self):
         if self.hardware_router_type_id is None:
-            self.hardware_router_type_id = self.cfg_agent.get_hardware_router_type_id()
+            self.hardware_router_type_id = \
+                self.plugin_rpc.get_hardware_router_type_id(self.context)
+
             self.hardware_router_type = copy.deepcopy(TEMP_ASR_ROUTER_TYPE)
             self.hardware_router_type['id'] = self.hardware_router_type_id
 
