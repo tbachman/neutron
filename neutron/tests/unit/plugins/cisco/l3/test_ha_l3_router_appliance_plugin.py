@@ -212,6 +212,40 @@ class HAL3RouterApplianceVMTestCase(
                 self._test_create_ha_router(r['router'], s['subnet'],
                                             ha_settings)
 
+    def test_create_ha_router_with_ha_specification_validation_fails(self):
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            ha_settings = self._get_ha_defaults(redundancy_level=5,
+                ha_type=ha.HA_GLBP, priority=15, probing_enabled=True,
+                probe_interval=3, probe_target='10.5.5.2')
+            kwargs = {ha.ENABLED: True,
+                      ha.DETAILS: ha_settings[ha.DETAILS],
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            res = self._create_router(self.fmt, _uuid(), 'ha_router1',
+                                  arg_list=(ha.ENABLED,
+                                            ha.DETAILS,
+                                            l3.EXTERNAL_GW_INFO),
+                                  **kwargs)
+            self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def test_create_ha_router_with_ha_specification_invalid_HA_type_fails(self):
+        with self.subnet() as s:
+            self._set_net_external(s['subnet']['network_id'])
+            ha_settings = self._get_ha_defaults(redundancy_level=3,
+                ha_type="UNKNOWN", priority=15, probing_enabled=True,
+                probe_interval=3, probe_target='10.5.5.2')
+            kwargs = {ha.ENABLED: True,
+                      ha.DETAILS: ha_settings[ha.DETAILS],
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            res = self._create_router(self.fmt, _uuid(), 'ha_router1',
+                                  arg_list=(ha.ENABLED,
+                                            ha.DETAILS,
+                                            l3.EXTERNAL_GW_INFO),
+                                  **kwargs)
+            self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
     def test_create_ha_router_with_ha_specification_non_admin_fails(self):
         with self.subnet() as s:
             self._set_net_external(s['subnet']['network_id'])

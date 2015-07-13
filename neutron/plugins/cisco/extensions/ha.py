@@ -51,24 +51,31 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'enforce_policy': True,
             'validate': {
                 'type:dict_or_nodata': {
-                    TYPE: {'type:values': HA_TYPES,
+                    TYPE: {'allow_post': True, 'allow_put': True,
+                           'type:values': HA_TYPES,
                            'default': attr.ATTR_NOT_SPECIFIED,
                            'is_visible': True},
-                    PRIORITY: {'convert_to': attr.convert_to_int,
+                    PRIORITY: {'allow_post': True, 'allow_put': True,
+                               'convert_to': attr.convert_to_int,
                                'type:non_negative': None,
                                'default': attr.ATTR_NOT_SPECIFIED},
-                    REDUNDANCY_LEVEL: {'convert_to': attr.convert_to_int,
+                    REDUNDANCY_LEVEL: {'allow_post': True, 'allow_put': True,
+                                       'convert_to': attr.convert_to_int,
                                        'type:range': [MIN_REDUNDANCY_LEVEL,
                                                       MAX_REDUNDANCY_LEVEL],
                                        'default': attr.ATTR_NOT_SPECIFIED,
                                        'is_visible': True},
-                    PROBE_CONNECTIVITY: {'convert_to': attr.convert_to_boolean,
+                    PROBE_CONNECTIVITY: {'allow_post': True,
+                                         'allow_put': True,
+                                         'convert_to': attr.convert_to_boolean,
                                          'default': attr.ATTR_NOT_SPECIFIED,
                                          'is_visible': True},
-                    PROBE_TARGET: {'type:ip_address_or_none': None,
+                    PROBE_TARGET: {'allow_post': True, 'allow_put': True,
+                                   'type:ip_address': None,
                                    'default': attr.ATTR_NOT_SPECIFIED,
                                    'is_visible': True},
-                    PROBE_INTERVAL: {'convert_to': attr.convert_to_int,
+                    PROBE_INTERVAL: {'allow_post': True, 'allow_put': True,
+                                     'convert_to': attr.convert_to_int,
                                      'type:non_negative': None,
                                      'default': attr.ATTR_NOT_SPECIFIED,
                                      'is_visible': True},
@@ -77,12 +84,16 @@ EXTENDED_ATTRIBUTES_2_0 = {
                         'is_visible': True,
                         'default': attr.ATTR_NOT_SPECIFIED,
                         'enforce_policy': True,
-                        'type:dict_or_nodata': {
-                            ROUTER_ID: {'type:uuid_or_none': None},
-                            PRIORITY: {'convert_to': attr.convert_to_int,
-                                       'type:non_negative': None,
-                                       'default': attr.ATTR_NOT_SPECIFIED}
-                        }
+                        'validate': {'type:dict_or_nodata': {
+                            ROUTER_ID: {
+                                'allow_post': False, 'allow_put': False,
+                                'type:uuid': None},
+                            PRIORITY: {
+                                'allow_post': False, 'allow_put': False,
+                                'convert_to': attr.convert_to_int,
+                                'type:non_negative': None,
+                                'default': attr.ATTR_NOT_SPECIFIED}
+                        }}
                     }
                 }
             }
