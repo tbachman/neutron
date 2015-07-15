@@ -200,12 +200,14 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         ha_spec[ha.ENABLED] == False
         """
         r = router['router']
-        router_type_id = self._ensure_create_routertype_compliant(context, r)
+        router_type_id, is_hardware_router = \
+            self._ensure_create_routertype_compliant(context, r)
+
         is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
                  router_type_id != self.get_namespace_router_type_id(context))
 
-        is_hardware_router = \
-            (router_type_id == self.get_hardware_router_type_id(context))
+        # is_hardware_router = \
+        #    (router_type_id == self.get_hardware_router_type_id(context))
 
         role = None
         if is_ha:
@@ -964,6 +966,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         return [v for k, v in res.items() if v['routers']]
 
     def _ensure_create_routertype_compliant(self, context, router):
+        """
+        if compliant, will return the router type id, is_hardware_router
+
+        if attempting to create a virtualized router and a management
+        network doesn't exist, RoutercreateInternalError is raised.
+        """
         router_type_name = router.pop(routertype.TYPE_ATTR,
                                       attributes.ATTR_NOT_SPECIFIED)
         if router_type_name is attributes.ATTR_NOT_SPECIFIED:
@@ -971,10 +979,18 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         namespace_router_type_id = self.get_namespace_router_type_id(context)
         router_type_id = self.get_routertype_by_id_name(
             context, router_type_name)['id']
+
+        is_hardware_router = \
+            (router_type_id == self.get_hardware_router_type_id(context))
+
+        # Should only complain if we are attempting to create a
+        # virtualized router without a mgmt network created.  A
+        # mgmt network is not required for a hardware router.
         if (router_type_id != namespace_router_type_id and
-                self._dev_mgr.mgmt_nw_id() is None):
+                self._dev_mgr.mgmt_nw_id() is None and
+                is_hardware_router is not True):
             raise RouterCreateInternalError()
-        return router_type_id
+        return router_type_id, is_hardware_router
 
     def _get_effective_and_normal_routertypes(self, context, hosting_info):
         if hosting_info:
