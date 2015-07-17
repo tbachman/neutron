@@ -1314,6 +1314,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         else:
             target_router_id = router_id
 
+        LOG.debug("check router FIPs, router_id: %s, target_id: %s" % (router_id,
+                                                                       target_router_id))
+
         return (super(L3RouterApplianceDBMixin, self).
                 _confirm_router_interface_not_in_use(context,
                                                      target_router_id,
