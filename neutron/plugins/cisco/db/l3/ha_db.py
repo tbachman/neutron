@@ -775,3 +775,13 @@ class HA_db_mixin(object):
             subnet_id=internal_subnet_id,
             external_network_id=external_network_id,
             port_id=internal_port['id'])
+
+
+    def _get_user_router_id_for_router(self, context, router_id):
+        r_r_b = self._get_redundancy_router_bindings(context, router_id=router_id)
+        if r_r_b:
+            user_router_id = r_r_b[0].user_router_id
+            if not user_router_id:
+                LOG.error("Redundancy router %s is missing user_router_id." % router_id)
+            return user_router_id
+        return router_id

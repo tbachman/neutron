@@ -1289,3 +1289,17 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                internal_port,
                                                internal_subnet_id,
                                                external_network_id))
+
+    def _confirm_router_interface_not_in_use(self, context, router_id,
+                                             subnet_id):
+        if utils.is_extension_supported(self, ha.HA_ALIAS):
+            target_router_id = self._get_user_router_id_for_router(context,
+                                                                   router_id)
+        else:
+            target_router_id = router_id
+
+        return (super(L3RouterApplianceDBMixin, self).
+                _confirm_router_interface_not_in_use(context,
+                                                     target_router_id,
+                                                     subnet_id))
+
