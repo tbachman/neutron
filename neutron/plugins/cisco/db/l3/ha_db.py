@@ -778,7 +778,8 @@ class HA_db_mixin(object):
 
 
     def _get_user_router_id_for_router(self, context, router_id):
-        r_r_b = self._get_redundancy_router_bindings(context, router_id=router_id)
+        r_r_b = self._get_redundancy_router_bindings(context,
+                                                     redundancy_router_id=router_id)
         if r_r_b:
             user_router_id = r_r_b[0].user_router_id
             if not user_router_id:
