@@ -36,6 +36,8 @@ HSRP_V4_VIP_REGEX = "\s*standby (\d+) ip (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 
 SNAT_REGEX = "ip nat inside source static (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) vrf " + NROUTER_REGEX + " redundancy neutron-hsrp-(\d+)-(\d+)"
 
+SNAT_REGEX_OLD = "ip nat inside source static (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) vrf " + NROUTER_REGEX + " redundancy neutron-hsrp-grp-(\d+)-(\d+)"
+
 NAT_POOL_REGEX = "ip nat pool " + NROUTER_REGEX + "_nat_pool (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) netmask (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 
 NAT_OVERLOAD_REGEX = "ip nat inside source list neutron_acl_(\d+) interface \S+\.(\d+) vrf " + NROUTER_REGEX + " overload"
@@ -366,6 +368,13 @@ class ConfigSyncer(object):
 
     def clean_snat(self, conn, router_id_dict, intf_segment_dict, segment_nat_dict, parsed_cfg):
         delete_fip_list = []
+        
+        # Delete any entries with old style 'hsrp-grp-x-y' grp name
+        floating_ip_old_rules = parsed_cfg.find_objects(SNAT_REGEX_OLD)
+        for snat_rule in floating_ip_old_rules:
+            LOG.info("\n Rule is old format, deleting: %s" % snat_rule.text)
+            delete_fip_list.append(snat_rule.text)
+
         floating_ip_nats = parsed_cfg.find_objects(SNAT_REGEX)
         for snat_rule in floating_ip_nats:
             LOG.info("\nstatic nat rule: %s" % (snat_rule))
