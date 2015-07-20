@@ -481,7 +481,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                         initial_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
         info = super(L3RouterApplianceDBMixin, self).create_floatingip(
             context, floatingip)
-
+        context = context.elevated()
         if info['router_id']:
             routers = [self.get_router(context, info['router_id'])]
             self.add_type_and_hosting_device_info(context.elevated(),
@@ -508,6 +508,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if r_id and r_id != before_router_id:
             router_ids.append(r_id)
         routers = []
+        context = context.elevated()
         for r_id in router_ids:
             router = self.get_router(context, r_id)
             self.add_type_and_hosting_device_info(context.elevated(), router)
@@ -524,6 +525,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         router_id = floatingip_db['router_id']
         super(L3RouterApplianceDBMixin, self).delete_floatingip(context,
                                                                 floatingip_id)
+        context = context.elevated()
         if router_id:
             routers = [self.get_router(context, router_id)]
             self.add_type_and_hosting_device_info(context.elevated(),
@@ -541,6 +543,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                            self).disassociate_floatingips(context, port_id)
         if router_ids and do_notify:
             routers = []
+            context = context.elevated()
             for router_id in router_ids:
                 router = self.get_router(context, router_id)
                 self.add_type_and_hosting_device_info(context.elevated(),
