@@ -257,6 +257,8 @@ class RoutingServiceHelper(object):
             for device_id, resources in hosting_devices.items():
                 routers = resources.get('routers')
                 removed_routers = resources.get('removed_routers')
+                if routers is None:
+                    routers = []
                 pool.spawn_n(self._process_routers, routers, removed_routers,
                              device_id, all_routers=all_routers_flag)
             pool.waitall()
