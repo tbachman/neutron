@@ -58,8 +58,9 @@ def main():
     plugin_rpc = CiscoRoutingPluginRPC(topics.L3PLUGIN, host)
 
     context = ctxt.Context('','')
+    # TODO: create an admin context instead
     hosting_devs = devmgr_rpc.get_all_hosting_devices(context)
-    for hd in hosting_devs:
+    for hd in hosting_devs['hosting_devices']:
         print("HOSTING DEVICE: %s" % hd)
 
 if __name__ == "__main__":
