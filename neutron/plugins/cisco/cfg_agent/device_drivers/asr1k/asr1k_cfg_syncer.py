@@ -68,7 +68,7 @@ def is_port_v6(port):
 
 class ConfigSyncer(object):
 
-    def __init__(self, router_db_info, driver, hosting_device_info):
+    def __init__(self, router_db_info, driver, hosting_device_info, test_mode=False):
         self.existing_cfg_dict = {}
         self.driver = driver
         self.hosting_device_info = hosting_device_info
@@ -83,6 +83,7 @@ class ConfigSyncer(object):
         self.router_id_dict = router_id_dict
         self.intf_segment_dict = interface_segment_dict
         self.segment_nat_dict = segment_nat_dict
+        self.test_mode = test_mode
 
     def process_routers_data(self, routers):
         hd_id = self.hosting_device_info['id']
@@ -137,12 +138,13 @@ class ConfigSyncer(object):
         # LOG.info("segment_nat_dict: %s" % segment_nat_dict)
         return router_id_dict, interface_segment_dict, segment_nat_dict
 
-    def delete_invalid_cfg(self):
+    def delete_invalid_cfg(self, conn=None):
         router_id_dict = self.router_id_dict
         intf_segment_dict = self.intf_segment_dict
         segment_nat_dict = self.segment_nat_dict
 
-        conn = self.driver._get_connection()
+        if not conn:
+            conn = self.driver._get_connection()
 
         LOG.info("*************************")
 
@@ -163,40 +165,46 @@ class ConfigSyncer(object):
         running_cfg = self.get_running_config(conn)
         parsed_cfg = ciscoconfparse.CiscoConfParse(running_cfg)
 
-        self.clean_snat(conn,
-                        router_id_dict,
-                        intf_segment_dict,
-                        segment_nat_dict,
-                        parsed_cfg)
+        invalid_cfg = []
 
-        self.clean_nat_pool_overload(conn,
-                                     router_id_dict,
-                                     intf_segment_dict,
-                                     segment_nat_dict,
-                                     parsed_cfg)
-        self.clean_nat_pool(conn,
-                            router_id_dict,
-                            intf_segment_dict,
-                            segment_nat_dict,
-                            parsed_cfg)
-
-        self.clean_default_route(conn,
-                                 router_id_dict,
-                                 intf_segment_dict,
-                                 segment_nat_dict,
-                                 parsed_cfg, DEFAULT_ROUTE_REGEX)
+        invalid_cfg += self.clean_snat(conn,
+                                       router_id_dict,
+                                       intf_segment_dict,
+                                       segment_nat_dict,
+                                       parsed_cfg)
+        
+        invalid_cfg += self.clean_nat_pool_overload(conn,
+                                                    router_id_dict,
+                                                    intf_segment_dict,
+                                                    segment_nat_dict,
+                                                    parsed_cfg)
+        
+        invalid_cfg += self.clean_nat_pool(conn,
+                                           router_id_dict,
+                                           intf_segment_dict,
+                                           segment_nat_dict,
+                                           parsed_cfg)
+        
+        invalid_cfg += self.clean_default_route(conn,
+                                                router_id_dict,
+                                                intf_segment_dict,
+                                                segment_nat_dict,
+                                                parsed_cfg, DEFAULT_ROUTE_REGEX)
         #self.clean_default_route(conn,
         #                         router_id_dict,
         #                         intf_segment_dict,
         #                         segment_nat_dict,
         #                         parsed_cfg, self.DEFAULT_ROUTE_V6_REGEX)
-        self.clean_acls(conn, intf_segment_dict, segment_nat_dict, parsed_cfg)
+        invalid_cfg += self.clean_acls(conn, intf_segment_dict, segment_nat_dict, parsed_cfg)
 
-        self.clean_interfaces(conn,
-                              intf_segment_dict,
-                              segment_nat_dict,
-                              parsed_cfg)
-        self.clean_vrfs(conn, router_id_dict, parsed_cfg)
+        invalid_cfg += self.clean_interfaces(conn,
+                                             intf_segment_dict,
+                                             segment_nat_dict,
+                                             parsed_cfg)
+
+        invalid_cfg += self.clean_vrfs(conn, router_id_dict, parsed_cfg)
+
+        return invalid_cfg
 
     def get_running_config(self, conn):
         """Get the CSR's current running config.
@@ -242,10 +250,16 @@ class ConfigSyncer(object):
         LOG.info("VRFs to delete: %s" % (del_set))
         # LOG.info("VRFs to add: %s" % (add_set))
 
+        invalid_vrfs = []
         for router_id in del_set:
-            vrf_name = "nrouter-%s" % (router_id)
-            confstr = asr_snippets.REMOVE_VRF_DEFN % vrf_name
-            conn.edit_config(target='running', config=confstr)
+            invalid_vrfs.append("nrouter-%s" % (router_id))
+
+        if not self.test_mode:
+            for vrf_name in invalid_vrfs:
+                confstr = asr_snippets.REMOVE_VRF_DEFN % vrf_name
+                conn.edit_config(target='running', config=confstr)
+
+        return invalid_vrfs
 
     def get_single_cfg(self, cfg_line):
         if len(cfg_line) != 1:
@@ -304,11 +318,14 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['pools'][pool_ip] = pool
 
-        for pool_cfg in delete_pool_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (pool_cfg))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Delete pool: %s" % del_cmd)
-            conn.edit_config(target='running', config=confstr)
+        if not self.test_mode:
+            for pool_cfg in delete_pool_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (pool_cfg))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Delete pool: %s" % del_cmd)
+                conn.edit_config(target='running', config=confstr)
+                
+        return delete_pool_list
 
     def clean_default_route(self,
                             conn,
@@ -358,12 +375,14 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['routes'][router_id] = route
 
-        for route_cfg in delete_route_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (route_cfg))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Delete default route: %s" % del_cmd)
-            conn.edit_config(target='running', config=confstr)
-
+        if not self.test_mode:
+            for route_cfg in delete_route_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (route_cfg))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Delete default route: %s" % del_cmd)
+                conn.edit_config(target='running', config=confstr)
+        
+        return delete_route_list
 
 
     def clean_snat(self, conn, router_id_dict, intf_segment_dict, segment_nat_dict, parsed_cfg):
@@ -441,11 +460,14 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['static_nat'][outer_ip] = snat_rule
 
-        for fip_cfg in delete_fip_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (fip_cfg))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Delete SNAT: %s" % del_cmd)
-            conn.edit_config(target='running', config=confstr)
+        if not self.test_mode:
+            for fip_cfg in delete_fip_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (fip_cfg))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Delete SNAT: %s" % del_cmd)
+                conn.edit_config(target='running', config=confstr)
+
+        return delete_fip_list
 
     def clean_nat_pool_overload(self,
                                 conn,
@@ -500,11 +522,14 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['dyn_nat'][segment_id] = nat_rule
 
-        for nat_cfg in delete_nat_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (nat_cfg))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Delete NAT overload: %s" % del_cmd)
-            conn.edit_config(target='running', config=confstr)
+        if not self.test_mode:
+            for nat_cfg in delete_nat_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (nat_cfg))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Delete NAT overload: %s" % del_cmd)
+                conn.edit_config(target='running', config=confstr)
+
+        return delete_nat_list
 
     def check_acl_permit_rules_valid(self, segment_id, acl, intf_segment_dict):
         permit_rules = acl.re_search_children(ACL_CHILD_REGEX)
@@ -569,11 +594,14 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['acls'][segment_id] = acl
 
-        for acl_cfg in delete_acl_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (acl_cfg))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Delete ACL: %s" % del_cmd)
-            conn.edit_config(target='running', config=confstr)
+        if not self.test_mode:
+            for acl_cfg in delete_acl_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (acl_cfg))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Delete ACL: %s" % del_cmd)
+                conn.edit_config(target='running', config=confstr)
+
+        return delete_acl_list
 
     def subintf_real_ip_check(self, intf_list, is_external, ip_addr, netmask):
 
@@ -852,9 +880,12 @@ class ConfigSyncer(object):
 
             self.existing_cfg_dict['interfaces'][intf.segment_id] = intf.text
 
-        for intf in pending_delete_list:
-            del_cmd = XML_CMD_TAG % ("no %s" % (intf.text))
-            confstr = XML_FREEFORM_SNIPPET % (del_cmd)
-            LOG.info("Deleting %s" % (intf.text))
-            #LOG.info(confstr)
-            conn.edit_config(target='running', config=confstr)
+        if not self.test_mode:
+            for intf in pending_delete_list:
+                del_cmd = XML_CMD_TAG % ("no %s" % (intf.text))
+                confstr = XML_FREEFORM_SNIPPET % (del_cmd)
+                LOG.info("Deleting %s" % (intf.text))
+                #LOG.info(confstr)
+                conn.edit_config(target='running', config=confstr)
+
+        return pending_delete_list

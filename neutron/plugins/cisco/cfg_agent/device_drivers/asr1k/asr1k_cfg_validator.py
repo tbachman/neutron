@@ -1,5 +1,3 @@
-import re
-import xml.etree.ElementTree as ET
 import ciscoconfparse
 import netaddr
 from neutron.common import constants
@@ -11,9 +9,10 @@ HA_INFO = 'ha_info'
 """Compares ASR running-config and neutron DB state, informs caller
 if any configuration was missing from running-config."""
 class ConfigValidator(object):
-    def __init__(self, router_db_info, hosting_device_info):
+    def __init__(self, router_db_info, hosting_device_info, conn):
         self.hosting_device_info = hosting_device_info
         self.routers = router_db_info
+        self.conn = conn
 
     def check_running_config(self):
         return self.process_routers_data(self.routers)
@@ -47,8 +46,8 @@ class ConfigValidator(object):
     def process_routers_data(self, routers):
         hd_id = self.hosting_device_info['id']
         segment_nat_dict = {}
-        conn = self.driver._get_connection() #TODO, init ncclient properly
-        running_cfg = self.get_running_config(conn)
+        #conn = self.driver._get_connection() #TODO, init ncclient properly
+        running_cfg = self.get_running_config(self.conn)
         parsed_cfg = ciscoconfparse.CiscoConfParse(running_cfg)
 
         self.populate_segment_nat_dict(segment_nat_dict, routers)
@@ -61,7 +60,7 @@ class ConfigValidator(object):
             if router['hosting_device']['id'] != hd_id:
                 continue
 
-            missing_cfg.append(self.check_router(router, parsed_cfg))
+            missing_cfg += self.check_router(router, parsed_cfg)
         
         return missing_cfg
             
@@ -75,17 +74,17 @@ class ConfigValidator(object):
 
     def check_tenant_router(self, router, running_config, segment_nat_dict):
         missing_cfg = []
-        missing_cfg.append(self.check_vrf(router, running_config))
-        missing_cfg.append(self.check_nat_pool(router, running_config))
-        missing_cfg.append(self.check_default_route(router, running_config))
-        missing_cfg.append(self.check_acls(router, running_config))
-        missing_cfg.append(self.check_fips(router, running_config))
-        missing_cfg.append(self.check_interfaces(router, running_config, segment_nat_dict, is_external=False))
+        missing_cfg += self.check_vrf(router, running_config)
+        missing_cfg += self.check_nat_pool(router, running_config)
+        missing_cfg += self.check_default_route(router, running_config)
+        missing_cfg += self.check_acls(router, running_config)
+        missing_cfg += self.check_fips(router, running_config)
+        missing_cfg += self.check_interfaces(router, running_config, segment_nat_dict, is_external=False)
         return missing_cfg
 
     def check_global_router(self, router, running_config, segment_nat_dict):
         missing_cfg = []
-        missing_cfg.append(self.check_interfaces(router, running_config, segment_nat_dict, is_external=True))
+        missing_cfg += self.check_interfaces(router, running_config, segment_nat_dict, is_external=True)
         return missing_cfg
 
     def get_vrf_name(self, router):
