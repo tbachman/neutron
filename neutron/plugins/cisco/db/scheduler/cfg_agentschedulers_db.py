@@ -184,3 +184,7 @@ class CfgAgentSchedulerDbMixin(
                 return
             hosting_device_db.cfg_agent = cfg_agent_db
             context.session.add(hosting_device_db)
+
+    def list_all_hosting_devices(self, context):
+        return {'hosting_devices': self.get_hosting_devices(
+            context, filters=None)}

@@ -9,7 +9,7 @@ from oslo_config import cfg
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import config as common_config
-
+from neutron import context as ctxt
 
 class CiscoDevMgrRPC(object):
     """Agent side of the device manager RPC API."""
@@ -19,11 +19,11 @@ class CiscoDevMgrRPC(object):
         target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
-    def get_active_hosting_devices(self, context):
-        """Get a list of all active hosting devices."""
+    def get_all_hosting_devices(self, context):
+        """Get a list of all hosting devices."""
         cctxt = self.client.prepare()
         return cctxt.call(context,
-                          'get_active_hosting_devices',
+                          'get_all_hosting_devices',
                           host=self.host)
 
 class CiscoRoutingPluginRPC(object):
@@ -57,8 +57,8 @@ def main():
     devmgr_rpc = CiscoDevMgrRPC(topics.DEVICE_MANAGER_PLUGIN, host)
     plugin_rpc = CiscoRoutingPluginRPC(topics.L3PLUGIN, host)
 
-    context = {}
-    hosting_devs = devmgr_rpc.get_active_hosting_devices(context)
+    context = ctxt.Context('','')
+    hosting_devs = devmgr_rpc.get_all_hosting_devices(context)
     for hd in hosting_devs:
         print("HOSTING DEVICE: %s" % hd)
 
