@@ -4,18 +4,22 @@ import ciscoconfparse
 import netaddr
 from neutron.common import constants
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.extensions import ha
 
+HA_INFO = 'ha_info'
+
+"""Compares ASR running-config and neutron DB state, informs caller
+if any configuration was missing from running-config."""
 class ConfigValidator(object):
-#Compares ASR running-config and neutron DB state, informs caller
-#if any configuration was missing from running-config.
-    def __init__(router_db_info, hosting_device_info):
+    def __init__(self, router_db_info, hosting_device_info):
         self.hosting_device_info = hosting_device_info
         self.routers = router_db_info
 
     def check_running_config(self):
-        pass
-
+        return self.process_routers_data(self.routers)
+        
     def populate_segment_nat_dict(self, segment_nat_dict, routers):
+        hd_id = self.hosting_device_info['id']
         for router in routers:
             if 'hosting_device' not in router:
                 continue
@@ -43,12 +47,13 @@ class ConfigValidator(object):
     def process_routers_data(self, routers):
         hd_id = self.hosting_device_info['id']
         segment_nat_dict = {}
-        conn = self.driver._get_connection()
+        conn = self.driver._get_connection() #TODO, init ncclient properly
         running_cfg = self.get_running_config(conn)
         parsed_cfg = ciscoconfparse.CiscoConfParse(running_cfg)
 
         self.populate_segment_nat_dict(segment_nat_dict, routers)
 
+        missing_cfg = []
         for router in routers:
             if 'hosting_device' not in router:
                 continue
@@ -56,27 +61,32 @@ class ConfigValidator(object):
             if router['hosting_device']['id'] != hd_id:
                 continue
 
-            missing_cfg = self.check_router(router, parsed_cfg)
+            missing_cfg.append(self.check_router(router, parsed_cfg))
+        
+        return missing_cfg
             
 
-    def check_router(self, router, running_config):
+    def check_router(self, router, running_config, segment_nat_dict):
         if router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL:
-            missing_cfg = self.check_global_router(router, running_config)
+            missing_cfg = self.check_global_router(router, running_config, segment_nat_dict)
         else:
-            missing_cfg = self.check_tenant_router(router, running_config)
+            missing_cfg = self.check_tenant_router(router, running_config, segment_nat_dict)
         return missing_cfg
 
-    def check_tenant_router(self, router, running_config):
-        # Check VRF
-        # Check NAT pool and default route
-        # Check ACLs
-        # Check floating IPs
-        # Check tenant interfaces
-        pass
+    def check_tenant_router(self, router, running_config, segment_nat_dict):
+        missing_cfg = []
+        missing_cfg.append(self.check_vrf(router, running_config))
+        missing_cfg.append(self.check_nat_pool(router, running_config))
+        missing_cfg.append(self.check_default_route(router, running_config))
+        missing_cfg.append(self.check_acls(router, running_config))
+        missing_cfg.append(self.check_fips(router, running_config))
+        missing_cfg.append(self.check_interfaces(router, running_config, segment_nat_dict, is_external=False))
+        return missing_cfg
 
-    def check_global_router(self, router, running_config):
-        # Check external interfaces
-        pass
+    def check_global_router(self, router, running_config, segment_nat_dict):
+        missing_cfg = []
+        missing_cfg.append(self.check_interfaces(router, running_config, segment_nat_dict, is_external=True))
+        return missing_cfg
 
     def get_vrf_name(self, router):
         short_router_id = router['id'][0:6]
@@ -103,7 +113,7 @@ class ConfigValidator(object):
         else:
             for substr in vrf_substrs:
                 if substr not in vrf_cfg:
-                    missing_cfg.append({"parent":vrf_cfg, "cfg": substr})
+                    missing_cfg.append({"parent":vrf_str, "cfg": substr})
         return missing_cfg
     
 
@@ -169,13 +179,107 @@ class ConfigValidator(object):
 
         
     def check_acls(self, router, running_config):
-        pass
+        missing_cfg = []
         
+        if "_interfaces" not in router:
+            return missing_cfg
+
+        interfaces = router["_interfaces"]
+        for intf in interfaces:
+            segment_id = intf['hosting_info']['segmentation_id']
+            acl_name = "neutron_acl_%s" % segment_id
+            internal_cidr = intf['ip_cidr']
+            internal_net = netaddr.IPNetwork(internal_cidr).network
+            net_mask = netaddr.IPNetwork(internal_cidr).hostmask
+
+            acl_str = "ip access-list standard %s" % acl_name
+            permit_str = " permit %s %s" % (internal_net, net_mask)
+            
+            acl_cfg = running_config.find_children(acl_str)
+            if not acl_cfg:
+                missing_cfg.append({"cfg":acl_str})
+            else:
+                if permit_str not in acl_cfg:
+                    missing_cfg.append({"parent":acl_str, "cfg":permit_str})
+
+        return missing_cfg
+
+
     def check_fips(self, router, running_config):
-        pass
+        missing_cfg = []
 
-    def check_interfaces(self, router, running_config):
-        pass
+        if "_floatingips" not in router:
+            return missing_cfg
 
-    def check_ext_interfaces(self, router, running_config):
-        pass
+        ex_gw_port = router['ex_gw_port']
+        vrf_name = self.get_vrf_name(router)
+
+        fips = router["_floatingips"]
+        for fip in fips:
+            segment_id = ex_gw_port['hosting_info']['segmentation_id']
+            hsrp_grp = ex_gw_port['nat_pool_info']['group']
+
+            fip_str = "ip nat inside source static %s %s vrf %s redundancy neutron-hsrp-%s-%s"
+            fip_str = fip_str % (fip['fixed_ip_address'],
+                                 fip['floating_ip_address'],
+                                 vrf_name,
+                                 hsrp_grp,
+                                 segment_id)
+
+            fip_cfg = running_config.find_lines(fip_str)
+            if not fip_cfg:
+                missing_cfg.append({"cfg":fip_str})
+
+        return missing_cfg
+
+
+    def check_interfaces(self, router, running_config, segment_nat_dict, is_external):
+        missing_cfg = []
+
+        if "_interfaces" not in router:
+            return missing_cfg
+
+        vrf_name = self.get_vrf_name(router)
+        priority = router[ha.DETAILS][ha.PRIORITY]
+
+        interfaces = router["_interfaces"]
+        for intf in interfaces:
+            segment_id = intf['hosting_info']['segmentation_id']
+            intf_name = self._get_interface_name_from_hosting_port(intf)
+            
+            intf_str = "interface %s" % intf_name
+            
+            intf_cfg = running_config.find_children(intf_str)
+
+            if not intf_cfg:
+                missing_cfg.append({"cfg":intf_str})
+            else:
+                netmask = netaddr.IPNetwork(intf['ip_cidr']).netmask
+                hsrp_vip = intf['fixed_ips'][0]['ip_address']
+                port_ha_info = intf[HA_INFO]
+                hsrp_grp = port_ha_info['group']
+                phys_ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
+
+                sub_strs = ["description OPENSTACK_NEUTRON_INTF",
+                            "encapsulation dot1Q %s" % segment_id,
+                            "ip address %s %s" % (hsrp_vip, netmask),
+                            "standby version 2",
+                            "standby delay minimum 30 reload 60",
+                            "standby %s priority %s" % (hsrp_grp, priority),
+                            "standby %s ip %s" % (hsrp_grp, phys_ip),
+                            "standby %s timers 1 3" % hsrp_grp]
+            
+                if not is_external:
+                    sub_strs.append("vrf forwarding %s" % vrf_name)
+
+                if segment_nat_dict[segment_id]:
+                    if is_external:
+                        sub_strs.append("ip nat outside")
+                    else:
+                        sub_strs.append("ip nat inside")
+
+                for substr in sub_strs:
+                    if substr not in intf_cfg:
+                        missing_cfg.append({"parent":intf_str, "cfg":substr})
+
+        return missing_cfg
