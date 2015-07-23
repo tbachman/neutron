@@ -105,6 +105,12 @@ class ConfigValidator(object):
         short_router_id = router['id'][0:6]
         return "nrouter-%s" % short_router_id
 
+    def set_ip_cidr(self, intf):
+        port_subnets = intf['subnets']
+        subnet = port_subnets[0]
+        prefixlen = netaddr.IPNetwork(subnet['cidr']).prefixlen
+        intf['ip_cidr'] = "%s/%s" % (intf['fixed_ips'][0]['ip_address'], prefixlen)
+
     def get_interface_name_from_hosting_port(self, port):
         """
         generates the underlying subinterface name for a port
@@ -189,7 +195,6 @@ class ConfigValidator(object):
             missing_cfg.append({"cfg":route_str})
 
         return missing_cfg
-
         
     def check_acls(self, router, running_config):
         missing_cfg = []
@@ -201,6 +206,7 @@ class ConfigValidator(object):
         for intf in interfaces:
             segment_id = intf['hosting_info']['segmentation_id']
             acl_name = "neutron_acl_%s" % segment_id
+            self.set_ip_cidr(intf)
             internal_cidr = intf['ip_cidr']
             internal_net = netaddr.IPNetwork(internal_cidr).network
             net_mask = netaddr.IPNetwork(internal_cidr).hostmask
@@ -267,11 +273,7 @@ class ConfigValidator(object):
             if not intf_cfg:
                 missing_cfg.append({"cfg":intf_str})
             else:
-                port_subnets = intf['subnets']
-                subnet = port_subnets[0]
-                prefixlen = netaddr.IPNetwork(subnet['cidr']).prefixlen
-                intf['ip_cidr'] = "%s/%s" % (intf['fixed_ips'][0]['ip_address'], prefixlen)
-
+                self.set_ip_cidr(intf)
                 netmask = netaddr.IPNetwork(intf['ip_cidr']).netmask
                 hsrp_vip = intf['fixed_ips'][0]['ip_address']
                 port_ha_info = intf[HA_INFO]
