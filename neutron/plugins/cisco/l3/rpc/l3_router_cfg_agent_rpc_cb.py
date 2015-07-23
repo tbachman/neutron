@@ -68,6 +68,14 @@ class L3RouterCfgRpcCallback(object):
                   {'agt': host, 'routers': jsonutils.dumps(routers, indent=5)})
         return routers
 
+    def cfg_sync_all_routers(self, context, host):
+        adm_context = neutron_context.get_admin_context()
+        try:
+            routers = self.list_all_routers_on_hosting_devices(self, adm_context)
+        except AttributeError:
+            routers = []
+        return routers
+
     def report_status(self, context, host, status_list):
         """Report status of a particular Neutron router by Cisco cfg agent.
 

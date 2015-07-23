@@ -1,7 +1,7 @@
 import sys
 
 import ciscoconfparse
-import ncclient
+from ncclient import manager
 
 import oslo_messaging
 from oslo_config import cfg
@@ -10,6 +10,15 @@ from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import config as common_config
 from neutron import context as ctxt
+
+
+
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
+    import asr1k_cfg_syncer
+
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
+    import asr1k_cfg_validator
+
 
 class CiscoDevMgrRPC(object):
     """Agent side of the device manager RPC API."""
@@ -34,7 +43,7 @@ class CiscoRoutingPluginRPC(object):
         target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
-    def get_routers(self, context, router_ids=None, hd_ids=None):
+    def get_all_routers(self, context):
         """Make a remote process call to retrieve the sync data for routers.
 
         :param context: session context
@@ -43,8 +52,24 @@ class CiscoRoutingPluginRPC(object):
                         hosting devices will be returned.
         """
         cctxt = self.client.prepare()
-        return cctxt.call(context, 'cfg_sync_routers', host=self.host,
-                          router_ids=router_ids, hosting_device_ids=hd_ids)
+        return cctxt.call(context, 'cfg_sync_all_routers', host=self.host)
+
+    def get_hardware_router_type_id(self, context):
+        """Get the ID for the ASR1k hardware router type."""
+        cctxt = self.client.prepare()
+        return cctxt.call(context,
+                          'get_hardware_router_type_id',
+                          host=self.host)
+
+def get_nc_conn(hd):
+    creds = hd['credentials']
+    ncc_connection = manager.connect(host=hd['management_ip_address'],
+                                     port=hd['protocol_port'],
+                                     username=creds['user_name'],
+                                     password=creds['password'],
+                                     device_params={'name': "csr"}, timeout=30)
+
+    return ncc_connection
 
 def main():
 
@@ -59,9 +84,40 @@ def main():
 
     context = ctxt.Context('','')
     # TODO: create an admin context instead
+
+    hardware_router_type_id = plugin_rpc.get_hardware_router_type_id(context)
+    print("Hardware router type ID: %s" % hardware_router_type_id)
+
+    routers = plugin_rpc.get_all_routers(context)
     hosting_devs = devmgr_rpc.get_all_hosting_devices(context)
+
     for hd in hosting_devs['hosting_devices']:
-        print("HOSTING DEVICE: %s" % hd)
+        print("HOSTING DEVICE: %s, IP: %s\n-----------------\n" % (hd['id'],
+                                                                   hd['management_ip_address']))
+
+
+        if hd['template_id'] != hardware_router_type_id:
+            continue
+
+        conn = get_nc_conn(hd)
+
+        cfg_cleaner = asr1k_cfg_syncer.ConfigSyncer(routers,
+                                                    None,
+                                                    hosting_devs,
+                                                    test_mode=True)
+
+        cfg_checker = asr1k_cfg_validator.ConfigValidator(routers,
+                                                          hosting_devs,
+                                                          conn)
+
+        invalid_cfg = cfg_cleaner.delete_invalid_cfg(conn)
+        missing_cfg = cfg_checker.process_routers_data(routers)
+
+        print("Invalid Cfg: %s" % invalid_cfg)
+        print("Missing Cfg: %s" % missing_cfg)
+
+        conn.close_session()
+
 
 if __name__ == "__main__":
     main()
