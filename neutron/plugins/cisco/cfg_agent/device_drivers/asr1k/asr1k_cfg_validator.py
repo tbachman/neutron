@@ -267,6 +267,11 @@ class ConfigValidator(object):
             if not intf_cfg:
                 missing_cfg.append({"cfg":intf_str})
             else:
+                port_subnets = intf['subnets']
+                subnet = port_subnets[0]
+                prefixlen = netaddr.IPNetwork(subnet['cidr']).prefixlen
+                intf['ip_cidr'] = "%s/%s" % (intf['fixed_ips'][0]['ip_address'], prefixlen)
+
                 netmask = netaddr.IPNetwork(intf['ip_cidr']).netmask
                 hsrp_vip = intf['fixed_ips'][0]['ip_address']
                 port_ha_info = intf[HA_INFO]
