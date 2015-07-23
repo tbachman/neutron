@@ -11,14 +11,17 @@ from neutron.common import topics
 from neutron.common import config as common_config
 from neutron import context as ctxt
 
-
-
 from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
     import asr1k_cfg_syncer
 
 from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
     import asr1k_cfg_validator
 
+
+"""
+USAGE:
+python asr1k_auto_config_check.py --config-file /etc/neutron/neutron.conf
+"""
 
 class CiscoDevMgrRPC(object):
     """Agent side of the device manager RPC API."""
