@@ -1,3 +1,5 @@
+import re
+import xml.etree.ElementTree as ET
 import ciscoconfparse
 import netaddr
 from neutron.common import constants
@@ -86,6 +88,18 @@ class ConfigValidator(object):
         missing_cfg = []
         missing_cfg += self.check_interfaces(router, running_config, segment_nat_dict, is_external=True)
         return missing_cfg
+
+    def get_running_config(self, conn):
+        """Get the CSR's current running config.
+        :return: Current IOS running config as multiline string
+        """
+        config = conn.get_config(source="running")
+        if config:
+            root = ET.fromstring(config._raw)
+            running_config = root[0][0]
+            rgx = re.compile("\r*\n+")
+            ioscfg = rgx.split(running_config.text)
+            return ioscfg
 
     def get_vrf_name(self, router):
         short_router_id = router['id'][0:6]

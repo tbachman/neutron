@@ -103,11 +103,11 @@ def main():
 
         cfg_cleaner = asr1k_cfg_syncer.ConfigSyncer(routers,
                                                     None,
-                                                    hosting_devs,
+                                                    hd,
                                                     test_mode=True)
 
         cfg_checker = asr1k_cfg_validator.ConfigValidator(routers,
-                                                          hosting_devs,
+                                                          hd,
                                                           conn)
 
         invalid_cfg = cfg_cleaner.delete_invalid_cfg(conn)
