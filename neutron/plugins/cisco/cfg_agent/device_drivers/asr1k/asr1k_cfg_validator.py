@@ -62,7 +62,7 @@ class ConfigValidator(object):
             if router['hosting_device']['id'] != hd_id:
                 continue
 
-            missing_cfg += self.check_router(router, parsed_cfg)
+            missing_cfg += self.check_router(router, parsed_cfg, segment_nat_dict)
         
         return missing_cfg
             
