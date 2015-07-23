@@ -124,8 +124,8 @@ class ConfigValidator(object):
         missing_cfg = []
         vrf_name = self.get_vrf_name(router)
         vrf_str = "vrf definition %s" % vrf_name
-        vrf_substrs = ["address-family ipv4",
-                       "address-family ipv6"]
+        vrf_substrs = [" address-family ipv4",
+                       " address-family ipv6"]
         vrf_cfg = running_config.find_children(vrf_str)
         if not vrf_cfg:
             missing_cfg.append({"cfg":vrf_cfg})
@@ -139,9 +139,9 @@ class ConfigValidator(object):
     def check_nat_pool(self, router, running_config):
         missing_cfg = []
 
-        if 'ex_gw_port' not in router:
+        if 'gw_port' not in router:
             return missing_cfg
-        gw_port = router['ex_gw_port']
+        gw_port = router['gw_port']
 
         vrf_name = self.get_vrf_name(router)
         pool_name = "%s_nat_pool" % (vrf_name)
@@ -175,15 +175,15 @@ class ConfigValidator(object):
     def check_default_route(self, router, running_config):
         missing_cfg = []
 
-        if 'ex_gw_port' not in router:
+        if 'gw_port' not in router:
             return missing_cfg
             
         vrf_name = self.get_vrf_name(router)
 
-        gw_port = router['ex_gw_port']
+        gw_port = router['gw_port']
         ext_gw_ip = gw_port['subnets'][0]['gateway_ip']
 
-        intf_name = self._get_interface_name_from_hosting_port(gw_port)
+        intf_name = self.get_interface_name_from_hosting_port(gw_port)
 
         
         route_str = "ip route vrf %s 0.0.0.0 0.0.0.0 %s %s" % (vrf_name,
@@ -230,7 +230,7 @@ class ConfigValidator(object):
         if "_floatingips" not in router:
             return missing_cfg
 
-        ex_gw_port = router['ex_gw_port']
+        ex_gw_port = router['gw_port']
         vrf_name = self.get_vrf_name(router)
 
         fips = router["_floatingips"]
@@ -280,14 +280,14 @@ class ConfigValidator(object):
                 hsrp_grp = port_ha_info['group']
                 phys_ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
 
-                sub_strs = ["description OPENSTACK_NEUTRON_INTF",
-                            "encapsulation dot1Q %s" % segment_id,
-                            "ip address %s %s" % (hsrp_vip, netmask),
-                            "standby version 2",
-                            "standby delay minimum 30 reload 60",
-                            "standby %s priority %s" % (hsrp_grp, priority),
-                            "standby %s ip %s" % (hsrp_grp, phys_ip),
-                            "standby %s timers 1 3" % hsrp_grp]
+                sub_strs = [" description OPENSTACK_NEUTRON_INTF",
+                            " encapsulation dot1Q %s" % segment_id,
+                            " ip address %s %s" % (hsrp_vip, netmask),
+                            " standby version 2",
+                            " standby delay minimum 30 reload 60",
+                            " standby %s priority %s" % (hsrp_grp, priority),
+                            " standby %s ip %s" % (hsrp_grp, phys_ip),
+                            " standby %s timers 1 3" % hsrp_grp]
             
                 if not is_external:
                     sub_strs.append("vrf forwarding %s" % vrf_name)
