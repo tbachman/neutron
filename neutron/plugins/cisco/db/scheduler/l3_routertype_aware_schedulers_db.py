@@ -252,8 +252,7 @@ class L3RouterTypeAwareSchedulerDbMixin(
         return hosts
 
 
-    def list_all_routers_on_hosting_devices(self, context, host,
-                                            hosting_device_ids=None):
+    def list_all_routers_on_hosting_devices(self, context):
         query = context.session.query(
             l3_models.RouterHostingDeviceBinding.router_id)
         query = query.filter(
