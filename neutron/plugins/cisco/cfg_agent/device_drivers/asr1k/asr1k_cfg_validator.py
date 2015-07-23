@@ -258,7 +258,7 @@ class ConfigValidator(object):
         interfaces = router["_interfaces"]
         for intf in interfaces:
             segment_id = intf['hosting_info']['segmentation_id']
-            intf_name = self._get_interface_name_from_hosting_port(intf)
+            intf_name = self.get_interface_name_from_hosting_port(intf)
             
             intf_str = "interface %s" % intf_name
             
