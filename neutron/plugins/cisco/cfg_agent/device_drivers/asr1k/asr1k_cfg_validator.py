@@ -133,9 +133,9 @@ class ConfigValidator(object):
     def check_nat_pool(self, router, running_config):
         missing_cfg = []
 
-        if 'ex_gw_port' not in router:
+        if 'gw_port' not in router:
             return missing_cfg
-        gw_port = router['ex_gw_port']
+        gw_port = router['gw_port']
 
         vrf_name = self.get_vrf_name(router)
         pool_name = "%s_nat_pool" % (vrf_name)
@@ -169,15 +169,15 @@ class ConfigValidator(object):
     def check_default_route(self, router, running_config):
         missing_cfg = []
 
-        if 'ex_gw_port' not in router:
+        if 'gw_port' not in router:
             return missing_cfg
             
         vrf_name = self.get_vrf_name(router)
 
-        gw_port = router['ex_gw_port']
+        gw_port = router['gw_port']
         ext_gw_ip = gw_port['subnets'][0]['gateway_ip']
 
-        intf_name = self._get_interface_name_from_hosting_port(gw_port)
+        intf_name = self.get_interface_name_from_hosting_port(gw_port)
 
         
         route_str = "ip route vrf %s 0.0.0.0 0.0.0.0 %s %s" % (vrf_name,
@@ -224,7 +224,7 @@ class ConfigValidator(object):
         if "_floatingips" not in router:
             return missing_cfg
 
-        ex_gw_port = router['ex_gw_port']
+        ex_gw_port = router['gw_port']
         vrf_name = self.get_vrf_name(router)
 
         fips = router["_floatingips"]
