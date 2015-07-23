@@ -290,13 +290,13 @@ class ConfigValidator(object):
                             " standby %s timers 1 3" % hsrp_grp]
             
                 if not is_external:
-                    sub_strs.append("vrf forwarding %s" % vrf_name)
+                    sub_strs.append(" vrf forwarding %s" % vrf_name)
 
                 if segment_id in segment_nat_dict:
                     if is_external:
-                        sub_strs.append("ip nat outside")
+                        sub_strs.append(" ip nat outside")
                     else:
-                        sub_strs.append("ip nat inside")
+                        sub_strs.append(" ip nat inside")
 
                 for substr in sub_strs:
                     if substr not in intf_cfg:
