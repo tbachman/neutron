@@ -290,7 +290,7 @@ class ConfigValidator(object):
                 if not is_external:
                     sub_strs.append("vrf forwarding %s" % vrf_name)
 
-                if segment_nat_dict[segment_id]:
+                if segment_id in segment_nat_dict:
                     if is_external:
                         sub_strs.append("ip nat outside")
                     else:
