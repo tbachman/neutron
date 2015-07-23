@@ -1,6 +1,6 @@
+import pprint
 import sys
 
-import ciscoconfparse
 from ncclient import manager
 
 import oslo_messaging
@@ -91,8 +91,10 @@ def main():
     routers = plugin_rpc.get_all_routers(context)
     hosting_devs = devmgr_rpc.get_all_hosting_devices(context)
 
+    print("ROUTERS: %s" % pprint.pformat(routers))
+
     for hd in hosting_devs['hosting_devices']:
-        print("HOSTING DEVICE: %s, IP: %s\n-----------------\n" % (hd['id'],
+        print("HOSTING DEVICE: %s, IP: %s\n-----------------" % (hd['id'],
                                                                    hd['management_ip_address']))
 
 
@@ -114,7 +116,7 @@ def main():
         missing_cfg = cfg_checker.process_routers_data(routers)
 
         print("Invalid Cfg: %s" % invalid_cfg)
-        print("Missing Cfg: %s" % missing_cfg)
+        print("Missing Cfg: %s\n\n" % missing_cfg)
 
         conn.close_session()
 

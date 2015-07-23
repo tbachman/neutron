@@ -71,7 +71,7 @@ class L3RouterCfgRpcCallback(object):
     def cfg_sync_all_routers(self, context, host):
         adm_context = neutron_context.get_admin_context()
         try:
-            routers = self.list_all_routers_on_hosting_devices(self, adm_context)
+            routers = self._l3plugin.list_all_routers_on_hosting_devices(self, adm_context)
         except AttributeError:
             routers = []
         return routers
