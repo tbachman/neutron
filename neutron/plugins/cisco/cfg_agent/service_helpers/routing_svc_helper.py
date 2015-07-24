@@ -676,7 +676,7 @@ class RoutingServiceHelper(object):
         driver = self._drivermgr.get_driver(ri.id)
         driver.internal_network_removed(ri, port)
         if ri.snat_enabled and ex_gw_port:
-            driver.disable_internal_network_NAT(ri, port, ex_gw_port)
+            driver.disable_internal_network_NAT(ri, port, ex_gw_port, True)
 
     def _external_gateway_added(self, ri, ex_gw_port):
         driver = self._drivermgr.get_driver(ri.id)

@@ -94,7 +94,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def disable_internal_network_NAT(self, ri, port, ext_gw_port,
                                      itfc_delete=False):
-        self._remove_internal_nw_nat_rules(ri, [port], ext_gw_port)
+
+        self._remove_internal_nw_nat_rules(ri,
+                                           [port],
+                                           ext_gw_port,
+                                           itfc_delete)
 
     # ============== Internal "preparation" functions  ==============
 
@@ -488,14 +492,28 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         rpc_obj = conn.edit_config(target='running', config=conf_str)
         self._check_response(rpc_obj, 'SET_NAT')
 
-    def _remove_internal_nw_nat_rules(self, ri, ports, ext_port):
+    def _remove_internal_nw_nat_rules(self,
+                                      ri,
+                                      ports,
+                                      ext_port,
+                                      intf_delete=False):
+        """
+        arguments:
+        ri          -- router-info object
+        ports       -- list of affected ports where network nat rules
+                       was affected
+        ext_port    -- external facing port
+        intf_delete -- If True, indicates that the subinterface was deleted.
+        """
         acls = []
         # first disable nat in all inner ports
         for port in ports:
             in_itfc_name = self._get_interface_name_from_hosting_port(port)
             inner_vlan = self._get_interface_vlan_from_hosting_port(port)
             acls.append(self._get_acl_name_from_vlan(inner_vlan))
-            self._remove_interface_nat(in_itfc_name, 'inside')
+
+            if not intf_delete:
+                self._remove_interface_nat(in_itfc_name, 'inside')
         # **** Don't wait and clear NAT for ASR,
         #      too slow and can disrupt traffic for
         # **** other tenants
