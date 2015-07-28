@@ -242,7 +242,7 @@ class CiscoCfgAgent(manager.Manager):
 
     def hosting_devices_assigned_to_cfg_agent(self, context, payload):
         """Deal with hosting devices assigned to this config agent."""
-        LOG.error("ZZZZZ got hosting device assigned, payload: %s" % payload)
+        LOG.debug("ZZZZZ Got hosting device assigned, payload: %s" % payload)
         try:
             if payload['hosting_device_ids']:
                 #TODO(hareeshp): implement assignment of hosting devices

@@ -134,8 +134,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         ret_virt_port = None
         ha_port = None
 
-        # TODO: Follow up with an approach to handle multiple subnets
-        # associated with a port
+        # TODO(Follow up with an approach)
+        # TODO(to handle multiple subnets associated with a port)
         subnet_id = ext_port['ha_info']['ha_port']['subnets'][0]['id']
 
         global_router_interfaces = ri.router.get("_interfaces", None)
@@ -257,7 +257,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                     pool_name, pool_ip, pool_ip, pool_net.netmask)
                 #self._edit_running_config(conf_str, '%s DELETE_NAT_POOL' %
                 #                          self.target_asr['name'])
-                # TODO: update so that hosting device name is passed down
+                # TODO(update so that hosting device name is passed down)
                 self._edit_running_config(conf_str, 'DELETE_NAT_POOL')
 
             else:
@@ -265,7 +265,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                     pool_name, pool_ip, pool_ip, pool_net.netmask)
                 #self._edit_running_config(conf_str, '%s CREATE_NAT_POOL' %
                 #                          self.target_asr['name'])
-                # TODO: update so that hosting device name is passed down
+                # TODO(update so that hosting device name is passed down)
                 self._edit_running_config(conf_str, 'CREATE_NAT_POOL')
         #except cfg_exc.CSR1kvConfigException as cse:
         except Exception as cse:
@@ -473,7 +473,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             rpc_obj = conn.edit_config(target='running', config=conf_str)
             self._check_response(rpc_obj, 'CREATE_ACL')
         except Exception as acl_e:
-            LOG.error("Ignore exception for CREATE_ACL: %s" % acl_e)
+            LOG.error(_LE("Ignore exception for CREATE_ACL: %s"), acl_e)
 
         pool_name = "%s_nat_pool" % (vrf_name)
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
@@ -482,7 +482,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             rpc_obj = conn.edit_config(target='running', config=conf_str)
             self._check_response(rpc_obj, 'CREATE_DYN_NAT')
         except Exception as dyn_nat_e:
-            LOG.error("Ignore exception for CREATE_DYN_NAT: %s" % dyn_nat_e)
+            LOG.error(_LE("Ignore exception for CREATE_DYN_NAT: %s"),
+                      dyn_nat_e)
 
         conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
         rpc_obj = conn.edit_config(target='running', config=conf_str)
@@ -539,8 +540,8 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                  '%s REMOVE_DYN_SRC_TRL_POOL' %
                                  self.target_asr['name'])
         except cfg_exc.CSR1kvConfigException as cse:
-            LOG.error("temporary disable REMOVE_DYN_SRC_TRL_POOL"
-                      " exception handling: %s" % (cse))
+            LOG.error(_LE("temporary disable REMOVE_DYN_SRC_TRL_POOL"
+                      " exception handling: %s"), (cse))
 
         conf_str = snippets.REMOVE_ACL % acl_no
         rpc_obj = conn.edit_config(target='running', config=conf_str)

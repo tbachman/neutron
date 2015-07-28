@@ -19,11 +19,12 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 from oslo_utils import importutils
+
+from sqlalchemy import or_
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import expression as expr
 from sqlalchemy.sql import false as sql_false
-from sqlalchemy import or_
 
 from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
@@ -307,10 +308,15 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                               r_hd_binding_db.router_type_id)
         if driver:
             router_ctxt = driver_context.RouterContext(routers[0], old_router)
-            driver.update_router_postcommit(context,
-                                            router_ctxt,
-                                            old_ext_gw,
-                                            new_ext_gw)
+            if is_ha and r_hd_binding_db.router_type_id ==
+                 self.get_hardware_router_type_id(context):
+                driver.update_router_postcommit(context,
+                                                router_ctxt,
+                                                old_ext_gw,
+                                                new_ext_gw)
+            else:
+                driver.update_router_postcommit(context,
+                                                router_ctxt)
 
         self.add_type_and_hosting_device_info(e_context, routers[0])
         for ni in self.get_notifiers(context, routers):
@@ -383,9 +389,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).delete_router(context,
                                                                 router_id)
             if driver:
-                driver.delete_router_postcommit(context,
-                                                router_ctxt,
-                                                old_ext_nw_id)
+                if is_ha:
+                    driver.delete_router_postcommit(context,
+                                                    router_ctxt,
+                                                    old_ext_nw_id)
+                else:
+                    driver.delete_router_postcommit(context, router_ctxt)
+
         except n_exc.NeutronException:
             with excutils.save_and_reraise_exception():
                 # put router back in backlog if deletion failed so that it
@@ -465,7 +475,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                             context,
                                             router,
                                             router_list):
-        ''' only call this after hosting_device_info is added'''
+        '''Only call this after hosting_device_info is added'''
         if utils.is_extension_supported(self, ha.HA_ALIAS):
             if router['role'] == cisco_constants.ROUTER_ROLE_LOGICAL:
                 rr_id_list = self._get_redundancy_router_ids(context,
@@ -1293,7 +1303,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     router_interfaces.append(interface)
                     router[l3_constants.INTERFACE_KEY] = router_interfaces
 
-
     def _get_router_for_floatingip(self, context, internal_port,
                                    internal_subnet_id,
                                    external_network_id):
@@ -1317,11 +1326,10 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         else:
             target_router_id = router_id
 
-        LOG.debug("check router FIPs, router_id: %s, target_id: %s" % (router_id,
-                                                                       target_router_id))
+        LOG.debug("check router FIPs, router_id: %s, target_id: %s" %
+           (router_id, target_router_id))
 
         return (super(L3RouterApplianceDBMixin, self).
                 _confirm_router_interface_not_in_use(context,
                                                      target_router_id,
                                                      subnet_id))
-

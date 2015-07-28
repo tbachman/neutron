@@ -251,12 +251,12 @@ class L3RouterTypeAwareSchedulerDbMixin(
                                           row.heartbeat_timestamp)]
         return hosts
 
-
     def list_all_routers_on_hosting_devices(self, context):
         query = context.session.query(
             l3_models.RouterHostingDeviceBinding.router_id)
         query = query.filter(
-            l3_models.RouterHostingDeviceBinding.hosting_device_id != expr.null())
+            l3_models.RouterHostingDeviceBinding.hosting_device_id !=
+            expr.null())
         router_ids = [item[0] for item in query]
         if router_ids:
             return self.get_sync_data_ext(context, router_ids=router_ids,
