@@ -192,9 +192,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     def create_router(self, context, router):
         """
-        If HA is enabled, the user router will be marked as a logical router
-        and will not be scheduled onto a device (auto_schedule = False)
-
         After the user router has been created, each redundant (physical)
         router will be created.  Each redundant router will have
         ha_spec[ha.ENABLED] == False
@@ -214,8 +211,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             # Ensure create spec is compliant with any HA
             ha_spec = self._ensure_create_ha_compliant(r)
         auto_schedule, share_host = self._ensure_router_scheduling_compliant(r)
-        # Don't schedule hardware user-visible routers, they aren't
-        # assigned to a hosting device
         # LOG.debug("QQQQQQQQ create_router, router: %s" % \
         #            pprint.pformat(router))
         # LOG.debug("QQQQQQQQ create_router, ha_spec: %s, enabled: %s" % \
@@ -250,8 +245,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     self._make_router_dict(r_hd_b_db.router))
 
             driver.create_router_postcommit(context, router_ctxt)
-        # if role == cisco_constants.ROUTER_ROLE_LOGICAL:
-        #    auto_schedule = False
         if auto_schedule is True:
             # backlog so this new router gets scheduled asynchronously
             self.backlog_router(context, r_hd_b_db)
@@ -911,8 +904,6 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             type_to_exclude,
             l3_models.RouterHostingDeviceBinding.hosting_device_id ==
             expr.null())
-        # excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL,
-        #                   cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
         excluded_roles = [cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL]
         query = \
             query.filter(or_(l3_models.RouterHostingDeviceBinding.role ==
