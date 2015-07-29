@@ -48,7 +48,8 @@ DOT1Q_REGEX = "\s*encapsulation dot1Q (\d+)"
 INTF_NAT_REGEX = "\s*ip nat (inside|outside)"
 HSRP_REGEX = "\s*standby (\d+) .*"
 
-INTF_V4_ADDR_REGEX = "\s*ip address (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # NOQA
+INTF_V4_ADDR_REGEX = "\s*ip address (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})" \
+    " (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 HSRP_V4_VIP_REGEX = "\s*standby (\d+) ip (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 
 SNAT_REGEX = "ip nat inside source static (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) vrf " + NROUTER_REGEX + " redundancy neutron-hsrp-(\d+)-(\d+)"  # NOQA
@@ -604,8 +605,8 @@ class ConfigSyncer(object):
                 LOG.info(_LI("KeyError when attemping to validate segment_id"))
                 return False
 
-            LOG.info("   cfg_subnet: %(cfg_net)s/%(cfg_prefix_len)s,"
-                     " db_subnet: %(db_net)s/%(db_prefix_len)s" %
+            LOG.info(_LI("   cfg_subnet: %(cfg_net)s/%(cfg_prefix_len)s,"
+                     " db_subnet: %(db_net)s/%(db_prefix_len)s") %
                      {'cfg_net': cfg_subnet.network,
                       'cfg_prefix_len': cfg_subnet.prefixlen,
                       'db_net': db_subnet.network,

@@ -78,15 +78,13 @@ class DeviceMgrCfgRpcCallback(object):
 
         return {"hosting_devices": []}
 
-
     def get_all_hosting_devices(self, context, host):
-        context = context.elevated() 
-        # TODO: make asr1k cfg checker provide admin ctxt
+        context = context.elevated()
+        # TODO(make asr1k cfg checker provide admin ctxt)
         hds = self._dmplugin.list_all_hosting_devices(context)
         for hd in hds['hosting_devices']:
             hd_db = self._dmplugin._get_hosting_device(context, hd['id'])
             creds = self._dmplugin._get_credentials(hd_db)
             hd['credentials'] = creds
-            
-        return hds
 
+        return hds

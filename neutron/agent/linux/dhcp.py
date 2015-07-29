@@ -621,7 +621,7 @@ class Dnsmasq(DhcpLocalProcess):
         subnet_index_map = {}
         if self.conf.enable_isolated_metadata:
             subnet_to_interface_ip = self._make_subnet_interface_ip_map()
-        isolated_subnets = self.get_isolated_subnets(self.network)
+        # isolated_subnets = self.get_isolated_subnets(self.network)
         for i, subnet in enumerate(self.network.subnets):
             if (not subnet.enable_dhcp or
                 (subnet.ip_version == 6 and

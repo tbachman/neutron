@@ -308,8 +308,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                               r_hd_binding_db.router_type_id)
         if driver:
             router_ctxt = driver_context.RouterContext(routers[0], old_router)
-            if is_ha and r_hd_binding_db.router_type_id ==
-                 self.get_hardware_router_type_id(context):
+            if is_ha and r_hd_binding_db.router_type_id == \
+               self.get_hardware_router_type_id(context):
                 driver.update_router_postcommit(context,
                                                 router_ctxt,
                                                 old_ext_gw,
@@ -389,7 +389,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             super(L3RouterApplianceDBMixin, self).delete_router(context,
                                                                 router_id)
             if driver:
-                if is_ha:
+                if is_ha and r_hd_binding_db.router_type_id == \
+                   self.get_hardware_router_type_id(context):
                     driver.delete_router_postcommit(context,
                                                     router_ctxt,
                                                     old_ext_nw_id)

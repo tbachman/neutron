@@ -14,20 +14,18 @@
 
 from oslo_log import log as logging
 
+from neutron.common import constants as common_constants
+from neutron.db import l3_db
+from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.db.l3 import ha_db
+from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.l3 import drivers
 from neutron.plugins.common import constants
-from neutron.common import constants as common_constants
-
-
-from neutron.db import l3_db
-from neutron.db import models_v2
-from neutron.plugins.cisco.db.l3 import l3_models
-from neutron.plugins.cisco.db.l3 import ha_db
 
 LOG = logging.getLogger(__name__)
 
@@ -293,7 +291,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 'tenant_id': '',
                 'name': self._global_router_name(hosting_device_id),
                 'admin_state_up': True}}
-                # l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
+            # l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
             r = self._l3_plugin.do_create_router(
                 context, r_spec, router[routertype.TYPE_ATTR], False, True,
                 hosting_device_id, cisco_constants.ROUTER_ROLE_GLOBAL)
@@ -325,11 +323,13 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         tenant_ext_nw_count = \
             self._get_logical_router_with_ext_nw_count(context,
                                                        ext_nw)
-        LOG.error("AAAA ext_port: %s, tenant_enc: %s" % (ext_port,
-                                                         tenant_ext_nw_count))
+        LOG.debug("ext_port: %(ext_port)s,"
+                  " tenant_enc: %(tenant_ext_nw_count)s" %
+                  {'ext_port': ext_port,
+                   'tenant_ext_nw_count': tenant_ext_nw_count})
 
         if ext_port is None and tenant_ext_nw_count > 0:
-            LOG.error("AAAAAAAAAAAAAAA TRACE global_router: %s" %
+            LOG.debug("TRACE global_router: %s" %
                       global_router)
 
             self._add_global_router_ext_nw_intf(context,
@@ -346,7 +346,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # also run on the hosting device (outside of any VRF) to enable the
         # connectivity.
         current = router_context.current
-        LOG.error("ZZZZZ schedule_router_post_commit: %s" % current)
+        LOG.debug("schedule_router_post_commit: %s" % current)
         hd_id = current[routerhostingdevice.HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
             self._ensure_logical_global_router_exists(context)
@@ -394,9 +394,9 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         ext_nw_intf_count = \
             self._get_logical_router_with_ext_nw_count(context,
                                                        ext_nw_id)
-        LOG.error("AAAA ext_nw_intf_count: %s" % ext_nw_intf_count)
+        LOG.debug("ext_nw_intf_count: %s" % ext_nw_intf_count)
         if ext_nw_intf_count < 1:
-            LOG.error("AAAA global routers: %s" % global_routers)
+            LOG.debug("global routers: %s" % global_routers)
             for global_router in global_routers:
                 # global_router = global_routers[0]
 
@@ -404,7 +404,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                     self._get_global_router_ext_nw_intf(context,
                                                         ext_nw_id,
                                                         global_router['id'])
-                LOG.error("AAAA g_ext_nw_intf: %s" % global_ext_nw_intf)
+                LOG.debug("g_ext_nw_intf: %s" % global_ext_nw_intf)
                 if global_ext_nw_intf:
                     self._l3_plugin._core_plugin.delete_port(context,
                                                         global_ext_nw_intf.id,

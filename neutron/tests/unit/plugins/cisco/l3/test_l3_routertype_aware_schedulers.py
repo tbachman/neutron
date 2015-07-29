@@ -317,7 +317,8 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase(
     RouterHostingDeviceSchedulerTestMixIn,
         test_l3_router_appliance_plugin.L3RouterApplianceTestCaseBase):
 
-    router_type = 'ASR1k_Neutron_router'
+    # router_type = 'ASR1k_Neutron_router'
+    router_type = 'Hardware_Neutron_router'
     configure_routertypes = False
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,

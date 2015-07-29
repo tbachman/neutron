@@ -32,11 +32,8 @@ import oslo_messaging
 import pprint
 import sys
 
-
-"""
-USAGE:
-python asr1k_auto_config_check.py --config-file /etc/neutron/neutron.conf
-"""
+# USAGE:
+# python asr1k_auto_config_check.py --config-file /etc/neutron/neutron.conf
 
 
 class CiscoDevMgrRPC(object):

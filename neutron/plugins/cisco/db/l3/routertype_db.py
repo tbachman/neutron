@@ -94,6 +94,8 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
 
     def get_routertype_by_id_name(self, context, id_or_name):
         query = context.session.query(l3_models.RouterType)
+        # for q_obj in query:
+        #     LOG.debug("ROUTERTYPE QUERY, OBJ: %s" % q_obj)
         query = query.filter(l3_models.RouterType.id == id_or_name)
         try:
             return query.one()

@@ -13,14 +13,15 @@
 #    under the License.
 
 import collections
+import copy
 import eventlet
 import netaddr
 import pprint
-import copy
 
 from oslo_log import log as logging
 import oslo_messaging
 from oslo_utils import excutils
+
 
 from neutron.common import constants as l3_constants
 from neutron.common import rpc as n_rpc
@@ -29,12 +30,12 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.i18n import _LE, _LI, _LW
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
+    import asr1k_cfg_syncer
 from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ha
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
-    import asr1k_cfg_syncer
 
 LOG = logging.getLogger(__name__)
 
@@ -406,9 +407,11 @@ class RoutingServiceHelper(object):
         return hosting_devices
 
     def _adjust_router_list(self, routers):
-        """Pushes 'Global' routers to the end of
+        """
+        Pushes 'Global' routers to the end of
         the router list, so that deleting default route
-        occurs before deletion of external nw subintf"""
+        occurs before deletion of external nw subintf
+        """
         for r in routers:
             if r['role'] == c_constants.ROUTER_ROLE_GLOBAL:
                 routers.remove(r)
@@ -744,10 +747,10 @@ class RoutingServiceHelper(object):
         num_subnets_on_port = len(port_subnets)
         LOG.debug("number of subnets associated with port = %d" %
                   num_subnets_on_port)
-        # TODO: What should we do if multiple subnets are somehow associated
-        # with a port?
+        # TODO(What should we do if multiple subnets are somehow associated)
+        # TODO(with a port?)
         if (num_subnets_on_port > 1):
-            LOG.error("Ignoring port with multiple subnets associated")
+            LOG.error(_LE("Ignoring port with multiple subnets associated"))
             raise Exception(("Multiple subnets configured on port.  %s") %
                             pprint.pformat(port_subnets))
         else:
