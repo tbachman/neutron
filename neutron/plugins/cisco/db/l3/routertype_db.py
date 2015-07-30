@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
+from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -23,6 +23,7 @@ from neutron.i18n import _LE
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.db.l3 import l3_models
 import neutron.plugins.cisco.extensions.routertype as routertype
+from neutron.plugins.cisco.common import cisco_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -66,10 +67,32 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
     def delete_routertype(self, context, id):
         LOG.debug("delete_routertype() called")
         try:
-            with context.session.begin(subtransactions=True):
+            with context.session.begin(subtransactions=True):                
                 routertype_query = context.session.query(l3_models.RouterType)
-                if not routertype_query.filter_by(id=id).delete():
+                routertype_query = routertype_query.filter_by(id=id)
+                if not routertype_query:
                     raise routertype.RouterTypeNotFound(id=id)
+                else:
+                    if cfg.CONF.routing.hardware_router_type_name == \
+                       routertype_query.first().name:
+                        router_query = context.session.query(l3_models.RouterHostingDeviceBinding)
+                        router_query.filter_by(router_type_id=id)
+                        global_ids = []
+                        if router_query:
+                            for router in router_query:
+                                if router.role != cisco_constants.ROUTER_ROLE_GLOBAL and \
+                                   router.role != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
+                                    raise routertype.RouterTypeInUse(id=id)
+                                else:
+                                    global_ids.append(router.router_id)
+
+                            for router_id in global_ids:
+                                self.delete_router(context, router_id)
+                                        
+                routertype_query.delete()
+                                            
+                #if not routertype_query.filter_by(id=id).delete():
+                #    raise routertype.RouterTypeNotFound(id=id)
         except db_exc.DBError as e:
             with excutils.save_and_reraise_exception() as ctxt:
                 if isinstance(e.inner_exception, sql_exc.IntegrityError):
