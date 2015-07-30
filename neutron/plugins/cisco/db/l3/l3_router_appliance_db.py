@@ -50,6 +50,7 @@ from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.l3.drivers import driver_context
 from neutron.plugins.common import constants as svc_constants
+from neutron.api.v2 import attributes as attrs
 
 LOG = logging.getLogger(__name__)
 
@@ -1334,3 +1335,16 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 _confirm_router_interface_not_in_use(context,
                                                      target_router_id,
                                                      subnet_id))
+    def _create_hidden_port(self, context, network_id, device_id,
+                            type=l3_constants.DEVICE_OWNER_ROUTER_INTF):
+        """Creates port used specially for HA purposes."""
+        return self._core_plugin.create_port(context, {
+            'port':
+            {'tenant_id': '',  # intentionally not set
+             'network_id': network_id,
+             'mac_address': attrs.ATTR_NOT_SPECIFIED,
+             'fixed_ips': attrs.ATTR_NOT_SPECIFIED,
+             'device_id': device_id,
+             'device_owner': type,
+             'admin_state_up': True,
+             'name': ''}})
