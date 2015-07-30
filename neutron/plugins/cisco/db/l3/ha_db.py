@@ -599,9 +599,12 @@ class HA_db_mixin(object):
         itfc_list = router.get(l3_constants.INTERFACE_KEY, [])
 
         if 'gw_port' in router and (r_r_b or router[ha.ENABLED]):
-            if router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
+            rb_info = self._get_router_binding_info(context, router['id'])                
+            if (rb_info.router_type_id == self.get_hardware_router_type_id(context)) and \
+               router['role'] != cisco_constants.ROUTER_ROLE_GLOBAL and \
                 router['role'] != cisco_constants.ROUTER_ROLE_LOGICAL_GLOBAL:
-
+                # Setup external network HA Group and fill nat_pool_info
+                # For ASR1k routers only.                
                 logical_global_router = \
                     self._get_logical_global_router(context)
                 lgr_hags = \
