@@ -37,6 +37,50 @@ HOST = 'myhost'
 FAKE_ID = _uuid()
 
 
+def prepare_ha_router_data(enable_snat=None, num_internal_ports=1):
+    router_id = _uuid()
+    ex_gw_port = {'id': _uuid(),
+                  'network_id': _uuid(),
+                  'fixed_ips': [{'ip_address': '19.4.4.4',
+                                 'subnet_id': _uuid()}],
+                  'subnets': [
+                              {'cidr': '19.4.4.0/24',
+                               'gateway_ip': '19.4.4.1',
+                               'id': _uuid()}]}
+    int_ports = []
+    for i in range(num_internal_ports):
+        int_ports.append({'id': _uuid(),
+                          'network_id': _uuid(),
+                          'admin_state_up': True,
+                          'fixed_ips': [{'ip_address': '35.4.%s.4' % i,
+                                         'subnet_id': _uuid()}],
+                          'mac_address': 'ca:fe:de:ad:be:ef',
+                          'subnets': [{'cidr': '35.4.%s.0/24' % i,
+                                     'gateway_ip': '35.4.%s.1' % i,
+                                     'id': _uuid()}]})
+
+    hosting_device = {'id': _uuid(),
+                      "name": "ASR1kv template",
+                      "booting_time": 300,
+                      "host_category": "Hardware",
+                      'management_ip_address': '20.0.0.5',
+                      'protocol_port': 22,
+                      "credentials": {
+                          "username": "user",
+                          "password": "4getme"},
+                      }
+    router = {
+        'id': router_id,
+        'admin_state_up': True,
+        l3_constants.INTERFACE_KEY: int_ports,
+        'routes': [],
+        'gw_port': ex_gw_port,
+        'hosting_device': hosting_device}
+    if enable_snat is not None:
+        router['enable_snat'] = enable_snat
+    return router, int_ports
+
+
 def prepare_router_data(enable_snat=None, num_internal_ports=1):
     router_id = _uuid()
     ex_gw_port = {'id': _uuid(),
@@ -266,7 +310,9 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             ri, ex_gw_port)
 
     def test_routing_table_update(self):
-        router = self.router
+        #router = self.router
+        router, int_ports = prepare_ha_router_data()
+
         fake_route1 = {'destination': '135.207.0.0/16',
                        'nexthop': '1.2.3.4'}
         fake_route2 = {'destination': '135.207.111.111/32',
@@ -313,7 +359,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.driver.routes_updated.assert_any_call(ri, 'delete', fake_route1)
 
     def test_process_router_internal_network_added_unexpected_error(self):
-        router, ports = prepare_router_data()
+        router, ports = prepare_ha_router_data()
         ri = RouterInfo(router['id'], router=router)
         # raise RuntimeError to simulate that an unexpected exception occurrs
         self.routing_helper._internal_network_added.side_effect = RuntimeError
