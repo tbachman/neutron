@@ -73,6 +73,7 @@ def prepare_ha_router_data(enable_snat=None, num_internal_ports=1):
         'id': router_id,
         'admin_state_up': True,
         l3_constants.INTERFACE_KEY: int_ports,
+        'role': 'Logical',
         'routes': [],
         'gw_port': ex_gw_port,
         'hosting_device': hosting_device}
@@ -237,13 +238,15 @@ class TestBasicRoutingOperations(base.BaseTestCase):
                   'confstr': confstr}
         self.routing_helper._internal_network_added.side_effect = (
             cfg_exceptions.CSR1kvConfigException(**params))
-        router, ports = prepare_router_data()
+        # router, ports = prepare_router_data()
+        router, ports = prepare_ha_router_data()
         ri = RouterInfo(router['id'], router)
         self.assertRaises(cfg_exceptions.CSR1kvConfigException,
                           self.routing_helper._process_router, ri)
 
     def test_process_router(self):
-        router, ports = prepare_router_data()
+        # router, ports = prepare_router_data()
+        router, ports = prepare_ha_router_data()
         #Setup mock for call to proceess floating ips
         self.routing_helper._process_router_floating_ips = mock.Mock()
         fake_floatingips1 = {'floatingips': [
@@ -379,7 +382,8 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             router[l3_constants.INTERFACE_KEY][0], ri.internal_ports)
 
     def test_process_router_internal_network_removed_unexpected_error(self):
-        router, ports = prepare_router_data()
+        # router, ports = prepare_router_data()
+        router, ports = prepare_ha_router_data()
         ri = RouterInfo(router['id'], router=router)
         # add an internal port
         self.routing_helper._process_router(ri)
@@ -633,7 +637,8 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.assertTrue(self.routing_helper.fullsync)
 
     def test_process_routers(self):
-        router, port = prepare_router_data()
+        # router, port = prepare_router_data()
+        router, port = prepare_ha_router_data()
         driver = self._mock_driver_and_hosting_device(self.routing_helper)
         self.routing_helper._process_router = mock.Mock()
         self.routing_helper._process_routers([router], None)
