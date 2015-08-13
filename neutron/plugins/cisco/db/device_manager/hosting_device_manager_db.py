@@ -1,4 +1,4 @@
-# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
+    # Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -16,8 +16,10 @@ import eventlet
 import math
 import threading
 
+from keystoneclient.auth.identity import v3
 from keystoneclient import exceptions as k_exceptions
-from keystoneclient.v2_0 import client as k_client
+from keystoneclient import session
+from keystoneclient.v3 import client
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -74,6 +76,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     # The all-mighty tenant owning all hosting devices
     _l3_tenant_uuid = None
+
+    # Keystone session corresponding to admin user and l3_admin_tenant
+    _keystone_session = None
+
     # The management network for hosting devices
     _mgmt_nw_uuid = None
     _mgmt_sec_grp_id = None
@@ -97,18 +103,37 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     # Flag indicating is needed Nova services are reported as up.
     _nova_running = False
 
+    @classmethod
+    def _keystone_auth_session(cls):
+        if cls._keystone_session:
+            return cls._keystone_session
+        else:
+            auth_url = cfg.CONF.keystone_authtoken.auth_url + "/v3"
+            # user = cfg.CONF.keystone_authtoken.admin_user
+            # pw = cfg.CONF.keystone_authtoken.admin_password
+            # project_name = cfg.CONF.keystone_authtoken.admin_tenant_name
+            # project_name = cfg.CONF.keystone_authtoken.project_name
+            user = cfg.CONF.keystone_authtoken.username
+            pw = cfg.CONF.keystone_authtoken.password
+            project_name = cfg.CONF.general.l3_admin_tenant
+            user_domain_id = (cfg.CONF.keystone_authtoken.user_domain_id or
+                              'default')
+            project_domain_id = (cfg.CONF.keystone_authtoken.project_domain_id
+                                 or 'default')
+            auth = v3.Password(auth_url=auth_url,
+                               username=user,
+                               password=pw,
+                               project_name=project_name,
+                               user_domain_id=user_domain_id,
+                               project_domain_id=project_domain_id)
+            cls._keystone_session = session.Session(auth=auth)
+        return cls._keystone_session
+
     @property
     def svc_vm_mgr(self):
         if self._svc_vm_mgr_obj is None:
-            auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-    #        u_name = cfg.CONF.keystone_authtoken.admin_user
-    #        pw = cfg.CONF.keystone_authtoken.admin_password
-            u_name = cfg.CONF.keystone_authtoken.username
-            pw = cfg.CONF.keystone_authtoken.password
-            tenant = cfg.CONF.general.l3_admin_tenant
             self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
-                user=u_name, passwd=pw, l3_admin_tenant=tenant,
-                auth_url=auth_url)
+                keystone_session=self._keystone_auth_session())
         return self._svc_vm_mgr_obj
 
     @classmethod
@@ -117,18 +142,9 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         if cls._l3_tenant_uuid is None:
             # This should normally only happen once so we register hosting
             # device templates defined in config file here.
-            auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
-#            user = cfg.CONF.keystone_authtoken.admin_user
-#            pw = cfg.CONF.keystone_authtoken.admin_password
-#           tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
-            user = cfg.CONF.keystone_authtoken.username
-            pw = cfg.CONF.keystone_authtoken.password
-            tenant = cfg.CONF.keystone_authtoken.project_name
-            keystone = k_client.Client(username=user, password=pw,
-                                       tenant_name=tenant,
-                                       auth_url=auth_url)
+            keystone = client.Client(session=cls._keystone_auth_session())
             try:
-                tenant = keystone.tenants.find(
+                tenant = keystone.projects.find(
                     name=cfg.CONF.general.l3_admin_tenant)
                 cls._l3_tenant_uuid = tenant.id
             except k_exceptions.NotFound:
