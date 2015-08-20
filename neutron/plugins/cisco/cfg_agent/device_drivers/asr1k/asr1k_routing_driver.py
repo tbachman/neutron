@@ -93,12 +93,12 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         self._asr_add_floating_ip(floating_ip, fixed_ip, vrf_name, ext_gw_port)
 
     def disable_internal_network_NAT(self, ri, port, ext_gw_port,
-                                     itfc_delete=False):
+                                     itfc_deleted=False):
 
         self._remove_internal_nw_nat_rules(ri,
                                            [port],
                                            ext_gw_port,
-                                           itfc_delete)
+                                           itfc_deleted)
 
     # ============== Internal "preparation" functions  ==============
 
@@ -497,14 +497,14 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                       ri,
                                       ports,
                                       ext_port,
-                                      intf_delete=False):
+                                      intf_deleted=False):
         """
         arguments:
         ri          -- router-info object
         ports       -- list of affected ports where network nat rules
                        was affected
         ext_port    -- external facing port
-        intf_delete -- If True, indicates that the subinterface was deleted.
+        intf_deleted -- If True, indicates that the subinterface was deleted.
         """
         acls = []
         # first disable nat in all inner ports
@@ -513,7 +513,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
             inner_vlan = self._get_interface_vlan_from_hosting_port(port)
             acls.append(self._get_acl_name_from_vlan(inner_vlan))
 
-            if not intf_delete:
+            if not intf_deleted:
                 self._remove_interface_nat(in_itfc_name, 'inside')
         # **** Don't wait and clear NAT for ASR,
         #      too slow and can disrupt traffic for
