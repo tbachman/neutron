@@ -639,6 +639,8 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _edit_running_config(self, conf_str, snippet):
         conn = self._get_connection()
+        LOG.warn("Config generated for %(snip)s is:%(conf)s",
+                 {'snip': snippet, 'conf': conf_str})
         rpc_obj = conn.edit_config(target='running', config=conf_str)
         self._check_response(rpc_obj, snippet, conf_str=conf_str)
 
@@ -673,9 +675,8 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
                   {'snippet_name': snippet_name, 'rpc_obj': rpc_obj.xml})
         xml_str = rpc_obj.xml
         if "<ok />" in xml_str:
-            LOG.debug("RPCReply for %s is OK", snippet_name)
-            LOG.info(_LI("%s successfully executed"), snippet_name)
-            LOG.debug("Config applied was:%s", conf_str)
+            # LOG.debug("RPCReply for %s is OK", snippet_name)
+            LOG.info(_LI("%s was successfully executed"), snippet_name)
             return True
         # Not Ok, we throw a ConfigurationException
         e_type = rpc_obj._root[0][0].text
