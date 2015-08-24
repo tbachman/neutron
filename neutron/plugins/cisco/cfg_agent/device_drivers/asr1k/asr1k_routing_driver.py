@@ -470,17 +470,19 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         # if not acl_present:
         conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
         try:
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, 'CREATE_ACL')
+            # rpc_obj = conn.edit_config(target='running', config=conf_str)
+            # self._check_response(rpc_obj, 'CREATE_ACL')
+            self._edit_running_config(conf_str, 'CREATE_ACL')
         except Exception as acl_e:
-            LOG.error(_LE("Ignore exception for CREATE_ACL: %s"), acl_e)
+            LOG.debug(_LE("Ignore exception for CREATE_ACL: %s"), acl_e)
 
-        pool_name = "%s_nat_pool" % (vrf_name)
+        pool_name = "%s_nat_pool" % vrf_name
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
                                                           vrf_name)
         try:
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, 'CREATE_DYN_NAT')
+            # rpc_obj = conn.edit_config(target='running', config=conf_str)
+            # self._check_response(rpc_obj, 'CREATE_DYN_NAT')
+            self._edit_running_config(conf_str, 'CREATE_DYN_NAT')
         except Exception as dyn_nat_e:
             LOG.error(_LE("Ignore exception for CREATE_DYN_NAT: %s"),
                       dyn_nat_e)
