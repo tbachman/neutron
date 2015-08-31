@@ -216,6 +216,7 @@ class RoutingServiceHelper(object):
                 self.removed_routers.clear()
                 self.sync_devices.clear()
                 routers = self._fetch_router_info(all_routers=True)
+                LOG.debug("All routers: %s" % (pprint.pformat(routers)))
                 self._cleanup_invalid_cfg(routers)
             else:
                 if self.updated_routers:
@@ -223,6 +224,7 @@ class RoutingServiceHelper(object):
                     LOG.debug("Updated routers:%s", router_ids)
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
+                    LOG.debug("Updated routers:%s" % (pprint.pformat(routers)))
                 if device_ids:
                     LOG.debug("Adding new devices:%s", device_ids)
                     self.sync_devices = set(device_ids) | self.sync_devices
@@ -623,7 +625,14 @@ class RoutingServiceHelper(object):
         """
         ri = RouterInfo(router_id, router)
         driver = self._drivermgr.set_driver(router)
-        driver.router_added(ri)
+        if router['role'] in [c_constants.ROUTER_ROLE_GLOBAL,
+                              c_constants.ROUTER_ROLE_LOGICAL_GLOBAL]:
+            # No need to create a vrf for Global or logical global routers
+            LOG.debug("Skipping router_added device processing for %(id)s as "
+                      "its role is %(role)s",
+                      {'id': router_id, 'role': router['role']})
+        else:
+            driver.router_added(ri)
         self.router_info[router_id] = ri
 
     def _router_removed(self, router_id, deconfigure=True):
