@@ -315,9 +315,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group,
                         ip, vlan):
+        # Hareesh: Ignoring vrf check as we don't create a vrf for the
+        # global/logical global role
+        # if vrf_name not in self._get_vrfs():
+        #     LOG.error(_LE("VRF %s not present"), vrf_name)
 
-        if vrf_name not in self._get_vrfs():
-            LOG.error(_LE("VRF %s not present"), vrf_name)
         #conf_str = snippets.SET_INTC_HSRP % (sub_interface, vrf_name, group,
         #                                     priority, group, ip)
         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % \
