@@ -511,14 +511,13 @@ class RoutingServiceHelper(object):
         """
         try:
             #ToDo(Hareesh): Check if we need these 1C debugs
-            LOG.debug("++++ ri = %s " % (pprint.pformat(ri)))
+            # LOG.debug("++++ ri = %s " % (pprint.pformat(ri)))
             ex_gw_port = ri.router.get('gw_port')
-            LOG.debug("++++ ex_gw_port = %s " % (pprint.pformat(ex_gw_port)))
+            # LOG.debug("++++ ex_gw_port = %s " % (pprint.pformat(ex_gw_port)))
             ri.ha_info = ri.router.get('ha_info', None)
             internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
 
-            LOG.debug("++++ internal ports = %s " %
-                      (pprint.pformat(internal_ports)))
+            # LOG.debug("++internal ports:%s" %(pprint.pformat(internal_ports)))
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
             current_port_ids = set([p['id'] for p in internal_ports
                                     if p['admin_state_up']])
@@ -528,8 +527,10 @@ class RoutingServiceHelper(object):
             old_ports = [p for p in ri.internal_ports
                          if p['id'] not in current_port_ids]
 
-            LOG.debug("++++ new_ports = %s " % (pprint.pformat(new_ports)))
-            LOG.debug("++++ old_ports = %s " % (pprint.pformat(old_ports)))
+            new_port_ids = [p['id'] for p in new_ports]
+            old_port_ids = [p['id'] for p in old_ports]
+            LOG.debug("++ new_port_ids = %s" % (pprint.pformat(new_port_ids)))
+            LOG.debug("++ old_port_ids = %s" % (pprint.pformat(old_port_ids)))
 
             for p in new_ports:
                 self._set_subnet_info(p)

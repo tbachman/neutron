@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import inspect
 import logging
 import netaddr
 import re
@@ -637,10 +638,52 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         parse = ciscoconfparse.CiscoConfParse(ios_cfg)
         return parse.find_lines('ip route')
 
+    def caller_name(self, skip=2):
+        """
+        Get a name of a caller in the format module.class.method
+
+       `skip` specifies how many levels of stack to skip while getting caller
+       name. skip=1 means "who calls me", skip=2 "who calls my caller" etc.
+
+       An empty string is returned if skipped levels exceed stack height
+       """
+        stack = inspect.stack()
+        start = 0 + skip
+        if len(stack) < start + 1:
+            return ''
+        parentframe = stack[start][0]
+
+        name = []
+        module = inspect.getmodule(parentframe)
+        # `modname` can be None when frame is executed directly in console
+        # TODO: consider using __main__
+        if module:
+            name.append(module.__name__)
+        # detect classname
+        if 'self' in parentframe.f_locals:
+            # I don't know any way to detect call from the object method
+            # XXX: there seems to be no way to detect static method call,
+            # it will be just a function call
+            name.append(parentframe.f_locals['self'].__class__.__name__)
+        codename = parentframe.f_code.co_name
+        if codename != '<module>':  # top level usually
+            name.append(codename ) # function or a method
+        del parentframe
+        return ".".join(name)
+
+    # [ OR ]
+    # curframe = inspect.currentframe()
+    # calframe = inspect.getouterframes(curframe, 2)
+    # return calframe[1][3]
+
     def _edit_running_config(self, conf_str, snippet):
         conn = self._get_connection()
-        LOG.warn("Config generated for %(snip)s is:%(conf)s",
-                 {'snip': snippet, 'conf': conf_str})
+        LOG.warn("Config generated for [%(device)s] %(snip)s is:%(conf)s "
+                 "caller:%(caller)s",
+                 {'device': self.hosting_device['name'],
+                  'snip': snippet,
+                  'conf': conf_str,
+                  'caller': self.caller_name()})
         rpc_obj = conn.edit_config(target='running', config=conf_str)
         self._check_response(rpc_obj, snippet, conf_str=conf_str)
 
