@@ -15,7 +15,7 @@
 import collections
 import eventlet
 import netaddr
-import pprint
+from pprint import pprint as pp
 
 from oslo_log import log as logging
 import oslo_messaging
@@ -216,7 +216,7 @@ class RoutingServiceHelper(object):
                 self.removed_routers.clear()
                 self.sync_devices.clear()
                 routers = self._fetch_router_info(all_routers=True)
-                LOG.debug("All routers: %s" % (pprint.pformat(routers)))
+                LOG.debug("All routers: %s" % (pp.pformat(routers)))
                 self._cleanup_invalid_cfg(routers)
             else:
                 if self.updated_routers:
@@ -224,7 +224,7 @@ class RoutingServiceHelper(object):
                     LOG.debug("Updated routers:%s", router_ids)
                     self.updated_routers.clear()
                     routers = self._fetch_router_info(router_ids=router_ids)
-                    LOG.debug("Updated routers:%s" % (pprint.pformat(routers)))
+                    LOG.debug("Updated routers:%s" % (pp.pformat(routers)))
                 if device_ids:
                     LOG.debug("Adding new devices:%s", device_ids)
                     self.sync_devices = set(device_ids) | self.sync_devices
@@ -505,14 +505,13 @@ class RoutingServiceHelper(object):
         """
         try:
             #ToDo(Hareesh): Check if we need these 1C debugs
-            LOG.debug("++++ ri = %s " % (pprint.pformat(ri)))
+            # LOG.debug("++++ ri = %s " % (pp.pformat(ri)))
             ex_gw_port = ri.router.get('gw_port')
-            LOG.debug("++++ ex_gw_port = %s " % (pprint.pformat(ex_gw_port)))
+            # LOG.debug("++++ ex_gw_port = %s " % (pp.pformat(ex_gw_port)))
             ri.ha_info = ri.router.get('ha_info', None)
             internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
 
-            LOG.debug("++++ internal ports = %s " %
-                      (pprint.pformat(internal_ports)))
+            # LOG.debug("++internal ports:%s" %(pp.pformat(internal_ports)))
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
             current_port_ids = set([p['id'] for p in internal_ports
                                     if p['admin_state_up']])
@@ -522,8 +521,10 @@ class RoutingServiceHelper(object):
             old_ports = [p for p in ri.internal_ports
                          if p['id'] not in current_port_ids]
 
-            LOG.debug("++++ new_ports = %s " % (pprint.pformat(new_ports)))
-            LOG.debug("++++ old_ports = %s " % (pprint.pformat(old_ports)))
+            new_port_ids = [p['id'] for p in new_ports]
+            old_port_ids = [p['id'] for p in old_ports]
+            LOG.debug("++ new_port_ids = %s" % (pp.pformat(new_port_ids)))
+            LOG.debug("++ old_port_ids = %s" % (pp.pformat(old_port_ids)))
 
             for p in new_ports:
                 self._set_subnet_info(p)
@@ -793,7 +794,7 @@ class RoutingServiceHelper(object):
         if (num_subnets_on_port > 1):
             LOG.error(_LE("Ignoring port with multiple subnets associated"))
             raise Exception(("Multiple subnets configured on port.  %s") %
-                            pprint.pformat(port_subnets))
+                            pp.pformat(port_subnets))
         else:
             subnet = port_subnets[0]
             prefixlen = netaddr.IPNetwork(subnet['cidr']).prefixlen
