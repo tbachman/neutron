@@ -18,6 +18,8 @@ import netaddr
 from neutron.i18n import _LE, _LI
 from neutron.common import constants
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
+    import asr1k_cfg_syncer
 from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import asr1k_snippets
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
@@ -99,6 +101,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                            [port],
                                            ext_gw_port,
                                            itfc_deleted)
+
+    def cleanup_invalid_cfg(self, routers, driver, hd):
+
+        cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers, driver, hd)
+        cfg_syncer.delete_invalid_cfg()
 
     # ============== Internal "preparation" functions  ==============
 
