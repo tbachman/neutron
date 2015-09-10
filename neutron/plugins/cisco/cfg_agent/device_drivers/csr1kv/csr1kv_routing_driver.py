@@ -112,6 +112,10 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
     def clear_connection(self):
         self._ncc_connection = None
 
+    def cleanup_invalid_cfg(self, hd, routers):
+        # at this point nothing to be done for CSR
+        return
+
     ##### Internal Functions  ####
 
     def _create_sub_interface(self, ri, port):
@@ -656,7 +660,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
         name = []
         module = inspect.getmodule(parentframe)
         # `modname` can be None when frame is executed directly in console
-        # TODO: consider using __main__
+        # TODO(asr1kteam): consider using __main__
         if module:
             name.append(module.__name__)
         # detect classname
@@ -667,7 +671,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             name.append(parentframe.f_locals['self'].__class__.__name__)
         codename = parentframe.f_code.co_name
         if codename != '<module>':  # top level usually
-            name.append(codename ) # function or a method
+            name.append(codename)  # function or a method
         del parentframe
         return ".".join(name)
 

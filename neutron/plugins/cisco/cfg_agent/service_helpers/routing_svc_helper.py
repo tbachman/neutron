@@ -307,9 +307,8 @@ class RoutingServiceHelper(object):
                         "router_type": routers[0]['router_type']}
             driver = self._drivermgr.set_driver(temp_res)
 
-            # TODO(sridar) add a dummy for CSR ? - Check with Hareesh
             driver.cleanup_invalid_cfg(
-                routers, driver, routers[0]['hosting_device'])
+                routers[0]['hosting_device'], routers)
 
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):
