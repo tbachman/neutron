@@ -93,22 +93,23 @@ class ServiceVMManager(object):
 
     #TODO(remove fake function later)
     def dispatch_service_vm(self, context, instance_name, vm_image,
-                            vm_flavor, hosting_device_drv, mgmt_port,
+                            vm_flavor, hosting_device_drv,
+                            credentials_info, connectivity_info,
                             ports=None):
         if self._core_plugin.__class__.__name__ != 'CSR1kv_OVSNeutronPluginV2':
-            return self.dispatch_service_vm_real(context, instance_name,
-                                                 vm_image, vm_flavor,
-                                                 hosting_device_drv,
-                                                 mgmt_port, ports)
+            return self.dispatch_service_vm_real(
+                context, instance_name, vm_image, vm_flavor,
+                hosting_device_drv, credentials_info, connectivity_info, ports)
         else:
-            return self.dispatch_service_vm_fake(context, instance_name,
-                                                 vm_image, vm_flavor,
-                                                 hosting_device_drv,
-                                                 mgmt_port, ports)
+            return self.dispatch_service_vm_fake(
+                context, instance_name, vm_image, vm_flavor,
+                hosting_device_drv, credentials_info, connectivity_info, ports)
 
-    def dispatch_service_vm_real(self, context, instance_name, vm_image,
-                                 vm_flavor, hosting_device_drv, mgmt_port,
-                                 ports=None):
+    def dispatch_service_vm_real(
+            self, context, instance_name, vm_image, vm_flavor,
+            hosting_device_drv, credentials_info, connectivity_info,
+            ports=None):
+        mgmt_port = connectivity_info['mgmt_port']
         nics = [{'port-id': mgmt_port['id']}]
         for port in ports or {}:
             nics.append({'port-id': port['id']})
@@ -123,7 +124,8 @@ class ServiceVMManager(object):
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
-            files = hosting_device_drv.create_config(context, mgmt_port)
+            files = hosting_device_drv.create_config(context, credentials_info,
+                                                     connectivity_info)
         except IOError:
             return
 
@@ -169,16 +171,19 @@ class ServiceVMManager(object):
     # TODO(bobmel): Move this to fake_service_vm_lib.py file with
     # FakeServiceVMManager
     def dispatch_service_vm_fake(self, context, instance_name, vm_image,
-                                 vm_flavor, hosting_device_drv, mgmt_port,
+                                 vm_flavor, hosting_device_drv,
+                                 credentials_info, connectivity_info,
                                  ports=None):
-        vm_id = uuidutils.generate_uuid()
+        mgmt_port = connectivity_info['mgmt_port']
         try:
             # Assumption for now is that this does not need to be
             # plugin dependent, only hosting device type dependent.
-            hosting_device_drv.create_config(context, mgmt_port)
+            hosting_device_drv.create_config(context, credentials_info,
+                                             connectivity_info)
         except IOError:
             return
 
+        vm_id = uuidutils.generate_uuid()
         if mgmt_port is not None:
             p_dict = {'port': {'device_id': vm_id,
                                'device_owner': 'nova'}}

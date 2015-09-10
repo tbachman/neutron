@@ -280,6 +280,7 @@ class TestDeviceManagerDBPlugin(
             keystone_session=mock.MagicMock())
         self._mock_svc_vm_create_delete(self._devmgr)
         self._other_tenant_id = device_manager_test_support._uuid()
+        self._devmgr._core_plugin = NeutronManager.get_plugin()
 
     def tearDown(self):
         self._test_remove_all_hosting_devices()
@@ -882,17 +883,21 @@ class TestDeviceManagerDBPlugin(
 
     # hosting device pool maintenance test helper
     def _test_pool_maintenance(self, desired_slots_free=10, slot_capacity=3,
-                               host_category=VM_CATEGORY, expected=15):
+                               host_category=VM_CATEGORY, expected=15,
+                               define_credentials=True):
         with self.hosting_device_template(
                 host_category=host_category, slot_capacity=slot_capacity,
                 desired_slots_free=desired_slots_free,
                 plugging_driver=TEST_PLUGGING_DRIVER) as hdt:
             hdt_id = hdt['hosting_device_template']['id']
-            with contextlib.nested(self.port(subnet=self._mgmt_subnet,
-                                             no_delete=True),
-                                   self.port(subnet=self._mgmt_subnet,
-                                             no_delete=True)) as (mgmt_port1,
-                                                                  mgmt_port2):
+            creds_id = (DEFAULT_CREDENTIALS_ID if define_credentials is True
+                        else 'non_existent_id')
+            credentials = {'user_name': 'bob', 'password': 'tooEasy'}
+            with contextlib.nested(mock.patch.dict(
+                    self.plugin._credentials, {creds_id: credentials}),
+                    self.port(subnet=self._mgmt_subnet, no_delete=True),
+                    self.port(subnet=self._mgmt_subnet, no_delete=True)) as (
+                    creds_dict, mgmt_port1, mgmt_port2):
                 with contextlib.nested(
                         self.hosting_device(
                                 template_id=hdt_id,
@@ -918,6 +923,11 @@ class TestDeviceManagerDBPlugin(
     # hosting device pool maintenance tests
     def test_vm_based_hosting_device_excessive_slot_deficit_adds_slots(self):
         self._test_pool_maintenance()
+
+    def test_vm_based_hosting_device_excessive_slot_deficit_no_credentials(
+            self):
+        # no slots are added if credentials for template are missing
+        self._test_pool_maintenance(expected=6, define_credentials=False)
 
     def test_vm_based_hosting_device_marginal_slot_deficit_no_change(self):
         self._test_pool_maintenance(desired_slots_free=7, expected=6)

@@ -30,7 +30,7 @@ class HostingDeviceDriver(object):
         pass
 
     @abc.abstractmethod
-    def create_config(self, context, mgmtport):
+    def create_config(self, context, credentials_info, connectivity_info):
         """Creates configuration(s) for a service VM.
 
         This function can be used to make initial configurations. The
@@ -40,13 +40,23 @@ class HostingDeviceDriver(object):
         Called when a service VM-based hosting device is to be created.
         This function should cleanup after itself in case of error.
 
-        returns: Dict with filenames and their corresponding content strings:
+        @param context: contains user information
+        @param credentials_info: dictionary with login credentials to be
+        injected into the hosting device
+                  {'user_name': <user name>,
+                   'password': <password>}
+        @param connectivity_info: dictionary with management connectivity
+        information needed by hosting device to communicate
+                {'mgmt_port': <neutron port for management>,
+                 'gateway_ip': <gateway ip address of management subnet
+                 'netmask': <netmask of management subnet>
+                 'name_server_1: <ip of domain name server 1>,
+                 'name_server_2: <ip of domain name server 2>}
+
+        returns: Dict with file names and their corresponding content strings:
                  {filename1: content_string1, filename2: content_string2, ...}
                  The file system of the VM will contain files with the
-                 specified filenames and content. If the dict is empty no
-                 configdrive will be used.
-
-        :param context: neutron api request context.
-        :param mgmt_port: management port for the hosting device.
+                 specified file names and content. If the dict is empty no
+                 config drive will be used.
         """
         pass

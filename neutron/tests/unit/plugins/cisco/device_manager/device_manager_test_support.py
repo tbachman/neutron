@@ -92,6 +92,8 @@ class DeviceManagerTestSupportMixin(object):
             self._delete('networks', self._mgmt_nw['network']['id'])
         hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_nw_uuid = (
             None)
+        hosting_device_manager_db.HostingDeviceManagerMixin._mgmt_subnet_uuid\
+            = None
 
     # Function used to mock novaclient services list
     def _novaclient_services_list(self, all=True):

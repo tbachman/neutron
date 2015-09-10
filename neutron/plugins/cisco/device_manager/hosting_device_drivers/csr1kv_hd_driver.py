@@ -12,14 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
-
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 
 from neutron.i18n import _LE
-from neutron import manager
 from neutron.plugins.cisco.device_manager import hosting_device_drivers
 
 LOG = logging.getLogger(__name__)
@@ -42,15 +39,16 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
     def hosting_device_name(self):
         return "CSR1kv"
 
-    def create_config(self, context, mgmtport):
-        mgmt_ip = mgmtport['fixed_ips'][0]['ip_address']
-        subnet_data = self._core_plugin.get_subnet(
-            context, mgmtport['fixed_ips'][0]['subnet_id'],
-            ['cidr', 'gateway_ip', 'dns_nameservers'])
-        netmask = str(netaddr.IPNetwork(subnet_data['cidr']).netmask)
-        params = {'<ip>': mgmt_ip, '<mask>': netmask,
-                  '<gw>': subnet_data['gateway_ip'],
-                  '<name_server>': '8.8.8.8'}
+    def create_config(self, context, credentials_info, connectivity_info):
+        mgmt_port = connectivity_info['mgmt_port']
+        mgmt_ip = mgmt_port['fixed_ips'][0]['ip_address']
+        params = {'<user_name>': credentials_info.get('user_name', ''),
+                  '<password>': credentials_info.get('password', ''),
+                  '<ip>': mgmt_ip,
+                  '<mask>': connectivity_info['netmask'],
+                  '<gw>': connectivity_info['gateway_ip'],
+                  '<name_server_1>': connectivity_info['name_server_1'],
+                  '<name_server_2>': connectivity_info['name_server_2']}
         try:
             cfg_template_filename = (
                 cfg.CONF.general.templates_path + "/" +
@@ -68,11 +66,3 @@ class CSR1kvHostingDeviceDriver(hosting_device_drivers.HostingDeviceDriver):
             with excutils.save_and_reraise_exception():
                 LOG.exception(_LE('Failed to create initial device '
                                   'configuration.'))
-
-    @property
-    def _core_plugin(self):
-        try:
-            return self._plugin
-        except AttributeError:
-            self._plugin = manager.NeutronManager.get_plugin()
-            return self._plugin

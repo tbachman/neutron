@@ -21,5 +21,5 @@ class NoopHostingDeviceDriver(HostingDeviceDriver):
     def hosting_device_name(self):
         return "Noop_hosting_driver"
 
-    def create_config(self, context, mgmtport):
+    def create_config(self, context, credentials_info, connectivity_info):
         return {}

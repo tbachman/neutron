@@ -196,6 +196,7 @@ class L3RouterApplianceTestCaseBase(
         TestApplianceL3RouterServicePlugin._refresh_router_backlog = True
         device_manager_test_support.TestCorePlugin._l3_tenant_uuid = None
         device_manager_test_support.TestCorePlugin._mgmt_nw_uuid = None
+        device_manager_test_support.TestCorePlugin._mgmt_subnet_uuid = None
         device_manager_test_support.TestCorePlugin._mgmt_sec_grp_id = None
         device_manager_test_support.TestCorePlugin._credentials = {}
         device_manager_test_support.TestCorePlugin._plugging_drivers = {}

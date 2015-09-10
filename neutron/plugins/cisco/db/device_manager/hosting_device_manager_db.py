@@ -14,6 +14,7 @@
 
 import eventlet
 import math
+import netaddr
 import threading
 
 from keystoneclient.auth.identity import v3
@@ -59,7 +60,13 @@ HOSTING_DEVICE_MANAGER_OPTS = [
                       "Default value is mgmt_sec_grp")),
     cfg.BoolOpt('ensure_nova_running', default=True,
                 help=_("Ensure that Nova is running before attempting to"
-                       "create any CSR1kv VM."))
+                       "create any CSR1kv VM.")),
+    cfg.StrOpt('domain_name_server_1', default='8.8.8.8',
+               help=_("IP address of primary domain name server for hosting "
+                      "devices")),
+    cfg.StrOpt('domain_name_server_2', default='8.8.4.4',
+               help=_("IP address of secondary domain name server for hosting "
+                      "devices"))
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS, "general")
@@ -82,6 +89,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
 
     # The management network for hosting devices
     _mgmt_nw_uuid = None
+    _mgmt_subnet_uuid = None
     _mgmt_sec_grp_id = None
 
     # Dictionary with credentials keyed on credential UUID
@@ -177,6 +185,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                     LOG.info(_LI('The management network has %d subnets. The '
                                  'first one will be used.'), num_subnets)
                 cls._mgmt_nw_uuid = net[0].get('id')
+                cls._mgmt_subnet_uuid = net[0]['subnets'][0]
             elif len(net) > 1:
                 # Management network must have a unique name.
                 LOG.error(_LE('The management network for does not have '
@@ -186,6 +195,12 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 LOG.error(_LE('There is no virtual management network. Please '
                               'create one.'))
         return cls._mgmt_nw_uuid
+
+    @classmethod
+    def mgmt_subnet_id(cls):
+        if cls._mgmt_subnet_uuid is None:
+            cls.mgmt_nw_id()
+        return cls._mgmt_subnet_uuid
 
     @classmethod
     def mgmt_sec_grp_id(cls):
@@ -524,7 +539,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         mgmt_context = {
             'mgmt_ip_address': hosting_device.management_ip_address,
             'mgmt_nw_id': mgmt_nw_id,
-            'mgmt_sec_grp_id': self.mgmt_sec_grp_id}
+            'mgmt_sec_grp_id': self.mgmt_sec_grp_id()}
         res = plg_drv.create_hosting_device_resources(
             adm_context, uuidutils.generate_uuid(), self.l3_tenant_id(),
             mgmt_context, 1)
@@ -641,26 +656,26 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         use. A list with the created hosting device VMs is returned.
         """
         hosting_devices = []
+        template_id = template['id']
+        credentials_id = template['default_credentials_id']
         plugging_drv = self.get_hosting_device_plugging_driver(context,
-                                                               template['id'])
+                                                               template_id)
         hosting_device_drv = self.get_hosting_device_driver(context,
-                                                            template['id'])
+                                                            template_id)
         if plugging_drv is None or hosting_device_drv is None or num <= 0:
             return hosting_devices
-        # These resources are owned by the L3AdminTenant
-        dev_data = {'template_id': template['id'],
-                    'credentials_id': template['default_credentials_id'],
-                    'admin_state_up': True,
-                    'protocol_port': template['protocol_port'],
-                    'created_at': timeutils.utcnow(),
-                    'tenant_bound': template['tenant_bound'] or None,
-                    'auto_delete': True}
         #TODO(bobmel): Determine value for max_hosted properly
         max_hosted = 1  # template['slot_capacity']
-        mgmt_context = {
-            'mgmt_ip_address': None,
-            'mgmt_nw_id': self.mgmt_nw_id(),
-            'mgmt_sec_grp_id': self.mgmt_sec_grp_id}
+        dev_data, mgmt_context = self._get_resources_properties_for_hd(
+            template, credentials_id)
+        credentials_info = self._credentials.get(credentials_id)
+        if credentials_info is None:
+            LOG.error(_LE('Could not find credentials for hosting device'
+                          'template %s. Aborting VM hosting device creation.'),
+                      template_id)
+            return hosting_devices
+        connectivity_info = self._get_mgmt_connectivity_info(
+            context, self.mgmt_subnet_id())
         for i in xrange(num):
             complementary_id = uuidutils.generate_uuid()
             res = plugging_drv.create_hosting_device_resources(
@@ -669,10 +684,11 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
             if res.get('mgmt_port') is None:
                 # Required ports could not be created
                 return hosting_devices
+            connectivity_info['mgmt_port'] = res['mgmt_port']
             vm_instance = self.svc_vm_mgr.dispatch_service_vm(
                 context, template['name'] + '_nrouter', template['image'],
-                template['flavor'], hosting_device_drv, res['mgmt_port'],
-                res.get('ports'))
+                template['flavor'], hosting_device_drv, credentials_info,
+                connectivity_info, res.get('ports'))
             if vm_instance is not None:
                 dev_data.update(
                     {'id': vm_instance['id'],
@@ -691,8 +707,41 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 break
         LOG.info(_LI('Created %(num)d hosting device VMs based on template '
                      '%(t_id)s'), {'num': len(hosting_devices),
-                                   't_id': template['id']})
+                                   't_id': template_id})
         return hosting_devices
+
+    def _get_mgmt_connectivity_info(self, context, mgmt_subnet_id):
+        subnet_data = self._core_plugin.get_subnet(
+            context, mgmt_subnet_id,
+            ['cidr', 'gateway_ip', 'dns_nameservers'])
+        num = len(subnet_data['dns_nameservers'])
+        name_server_1 = cfg.CONF.general.domain_name_server_1
+        name_server_2 = cfg.CONF.general.domain_name_server_2
+        if num == 1:
+            name_server_1 = subnet_data['dns_nameservers'][0]['address']
+            name_server_2 = cfg.CONF.general.domain_name_server_2
+        elif num >= 2:
+            name_server_1 = subnet_data['dns_nameservers'][0]['address']
+            name_server_2 = subnet_data['dns_nameservers'][1]['address']
+        return {'gateway_ip': subnet_data['gateway_ip'],
+                'netmask': str(netaddr.IPNetwork(subnet_data['cidr']).netmask),
+                'name_server_1': name_server_1,
+                'name_server_2': name_server_2}
+
+    def _get_resources_properties_for_hd(self, template, credentials_id):
+        # These resources are owned by the L3AdminTenant
+        dev_data = {'template_id': template['id'],
+                    'credentials_id': credentials_id,
+                    'admin_state_up': True,
+                    'protocol_port': template['protocol_port'],
+                    'created_at': timeutils.utcnow(),
+                    'tenant_bound': template['tenant_bound'] or None,
+                    'auto_delete': True}
+        mgmt_context = {
+            'mgmt_ip_address': None,
+            'mgmt_nw_id': self.mgmt_nw_id(),
+            'mgmt_sec_grp_id': self.mgmt_sec_grp_id()}
+        return dev_data, mgmt_context
 
     def _delete_idle_service_vm_hosting_devices(self, context, num, template):
         """Deletes <num> or less unused <template>-based service VM instances.
@@ -799,7 +848,7 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         return (context.session.query(hd_models.SlotAllocation).filter(
             hd_models.SlotAllocation.hosting_device_id == hosting_device['id'],
             hd_models.SlotAllocation.logical_resource_owner != tenant_id).
-                first() is None)
+            first() is None)
 
     def _update_hosting_device_exclusivity(self, context, hosting_device,
                                            tenant_id):
