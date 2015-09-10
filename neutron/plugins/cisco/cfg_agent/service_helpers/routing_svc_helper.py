@@ -13,7 +13,6 @@
 #    under the License.
 
 import collections
-import copy
 import eventlet
 import netaddr
 import pprint
@@ -30,8 +29,6 @@ from neutron.common import utils as common_utils
 from neutron import context as n_context
 from neutron.i18n import _LE, _LI, _LW
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k \
-    import asr1k_cfg_syncer
 from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
@@ -40,17 +37,6 @@ from neutron.plugins.cisco.extensions import ha
 LOG = logging.getLogger(__name__)
 
 N_ROUTER_PREFIX = 'nrouter-'
-
-
-TEMP_ASR_ROUTER_TYPE = {
-    "cfg_agent_driver": "neutron.plugins.cisco.cfg_agent.device_drivers."
-                        "asr1k.asr1k_routing_driver.ASR1kRoutingDriver",
-    "cfg_agent_service_helper": "neutron.plugins.cisco.cfg_agent."
-                                "service_helpers.routing_svc_helper."
-                                "RoutingServiceHelper",
-    "id": "00000000-0000-0000-0000-000000000003",
-    "name": "Hardware_Neutron_router"
-}
 
 
 class RouterInfo(object):
@@ -201,7 +187,6 @@ class RoutingServiceHelper(object):
     def process_service(self, device_ids=None, removed_devices_info=None):
         try:
             LOG.debug("Routing service processing started")
-            self._init_hardware_router_type()
             resources = {}
             routers = []
             removed_routers = []
@@ -308,29 +293,23 @@ class RoutingServiceHelper(object):
 
     # Routing service helper internal methods
 
-    def _init_hardware_router_type(self):
-        if self.hardware_router_type_id is None:
-            self.hardware_router_type_id = (
-                self.plugin_rpc.get_hardware_router_type_id(self.context))
-            self.hardware_router_type = copy.deepcopy(TEMP_ASR_ROUTER_TYPE)
-            self.hardware_router_type['id'] = self.hardware_router_type_id
-
     def _cleanup_invalid_cfg(self, routers):
-        cfg_syncers = []
-        hds = self.cfg_agent.get_assigned_hosting_devices()
-        LOG.debug("Assigned Hosting devices: %s" % hds)
-        for hd in hds['hosting_devices']:
-            if hd['template_id'] != self.hardware_router_type_id:
-                continue
-            temp_res = {"id": hd['id'],
-                        "hosting_device": hd,
-                        "router_type": self.hardware_router_type}
-            driver = self._drivermgr.set_driver(temp_res)
-            cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers, driver, hd)
-            cfg_syncers.append(cfg_syncer)
 
-        for cfg_syncer in cfg_syncers:
-            cfg_syncer.delete_invalid_cfg()
+        # dict with hd id as key and associated routers list as val
+        hd_routermapping = collections.defaultdict(list)
+        for router in routers:
+            hd_routermapping[router['hosting_device']['id']].append(router)
+
+        # call cfg cleanup specific to device type from its driver
+        for hd_id, routers in hd_routermapping.iteritems():
+            temp_res = {"id": hd_id,
+                        "hosting_device": routers[0]['hosting_device'],
+                        "router_type": routers[0]['router_type']}
+            driver = self._drivermgr.set_driver(temp_res)
+
+            # TODO(sridar) add a dummy for CSR ? - Check with Hareesh
+            driver.cleanup_invalid_cfg(
+                routers, driver, routers[0]['hosting_device'])
 
     def _fetch_router_info(self, router_ids=None, device_ids=None,
                            all_routers=False):
