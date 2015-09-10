@@ -103,9 +103,9 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                            ext_gw_port,
                                            itfc_deleted)
 
-    def cleanup_invalid_cfg(self, routers, driver, hd):
+    def cleanup_invalid_cfg(self, hd, routers):
 
-        cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers, driver, hd)
+        cfg_syncer = asr1k_cfg_syncer.ConfigSyncer(routers, self, hd)
         cfg_syncer.delete_invalid_cfg()
 
     # ============== Internal "preparation" functions  ==============

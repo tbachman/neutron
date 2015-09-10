@@ -156,3 +156,13 @@ class RoutingDriverBase(object):
         :return None
         """
         pass
+
+    @abc.abstractmethod
+    def cleanup_invalid_cfg(self, hosting_device, routers):
+        """Cleanup any invalid configuration in backend.
+
+        :param hosting_device: hosting_device dictionary for backend
+        :param routers: list of router dictionaries for routers on backend
+        :return None
+        """
+        pass
