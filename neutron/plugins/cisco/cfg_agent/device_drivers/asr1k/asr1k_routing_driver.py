@@ -130,53 +130,11 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         """For ASR we don't need to do anything"""
         return True
 
-    def _get_virtual_gw_port_for_ext_net(self, ri, ext_port):
-        """
-        For the physical gw port (the port connecting to the external network),
-        lookup the virtualized port containing the VIP and return it.
-
-        If none is found, return None
-        """
-        LOG.debug("++++ _get_virtual_gw_port_for_ext_net invoked")
-
-        ret_virt_port = None
-        ha_port = None
-
-        # TODO(Follow up with an approach)
-        # TODO(to handle multiple subnets associated with a port)
-        subnet_id = ext_port['ha_info']['ha_port']['subnets'][0]['id']
-
-        global_router_interfaces = ri.router.get("_interfaces", None)
-
-        # iterate through all the interfaces associated on the
-        # physical global router and find the matching port
-        # associated wit the ext_port
-
-        for interface in global_router_interfaces:
-            ha_info = interface.get("ha_info", None)
-            if (ha_info is not None):
-                ha_port = ha_info.get("ha_port", None)
-
-                if (ha_port is not None):
-                    for subnet in ha_port.get("subnets"):
-                        if subnet['id'] == subnet_id:
-                            if ha_port['device_owner'] == \
-                                constants.DEVICE_OWNER_ROUTER_INTF:
-                                ret_virt_port = ha_port
-                                found = True
-                                break
-
-            if found is True:
-                break
-
-        if (ret_virt_port is None):
-            LOG.debug("++++ returning Null ret_gw_port")
-        return ret_virt_port
-
     def _handle_external_gateway_added_global_router(self, ri, ext_gw_port):
         # TODO(bobmel): Get the HA virtual IP correctly
-        virtual_gw_port = self._get_virtual_gw_port_for_ext_net(
-            ri, ext_gw_port)
+        # TODO(sridar):
+        # This seems to work fine. Keeping this todo until more testing.
+        virtual_gw_port = ext_gw_port["ha_info"]["ha_port"]
         sub_itfc_ip = virtual_gw_port['fixed_ips'][0]['ip_address']
         if self._is_port_v6(ext_gw_port):
             LOG.debug("Adding IPv6 external network port: %s for global "
@@ -246,11 +204,14 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
 
     def _set_nat_pool(self, ri, gw_port, is_delete):
         vrf_name = self._get_vrf_name(ri)
-        pool_info = gw_port['nat_pool_info']
-        pool_ip = pool_info['pool_ip']
+        # TODO(sridar) reverting to old model, needs more investigation
+        # and cleanup
+        pool_ip = gw_port['fixed_ips'][0]['ip_address']
+        # pool_info = gw_port['nat_pool_info']
+        # pool_ip = pool_info['pool_ip']
         pool_name = "%s_nat_pool" % (vrf_name)
-        pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
-
+        #pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
+        pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
         if self._fullsync and pool_ip in self._existing_cfg_dict['pools']:
             LOG.info(_LI("Pool already exists, skipping"))
             return

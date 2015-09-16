@@ -324,9 +324,15 @@ class ConfigSyncer(object):
                 continue
 
             # Check IPs and netmask
-            pool_info = router['gw_port']['nat_pool_info']
-            pool_ip = pool_info['pool_ip']
-            pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
+            # TODO(sridar) rework this to old model, further
+            # investigation needed and cleanup.
+            # pool_info = router['gw_port']['nat_pool_info']
+            # pool_ip = pool_info['pool_ip']
+            # pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
+            pool_ip = str(router['gw_port']['fixed_ips'][0]['ip_address'])
+            # pool_net = router['gw_port']['subnets'][0]['cidr']
+            pool_net = netaddr.IPNetwork(
+                router['gw_port']['subnets'][0]['cidr'])
 
             if start_ip != pool_ip:
                 LOG.info(_LI("start IP for pool does not match, deleting"))
