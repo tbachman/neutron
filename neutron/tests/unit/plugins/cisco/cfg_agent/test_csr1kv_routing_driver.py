@@ -26,7 +26,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    csr1kv_routing_driver as csr_driver)
+    iosxe_routing_driver as csr_driver)
 from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
 
 _uuid = uuidutils.generate_uuid

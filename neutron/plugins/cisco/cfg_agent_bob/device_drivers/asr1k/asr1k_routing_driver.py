@@ -22,7 +22,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import asr1k_snippets
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    csr1kv_routing_driver as csr1kv_driver)
+    iosxe_routing_driver as csr1kv_driver)
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ha
 

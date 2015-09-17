@@ -23,7 +23,7 @@ from neutron.plugins.cisco.cfg_agent import cfg_exceptions as cfg_exc
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    csr1kv_routing_driver as driver)
+    iosxe_routing_driver as driver)
 
 LOG = logging.getLogger(__name__)
 
