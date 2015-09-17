@@ -129,11 +129,9 @@ class CiscoRoutingPluginApi(object):
         @param router_id: dict with floatingip_id as key and status as value
         """
         """Call the plugin update floating IPs's operational status."""
-        return self.call(context,
-                         self.make_msg('update_floatingip_statuses_cfg',
-                                       router_id=router_id,
-                                       fip_statuses=fip_statuses),
-                         version='1.1')
+        cctxt = self.client.prepare(version='1.1')
+        return cctxt.call(context, 'update_floatingip_statuses_cfg',
+                          router_id=router_id, fip_statuses=fip_statuses)
 
 
 class RoutingServiceHelper(object):
