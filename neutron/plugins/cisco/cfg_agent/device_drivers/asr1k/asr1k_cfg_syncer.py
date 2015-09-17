@@ -476,7 +476,7 @@ class ConfigSyncer(object):
             gw_port = router['gw_port']
             #gw_net_id = gw_port['network_id']
             #gw_hsrp_num = self._get_hsrp_grp_num_from_net_id(gw_net_id)
-            gw_hsrp_num = int(gw_port['nat_pool_info']['group'])
+            gw_hsrp_num = int(gw_port['ha_info']['group'])
             gw_segment_id = gw_port['hosting_info']['segmentation_id']
             if segment_id != gw_segment_id:
                 LOG.info(_LI("snat segment_id does not match router's"

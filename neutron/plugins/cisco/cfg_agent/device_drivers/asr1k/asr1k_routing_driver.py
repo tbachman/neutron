@@ -527,7 +527,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
         """
         conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
-        hsrp_grp = ex_gw_port['nat_pool_info']['group']
+        hsrp_grp = ex_gw_port['ha_info']['group']
 
         LOG.debug("add floating_ip: %s, fixed_ip: %s, vrf: %s, ex_gw_port: %s"
                   % (floating_ip, fixed_ip, vrf, ex_gw_port))
@@ -558,7 +558,7 @@ class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
                                    fixed_ip, vrf, ex_gw_port):
         conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
-        hsrp_grp = ex_gw_port['nat_pool_info']['group']
+        hsrp_grp = ex_gw_port['ha_info']['group']
 
         confstr = asr1k_snippets.REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH % \
             (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
