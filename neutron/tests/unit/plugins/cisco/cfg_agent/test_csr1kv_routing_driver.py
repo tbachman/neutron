@@ -16,6 +16,7 @@ import sys
 
 import mock
 import netaddr
+from oslo_utils import uuidutils
 
 from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
@@ -26,8 +27,9 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    iosxe_routing_driver as csr_driver)
-from neutron.plugins.cisco.cfg_agent.service_helpers import routing_svc_helper
+    csr1kv_routing_driver as csr_driver)
+from neutron.plugins.cisco.cfg_agent.service_helpers import (
+    routing_svc_helper)
 
 _uuid = uuidutils.generate_uuid
 FAKE_ID = _uuid()
@@ -43,6 +45,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
                          'protocol_port': 22,
                          'credentials': {"username": "stack",
                                          "password": "cisco"},
+                         'timeout': None
                          }
         self.driver = csr_driver.CSR1kvRoutingDriver(
             **device_params)
@@ -61,8 +64,8 @@ class TestCSR1kvRouting(base.BaseTestCase):
                            'network_id': _uuid(),
                            'fixed_ips': [{'ip_address': self.ex_gw_ip,
                                           'subnet_id': _uuid()}],
-                           'subnet': {'cidr': self.ex_gw_cidr,
-                                      'gateway_ip': self.ex_gw_gateway_ip},
+                           'subnets': [{'cidr': self.ex_gw_cidr,
+                                      'gateway_ip': self.ex_gw_gateway_ip}],
                            'ip_cidr': self.ex_gw_cidr,
                            'mac_address': 'ca:fe:de:ad:be:ef',
                            'hosting_info': {'segmentation_id': self.ex_gw_vlan,
@@ -89,61 +92,61 @@ class TestCSR1kvRouting(base.BaseTestCase):
         self.ri.internal_ports = int_ports
 
     def test_csr_get_vrf_name(self):
-        self.assertEqual(self.driver._get_vrf_name(self.ri), self.vrf)
+        self.assertEqual(self.driver._csr_get_vrf_name(self.ri), self.vrf)
 
     def test_create_vrf(self):
         confstr = snippets.CREATE_VRF % self.vrf
 
-        self.driver._do_create_vrf(self.vrf)
+        self.driver._create_vrf(self.vrf)
 
-        self.assertTrue(self.driver._ncc_connection.edit_config.called)
-        self.driver._ncc_connection.edit_config.assert_called_with(
-            target='running', config=confstr)
+        self.assertTrue(self.driver._csr_conn.edit_config.called)
+        self.driver._csr_conn.edit_config.assert_called_with(target='running',
+                                                             config=confstr)
 
     def test_remove_vrf(self):
         confstr = snippets.REMOVE_VRF % self.vrf
 
-        self.driver._do_remove_vrf(self.vrf)
+        self.driver._remove_vrf(self.vrf)
 
-        self.assertTrue(self.driver._ncc_connection.edit_config.called)
-        self.driver._ncc_connection.edit_config.assert_called_with(
-            target='running', config=confstr)
+        self.assertTrue(self.driver._csr_conn.edit_config.called)
+        self.driver._csr_conn.edit_config.assert_called_with(target='running',
+                                                             config=confstr)
 
     def test_router_added(self):
         confstr = snippets.CREATE_VRF % self.vrf
 
         self.driver.router_added(self.ri)
 
-        self.assertTrue(self.driver._ncc_connection.edit_config.called)
-        self.driver._ncc_connection.edit_config.assert_called_with(
-            target='running', config=confstr)
+        self.assertTrue(self.driver._csr_conn.edit_config.called)
+        self.driver._csr_conn.edit_config.assert_called_with(target='running',
+                                                             config=confstr)
 
     def test_router_removed(self):
         confstr = snippets.REMOVE_VRF % self.vrf
 
-        self.driver._do_remove_vrf(self.vrf)
+        self.driver._remove_vrf(self.vrf)
 
-        self.assertTrue(self.driver._ncc_connection.edit_config.called)
-        self.driver._ncc_connection.edit_config.assert_called_once_with(
+        self.assertTrue(self.driver._csr_conn.edit_config.called)
+        self.driver._csr_conn.edit_config.assert_called_once_with(
             target='running', config=confstr)
 
     def test_internal_network_added(self):
-        self.driver._do_create_sub_interface = mock.MagicMock()
+        self.driver._create_subinterface = mock.MagicMock()
         interface = 'GigabitEthernet0' + '.' + str(self.vlan_no)
 
         self.driver.internal_network_added(self.ri, self.port)
 
         args = (interface, self.vlan_no, self.vrf, self.gw_ip,
                 netaddr.IPAddress('255.255.0.0'))
-        self.driver._do_create_sub_interface.assert_called_once_with(*args)
+        self.driver._create_subinterface.assert_called_once_with(*args)
 
     def test_internal_network_removed(self):
-        self.driver._do_remove_sub_interface = mock.MagicMock()
+        self.driver._remove_subinterface = mock.MagicMock()
         interface = 'GigabitEthernet0' + '.' + str(self.vlan_no)
 
         self.driver.internal_network_removed(self.ri, self.port)
 
-        self.driver._do_remove_sub_interface.assert_called_once_with(interface)
+        self.driver._remove_subinterface.assert_called_once_with(interface)
 
     def test_routes_updated(self):
         dest_net = '20.0.0.0/16'
@@ -168,15 +171,15 @@ class TestCSR1kvRouting(base.BaseTestCase):
         floating_ip = '15.1.2.3'
         fixed_ip = '10.0.0.3'
 
-        self.driver._do_add_floating_ip = mock.MagicMock()
-        self.driver._do_remove_floating_ip = mock.MagicMock()
+        self.driver._add_floating_ip = mock.MagicMock()
+        self.driver._remove_floating_ip = mock.MagicMock()
         self.driver._add_interface_nat = mock.MagicMock()
         self.driver._remove_dyn_nat_translations = mock.MagicMock()
         self.driver._remove_interface_nat = mock.MagicMock()
 
         self.driver.floating_ip_added(self.ri, self.ex_gw_port,
                                       floating_ip, fixed_ip)
-        self.driver._do_add_floating_ip.assert_called_once_with(
+        self.driver._add_floating_ip.assert_called_once_with(
             floating_ip, fixed_ip, self.vrf)
 
         self.driver.floating_ip_removed(self.ri, self.ex_gw_port,
@@ -185,30 +188,24 @@ class TestCSR1kvRouting(base.BaseTestCase):
         self.driver._remove_interface_nat.assert_called_once_with(
             'GigabitEthernet1.1000', 'outside')
         self.driver._remove_dyn_nat_translations.assert_called_once_with()
-        self.driver._do_remove_floating_ip.assert_called_once_with(
+        self.driver._remove_floating_ip.assert_called_once_with(
             floating_ip, fixed_ip, self.vrf)
         self.driver._add_interface_nat.assert_called_once_with(
             'GigabitEthernet1.1000', 'outside')
 
     def test_external_gateway_added(self):
-        create_sub_itfc_mock = mock.MagicMock()
-        self.driver._do_create_sub_interface = create_sub_itfc_mock
-        self.driver._cfg_exists = mock.MagicMock(return_value=False)
-        self.driver._get_connection = mock.MagicMock()
-        edit_config_mock = mock.MagicMock()
-        self.driver._get_connection = mock.MagicMock()
-        self.driver._get_connection.return_value.edit_config = edit_config_mock
-        self.driver._check_response = mock.MagicMock()
+        self.driver._create_subinterface = mock.MagicMock()
+        self.driver._add_default_static_route = mock.MagicMock()
 
         ext_interface = 'GigabitEthernet1' + '.' + str(1000)
         args = (ext_interface, self.ex_gw_vlan, self.vrf, self.ex_gw_ip,
                 netaddr.IPAddress('255.255.255.0'))
-        conf_str = snippets.SET_DEFAULT_ROUTE % (self.vrf,
-                                                 self.ex_gw_gateway_ip)
-        kwargs = {'target': 'running', 'config': conf_str}
+
         self.driver.external_gateway_added(self.ri, self.ex_gw_port)
-        create_sub_itfc_mock.assert_called_once_with(*args)
-        edit_config_mock.assert_called_once_with(**kwargs)
+
+        self.driver._create_subinterface.assert_called_once_with(*args)
+        self.driver._add_default_static_route.assert_called_once_with(
+            self.ex_gw_gateway_ip, self.vrf)
 
     def test_enable_internal_network_NAT(self):
         self.driver._nat_rules_for_internet_access = mock.MagicMock()
@@ -228,7 +225,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
             *args)
 
     def test_enable_internal_network_NAT_with_confstring(self):
-        self.driver._ncc_connection.reset_mock()
+        self.driver._csr_conn.reset_mock()
         self.driver._check_acl = mock.Mock(return_value=False)
         int_interface = ('GigabitEthernet0' + '.' + str(self.vlan_no))
         ext_interface = 'GigabitEthernet1' + '.' + str(1000)
@@ -268,7 +265,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
             confstr = snippet_name % args
         else:
             confstr = snippet_name
-        self.driver._ncc_connection.edit_config.assert_any_call(
+        self.driver._csr_conn.edit_config.assert_any_call(
             target='running', config=confstr)
 
     def test_disable_internal_network_NAT_with_confstring(self):

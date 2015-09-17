@@ -104,12 +104,12 @@ class CiscoRoutingPluginApi(object):
     def get_routers(self, context, router_ids=None, hd_ids=None):
         """Make a remote process call to retrieve the sync data for routers.
 
-        @param context: session context
-        @param router_ids: list of  routers to fetch
-        @param hd_ids : hosting device ids, only routers assigned to these
+        :param context: session context
+        :param router_ids: list of  routers to fetch
+        :param hd_ids : hosting device ids, only routers assigned to these
                         hosting devices will be returned.
         """
-        cctxt = self.client.prepare()
+        cctxt = self.client.prepare(version='1.1')
         return cctxt.call(context, 'cfg_sync_routers', host=self.host,
                           router_ids=router_ids, hosting_device_ids=hd_ids)
 
@@ -164,36 +164,27 @@ class RoutingServiceHelper(object):
 
     ### Notifications from Plugin ####
 
-    def router_deleted(self, context, routers, log_it=True):
+    def router_deleted(self, context, routers):
         """Deal with router deletion RPC message."""
-        if log_it:
-            LOG.debug('Got router deleted notification for %s', routers)
-        # This is needed for backward compatibility
-        if isinstance(routers[0], dict):
-            r_ids = [router['id'] for router in routers]
-        else:
-            r_ids = routers
-        self.removed_routers.update(r_ids)
+        LOG.debug('Got router deleted notification for %s', routers)
+        self.removed_routers.update(routers)
 
-    def routers_updated(self, context, routers, log_it=True):
+    def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""
-        if log_it:
-            LOG.debug('Got routers updated notification :%s', routers)
+        LOG.debug('Got routers updated notification :%s', routers)
         if routers:
             # This is needed for backward compatibility
             if isinstance(routers[0], dict):
-                r_ids = [router['id'] for router in routers]
-            else:
-                r_ids = routers
-            self.updated_routers.update(r_ids)
+                routers = [router['id'] for router in routers]
+            self.updated_routers.update(routers)
 
     def router_removed_from_hosting_device(self, context, routers):
         LOG.debug('Got router removed from hosting device: %s', routers)
-        self.router_deleted(context, routers, log_it=False)
+        self.router_deleted(context, routers)
 
     def router_added_to_hosting_device(self, context, routers):
         LOG.debug('Got router added to hosting device :%s', routers)
-        self.routers_updated(context, routers, log_it=False)
+        self.routers_updated(context, routers)
 
     # Routing service helper public methods
 

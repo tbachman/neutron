@@ -12,6 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import eventlet
+eventlet.monkey_patch()
+
+from novaclient import exceptions as nova_exc
 from oslo_log import log as logging
 from sqlalchemy.sql import expression as expr
 
@@ -30,11 +34,18 @@ DELETION_ATTEMPTS = 4
 SECONDS_BETWEEN_DELETION_ATTEMPTS = 1
 
 
+class PortNotUnBoundException(n_exc.InUse):
+    message = _("Port: %(port_id)s not unbound yet.")
+
+
 class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
                                utils.PluggingDriverUtilsMixin):
     """Driver class for service VMs used with Neutron plugins supporting
     VIF hot-plug.
     """
+
+    def __init__(self):
+        self._gt_pool = eventlet.GreenPool()
 
     @property
     def _core_plugin(self):
@@ -99,13 +110,13 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
 
         if mgmt_port is not None:
             try:
-                self._delete_resource_port(context, mgmt_port['id'])
+                self._cleanup_hosting_port(context, mgmt_port['id'])
             except n_exc.NeutronException as e:
-                LOG.error(_LE("Unable to delete port:%(port)s after %(tries)d "
-                              "attempts due to exception %(exception)s. "
-                              "Skipping it"),
-                          {'port': mgmt_port['id'], 'tries': DELETION_ATTEMPTS,
-                           'exception': str(e)})
+                LOG.error(_LE("Unable to delete port:%(port)s after %(tries)d"
+                              " attempts due to exception %(exception)s. "
+                              "Skipping it"), {'port': mgmt_port['id'],
+                                               'tries': DELETION_ATTEMPTS,
+                                               'exception': str(e)})
 
     @utils.retry(n_exc.NeutronException, DELETION_ATTEMPTS,
                  SECONDS_BETWEEN_DELETION_ATTEMPTS)
@@ -117,64 +128,90 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
             LOG.warning(_LW('Trying to delete port:%s, but port is not found'),
                         port_id)
 
+    @utils.retry(PortNotUnBoundException, tries=6)
+    def _is_port_unbound(self, context, port_db):
+        # Nova will unbind the port asynchronously after the unplug. So we need
+        # to expire the port db to fetch the updated info.
+        context.session.expire(port_db)
+        port_db = self._core_plugin._get_port(context, port_db.id)
+        if port_db.device_id == '' and port_db.device_owner == '':
+            return True
+        else:
+            raise PortNotUnBoundException(port_id=port_db.id)
+
+    def _cleanup_hosting_port(self, context, port_id):
+        # Needs a bit of time for gateway port to unbind
+        eventlet.sleep(2)
+        port_db = self._core_plugin._get_port(context, port_id)
+        if self._is_port_unbound(context, port_db):
+            LOG.debug("Port:%s unbound. Going to delete it", port_db.name)
+            self._delete_resource_port(context, port_id)
+
+    def _attach_hosting_port(self, hosting_device_id, hosting_port_id):
+        # Give a little bit of time for CSR to get out of vm building state
+        eventlet.sleep(10)
+        try:
+            self.svc_vm_mgr.interface_attach(
+                hosting_device_id, hosting_port_id)
+            LOG.debug("_attach_hosting_port Setup logical port completed")
+        except Exception as e:
+            LOG.error(_LE("_attach_hosting_port Failed to attach interface:"
+                          "%(p_id)s on hosting device:%(hd_id)s due to "
+                          "error %(error)s"), {'p_id': hosting_port_id,
+                                               'hd_id': hosting_device_id,
+                                               'error': str(e)})
+
     def setup_logical_port_connectivity(self, context, port_db,
                                         hosting_device_id):
-        """Establishes connectivity for a logical port."""
-        l3admin_tenant_id = self._dev_mgr.l3_tenant_id()
-        # Note(bobmel); Enable the following lines when lines at the end of
-        # this function are enabled.
-        # Clear device_owner and device_id and set tenant_id to L3AdminTenant
-        # to let interface-attach succeed
-        # original_tenant_id = port_db['tenant_id']
-        # original_device_id = port_db['device_id']
-        # original_device_owner = port_db['device_owner']
-        self._core_plugin.update_port(
-            context.elevated(),
-            port_db['id'],
-            {'port': {'device_owner': '',
-                      'device_id': '',
-                      'tenant_id': l3admin_tenant_id}})
-        try:
-            self._dev_mgr.svc_vm_mgr.interface_attach(hosting_device_id,
-                                                      port_db['id'])
-            LOG.debug("Setup logical port completed for port: %s",
-                      port_db['id'])
-        finally:
-            pass
-            # Enable below for setting tenant_id, device_id and device_owner
-            # back to original
-            # self._core_plugin.update_port(
-            #     context.elevated(),
-            #     port_db['id'],
-            #     {'port': {'tenant_id': original_tenant_id,
-            #               'device_id': original_device_id,
-            #               'device_owner': original_device_owner}})
+        """Establishes connectivity for a logical port.
+
+        This is done by hot plugging the interface(VIF) corresponding to the
+        port from the CSR.
+        """
+        hosting_port = port_db.hosting_info.hosting_port
+        if hosting_port:
+            try:
+                self._dev_mgr.svc_vm_mgr.interface_attach(hosting_device_id,
+                                                          hosting_port.id)
+                LOG.debug("Setup logical port completed for port:%s",
+                          port_db.id)
+            except nova_exc.Conflict as e:
+                # CSR is still in vm_state building
+                LOG.debug("Failed to attach interface - spawn thread "
+                          "error %(error)s", {'error': str(e)})
+                self._gt_pool.spawn_n(self._attach_hosting_port,
+                                      hosting_device_id, hosting_port.id)
+            except Exception as e:
+                LOG.error(_LE("Failed to attach interface mapped to port:"
+                              "%(p_id)s on hosting device:%(hd_id)s due to "
+                              "error %(error)s"), {'p_id': hosting_port.id,
+                                                   'hd_id': hosting_device_id,
+                                                   'error': str(e)})
 
     def teardown_logical_port_connectivity(self, context, port_db,
                                            hosting_device_id):
         """Removes connectivity for a logical port.
-        Unplugs the corresponding data interface from the CSR
+
+        Unplugs the corresponding data interface from the CSR.
         """
-        l3admin_tenant_id = self._dev_mgr.l3_tenant_id()
-        self._core_plugin.update_port(
-            context.elevated(),
-            port_db['id'],
-            {'port': {'tenant_id': l3admin_tenant_id,
-                      'device_id': hosting_device_id,
-                      'device_owner': 'compute:None'}})
-        self._core_plugin.update_port(
-            context.elevated(),
-            port_db['id'],
-            {'port': {'tenant_id': l3admin_tenant_id,
-                      'device_id': hosting_device_id,
-                      'device_owner': ''}})
+        if port_db is None or port_db.get('id') is None:
+            LOG.warning(_LW("Port id is None! Cannot remove port "
+                            "from hosting_device:%s"), hosting_device_id)
+            return
+        hosting_port_id = port_db.hosting_info.hosting_port.id
         try:
             self._dev_mgr.svc_vm_mgr.interface_detach(hosting_device_id,
-                                                      port_db['id'])
-            LOG.debug("Done teardown logical port connectivity for port: %s",
-                      port_db['id'])
+                                                      hosting_port_id)
+            self._gt_pool.spawn_n(self._cleanup_hosting_port, context,
+                                  hosting_port_id)
+            LOG.debug("Teardown logicalport completed for port:%s", port_db.id)
+
         except Exception as e:
-            LOG.error(_LE("Exception while tearing down connectivity: %s"), e)
+            LOG.error(_LE("Failed to detach interface corresponding to port:"
+                          "%(p_id)s on hosting device:%(hd_id)s due to "
+                          "error %(error)s"), {'p_id': hosting_port_id,
+                                               'hd_id': hosting_device_id,
+                                               'error': str(e)})
 
     def extend_hosting_port_info(self, context, port_db, hosting_device,
                                  hosting_info):
@@ -183,6 +220,33 @@ class VIFHotPlugPluggingDriver(plugging_drivers.PluginSidePluggingDriver,
 
     def allocate_hosting_port(self, context, router_id, port_db, network_type,
                               hosting_device_id):
-        """Allocates a hosting port for a logical port."""
-        return {'allocated_port_id': port_db['id'],
-                'allocated_vlan': None}
+        """Allocates a hosting port for a logical port.
+
+        We create a hosting port for the router port
+        """
+        l3admin_tenant_id = self._dev_mgr.l3_tenant_id()
+        hostingport_name = 'hostingport_' + port_db['id'][:8]
+        p_spec = {'port': {
+                  'tenant_id': l3admin_tenant_id,
+                  'admin_state_up': True,
+                  'name': hostingport_name,
+                  'network_id': port_db['network_id'],
+                  'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                  'fixed_ips': [],
+                  'device_id': '',
+                  'device_owner': '',
+                  'port_security_enabled': False}}
+        try:
+            hosting_port = self._core_plugin.create_port(context, p_spec)
+        except n_exc.NeutronException as e:
+            LOG.error(_('Error %s when creating hosting port'
+                        'Cleaning up.'), e)
+            self.delete_hosting_device_resources(
+                context, l3admin_tenant_id, hosting_port)
+            hosting_port = None
+        finally:
+            if hosting_port:
+                return {'allocated_port_id': hosting_port['id'],
+                        'allocated_vlan': None}
+            else:
+                return None
