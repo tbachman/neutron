@@ -345,10 +345,11 @@ class L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase(
         self.setup_config()
         # do pool management in same green thread during tests
         self._mock_eventlet_greenpool_spawn_n()
-        # set a very long processing interval and instead call the
-        # _process_backlogged_routers function directly in the tests
-        cfg.CONF.set_override('backlog_processing_interval', 100,
-                              group='routing')
+        # mock the periodic router backlog processing and instead call
+        # the _process_backlogged_routers function directly in the tests
+        mock.patch.object(self.plugin, '_is_master_process',
+                          return_value=True).start()
+        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
         self.adminContext = n_context.get_admin_context()
         # tests need a predictable random.choice so we always return first
         # item in the argument sequence

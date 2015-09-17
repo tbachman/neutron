@@ -82,8 +82,6 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
             cfg.CONF.routing.router_type_aware_scheduler_driver)
         self.l3agent_scheduler = importutils.import_object(
             cfg.CONF.router_scheduler_driver)
-        # for backlogging of non-scheduled routers
-        self._setup_backlog_handling()
 
     def setup_rpc(self):
         # RPC support

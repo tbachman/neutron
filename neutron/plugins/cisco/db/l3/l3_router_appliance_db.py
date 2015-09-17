@@ -13,6 +13,8 @@
 #    under the License.
 
 import copy
+import os
+import subprocess
 
 from oslo_concurrency import lockutils
 from oslo_config import cfg
@@ -732,11 +734,26 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                load_hd_info=False)
         return r_hd_b['router_type_id']
 
+    def _is_master_process(self):
+        ppid = os.getppid()
+        parent_name = subprocess.check_output(
+            ["ps", "-p", str(ppid), "-o", "comm="])
+        is_master = parent_name != "python"
+        LOG.debug('Executable for parent process(%d) is %s so this is %s '
+                  'process (%d)' % (ppid, parent_name,
+                                    'the MASTER' if is_master else 'a WORKER',
+                                    os.getpid()))
+        return is_master
+
     def get_namespace_router_type_id(self, context):
         if self._namespace_router_type_id is None:
-            # This should normally only happen once so we register router types
-            # defined in config file here.
-            self._create_router_types_from_config()
+            if self._is_master_process() is True:
+                # This should normally only happen once so we register
+                # router types defined in config file here in the master
+                # process.
+                self._create_router_types_from_config()
+            # activate processing of backlogged (i.e., non-scheduled) routers
+            self._setup_backlog_handling()
             try:
                 self._namespace_router_type_id = (
                     self.get_routertype_by_id_name(
@@ -748,6 +765,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
     def backlog_router(self, context, binding_info_db):
+        LOG.debug('Trying to backlog router %s' % binding_info_db.router_id)
         # Ensure we get latest state from DB in case it was updated while
         # thread was waiting for lock to enter this function
         context.session.expire(binding_info_db)
@@ -761,6 +779,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 self.get_namespace_router_type_id(context) or
             binding_info_db.hosting_device_id is not None or
                 binding_info_db.router_id in self._backlogged_routers):
+            LOG.debug('Aborting backlogging of router %s' %
+                      binding_info_db.router_id)
             return
         LOG.info(_LI('Backlogging router %s for renewed scheduling attempt '
                      'later'), binding_info_db.router_id)
@@ -781,6 +801,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if self._refresh_router_backlog:
             self._sync_router_backlog()
         if not self._backlogged_routers:
+            LOG.debug('No routers in backlog %s' % self._backlogged_routers)
             return
         e_context = n_context.get_admin_context()
         scheduled_routers = []
@@ -788,6 +809,11 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         # try to reschedule
         for r_id in copy.deepcopy(self._backlogged_routers):
             r_hd_binding = self._get_router_binding_info(e_context, r_id)
+            if r_hd_binding.hosting_device_id is not None:
+                # this router was scheduled by some other process so it
+                # requires no further processing
+                self._backlogged_routers.pop(r_id)
+                continue
             # since this function is already synchronized on the
             # router backlog, any backlog operations during scheduling
             # can be done unsynchronized
@@ -807,6 +833,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     ni['notifier'].routers_updated(e_context, ni['routers'])
 
     def _setup_backlog_handling(self):
+        LOG.debug('Activating periodic backlog processor')
         self._heartbeat = loopingcall.FixedIntervalLoopingCall(
             self._process_backlogged_routers)
         self._heartbeat.start(
