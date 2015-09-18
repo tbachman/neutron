@@ -24,7 +24,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import asr1k_snippets
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
-    iosxe_routing_driver as csr1kv_driver)
+    iosxe_routing_driver as iosxe_driver)
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ha
 
@@ -36,7 +36,7 @@ DEVICE_OWNER_ROUTER_GW = constants.DEVICE_OWNER_ROUTER_GW
 HA_INFO = 'ha_info'
 
 
-class ASR1kRoutingDriver(csr1kv_driver.CSR1kvRoutingDriver):
+class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def __init__(self, **device_params):
         super(ASR1kRoutingDriver, self).__init__(**device_params)

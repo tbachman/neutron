@@ -92,13 +92,13 @@ class TestRouterInfo(base.BaseTestCase):
     def test_router_info_create(self):
         router_id = _uuid()
         fake_router = {}
-        ri = RouterInfo(router_id, fake_router)
+        ri = routing_svc_helper.RouterInfo(router_id, fake_router)
 
         self.assertTrue(ri.router_name().endswith(router_id))
 
     def test_router_info_create_with_router(self):
         router_id = _uuid()
-        ri = RouterInfo(router_id, self.router)
+        ri = routing_svc_helper.RouterInfo(router_id, self.router)
         self.assertTrue(ri.router_name().endswith(router_id))
         self.assertEqual(ri.router, self.router)
         self.assertEqual(ri._router, self.router)
@@ -108,7 +108,7 @@ class TestRouterInfo(base.BaseTestCase):
     def test_router_info_create_snat_disabled(self):
         router_id = _uuid()
         self.router['enable_snat'] = False
-        ri = RouterInfo(router_id, self.router)
+        ri = routing_svc_helper.RouterInfo(router_id, self.router)
         self.assertFalse(ri.snat_enabled)
 
 

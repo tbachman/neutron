@@ -41,11 +41,11 @@ T1_PORT_NAME_PREFIX = 't1_p:'  # T1 port/network is for VXLAN
 T2_PORT_NAME_PREFIX = 't2_p:'  # T2 port/network is for VLAN
 
 
-class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
-    """CSR1kv Routing Driver.
+class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
+    """Generic IOS XE Routing Driver.
 
     This driver encapsulates the configuration logic via NETCONF protocol to
-    configure a CSR1kv Virtual Router (IOS-XE based) for implementing
+    configure a generic (IOS-XE based) device for implementing
     Neutron L3 services. These services include routing, NAT and floating
     IPs (as per Neutron terminology).
     """
@@ -65,7 +65,7 @@ class CSR1kvRoutingDriver(devicedriver_api.RoutingDriverBase):
             self._itfcs_enabled = False
         except KeyError as e:
             LOG.error(_LE("Missing device parameter:%s. Aborting "
-                          "CSR1kvRoutingDriver initialization"), e)
+                          "IosXeRoutingDriver initialization"), e)
             raise cfg_exc.CSR1kvInitializationException()
 
     ###### Public Functions ########
