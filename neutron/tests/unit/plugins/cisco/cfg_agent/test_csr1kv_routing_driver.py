@@ -16,7 +16,6 @@ import sys
 
 import mock
 import netaddr
-from oslo_utils import uuidutils
 
 from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
@@ -50,7 +49,7 @@ class TestCSR1kvRouting(base.BaseTestCase):
         self.driver = csr_driver.CSR1kvRoutingDriver(
             **device_params)
         self.mock_conn = mock.MagicMock()
-        self.driver._ncc_connection = self.mock_conn
+        self.driver._csr_conn = self.mock_conn
         self.driver._check_response = mock.MagicMock(return_value=True)
 
         self.vrf = ('nrouter-' + FAKE_ID)[:csr_driver.CSR1kvRoutingDriver.

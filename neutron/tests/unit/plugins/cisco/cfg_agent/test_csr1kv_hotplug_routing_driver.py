@@ -18,9 +18,9 @@ import mock
 import netaddr
 import test_csr1kv_routing_driver
 
-from networking_cisco.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as snippets)
-from networking_cisco.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
+from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     csr1kv_hotplug_routing_driver as csr_driver)
 from oslo_utils import uuidutils
 

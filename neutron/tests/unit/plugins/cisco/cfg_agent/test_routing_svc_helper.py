@@ -41,7 +41,7 @@ def prepare_router_data(enable_snat=None, num_internal_ports=1):
                   'fixed_ips': [{'ip_address': '19.4.4.4',
                                  'subnet_id': _uuid()}],
                   'subnets': [{'cidr': '19.4.4.0/24',
-                             'gateway_ip': '19.4.4.1'}]}
+                               'gateway_ip': '19.4.4.1'}]}
     int_ports = []
     for i in range(num_internal_ports):
         int_ports.append({'id': _uuid(),
@@ -68,7 +68,9 @@ def prepare_router_data(enable_snat=None, num_internal_ports=1):
         l3_constants.INTERFACE_KEY: int_ports,
         'routes': [],
         'gw_port': ex_gw_port,
-        'hosting_device': hosting_device}
+        'hosting_device': hosting_device,
+        'router_type': '',
+        'role': None}
     if enable_snat is not None:
         router['enable_snat'] = enable_snat
     return router, int_ports
@@ -153,7 +155,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         l3plugin_api_cls.return_value = self.plugin_api
         self.plugin_api.get_routers = mock.MagicMock()
         self.looping_call_p = mock.patch(
-            'oslo_service.loopingcall.FixedIntervalLoopingCall')
+            'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
         self.looping_call_p.start()
         mock.patch('neutron.common.rpc.create_connection').start()
 
@@ -378,6 +380,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
     def test_process_router_delete(self):
         router = self.router
         router['gw_port'] = self.ex_gw_port
+        router['role'] = None
         self.routing_helper._router_added(router['id'], router)
         self.assertIn(router['id'], self.routing_helper.router_info)
         # Now we remove the router
@@ -442,10 +445,10 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.routing_helper.process_service()
         self.assertEqual(2, mock_spawn.call_count)
         call1 = mock.call(self.routing_helper._process_routers, [router1],
-                          None, router1['hosting_device']['id'],
+                          [], router1['hosting_device']['id'],
                           all_routers=True)
         call2 = mock.call(self.routing_helper._process_routers, [router2],
-                          None, router2['hosting_device']['id'],
+                          [], router2['hosting_device']['id'],
                           all_routers=True)
         mock_spawn.assert_has_calls([call1, call2], any_order=True)
 
@@ -459,8 +462,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
         self.routing_helper.process_service()
         self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(self.routing_helper._process_routers,
-                                      [router1, router2],
-                                      None,
+                                      [router1, router2], [],
                                       router1['hosting_device']['id'],
                                       all_routers=True)
 
@@ -483,8 +485,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             router_ids=[router1['id']])
         self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(self.routing_helper._process_routers,
-                                      [router1],
-                                      None,
+                                      [router1], [],
                                       router1['hosting_device']['id'],
                                       all_routers=False)
 
@@ -508,9 +509,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
             hd_ids=[device_id])
         self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(self.routing_helper._process_routers,
-                                      [router],
-                                      None,
-                                      device_id,
+                                      [router], [], device_id,
                                       all_routers=False)
 
     @mock.patch("eventlet.GreenPool.spawn_n")
@@ -528,9 +527,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
         self.assertEqual(1, mock_spawn.call_count)
         mock_spawn.assert_called_with(self.routing_helper._process_routers,
-                                      None,
-                                      [router],
-                                      device_id,
+                                      [], [router], device_id,
                                       all_routers=False)
 
     @mock.patch("eventlet.GreenPool.spawn_n")
@@ -557,14 +554,10 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
         self.assertEqual(2, mock_spawn.call_count)
         call1 = mock.call(self.routing_helper._process_routers,
-                          None,
-                          [router1],
-                          router1['hosting_device']['id'],
+                          [], [router1], router1['hosting_device']['id'],
                           all_routers=False)
         call2 = mock.call(self.routing_helper._process_routers,
-                          None,
-                          [router2],
-                          router2['hosting_device']['id'],
+                          [], [router2], router2['hosting_device']['id'],
                           all_routers=False)
         mock_spawn.assert_has_calls([call1, call2], any_order=True)
 
@@ -627,7 +620,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
 
             self.routing_helper._process_router_floating_ips(ri, ex_gw_port)
             driver.floating_ip_added.assert_called_with(
-                ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address_2)
+                ri, ex_gw_port, floating_ip_address, fixed_ip_address_2)
 
             driver.floating_ip_removed.assert_called_with(
                 ri, ri.ex_gw_port, floating_ip_address, fixed_ip_address)
