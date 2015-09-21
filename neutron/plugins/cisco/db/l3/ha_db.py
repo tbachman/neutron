@@ -319,7 +319,8 @@ class HA_db_mixin(object):
             router_requested.update(requested_ha_settings)
             router_requested[EXTERNAL_GW_INFO] = (
                 updated_router[EXTERNAL_GW_INFO])
-            self._ensure_create_ha_compliant(router_requested)
+            requested_ha_settings = self._ensure_create_ha_compliant(
+                router_requested)
             self._create_redundancy_routers(
                 context, updated_router, requested_ha_settings,
                 updated_router_db, ports, expire_db=True)

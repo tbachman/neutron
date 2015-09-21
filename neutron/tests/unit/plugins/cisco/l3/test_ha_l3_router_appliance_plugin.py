@@ -444,8 +444,7 @@ class HAL3RouterApplianceVMTestCase(
                                               p['port'], None,
                                               _disable_ha_tests)
 
-    def _test_enable_ha(self, subnet, router, port, ha_spec=None,
-                        additional_tests_function=None):
+    def _test_enable_ha(self, subnet, router, port, set_ha_details=True):
         body = self._router_interface_action('add', router['id'], None,
                                              port['id'])
         self.assertIn('port_id', body)
@@ -457,12 +456,13 @@ class HAL3RouterApplianceVMTestCase(
         self._verify_router_ports(router['id'], subnet['network_id'],
                                   subnet['id'], port['network_id'],
                                   port['fixed_ips'][0]['subnet_id'])
-        body = {'router': {ha.ENABLED: True,
-                           ha.DETAILS: {ha.TYPE: ha.HA_VRRP}}}
+        body = {'router': {ha.ENABLED: True}}
+        if set_ha_details is True:
+            body['router'][ha.DETAILS] = {ha.TYPE: ha.HA_VRRP}
+        ha_type = body['router'].get(ha.DETAILS, {}).get(ha.TYPE)
         updated_router = self._update('routers', router['id'], body)
-        self._verify_ha_settings(
-            updated_router['router'],
-            self._get_ha_defaults(ha_type=ha.HA_VRRP))
+        self._verify_ha_settings(updated_router['router'],
+                                 self._get_ha_defaults(ha_type=ha_type))
         ha_d = updated_router['router'][ha.DETAILS]
         redundancy_routers = self._list(
             'routers',
@@ -487,6 +487,17 @@ class HAL3RouterApplianceVMTestCase(
             with self.router(arg_list=(ha.ENABLED,), **kwargs) as r:
                 with self.port() as p:
                     self._test_enable_ha(s['subnet'], r['router'], p['port'])
+
+    def test_enable_ha_on_gateway_router_succeeds_no_ha_spec(self):
+        with self.subnet(cidr='10.0.1.0/24') as s:
+            self._set_net_external(s['subnet']['network_id'])
+            kwargs = {ha.ENABLED: False,
+                      l3.EXTERNAL_GW_INFO: {'network_id':
+                                            s['subnet']['network_id']}}
+            with self.router(arg_list=(ha.ENABLED,), **kwargs) as r:
+                with self.port() as p:
+                    self._test_enable_ha(s['subnet'], r['router'], p['port'],
+                                         set_ha_details=False)
 
     def test_enable_ha_on_gateway_router_non_admin_succeeds(self):
         tenant_id = _uuid()
