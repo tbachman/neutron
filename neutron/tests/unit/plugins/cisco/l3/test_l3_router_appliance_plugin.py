@@ -181,6 +181,8 @@ class L3RouterApplianceTestCaseBase(
         self._mock_io_file_ops()
         if self.mock_cfg_agent_notifiers is True:
             self._mock_cfg_agent_notifier(self.plugin)
+        # mock the periodic router backlog processing in the tests
+        self._mock_backlog_processing()
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP
@@ -234,10 +236,6 @@ class L3RouterApplianceRouterTypeDriverTestCase(test_l3.L3NatTestCaseMixin,
               ext_mgr=None):
         super(L3RouterApplianceRouterTypeDriverTestCase, self).setUp(
             core_plugin, l3_plugin, dm_plugin, ext_mgr)
-        # mock the periodic router backlog processing in the tests
-        mock.patch.object(self.plugin, '_is_master_process',
-                          return_value=True).start()
-        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
 
     def test_schedule_router_pre_and_post_commit(self):
         hdts = self._list(

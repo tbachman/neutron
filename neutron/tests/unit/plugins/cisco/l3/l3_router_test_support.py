@@ -48,6 +48,11 @@ class L3RouterTestSupportMixin(object):
             mock.Mock(return_value=None))
         self.get_routertype_scheduler_fcn_p.start()
 
+    def _mock_backlog_processing(self):
+        mock.patch.object(self.plugin, '_is_master_process',
+                          return_value=True).start()
+        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
+
     def _add_router_plugin_ini_file(self):
         # includes config file for router service plugin
         cfg_file = (

@@ -53,10 +53,6 @@ class TestHwVLANTrunkingPlugDriver(
         #TODO(bobmel): Fix bug in test_extensions.py and we can remove the
         # below call to setup_config()
         self.setup_config()
-        # mock the periodic router backlog processing in the tests
-        mock.patch.object(self.plugin, '_is_master_process',
-                          return_value=True).start()
-        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
 
     def tearDown(self):
         if self._old_config_files is None:
