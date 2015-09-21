@@ -551,6 +551,46 @@ class TestDeviceManagerDBPlugin(
         self._test_get_driver('get_hosting_device_plugging_driver', 'bogus_id',
                               True)
 
+    # get device info tests
+    def test_get_device_info_for_agent(self):
+        device_id = "device_XYZ"
+        with contextlib.nested(
+                self.hosting_device_template(),
+                self.port(subnet=self._mgmt_subnet)) as (hdt, mgmt_port):
+            creds = device_manager_test_support._uuid()
+            mgmt_ip = mgmt_port['port']['fixed_ips'][0]['ip_address']
+            with self.hosting_device(
+                    device_id=device_id,
+                    template_id=hdt['hosting_device_template']['id'],
+                    management_port_id=mgmt_port['port']['id'],
+                    credentials_id=creds) as hd:
+                context = self._get_test_context(
+                    tenant_id=hdt['hosting_device_template']['tenant_id'],
+                    is_admin=True)
+                hd_id = hd['hosting_device']['id']
+                hd_db = self._devmgr._get_hosting_device(context, hd_id)
+                info = self._devmgr.get_device_info_for_agent(context, hd_db)
+                self.assertEqual(info['management_ip_address'], mgmt_ip)
+
+    def test_get_device_info_for_agent_no_mgmt_port(self):
+        device_id = "device_XYZ"
+        with self.hosting_device_template() as hdt:
+            creds = device_manager_test_support._uuid()
+            mgmt_ip = '192.168.0.55'
+            with self.hosting_device(
+                    device_id=device_id,
+                    template_id=hdt['hosting_device_template']['id'],
+                    management_ip_address=mgmt_ip,
+                    management_port_id=None,
+                    credentials_id=creds) as hd:
+                context = self._get_test_context(
+                    tenant_id=hdt['hosting_device_template']['tenant_id'],
+                    is_admin=True)
+                hd_id = hd['hosting_device']['id']
+                hd_db = self._devmgr._get_hosting_device(context, hd_id)
+                info = self._devmgr.get_device_info_for_agent(context, hd_db)
+                self.assertEqual(info['management_ip_address'], mgmt_ip)
+
     def _set_ownership(self, bound_status, tenant_id, other_tenant_id=None):
         if bound_status == UNBOUND:
             return None

@@ -127,7 +127,7 @@ class L3RouterApplianceTestCaseBase(
     mock_cfg_agent_notifiers = True
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
-              ext_mgr=None):
+              ext_mgr=None, create_mgmt_nw=True):
         # Save the global RESOURCE_ATTRIBUTE_MAP
         self.saved_attr_map = {}
         for resource, attrs in attributes.RESOURCE_ATTRIBUTE_MAP.iteritems():
@@ -168,7 +168,9 @@ class L3RouterApplianceTestCaseBase(
                                   group='routing')
 
         self._mock_l3_admin_tenant()
-        self._create_mgmt_nw_for_tests(self.fmt)
+        self._created_mgmt_nw = create_mgmt_nw
+        if create_mgmt_nw is True:
+            self._create_mgmt_nw_for_tests(self.fmt)
         if self.configure_routertypes is True:
             templates = self._test_create_hosting_device_templates()
             self._test_create_routertypes(templates.values())
@@ -188,7 +190,8 @@ class L3RouterApplianceTestCaseBase(
         if self.configure_routertypes is True:
             self._test_remove_routertypes()
             self._test_remove_hosting_device_templates()
-        self._remove_mgmt_nw_for_tests()
+        if self._created_mgmt_nw is True:
+            self._remove_mgmt_nw_for_tests()
         TestApplianceL3RouterServicePlugin._router_schedulers = {}
         TestApplianceL3RouterServicePlugin._router_drivers = {}
         TestApplianceL3RouterServicePlugin._namespace_router_type_id = None
@@ -231,10 +234,10 @@ class L3RouterApplianceRouterTypeDriverTestCase(test_l3.L3NatTestCaseMixin,
               ext_mgr=None):
         super(L3RouterApplianceRouterTypeDriverTestCase, self).setUp(
             core_plugin, l3_plugin, dm_plugin, ext_mgr)
-        # set a very long processing interval and instead call the
-        # _process_backlogged_routers function directly in the tests
-        cfg.CONF.set_override('backlog_processing_interval', 100,
-                              group='routing')
+        # mock the periodic router backlog processing in the tests
+        mock.patch.object(self.plugin, '_is_master_process',
+                          return_value=True).start()
+        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
 
     def test_schedule_router_pre_and_post_commit(self):
         hdts = self._list(

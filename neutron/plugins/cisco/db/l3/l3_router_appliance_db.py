@@ -44,6 +44,7 @@ from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 from neutron.plugins.cisco.db.l3 import l3_models
 from neutron.plugins.cisco.device_manager import config
+from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routerrole
@@ -56,7 +57,7 @@ LOG = logging.getLogger(__name__)
 
 AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
 AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
-
+VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
 
 ROUTER_APPLIANCE_OPTS = [
     cfg.StrOpt('default_router_type',
@@ -905,12 +906,13 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         if router_type_name is attributes.ATTR_NOT_SPECIFIED:
             router_type_name = cfg.CONF.routing.default_router_type
         namespace_router_type_id = self.get_namespace_router_type_id(context)
-        router_type_id = self.get_routertype_by_id_name(
-            context, router_type_name)['id']
-        if (router_type_id != namespace_router_type_id and
+        router_type_db = self.get_routertype_by_id_name(context,
+                                                        router_type_name)
+        if (router_type_db.id != namespace_router_type_id and
+            router_type_db.template.host_category == VM_CATEGORY and
                 self._dev_mgr.mgmt_nw_id() is None):
             raise RouterCreateInternalError()
-        return router_type_id
+        return router_type_db.id
 
     def _get_effective_and_normal_routertypes(self, context, hosting_info):
         if hosting_info:

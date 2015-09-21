@@ -16,7 +16,6 @@ import copy
 
 import contextlib
 import mock
-from oslo_config import cfg
 from oslo_log import log as logging
 
 from neutron.common import constants as l3_constants
@@ -38,10 +37,10 @@ class TestHwVLANTrunkingPlugDriver(
 
     # we use router types defined in .ini file.
     configure_routertypes = False
-    router_type = 'CSR1kv_Neutron_router'
+    router_type = 'ASR1k_Neutron_router'
 
     def setUp(self):
-        super(TestHwVLANTrunkingPlugDriver, self).setUp()
+        super(TestHwVLANTrunkingPlugDriver, self).setUp(create_mgmt_nw=False)
         # save possible test_lib.test_config 'config_files' dict entry so we
         # can restore it after tests since we will change its value
         self._old_config_files = copy.copy(test_lib.test_config.get(
@@ -54,10 +53,10 @@ class TestHwVLANTrunkingPlugDriver(
         #TODO(bobmel): Fix bug in test_extensions.py and we can remove the
         # below call to setup_config()
         self.setup_config()
-        # set a very long processing interval and instead call the
-        # _process_backlogged_routers function directly in the tests
-        cfg.CONF.set_override('backlog_processing_interval', 100,
-                              group='routing')
+        # mock the periodic router backlog processing in the tests
+        mock.patch.object(self.plugin, '_is_master_process',
+                          return_value=True).start()
+        mock.patch.object(self.plugin, '_setup_backlog_handling').start()
 
     def tearDown(self):
         if self._old_config_files is None:
@@ -67,21 +66,17 @@ class TestHwVLANTrunkingPlugDriver(
         super(TestHwVLANTrunkingPlugDriver, self).tearDown()
 
     def test_create_hosting_device_resources(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
+        tenant_id = 'some_tenant_id'
         ctx = context.Context('', tenant_id, is_admin=True)
         plugging_driver = HwVLANTrunkingPlugDriver()
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
+        mgmt_context = {'mgmt_nw_id': None}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
-        self.assertIsNotNone(res['mgmt_port'])
-        self.assertEqual(res['mgmt_port']['name'], 'mgmt')
-        self.assertEqual(res['mgmt_port']['device_owner'], 'some_id')
+        self.assertIsNone(res['mgmt_port'])
         self.assertEqual(len(res), 1)
 
     def test_create_hosting_device_resources_no_mgmt_context(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
+        tenant_id = 'some_tenant_id'
         ctx = context.Context('', tenant_id, is_admin=True)
         plugging_driver = HwVLANTrunkingPlugDriver()
         res = plugging_driver.create_hosting_device_resources(
@@ -90,28 +85,25 @@ class TestHwVLANTrunkingPlugDriver(
         self.assertEqual(len(res), 1)
 
     def test_get_hosting_device_resources_by_complementary_id(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
+        tenant_id = 'some_tenant_id'
         ctx = context.Context('', tenant_id, is_admin=True)
         plugging_driver = HwVLANTrunkingPlugDriver()
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
+        mgmt_context = {'mgmt_nw_id': None}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 1)
         # ports that should not be returned
         with contextlib.nested(self.port(), self.port(device_id='uuid2'),
                                self.port(tenant_id=tenant_id)):
             res_get = plugging_driver.get_hosting_device_resources(
-                ctx, '', 'some_id', tenant_id, osn_subnet['network_id'])
-            self.assertEqual(res_get['mgmt_port']['id'],
-                             res['mgmt_port']['id'])
+                ctx, '', 'some_id', tenant_id, None)
+            self.assertIsNone(res_get['mgmt_port'])
             self.assertEqual(len(res), 1)
 
     def test_get_hosting_device_resources_by_device_id(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
+        tenant_id = 'some_tenant_id'
         ctx = context.Context('', tenant_id, is_admin=True)
         plugging_driver = HwVLANTrunkingPlugDriver()
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
+        mgmt_context = {'mgmt_nw_id': None}
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 1)
         # update attributes of created ports to fake what Nova updates
@@ -126,119 +118,35 @@ class TestHwVLANTrunkingPlugDriver(
                                self.port(tenant_id=tenant_id,
                                          device_owner='other_uuid')):
             res_get = plugging_driver.get_hosting_device_resources(
-                ctx, hd_uuid, 'some_id', tenant_id, osn_subnet['network_id'])
-            self.assertEqual(res_get['mgmt_port']['id'],
-                             res['mgmt_port']['id'])
+                ctx, hd_uuid, 'some_id', tenant_id, None)
+            self.assertIsNone(res_get['mgmt_port'])
             self.assertEqual(len(res), 1)
 
     def test_delete_hosting_device_resources(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
+        tenant_id = 'some_tenant_id'
         ctx = context.Context('', tenant_id, is_admin=True)
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
+        mgmt_context = {'mgmt_nw_id': None}
         plugging_driver = HwVLANTrunkingPlugDriver()
         res = plugging_driver.create_hosting_device_resources(
             ctx, "some_id", tenant_id, mgmt_context, 2)
         nets = self._list('networks')
-        self.assertEqual(len(nets['networks']), 1)
+        self.assertEqual(len(nets['networks']), 0)
         subnets = self._list('subnets')
-        self.assertEqual(len(subnets['subnets']), 1)
+        self.assertEqual(len(subnets['subnets']), 0)
         ports = self._list('ports')
-        self.assertEqual(len(ports['ports']), 1)
+        self.assertEqual(len(ports['ports']), 0)
         # avoid passing the mgmt port twice in argument list
         mgmt_port = res['mgmt_port']
         del res['mgmt_port']
         plugging_driver.delete_hosting_device_resources(
             ctx, tenant_id, mgmt_port, **res)
         nets = self._list('networks')['networks']
-        # mgmt network and subnet should remain
-        self.assertEqual(len(nets), 1)
-        self.assertEqual(nets[0]['id'], osn_subnet['network_id'])
+        # no networks and subnets should remain
+        self.assertEqual(len(nets), 0)
         subnets = self._list('subnets')['subnets']
-        self.assertEqual(len(subnets), 1)
-        self.assertEqual(subnets[0]['id'], osn_subnet['id'])
+        self.assertEqual(len(subnets), 0)
         ports = self._list('ports')
         self.assertEqual(len(ports['ports']), 0)
-
-    def test_delete_hosting_device_resources_retry_success(self):
-
-        def _fake_delete_resources(context, name, deleter, exception_type,
-                                   resource_ids):
-            if counters['attempts'] < counters['max_attempts']:
-                if name == "management port":
-                    counters['attempts'] += 1
-                    return
-            real_delete_resources(context, name, deleter, exception_type,
-                                  resource_ids)
-
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
-        ctx = context.Context('', tenant_id, is_admin=True)
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = HwVLANTrunkingPlugDriver()
-        real_delete_resources = plugging_driver._delete_resources
-        res = plugging_driver.create_hosting_device_resources(
-            ctx, "some_id", tenant_id, mgmt_context, 2)
-        nets = self._list('networks')
-        self.assertEqual(len(nets['networks']), 1)
-        subnets = self._list('subnets')
-        self.assertEqual(len(subnets['subnets']), 1)
-        ports = self._list('ports')
-        self.assertEqual(len(ports['ports']), 1)
-        # avoid passing the mgmt port twice in argument list
-        mgmt_port = res['mgmt_port']
-        del res['mgmt_port']
-        with mock.patch.object(plugging_driver, '_delete_resources') as (
-                delete_mock):
-            with mock.patch(
-                    'neutron.plugins.cisco.device_manager.plugging_drivers.'
-                    'hw_vlan_trunking_driver.eventlet.sleep'):
-                delete_mock.side_effect = _fake_delete_resources
-                counters = {'attempts': 0, 'max_attempts': 2}
-                plugging_driver.delete_hosting_device_resources(
-                    ctx, tenant_id, mgmt_port, **res)
-                # three retry iterations with one call per iteration
-                self.assertEqual(delete_mock.call_count, 3)
-                nets = self._list('networks')['networks']
-                self.assertEqual(len(nets), 1)
-                subnets = self._list('subnets')['subnets']
-                self.assertEqual(len(subnets), 1)
-                ports = self._list('ports')
-                self.assertEqual(len(ports['ports']), 0)
-
-    def test_delete_hosting_device_resources_finite_attempts(self):
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
-        ctx = context.Context('', tenant_id, is_admin=True)
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
-        plugging_driver = HwVLANTrunkingPlugDriver()
-        res = plugging_driver.create_hosting_device_resources(
-            ctx, "some_id", tenant_id, mgmt_context, 2)
-        nets = self._list('networks')
-        self.assertEqual(len(nets['networks']), 1)
-        subnets = self._list('subnets')
-        self.assertEqual(len(subnets['subnets']), 1)
-        ports = self._list('ports')
-        self.assertEqual(len(ports['ports']), 1)
-        # avoid passing the mgmt port twice in argument list
-        mgmt_port = res['mgmt_port']
-        del res['mgmt_port']
-        with mock.patch.object(plugging_driver, '_delete_resources') as (
-                delete_mock):
-            with mock.patch(
-                    'neutron.plugins.cisco.device_manager.'
-                    'plugging_drivers.hw_vlan_trunking_driver.eventlet'
-                    '.sleep'):
-                plugging_driver.delete_hosting_device_resources(
-                    ctx, tenant_id, mgmt_port, **res)
-                # four retry iterations with one call per iteration
-                self.assertEqual(delete_mock.call_count, 4)
-                nets = self._list('networks')['networks']
-                self.assertEqual(len(nets), 1)
-                subnets = self._list('subnets')['subnets']
-                self.assertEqual(len(subnets), 1)
-                ports = self._list('ports')
-                self.assertEqual(len(ports['ports']), 1)
 
     def test_extend_hosting_port_info_adds_segmentation_id_internal(self):
         hosting_info = {}
@@ -328,13 +236,7 @@ class TestHwVLANTrunkingPlugDriver(
             self.assertEqual(binding_db.segmentation_id,
                              test_info['vlan_tags'][i])
 
-        osn_subnet = self._list('subnets')['subnets'][0]
-        tenant_id = osn_subnet['tenant_id']
-        ctx = context.Context('', tenant_id, is_admin=True)
-        mgmt_context = {'mgmt_nw_id': osn_subnet['network_id']}
         plugging_driver = HwVLANTrunkingPlugDriver()
-        res = plugging_driver.create_hosting_device_resources(
-            ctx, "some_id", tenant_id, mgmt_context, 2)
         with self.subnet() as subnet1:
             sn1 = subnet1['subnet']
             ext_net_id = sn1['network_id']
@@ -345,12 +247,6 @@ class TestHwVLANTrunkingPlugDriver(
                 r1 = router1['router']
                 hds = self._list('hosting_devices')['hosting_devices']
                 hd = hds[0]
-                # update attributes of created ports to fake what Nova updates
-                hd_uuid = hd['id']
-                update_spec = {'port': {'device_id': hd_uuid,
-                                        'device_owner': 'nova'}}
-                self._update('ports', res['mgmt_port']['id'], update_spec)
-
                 self._pv_info = {'vlan': {}, 'vxlan': {}}
                 self._network_type = test_info1['network_types'][0]
                 self.real_get_network = self.core_plugin.get_network

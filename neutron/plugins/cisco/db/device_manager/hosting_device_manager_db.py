@@ -498,57 +498,28 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 notifier.hosting_devices_removed(context, hosting_info, False,
                                                  cfg_agent)
 
-    def get_device_info_for_agent(self, context, hosting_device):
+    def get_device_info_for_agent(self, context, hosting_device_db):
         """Returns information about <hosting_device> needed by config agent.
 
            Convenience function that service plugins can use to populate
            their resources with information about the device hosting their
            logical resource.
         """
-        template = hosting_device.template
-        if hosting_device.management_port is None:
-            # This can happen for hardware hosting devices which may have been
-            # registered via .ini file before the management network exists.
-            # Allocate the ip address for the hosting device by creating the
-            # Neutron port for it.
-            self._create_management_port(context, hosting_device)
-        mgmt_ip = (hosting_device.management_port['fixed_ips'][0]['ip_address']
-                   if hosting_device.management_port else None)
-        return {'id': hosting_device.id,
+        template = hosting_device_db.template
+        mgmt_port = hosting_device_db.management_port
+        mgmt_ip = (mgmt_port['fixed_ips'][0]['ip_address']
+                   if mgmt_port else hosting_device_db.management_ip_address)
+        return {'id': hosting_device_db.id,
                 'name': template.name,
                 'template_id': template.id,
-                'credentials': self._get_credentials(hosting_device),
+                'credentials': self._get_credentials(hosting_device_db),
                 'host_category': template.host_category,
                 'service_types': template.service_types,
                 'management_ip_address': mgmt_ip,
-                'protocol_port': hosting_device.protocol_port,
+                'protocol_port': hosting_device_db.protocol_port,
                 'timeout': None,
-                'created_at': str(hosting_device.created_at),
+                'created_at': str(hosting_device_db.created_at),
                 'booting_time': template.booting_time}
-
-    def _create_management_port(self, context, hosting_device):
-        mgmt_nw_id = self.mgmt_nw_id()
-        if mgmt_nw_id is None:
-            # mgmt network not yet created, need to abort
-            return
-        adm_context = neutron_context.get_admin_context()
-        plg_drv = self.get_hosting_device_plugging_driver(
-            adm_context, hosting_device.template_id)
-        if not plg_drv:
-            return
-        mgmt_context = {
-            'mgmt_ip_address': hosting_device.management_ip_address,
-            'mgmt_nw_id': mgmt_nw_id,
-            'mgmt_sec_grp_id': self.mgmt_sec_grp_id()}
-        res = plg_drv.create_hosting_device_resources(
-            adm_context, uuidutils.generate_uuid(), self.l3_tenant_id(),
-            mgmt_context, 1)
-        if not res['mgmt_port']:
-            return
-        with context.session.begin(subtransactions=True):
-            hosting_device.management_port_id = res['mgmt_port']['id']
-        # refresh so that we get latest contents from DB
-        context.session.expire(hosting_device)
 
     def _process_non_responsive_hosting_device(self, context, hosting_device):
         """Host type specific processing of non responsive hosting devices.
