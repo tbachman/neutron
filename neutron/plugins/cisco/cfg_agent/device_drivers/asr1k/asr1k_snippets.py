@@ -13,8 +13,9 @@
 #    under the License.
 
 # ===================================================
-# Create Subinterface (with deployment_id)
+# Create Subinterface
 # $(config)interface GigabitEthernet 2.500
+# $(config)description OPENSTACK_NEUTRON_INTF
 # $(config)encapsulation dot1Q 500
 # $(config)vrf forwarding nrouter-abc-e7d4y5
 # $(config)ip address 192.168.0.1 255.255.255.0
@@ -34,6 +35,7 @@ CREATE_SUBINTERFACE_WITH_ID = """
 # ===================================================
 # Create Subinterface (External. no VRF)
 # $(config)interface GigabitEthernet 2.500
+# $(config)description OPENSTACK_NEUTRON_INTF
 # $(config)encapsulation dot1Q 500
 # $(config)ip address 192.168.0.1 255.255.255.0
 # ===================================================
@@ -49,12 +51,14 @@ CREATE_SUBINTERFACE_EXTERNAL_WITH_ID = """
 """
 
 # ===================================================
-# Enable HSRP on a Subinterface for ASR
-# $(config)interface GigabitEthernet 2.500
+# Enable HSRP on a Subinterface
+# $(config)interface GigabitEthernet0/0/0.314
 # $(config)vrf forwarding nrouter-e7d4y5
 # $(config)standby version 2
-# $(config)standby <group> priority <priority>
-# $(config)standby <group> ip <ip>
+# $(config)standby delay minimum 30 reload 60
+# $(config)standby 1621 priority 10
+# $(config)standby 1621 ip 10.0.3.1
+# $(config)standby 1621 timers 1 3
 # ===================================================
 SET_INTC_ASR_HSRP = """
 <config>
@@ -72,10 +76,13 @@ SET_INTC_ASR_HSRP = """
 
 # ===================================================
 # Enable HSRP on a External Network Subinterface
-# $(config)interface GigabitEthernet 2.500
+# $(config)interface GigabitEthernet0/0/0.314
 # $(config)standby version 2
-# $(config)standby <group> priority <priority>
-# $(config)standby <group> ip <ip>
+# $(config)standby delay minimum 30 reload 60
+# $(config)standby 1621 priority 10
+# $(config)standby 1621 ip 10.0.3.1
+# $(config)standby 1621 timers 1 3
+# $(config)standby 1621 name neutron-hsrp-1621-314
 # ===================================================
 SET_INTC_ASR_HSRP_EXTERNAL = """
 <config>
@@ -96,7 +103,7 @@ SET_INTC_ASR_HSRP_EXTERNAL = """
 # Syntax: ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> redundancy <hsrp group name>
 # eg: $(config)ip nat inside source static 192.168.0.1 121.158.0.5
-#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-305
+#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-1621-314
 # ==========================================================================
 SET_STATIC_SRC_TRL_NO_VRF_MATCH = """
 <config>
@@ -111,7 +118,7 @@ SET_STATIC_SRC_TRL_NO_VRF_MATCH = """
 # Syntax: no ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> redundancy <hsrp group name>
 # eg: $(config)no ip nat inside source static 192.168.0.1 121.158.0.5
-#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-305
+#    ..........vrf nrouter-e7d4y5 redundancy neutron-hsrp-1621-314
 # ==========================================================================
 REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH = """
 <config>
@@ -125,9 +132,10 @@ REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH = """
 # Set default ip route with interface
 # Syntax: ip route vrf <vrf-name> 0.0.0.0 0.0.0.0 <interface> <next hop>
 # eg:
-#   $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 po10.304 10.0.100.255
+# $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 po10.304 10.0.100.255
 # =============================================================================
-DEFAULT_ROUTE_WITH_INTF_CFG = 'ip route vrf %s 0.0.0.0 0.0.0.0 %s %s'
+# ToDo(Hareesh): Seems unused, remove commented below after testing
+# DEFAULT_ROUTE_WITH_INTF_CFG = 'ip route vrf %s 0.0.0.0 0.0.0.0 %s %s'
 
 SET_DEFAULT_ROUTE_WITH_INTF = """
 <config>
@@ -154,6 +162,10 @@ REMOVE_DEFAULT_ROUTE_WITH_INTF = """
 # ===================================================
 # Create VRF definition
 # $(config)vrf definition nrouter-e7d4y5
+# $(config)address-family ipv4
+# $(config)exit-address-family
+# $(config)address-family ipv6
+# $(config)exit-address-family
 # ===================================================
 CREATE_VRF_DEFN = """
 <config>
@@ -180,11 +192,12 @@ REMOVE_VRF_DEFN = """
 """
 
 # ===================================================
-# Create Subinterface (with deployment_id)
+# Create V6 Subinterface (With deployement id)
 # $(config)interface GigabitEthernet 2.500
+# $(config)description OPENSTACK_NEUTRON-Region_XY_INTF
 # $(config)encapsulation dot1Q 500
 # $(config)vrf forwarding nrouter-abc-e7d4y5
-# $(config)ip address 2001:DB8:CAFE:A::1/64
+# $(config)ipv6 address 2001:DB8:CAFE:A::1/64
 # ===================================================
 CREATE_SUBINTERFACE_V6_WITH_ID = """
 <config>
@@ -201,8 +214,9 @@ CREATE_SUBINTERFACE_V6_WITH_ID = """
 # ===================================================
 # Create Subinterface (with deployment_id)
 # $(config)interface GigabitEthernet 2.500
+# $(config)description OPENSTACK_NEUTRON-Region_XY_INTF
 # $(config)encapsulation dot1Q 500
-# $(config)ip address 2001:DB8:CAFE:A::1/64
+# $(config)ipv6 address 2001:DB8:CAFE:A::1/64
 # ===================================================
 CREATE_SUBINTERFACE_V6_NO_VRF_WITH_ID = """
 <config>
@@ -216,12 +230,15 @@ CREATE_SUBINTERFACE_V6_NO_VRF_WITH_ID = """
 """
 
 # ===================================================
-# Enable HSRP on a Subinterface for ASR
-# $(config)interface GigabitEthernet 2.500
+# Enable HSRP on a Subinterface
+# $(config)interface GigabitEthernet0/0/0.314
 # $(config)vrf forwarding nrouter-e7d4y5
 # $(config)standby version 2
-# $(config)standby <group> priority <priority>
-# $(config)standby <group> ip <ip>
+# $(config)standby 1621 ipv6 autoconfig
+# $(config)standby 1621 priority 10
+# $(config)standby 1621 preempt
+# $(config)standby 1621 timers 1 3
+# $(config)standby 1621 name neutron-hsrp-1621-314
 # ===================================================
 SET_INTC_ASR_HSRP_V6 = """
 <config>
@@ -240,11 +257,12 @@ SET_INTC_ASR_HSRP_V6 = """
 
 # =============================================================================
 # Set default ipv6 route with interface
-# Syntax: ipv6 route vrf <vrf-name> ::/0 <interface> <next hop>
+# Syntax: ipv6 route vrf <vrf-name> ::/0 <interface> nexthop-vrf default
 # eg:
-#   $(config)ipv6 route vrf nrouter-e7d4y5 ::/0 po10.304 2001:DB8:CAFE:22::1/64
+# $(config)ipv6 route vrf nrouter-e7d4y5 ::/0 po10.304 nexthop-vrf default
 # =============================================================================
-DEFAULT_ROUTE_V6_WITH_INTF_CFG = 'ipv6 route vrf %s ::/0 %s %s'
+# ToDo(Hareesh): Seems unused, remove commented below after testing
+# DEFAULT_ROUTE_V6_WITH_INTF_CFG = 'ipv6 route vrf %s ::/0 %s %s'
 
 SET_DEFAULT_ROUTE_V6_WITH_INTF = """
 <config>
@@ -256,9 +274,9 @@ SET_DEFAULT_ROUTE_V6_WITH_INTF = """
 
 # ============================================================================
 # Remove default ipv6 route
-# Syntax: ipv6 route vrf <vrf-name> ::/0 <interface> <next hop>
+# Syntax: no ipv6 route vrf <vrf-name> ::/0 <interface> nexthop-vrf default
 # eg:
-#   $(config)ipv6 route vrf nrouter-e7d4y5 ::/0 po10.304 2001:DB8:CAFE:22::1/64
+# $(config)no ipv6 route vrf nrouter-e7d4y5 ::/0 po10.304 nexthop-vrf default
 # ============================================================================
 REMOVE_DEFAULT_ROUTE_V6_WITH_INTF = """
 <config>
@@ -275,7 +293,8 @@ REMOVE_DEFAULT_ROUTE_V6_WITH_INTF = """
 # eg: $(config)ip nat inside source list acl_500
 #    ....pool nrouter-e7d4y5-pool vrf nrouter-e7d4y5 overload
 # ==========================================================================
-SNAT_POOL_CFG = "ip nat inside source list %s pool %s vrf %s overload"
+# ToDo(Hareesh): Seems unused, remove commented below after testing
+# SNAT_POOL_CFG = "ip nat inside source list %s pool %s vrf %s overload"
 
 SET_DYN_SRC_TRL_POOL = """
 <config>
@@ -304,7 +323,7 @@ REMOVE_DYN_SRC_TRL_POOL = """
 # Create a NAT pool
 # Syntax: ip nat pool <pool_name> <start_ip> <end_ip> netmask <netmask_value>
 # eg:
-#  $(config)ip nat pool TEST_POOL 192.168.0.20 192.168.0.35 netmask 255.255.0.0
+# $(config)ip nat pool TEST_POOL 192.168.0.20 192.168.0.35 netmask 255.255.0.0
 # ==========================================================================
 CREATE_NAT_POOL = """
 <config>
@@ -316,11 +335,10 @@ CREATE_NAT_POOL = """
 
 # ===========================================================================
 # Delete a NAT pool
-# Syntax:
-#   no ip nat pool <pool_name> <start_ip> <end_ip> netmask <netmask_value>
+# Syntax:no ip nat pool <pool_name> <start_ip> <end_ip> netmask <netmask_value>
 # eg:
 # $(config)no ip nat pool TEST_POOL 192.168.0.20 192.168.0.35
-#     ....netmask 255.255.0.0
+# .........netmask 255.255.0.0
 # ==========================================================================
 DELETE_NAT_POOL = """
 <config>
@@ -332,6 +350,8 @@ DELETE_NAT_POOL = """
 
 # ===================================================
 # Disable HSRP preempt on an interface
+# $(config)interface GigabitEthernet 2.500
+# $(config)no standby 1621 preempt
 # ===================================================
 REMOVE_INTC_ASR_HSRP_PREEMPT = """
 <config>
@@ -340,17 +360,6 @@ REMOVE_INTC_ASR_HSRP_PREEMPT = """
             <cmd>no standby %s preempt</cmd>
         </cli-config-data>
 </config>
-"""
-
-GET_SHOW_CLOCK = """
-<filter type="subtree">
-    <config-format-text-cmd>
-        <text-filter-spec> | inc FFFFFFFFFFFFFFFF</text-filter-spec>
-    </config-format-text-cmd>
-    <oper-data-format-text-block>
-        <exec>show clock</exec>
-    </oper-data-format-text-block>
-</filter>
 """
 
 # ===================================================
