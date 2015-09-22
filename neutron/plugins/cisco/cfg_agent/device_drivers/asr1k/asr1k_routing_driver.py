@@ -83,7 +83,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             ex_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
             if (ex_gw_ip and
                     ext_gw_port['device_owner'] == DEVICE_OWNER_ROUTER_GW):
-                # LOG.debug("REMOVE ROUTE PORT %s" % ex_gw_port)
                 # Remove default route via this network's gateway ip
                 if self._is_port_v6(ext_gw_port):
                     self._remove_default_route_v6(ri, ex_gw_ip, ext_gw_port)
@@ -181,7 +180,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         self._do_create_sub_interface(sub_interface, vlan, vrf_name, hsrp_ip,
                                       net_mask, is_external)
         # Always do HSRP
-        #self._add_ha_hsrp(ri, port, gw_ip, is_external)
         self._add_ha_hsrp(ri, port)
 
     def _do_create_sub_interface(self, sub_interface, vlan_id, vrf_name, ip,
@@ -240,9 +238,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
                           "%s"), cse)
 
     def _add_default_route(self, ri, ext_gw_port):
-        # router_id = self._get_short_router_id_from_port(ext_gw_port)
-        if self._fullsync and \
-           ri.router_id in self._existing_cfg_dict['routes']:
+        if self._fullsync and (
+                    ri.router_id in self._existing_cfg_dict['routes']):
             LOG.debug("Default route already exists, skipping")
             return
         ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
@@ -282,40 +279,29 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _do_set_ha_hsrp(self, sub_interface, vrf_name, priority, group,
                         ip, vlan):
-        # Hareesh: Ignoring vrf check as we don't create a vrf for the
-        # global/logical global role
-        # if vrf_name not in self._get_vrfs():
-        #     LOG.error(_LE("VRF %s not present"), vrf_name)
-
-        #conf_str = snippets.SET_INTC_HSRP % (sub_interface, vrf_name, group,
-        #                                     priority, group, ip)
-        conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % \
-            (sub_interface,
-             group, priority,
-             group, ip,
-             group,
-             group, group, vlan)
-
+        conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (sub_interface,
+             group, priority, group, ip, group, group, group, vlan)
         self._edit_running_config(conf_str, 'SET_INTC_ASR_HSRP_EXTERNAL')
 
-    def _do_set_ha_hsrp2(self, subinterface, vrf_name, priority, group, vlan,
-                         ip, is_external=False):
-        try:
-            confstr = asr1k_snippets.REMOVE_INTC_ASR_HSRP_PREEMPT % (
-                subinterface, group)
-            self._edit_running_config(confstr, "REMOVE_HSRP_PREEMPT")
-        except Exception:
-            pass
-        if is_external is True:
-            conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (
-                subinterface, group, priority, group, ip, group, group, group,
-                vlan)
-        else:
-            conf_str = asr1k_snippets.SET_INTC_ASR_HSRP % (
-                subinterface, vrf_name, group, priority, group, ip, group)
-        action = "%s SET_INTC_HSRP (Group: %s, Priority: % s)" % (
-            self.hosting_device['name'], group, priority)
-        self._edit_running_config(conf_str, action)
+    # ToDo(Hareesh):This function doesn't seem to be used. Delete in next sweep
+    # def _do_set_ha_hsrp2(self, subinterface, vrf_name, priority, group, vlan,
+    #                      ip, is_external=False):
+    #     try:
+    #         confstr = asr1k_snippets.REMOVE_INTC_ASR_HSRP_PREEMPT % (
+    #             subinterface, group)
+    #         self._edit_running_config(confstr, "REMOVE_HSRP_PREEMPT")
+    #     except Exception:
+    #         pass
+    #     if is_external is True:
+    #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (
+    #             subinterface, group, priority, group, ip, group, group, group,
+    #             vlan)
+    #     else:
+    #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP % (
+    #             subinterface, vrf_name, group, priority, group, ip, group)
+    #     action = "%s SET_INTC_HSRP (Group: %s, Priority: % s)" % (
+    #         self.hosting_device['name'], group, priority)
+    #     self._edit_running_config(conf_str, action)
 
     def _create_sub_interface_v6(self, ri, port, is_external=False, gw_ip=""):
         if self._v6_port_needs_config(port) is not True:
@@ -344,10 +330,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _add_default_route_v6(self, ri, gw_ip, gw_port):
         vrf_name = self._get_vrf_name(ri)
-        #sub_interface = self._get_interface_name_from_hosting_port(gw_port)
         conn = self._get_connection()
-        # confstr = asr1k_snippets.SET_DEFAULT_ROUTE_V6_WITH_INTF % (vrf,
-        # out_intf, gw_ip)
         conf_str = asr1k_snippets.SET_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf_name, gw_ip)
         rpc_obj = conn.edit_config(target='running', config=conf_str)
@@ -361,8 +344,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _remove_default_static_route_v6(self, gw_ip, vrf, out_intf):
         conn = self._get_connection()
-        # confstr = asr_snippets.REMOVE_DEFAULT_ROUTE_V6_WITH_INTF % (vrf,
-        # out_intf, gw_ip)
         conf_str = asr1k_snippets.REMOVE_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf, gw_ip)
         rpc_obj = conn.edit_config(target='running', config=conf_str)
@@ -390,22 +371,27 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             return False
         return True
 
+    @staticmethod
     def _port_is_hsrp(self, port):
         hsrp_types = [constants.DEVICE_OWNER_ROUTER_HA_GW,
                       constants.DEVICE_OWNER_ROUTER_HA_INTF]
         return port['device_owner'] in hsrp_types
 
+    @staticmethod
     def _is_global_router(self, ri):
-        # LOG.debug("++++ ri.router = %s " % (pprint.pformat(ri.router)))
         return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
 
+    @staticmethod
     def _is_port_v6(self, port):
         return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
 
+    @staticmethod
     def _get_hsrp_grp_num_from_ri(self, ri):
         return ri.router['ha_info']['group']
 
-    def _nat_rules_for_internet_access(self, acl_no, network,
+    def _nat_rules_for_internet_access(self,
+                                       acl_no,
+                                       network,
                                        netmask,
                                        inner_itfc,
                                        outer_itfc,
@@ -432,15 +418,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         CSR1kvConfigException
         """
         conn = self._get_connection()
-        # Duplicate ACL creation throws error, so checking
-        # it first. Remove it in future as this is not common in production
-        # **** Disable this for ASR, ACL checking is slow, just log exceptions
-        # **** acl_present = self._check_acl(acl_no, network, netmask)
-        # if not acl_present:
         conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
         try:
-            # rpc_obj = conn.edit_config(target='running', config=conf_str)
-            # self._check_response(rpc_obj, 'CREATE_ACL')
             self._edit_running_config(conf_str, 'CREATE_ACL')
         except Exception as acl_e:
             LOG.debug("Ignore exception for CREATE_ACL: %s", acl_e)
@@ -449,20 +428,16 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
                                                           vrf_name)
         try:
-            # rpc_obj = conn.edit_config(target='running', config=conf_str)
-            # self._check_response(rpc_obj, 'CREATE_DYN_NAT')
             self._edit_running_config(conf_str, 'CREATE_DYN_NAT')
         except Exception as dyn_nat_e:
             LOG.error(_LE("Ignore exception for CREATE_DYN_NAT: %s"),
                       dyn_nat_e)
 
         conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_NAT')
+        self._edit_running_config(conf_str, 'SET_NAT')
 
         conf_str = snippets.SET_NAT % (outer_itfc, 'outside')
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_NAT')
+        self._edit_running_config(conf_str, 'SET_NAT')
 
     def _remove_internal_nw_nat_rules(self,
                                       ri,
@@ -470,12 +445,15 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
                                       ext_port,
                                       intf_deleted=False):
         """
-        arguments:
-        ri          -- router-info object
-        ports       -- list of affected ports where network nat rules
-                       was affected
-        ext_port    -- external facing port
-        intf_deleted -- If True, indicates that the subinterface was deleted.
+        Removes the NAT rules already configured when an internal network is
+        removed.
+
+        :param ri          -- router-info object
+        :param ports       -- list of affected ports where network nat rules
+                              was affected
+        :param ext_port    -- external facing port
+        :param intf_deleted-- If True, indicates that the subinterface was
+                              deleted.
         """
         acls = []
         # first disable nat in all inner ports
@@ -486,14 +464,19 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
             if not intf_deleted:
                 self._remove_interface_nat(in_itfc_name, 'inside')
-        # **** Don't wait and clear NAT for ASR,
-        #      too slow and can disrupt traffic for
-        # **** other tenants
-        # wait for two seconds
+        # There is a possibility that the dynamic NAT rule cannot be removed
+        # from the running config, if there is still traffic in the inner
+        # interface causing a rule to be present in the NAT translation
+        # table. For this we give 2 seconds for the 'inside NAT rule' to
+        # expire and then clear the NAT translation table manually. This can
+        # be costly and hence is not enabled here, pending further
+        # sinvestigation.
+
         # LOG.debug("Sleep for 2 seconds before clearing NAT rules")
         # time.sleep(2)
         # clear the NAT translation table
         # self._remove_dyn_nat_translations()
+
         # remove dynamic nat rules and acls
         vrf_name = self._get_vrf_name(ri)
         ext_itfc_name = self._get_interface_name_from_hosting_port(ext_port)
@@ -541,18 +524,10 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _remove_floating_ip(self, ri, ext_gw_port, floating_ip, fixed_ip):
         vrf_name = self._get_vrf_name(ri)
-        self._get_interface_name_from_hosting_port(ext_gw_port)
-        # first remove NAT from outer interface
-        # self._remove_interface_nat(out_itfc_name, 'outside')
-        # clear the NAT translation table
-        # self._remove_dyn_nat_translations()
-        # remove the floating ip
         self._asr_do_remove_floating_ip(floating_ip,
                                         fixed_ip,
                                         vrf_name,
                                         ext_gw_port)
-        # enable NAT on outer interface
-        # self._add_interface_nat(out_itfc_name, 'outside')
 
     def _asr_do_remove_floating_ip(self, floating_ip,
                                    fixed_ip, vrf, ex_gw_port):
