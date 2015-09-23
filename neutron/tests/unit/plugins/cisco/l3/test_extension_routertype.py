@@ -17,8 +17,8 @@ import copy
 import mock
 from webob import exc
 
-from neutron.plugins.cisco.common import utils
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.common import utils
 from neutron.plugins.cisco.extensions import routertype
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base

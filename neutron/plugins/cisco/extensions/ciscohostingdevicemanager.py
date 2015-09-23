@@ -22,6 +22,7 @@ from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexception
 from neutron.plugins.cisco.common import cisco_constants as constants
 from neutron.plugins.cisco.common import utils
+from neutron.plugins.common import constants as svc_constants
 from neutron.services.service_base import ServicePluginBase
 
 

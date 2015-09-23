@@ -17,9 +17,11 @@ from oslo_utils import importutils
 
 from neutron.common import constants
 from neutron.db import agentschedulers_db
+from neutron import manager
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.extensions import (ciscohostingdevicemanager as
                                               ciscodevmgr)
+from neutron.plugins.common import constants as service_constants
 from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
 from neutron.tests.unit.plugins.cisco.device_manager import (
@@ -81,6 +83,8 @@ class L3RouterApplianceL3AgentSchedulerTestCase(
         self._mock_l3_admin_tenant()
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
+        self.l3plugin = manager.NeutronManager.get_service_plugins().get(
+            service_constants.L3_ROUTER_NAT)
         # mock the periodic router backlog processing in the tests
         self._mock_backlog_processing(self.l3plugin)
 
