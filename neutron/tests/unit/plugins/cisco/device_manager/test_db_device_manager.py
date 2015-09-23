@@ -422,7 +422,8 @@ class TestDeviceManagerDBPlugin(
                         resource = self._get_fake_resource()
                         self.assertTrue(
                             self._devmgr.acquire_hosting_device_slots(
-                                ctx, hd_db, resource, 1))
+                                ctx, hd_db, resource, 'router', L3_ROUTER_NAT,
+                                1))
                         self.assertRaises(
                             ciscohostingdevicemanager.HostingDeviceInUse,
                             self._devmgr.delete_hosting_device, ctx, hd_id)
@@ -631,7 +632,8 @@ class TestDeviceManagerDBPlugin(
                             hdm_db.HostingDeviceManagerMixin,
                             '_dispatch_pool_maintenance_job') as pm_mock:
                         result = self._devmgr.acquire_hosting_device_slots(
-                            context, hd_db, resource, num_requested, bind)
+                            context, hd_db, resource, 'router', L3_ROUTER_NAT,
+                            num_requested, bind)
                         allocation = self._devmgr.get_slot_allocation(
                             context, resource_id=resource['id'])
                         self.assertEqual(result, expected_result)
