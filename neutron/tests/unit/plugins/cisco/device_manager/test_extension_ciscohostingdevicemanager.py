@@ -49,6 +49,8 @@ class CiscoHostingDeviceManagerTestCase(
             'tenant_id': _uuid(),
             'template_id': _uuid(),
             'credentials_id': None,
+            'name': 'SuperDeviceXYZ',
+            'description': 'The latest and greatest device',
             'device_id': 'device_id_string1',
             'admin_state_up': True,
             'management_ip_address': '10.0.100.10',
