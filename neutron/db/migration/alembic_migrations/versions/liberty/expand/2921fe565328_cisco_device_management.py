@@ -32,16 +32,6 @@ from neutron.db import migration
 
 
 def upgrade():
-    # op.create_table('cisco_device_credentials',
-    #     sa.Column('tenant_id', sa.String(length=255), nullable=True),
-    #     sa.Column('id', sa.String(length=36), nullable=False),
-    #     sa.Column('name', sa.String(length=255), nullable=True),
-    #     sa.Column('description', sa.String(length=255), nullable=True),
-    #     sa.Column('user_name', sa.String(length=255), nullable=True),
-    #     sa.Column('password', sa.String(length=255), nullable=True),
-    #     sa.Column('type', sa.String(length=255), nullable=True),
-    #     sa.PrimaryKeyConstraint('id')
-    # )
     op.create_table('cisco_hosting_device_templates',
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
@@ -66,13 +56,13 @@ def upgrade():
         sa.Column('tenant_bound', sa.String(length=512), nullable=True),
         sa.Column('device_driver', sa.String(length=255), nullable=False),
         sa.Column('plugging_driver', sa.String(length=255), nullable=False),
-        # sa.ForeignKeyConstraint(['default_credentials_id'],
-        #                         ['cisco_device_credentials.id']),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_table('cisco_slot_allocations',
         sa.Column('template_id', sa.String(length=36), nullable=False),
         sa.Column('hosting_device_id', sa.String(length=36), nullable=False),
+        sa.Column('logical_resource_type', sa.String(155), nullable=False),
+        sa.Column('logical_resource_service', sa.String(155), nullable=False),
         sa.Column('logical_resource_id', sa.String(length=36), nullable=False),
         sa.Column('logical_resource_owner', sa.String(length=36),
                   nullable=False),
@@ -98,13 +88,6 @@ def upgrade():
         op.add_column('cisco_hosting_devices',
                       sa.Column('credentials_id', sa.String(length=36),
                                 nullable=True))
-        # op.create_foreign_key('cisco_hosting_devices_ibfk_4',
-        #                       source='cisco_hosting_devices',
-        #                       referent='cisco_device_credentials',
-        #                       local_cols=['credentials_id'],
-        #                       remote_cols=['id'])
-        #op.create_index('credentials_id', 'cisco_hosting_devices',
-        #                ['credentials_id'])
         op.add_column('cisco_hosting_devices',
                       sa.Column('management_ip_address', sa.String(255),
                                 nullable=True))
@@ -125,12 +108,9 @@ def downgrade():
     op.drop_column('cisco_hosting_devices', 'auto_delete')
     op.drop_column('cisco_hosting_devices', 'tenant_bound')
     op.drop_column('cisco_hosting_devices', 'management_ip_address')
-    # op.drop_constraint('cisco_hosting_devices_ibfk_4',
-    #                   'cisco_hosting_devices', type_='foreignkey')
     op.drop_column('cisco_hosting_devices', 'credentials_id')
     op.drop_constraint('cisco_hosting_devices_ibfk_3',
                        'cisco_hosting_devices', type_='foreignkey')
     op.drop_column('cisco_hosting_devices', 'template_id')
     op.drop_table('cisco_slot_allocations')
     op.drop_table('cisco_hosting_device_templates')
-    # op.drop_table('cisco_device_credentials')

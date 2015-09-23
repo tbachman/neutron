@@ -267,7 +267,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         self._dispatch_pool_maintenance_job(template)
 
     def acquire_hosting_device_slots(self, context, hosting_device, resource,
-                                     num, exclusive=False):
+                                     resource_type, resource_service, num,
+                                     exclusive=False):
         """Assign <num> slots in <hosting_device> to logical <resource>.
 
         If exclusive is True the hosting device is bound to the resource's
@@ -304,6 +305,8 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
                 slot_info = hd_models.SlotAllocation(
                     template_id=hosting_device['template_id'],
                     hosting_device_id=hosting_device['id'],
+                    logical_resource_type=resource_type,
+                    logical_resource_service=resource_service,
                     logical_resource_id=resource['id'],
                     logical_resource_owner=resource['tenant_id'],
                     num_allocated=0,

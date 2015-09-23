@@ -127,8 +127,10 @@ class SlotAllocation(model_base.BASEV2):
     hosting_device_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('cisco_hosting_devices.id'),
                                   nullable=False)
-    #TODO(bobmel): Add logical_resource_name[sa.String(255)]
-    #TODO(bobmel): Add logical_resource_service[sa.String(255)]
+    # type of logical resource (e.g., router)
+    logical_resource_type = sa.Column(sa.String(155), nullable=False)
+    # service managing the logical resource (e.g., L3_ROUTER_NAT)
+    logical_resource_service = sa.Column(sa.String(155), nullable=False)
     logical_resource_id = sa.Column(sa.String(36), primary_key=True,
                                     nullable=False)
     # UUID of tenant owning logical resource
@@ -157,7 +159,6 @@ class HostedHostingPortBinding(model_base.BASEV2):
     hosting_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id',
                                               ondelete='CASCADE'))
-#                                              ondelete='SET NULL'))
     hosting_port = orm.relationship(
         models_v2.Port,
         primaryjoin='Port.id==HostedHostingPortBinding.hosting_port_id')

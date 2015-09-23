@@ -29,6 +29,7 @@ from neutron.plugins.cisco.db.device_manager import (hosting_device_manager_db
                                                      as hdm_db)
 from neutron.plugins.cisco.device_manager import service_vm_lib
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
+from neutron.plugins.common import constants as svc_constants
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron.tests.unit.plugins.cisco.device_manager import (
     device_manager_test_support)
@@ -51,6 +52,8 @@ HW_CATEGORY = ciscohostingdevicemanager.HARDWARE_CATEGORY
 HW_TEMPLATE_NAME = "HW_template"
 HW_ROUTERTYPE_NAME = "HW_router"
 
+L3_ROUTER_NAT = svc_constants.L3_ROUTER_NAT
+
 DEFAULT_SERVICE_TYPES = "router"
 NETWORK_NODE_SERVICE_TYPES = "router:fwaas:vpn"
 
@@ -62,8 +65,6 @@ NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.device_manager.'
                         'NoopPluggingDriver')
 
 TEST_DEVICE_DRIVER = NOOP_DEVICE_DRIVER
-#    ('neutron.plugins.cisco.test.device_manager.'
-#                      'hd_test_driver.TestHostingDeviceDriver')
 TEST_PLUGGING_DRIVER = ('neutron.tests.unit.plugins.cisco.device_manager.'
                         'plugging_test_driver.TestPluggingDriver')
 
@@ -420,7 +421,8 @@ class TestDeviceManagerDBPlugin(
                         resource = self._get_fake_resource()
                         self.assertTrue(
                             self._devmgr.acquire_hosting_device_slots(
-                                ctx, hd_db, resource, 1))
+                                ctx, hd_db, resource, 'router', L3_ROUTER_NAT,
+                                1))
                         self.assertRaises(
                             ciscohostingdevicemanager.HostingDeviceInUse,
                             self._devmgr.delete_hosting_device, ctx, hd_id)
@@ -628,7 +630,8 @@ class TestDeviceManagerDBPlugin(
                             hdm_db.HostingDeviceManagerMixin,
                             '_dispatch_pool_maintenance_job') as pm_mock:
                         result = self._devmgr.acquire_hosting_device_slots(
-                            context, hd_db, resource, num_requested, bind)
+                            context, hd_db, resource, 'router', L3_ROUTER_NAT,
+                            num_requested, bind)
                         allocation = self._devmgr.get_slot_allocation(
                             context, resource_id=resource['id'])
                         self.assertEqual(result, expected_result)
