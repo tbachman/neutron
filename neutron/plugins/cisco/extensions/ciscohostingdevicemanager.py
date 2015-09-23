@@ -13,7 +13,6 @@
 #    under the License.
 
 import abc
-import imp
 
 import six
 
@@ -22,7 +21,7 @@ from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions as nexception
 from neutron.plugins.cisco.common import cisco_constants as constants
-from neutron.plugins.common import constants as svc_constants
+from neutron.plugins.cisco.common import utils
 from neutron.services.service_base import ServicePluginBase
 
 
@@ -51,10 +50,6 @@ class HostingDeviceTemplateInUse(nexception.InUse):
     message = _("Hosting device template %(id)s in use.")
 
 
-class DriverNotFound(nexception.NetworkNotFound):
-    message = _("Driver %(driver)s does not exist")
-
-
 class TenantBoundNotUUIDListOrNone(nexception.NetworkNotFound):
     message = _("Attribute tenant_bound must be a list of tenant ids or None")
 
@@ -77,23 +72,6 @@ def convert_empty_string_to_none(value):
         return None
     else:
         return value
-
-
-def convert_validate_driver_class(driver_class_name):
-    # Verify that import_obj is a loadable class
-    if driver_class_name is None or driver_class_name == '':
-        return driver_class_name
-    else:
-        parts = driver_class_name.split('.')
-        m_pathname = '/'.join(parts[:-1])
-        try:
-            info = imp.find_module(m_pathname)
-            mod = imp.load_module(parts[-2], *info)
-            if parts[-1] in dir(mod):
-                return driver_class_name
-        except ImportError:
-            pass
-    raise DriverNotFound(driver=driver_class_name)
 
 
 # Hosting device belong to one of the following categories:
@@ -207,10 +185,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                          'validate': {'type:uuid_list': []},
                          'default': [], 'is_visible': True},
         'device_driver': {'allow_post': True, 'allow_put': False,
-                          'convert_to': convert_validate_driver_class,
+                          'convert_to': utils.convert_validate_driver_class,
                           'is_visible': True},
         'plugging_driver': {'allow_post': True, 'allow_put': False,
-                            'convert_to': convert_validate_driver_class,
+                            'convert_to': utils.convert_validate_driver_class,
                             'is_visible': True},
     }
 }

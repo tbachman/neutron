@@ -563,17 +563,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def get_sync_data(self, context, router_ids=None, active=None):
         # ensure only routers of namespace type are returned
         router_ids = self._get_relevant_router_ids(context, router_ids, True)
-        return self._get_sync_data(context, router_ids, active)
-
-    def _get_sync_data(self, context, router_ids, active):
-        # Do similar processing as get_sync_data in parent class...
-        routers, interfaces, floating_ips = self._get_router_info_list(
-            context, router_ids=router_ids, active=active)
-        routers_dict = dict((router['id'], router) for router in routers)
-        self._process_floating_ips(context, routers_dict, floating_ips)
-        # ... except for this call
-        self._process_interfaces_ext(context, routers_dict, interfaces)
-        return routers_dict.values()
+        return super(L3RouterApplianceDBMixin,
+                     self).get_sync_data(context, router_ids, active)
 
     def get_sync_data_ext(self, context, router_ids=None, active=None):
         """Query routers and their related floating_ips, interfaces.
@@ -582,7 +573,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         """
         # ensure that routers of namespace type are not returned
         router_ids = self._get_relevant_router_ids(context, router_ids)
-        sync_data = self._get_sync_data(context, router_ids, active)
+        sync_data = super(L3RouterApplianceDBMixin,
+                          self).get_sync_data(context, router_ids, active)
         for router in sync_data:
             self.add_type_and_hosting_device_info(context, router)
             if utils.is_extension_supported(self, ha.HA_ALIAS):
@@ -1199,19 +1191,3 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     LOG.error(_LE('Invalid router type definition in '
                                   'configuration file for device = %s'),
                               rt_uuid)
-
-    # TODO(bobmel): we should change upstream neutron, neutronclient and
-    # horizon so that router interfaces are fetched using a new REST API call.
-    # As part of that we should no longer need to overload this function:
-    # _process_interfaces_ext
-    def _process_interfaces_ext(self, context, routers_dict, interfaces):
-        for interface in interfaces:
-            query = context.session.query(l3_db.RouterPort.router_id)
-            router_id = query.filter_by(port_id=interface['id']).first()
-            if router_id:
-                router = routers_dict.get(router_id[0])
-                if router:
-                    router_interfaces = router.get(
-                        l3_constants.INTERFACE_KEY, [])
-                    router_interfaces.append(interface)
-                    router[l3_constants.INTERFACE_KEY] = router_interfaces

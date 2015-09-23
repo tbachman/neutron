@@ -81,6 +81,8 @@ class L3RouterApplianceL3AgentSchedulerTestCase(
         self._mock_l3_admin_tenant()
         templates = self._test_create_hosting_device_templates()
         self._test_create_routertypes(templates.values())
+        # mock the periodic router backlog processing in the tests
+        self._mock_backlog_processing(self.l3plugin)
 
     def tearDown(self):
         self._test_remove_routertypes()

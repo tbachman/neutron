@@ -182,7 +182,7 @@ class L3RouterApplianceTestCaseBase(
         if self.mock_cfg_agent_notifiers is True:
             self._mock_cfg_agent_notifier(self.plugin)
         # mock the periodic router backlog processing in the tests
-        self._mock_backlog_processing()
+        self._mock_backlog_processing(self.plugin)
 
     def restore_attribute_map(self):
         # Restore the original RESOURCE_ATTRIBUTE_MAP

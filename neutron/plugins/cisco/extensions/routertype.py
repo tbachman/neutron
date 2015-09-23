@@ -13,7 +13,6 @@
 #    under the License.
 
 import abc
-import imp
 
 from oslo_log import log as logging
 
@@ -21,28 +20,10 @@ from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.common import exceptions
+from neutron.plugins.cisco.common import utils
 from neutron.plugins.common import constants
 
 LOG = logging.getLogger(__name__)
-
-
-def convert_validate_driver_class(driver_class_name):
-    # Verify that import_obj is a loadable class
-    if driver_class_name is None or driver_class_name == '':
-        return driver_class_name
-    else:
-        parts = driver_class_name.split('.')
-        m_pathname = '/'.join(parts[:-1])
-        try:
-            info = imp.find_module(m_pathname)
-            mod = imp.load_module(parts[-2], *info)
-            if parts[-1] in dir(mod):
-                return driver_class_name
-        except ImportError as e:
-            LOG.debug('Failed to verify driver module %s: %s' % (
-                driver_class_name, e))
-            pass
-    raise DriverNotFound(driver=driver_class_name)
 
 
 ROUTERTYPE = 'routertype'
@@ -77,18 +58,19 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'is_visible': True},
         'scheduler': {'allow_post': True, 'allow_put': False,
                       'required_by_policy': True,
-                      'convert_to': convert_validate_driver_class,
+                      'convert_to': utils.convert_validate_driver_class,
                       'is_visible': True},
         'driver': {'allow_post': True, 'allow_put': False,
                    'required_by_policy': True,
-                   'convert_to': convert_validate_driver_class,
+                   'convert_to': utils.convert_validate_driver_class,
                    'is_visible': True},
         'cfg_agent_service_helper': {
             'allow_post': True, 'allow_put': False, 'required_by_policy': True,
-            'convert_to': convert_validate_driver_class, 'is_visible': True},
+            'convert_to': utils.convert_validate_driver_class,
+            'is_visible': True},
         'cfg_agent_driver': {'allow_post': True, 'allow_put': False,
                              'required_by_policy': True,
-                             'convert_to': convert_validate_driver_class,
+                             'convert_to': utils.convert_validate_driver_class,
                              'is_visible': True},
     }
 }
@@ -169,10 +151,6 @@ class RouterTypeNotFound(exceptions.NotFound):
 class MultipleRouterTypes(exceptions.NeutronException):
     message = _("Multiple router type with same name %(name)s exist. Id "
                 "must be used to specify router type.")
-
-
-class DriverNotFound(exceptions.NetworkNotFound):
-    message = _("Driver %(driver)s does not exist")
 
 
 class SchedulerNotFound(exceptions.NetworkNotFound):

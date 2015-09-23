@@ -17,6 +17,7 @@ import copy
 import mock
 from webob import exc
 
+from neutron.plugins.cisco.common import utils
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.extensions import routertype
 from neutron.tests import base
@@ -135,9 +136,9 @@ class TestRouterTypeAttributeValidators(base.BaseTestCase):
     def test_convert_validate_driver(self):
         drv = ('neutron.plugins.cisco.cfg_agent.device_drivers.'
                'dummy_driver.DummyRoutingDriver')
-        res = routertype.convert_validate_driver_class(drv)
+        res = utils.convert_validate_driver_class(drv)
         self.assertEqual(res, drv)
 
-        self.assertRaises(routertype.DriverNotFound,
-                          routertype.convert_validate_driver_class,
+        self.assertRaises(utils.DriverNotFound,
+                          utils.convert_validate_driver_class,
                           'this.is.not.a.driver')

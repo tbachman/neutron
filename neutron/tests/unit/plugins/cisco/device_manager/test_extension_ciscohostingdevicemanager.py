@@ -19,6 +19,7 @@ from webob import exc
 
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.common import utils
 from neutron.plugins.cisco.extensions import ciscohostingdevicemanager
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
@@ -253,10 +254,9 @@ class TestCiscoHostingDeviceManagerAttributeValidators(base.BaseTestCase):
     def test_convert_validate_driver(self):
         drv = ('neutron.plugins.cisco.device_manager.plugging_drivers'
                '.noop_plugging_driver.NoopPluggingDriver')
-        res = ciscohostingdevicemanager.convert_validate_driver_class(drv)
+        res = utils.convert_validate_driver_class(drv)
         self.assertEqual(res, drv)
 
         self.assertRaises(
-            ciscohostingdevicemanager.DriverNotFound,
-            ciscohostingdevicemanager.convert_validate_driver_class,
+            utils.DriverNotFound, utils.convert_validate_driver_class,
             'this.is.not.a.driver')
