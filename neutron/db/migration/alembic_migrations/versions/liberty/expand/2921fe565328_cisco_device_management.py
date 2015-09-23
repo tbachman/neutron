@@ -89,6 +89,10 @@ def upgrade():
                       sa.Column('credentials_id', sa.String(length=36),
                                 nullable=True))
         op.add_column('cisco_hosting_devices',
+                      sa.Column('name', sa.String(255), nullable=True))
+        op.add_column('cisco_hosting_devices',
+                      sa.Column('description', sa.String(255), nullable=True))
+        op.add_column('cisco_hosting_devices',
                       sa.Column('management_ip_address', sa.String(255),
                                 nullable=True))
         op.add_column('cisco_hosting_devices',
@@ -108,6 +112,8 @@ def downgrade():
     op.drop_column('cisco_hosting_devices', 'auto_delete')
     op.drop_column('cisco_hosting_devices', 'tenant_bound')
     op.drop_column('cisco_hosting_devices', 'management_ip_address')
+    op.drop_column('cisco_hosting_devices', 'description')
+    op.drop_column('cisco_hosting_devices', 'name')
     op.drop_column('cisco_hosting_devices', 'credentials_id')
     op.drop_constraint('cisco_hosting_devices_ibfk_3',
                        'cisco_hosting_devices', type_='foreignkey')

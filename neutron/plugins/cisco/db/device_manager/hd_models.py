@@ -85,7 +85,10 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     template = orm.relationship(HostingDeviceTemplate)
     # UUID of credentials for this hosting device
     credentials_id = sa.Column(sa.String(36))
-    #TODO(bobmel): Add description[sa.String(255)]
+    # name of hosting device (e.g., its name in DNS)
+    name = sa.Column(sa.String(255))
+    # arbitrary description string
+    description = sa.Column(sa.String(255))
     # manufacturer id of the device, e.g., its serial number
     device_id = sa.Column(sa.String(255))
     # version 4 or 6 IP address of management interface
