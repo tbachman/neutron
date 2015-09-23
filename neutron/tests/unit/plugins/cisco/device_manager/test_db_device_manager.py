@@ -51,6 +51,8 @@ HW_CATEGORY = ciscohostingdevicemanager.HARDWARE_CATEGORY
 HW_TEMPLATE_NAME = "HW_template"
 HW_ROUTERTYPE_NAME = "HW_router"
 
+L3_ROUTER_NAT = constants.L3_ROUTER_NAT
+
 DEFAULT_SERVICE_TYPES = "router"
 NETWORK_NODE_SERVICE_TYPES = "router:fwaas:vpn"
 
@@ -62,8 +64,6 @@ NOOP_PLUGGING_DRIVER = ('neutron.plugins.cisco.device_manager.'
                         'NoopPluggingDriver')
 
 TEST_DEVICE_DRIVER = NOOP_DEVICE_DRIVER
-#    ('neutron.plugins.cisco.test.device_manager.'
-#                      'hd_test_driver.TestHostingDeviceDriver')
 TEST_PLUGGING_DRIVER = ('neutron.tests.unit.plugins.cisco.device_manager.'
                         'plugging_test_driver.TestPluggingDriver')
 

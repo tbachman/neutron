@@ -51,6 +51,7 @@ from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
 from neutron.plugins.cisco.extensions import routertypeawarescheduler
 from neutron.plugins.cisco.l3.drivers import driver_context
+from neutron.plugins.common import constants as svc_constants
 
 LOG = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ LOG = logging.getLogger(__name__)
 AGENT_TYPE_L3 = l3_constants.AGENT_TYPE_L3
 AGENT_TYPE_L3_CFG = cisco_constants.AGENT_TYPE_L3_CFG
 VM_CATEGORY = ciscohostingdevicemanager.VM_CATEGORY
+L3_ROUTER_NAT = svc_constants.L3_ROUTER_NAT
 
 ROUTER_APPLIANCE_OPTS = [
     cfg.StrOpt('default_router_type',
@@ -642,7 +644,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             # where effective router type is different than router's
             # normal router type).
             acquired = self._dev_mgr.acquire_hosting_device_slots(
-                e_context, selected_hd, router_db,
+                e_context, selected_hd, router_db, 'router', L3_ROUTER_NAT,
                 slot_need or binding_info_db.router_type.slot_need,
                 exclusive=not binding_info_db.share_hosting_device)
             if acquired is True:
