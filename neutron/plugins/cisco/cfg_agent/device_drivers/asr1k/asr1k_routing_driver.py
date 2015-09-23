@@ -294,8 +294,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
     #         pass
     #     if is_external is True:
     #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (
-    #             subinterface, group, priority, group, ip, group, group, group,
-    #             vlan)
+    #             subinterface, group, priority, group, ip, group, group,
+    #             group, vlan)
     #     else:
     #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP % (
     #             subinterface, vrf_name, group, priority, group, ip, group)
@@ -417,7 +417,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
         CSR1kvConfigException
         """
-        conn = self._get_connection()
         conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
         try:
             self._edit_running_config(conf_str, 'CREATE_ACL')
