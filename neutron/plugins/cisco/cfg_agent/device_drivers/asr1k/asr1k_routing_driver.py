@@ -372,21 +372,21 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         return True
 
     @staticmethod
-    def _port_is_hsrp(self, port):
+    def _port_is_hsrp(port):
         hsrp_types = [constants.DEVICE_OWNER_ROUTER_HA_GW,
                       constants.DEVICE_OWNER_ROUTER_HA_INTF]
         return port['device_owner'] in hsrp_types
 
     @staticmethod
-    def _is_global_router(self, ri):
+    def _is_global_router(ri):
         return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
 
     @staticmethod
-    def _is_port_v6(self, port):
+    def _is_port_v6(port):
         return netaddr.IPNetwork(port['subnets'][0]['cidr']).version == 6
 
     @staticmethod
-    def _get_hsrp_grp_num_from_ri(self, ri):
+    def _get_hsrp_grp_num_from_ri(ri):
         return ri.router['ha_info']['group']
 
     def _nat_rules_for_internet_access(self,
