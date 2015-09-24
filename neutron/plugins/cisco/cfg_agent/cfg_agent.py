@@ -396,4 +396,4 @@ def main(manager='neutron.plugins.cisco.cfg_agent.'
         topic=c_constants.CFG_AGENT,
         report_interval=cfg.CONF.AGENT.report_interval,
         manager=manager)
-    service.launch(server).wait()
+    service.launch(cfg.CONF, server).wait()
