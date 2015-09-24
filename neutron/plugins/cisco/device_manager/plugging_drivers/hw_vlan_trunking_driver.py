@@ -18,20 +18,28 @@ from oslo_utils import excutils
 from neutron.common import constants as l3_constants
 from neutron.extensions import providernet as pr_net
 from neutron.i18n import _LE
+from neutron import manager
 from neutron.plugins.cisco.device_manager import config
-from neutron.plugins.cisco.device_manager.plugging_drivers import (
-    n1kv_trunking_driver)
+import neutron.plugins.cisco.device_manager.plugging_drivers as plug
 
 LOG = logging.getLogger(__name__)
 
 
-class HwVLANTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
+class HwVLANTrunkingPlugDriver(plug.PluginSidePluggingDriver):
     """Driver class for Cisco hardware-based devices.
 
     The driver works with VLAN segmented Neutron networks.
     """
     # once initialized _device_network_interface_map is dictionary
     _device_network_interface_map = None
+
+    @property
+    def _core_plugin(self):
+        try:
+            return self._plugin
+        except AttributeError:
+            self._plugin = manager.NeutronManager.get_plugin()
+            return self._plugin
 
     def create_hosting_device_resources(self, context, complementary_id,
                                         tenant_id, mgmt_context, max_hosted):
