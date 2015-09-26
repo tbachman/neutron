@@ -450,7 +450,7 @@ class HA_db_mixin(object):
         router_id = router['id']
         if ha_settings_db is None:
             ha_settings_db = self._get_ha_settings_by_router_id(context,
-                                                             router_id)
+                                                                router_id)
         if ha_settings_db is None:
             return
         e_context = context.elevated()
@@ -521,6 +521,26 @@ class HA_db_mixin(object):
         for r_id in self._get_redundancy_router_ids(e_context, router_id):
             self.remove_router_interface(e_context, r_id, interface_info)
         self._delete_ha_group(e_context, old_port['id'])
+
+    def _redundant_floatingip_update(self, context, router_id,
+                                     redundancy_router_ids=None,
+                                     ha_settings_db=None):
+        """To be called in update_floatingip() to get the
+            redundant router ids.
+        """
+        if ha_settings_db is None:
+            ha_settings_db = self._get_ha_settings_by_router_id(context,
+                                                                router_id)
+        if ha_settings_db is None:
+            return
+
+        e_context = context.elevated()
+        router_ids = []
+        for r_id in (redundancy_router_ids or
+                     self._get_redundancy_router_ids(e_context, router_id)):
+            router_ids.append(r_id)
+
+        return router_ids
 
     def _delete_ha_group(self, context, ha_port_id):
         hag = self._get_ha_group_by_ha_port_id(context, ha_port_id)

@@ -443,12 +443,29 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
         info = super(L3RouterApplianceDBMixin, self).update_floatingip(
             context, floatingip_id, floatingip)
         router_ids = []
+        routers = []
+        router_id_list = []
         if before_router_id:
             router_ids.append(before_router_id)
         r_id = info['router_id']
         if r_id and r_id != before_router_id:
             router_ids.append(r_id)
-        routers = []
+
+        if router_ids:
+            r_hd_binding_db = \
+                self._get_router_binding_info(context.elevated(),
+                                              router_ids[0])
+
+            is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
+                     r_hd_binding_db.router_type_id !=
+                     self.get_namespace_router_type_id(context))
+            if is_ha:
+                # process any HA
+                router_id_list = \
+                    self._redundant_floatingip_update(context, router_ids[0])
+            if router_id_list:
+                router_ids.extend(router_id_list)
+
         for r_id in router_ids:
             router = self.get_router(context, r_id)
             self.add_type_and_hosting_device_info(context.elevated(), router)

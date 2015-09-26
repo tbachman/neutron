@@ -45,10 +45,10 @@ from neutron.plugins.common import constants
 
 class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
                         routertype_db.RoutertypeDbMixin,
+                        ha_db.HA_db_mixin,
                         l3_router_appliance_db.L3RouterApplianceDBMixin,
                         #l3_gwmode_db.L3_NAT_db_mixin,
-                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin,
-                        ha_db.HA_db_mixin):
+                        router_sch_db.L3RouterTypeAwareSchedulerDbMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
 
