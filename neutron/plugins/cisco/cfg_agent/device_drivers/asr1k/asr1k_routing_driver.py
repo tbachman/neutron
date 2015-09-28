@@ -249,9 +249,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             out_itfc = self._get_interface_name_from_hosting_port(ext_gw_port)
             conf_str = asr1k_snippets.SET_DEFAULT_ROUTE_WITH_INTF % (
                 vrf_name, out_itfc, ext_gw_ip)
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, '%s SET_DEFAULT_ROUTE_WITH_INTF' %
-                                 self.hosting_device['name'])
+            self._edit_running_config(conf_str, 'SET_DEFAULT_ROUTE_WITH_INTF')
 
     def _remove_default_route(self, ri, ext_gw_port):
         ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
@@ -261,9 +259,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             out_itfc = self._get_interface_name_from_hosting_port(ext_gw_port)
             conf_str = asr1k_snippets.REMOVE_DEFAULT_ROUTE_WITH_INTF % (
                 vrf_name, out_itfc, ext_gw_ip)
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, '%s REMOVE_DEFAULT_ROUTE_WITH_INTF' %
-                                 self.hosting_device['name'])
+            self._edit_running_config(conf_str,
+                                      'REMOVE_DEFAULT_ROUTE_WITH_INTF')
 
     def _add_ha_hsrp(self, ri, port):
         priority = ri.router[ha.DETAILS][ha.PRIORITY]
@@ -333,9 +330,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         conn = self._get_connection()
         conf_str = asr1k_snippets.SET_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf_name, gw_ip)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, '%s SET_DEFAULT_ROUTE_V6_WITH_INTF' %
-                             self.hosting_device['name'])
+        self._edit_running_config(conf_str, 'SET_DEFAULT_ROUTE_V6_WITH_INTF')
 
     def _remove_default_route_v6(self, ri, gw_ip, gw_port):
         vrf_name = self._get_vrf_name(ri)
@@ -346,9 +341,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         conn = self._get_connection()
         conf_str = asr1k_snippets.REMOVE_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf, gw_ip)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, '%s REMOVE_DEFAULT_ROUTE_V6_WITH_INTF' %
-                             self.hosting_device['name'])
+        self._edit_running_config(conf_str,
+                                  'REMOVE_DEFAULT_ROUTE_V6_WITH_INTF')
 
     def _add_ha_HSRP_v6(self, ri, port, ip, is_external=False):
         if self._v6_port_needs_config(port) is not True:
@@ -488,17 +482,13 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             pool_name = "%s_nat_pool" % (vrf_name)
             confstr = asr1k_snippets.REMOVE_DYN_SRC_TRL_POOL % \
                 (acl_no, pool_name, vrf_name)
-            rpc_obj = conn.edit_config(target='running', config=confstr)
-            self._check_response(rpc_obj,
-                                 '%s REMOVE_DYN_SRC_TRL_POOL' %
-                                 self.hosting_device['name'])
+            self._edit_running_config(confstr, 'REMOVE_DYN_SRC_TRL_POOL')
         except cfg_exc.CSR1kvConfigException as cse:
             LOG.error(_LE("temporary disable REMOVE_DYN_SRC_TRL_POOL"
                       " exception handling: %s"), (cse))
 
         conf_str = snippets.REMOVE_ACL % acl_no
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'REMOVE_ACL')
+        self._edit_running_config(conf_str, 'REMOVE_ACL')
 
     def _asr_add_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
         """
@@ -516,10 +506,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
         confstr = asr1k_snippets.SET_STATIC_SRC_TRL_NO_VRF_MATCH % \
             (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
-        rpc_obj = conn.edit_config(target='running', config=confstr)
-        self._check_response(rpc_obj,
-                             '%s SET_STATIC_SRC_TRL' %
-                             self.hosting_device['name'])
+        self._edit_running_config(confstr, 'SET_STATIC_SRC_TRL_NO_VRF_MATCH')
 
     def _remove_floating_ip(self, ri, ext_gw_port, floating_ip, fixed_ip):
         vrf_name = self._get_vrf_name(ri)
@@ -536,7 +523,5 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
         confstr = asr1k_snippets.REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH % \
             (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
-        rpc_obj = conn.edit_config(target='running', config=confstr)
-        self._check_response(rpc_obj,
-                             '%s REMOVE_STATIC_SRC_TRL' %
-                             self.hosting_device['name'])
+        self._edit_running_config(confstr,
+                                  'REMOVE_STATIC_SRC_TRL_NO_VRF_MATCH')
