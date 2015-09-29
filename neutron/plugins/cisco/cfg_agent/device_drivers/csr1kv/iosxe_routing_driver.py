@@ -682,9 +682,9 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _edit_running_config(self, conf_str, snippet):
         conn = self._get_connection()
-        LOG.warn(_LW("Config generated for [%(device)s] %(snip)s is:%(conf)s "
+        LOG.info(_LI("Config generated for [%(device)s] %(snip)s is:%(conf)s "
                  "caller:%(caller)s"),
-                 {'device': self.hosting_device['name'],
+                 {'device': self.hosting_device['id'],
                   'snip': snippet,
                   'conf': conf_str,
                   'caller': self.caller_name()})

@@ -439,6 +439,7 @@ class RoutingServiceHelper(object):
                 self._router_removed(router_id)
                 deleted_id_list.append(router_id)
             if removed_routers:
+                self._adjust_router_list_for_global_router(removed_routers)
                 for router in removed_routers:
                     self._router_removed(router['id'])
                     deleted_id_list.append(router['id'])
