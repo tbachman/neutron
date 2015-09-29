@@ -43,7 +43,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         self._fullsync = False
         self._deployment_id = "zxy"
         self.hosting_device = {'id': device_params.get('id'),
-                               'name': device_params.get('device_id')}
+                               'device_id': device_params.get('device_id')}
 
     # ============== Public functions ==============
 
@@ -208,11 +208,14 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         # TODO(sridar) reverting to old model, needs more investigation
         # and cleanup
         pool_ip = gw_port['fixed_ips'][0]['ip_address']
+        pool_ip_prefix_len = gw_port['fixed_ips'][0]['prefixlen']
         # pool_info = gw_port['nat_pool_info']
         # pool_ip = pool_info['pool_ip']
         pool_name = "%s_nat_pool" % (vrf_name)
         #pool_net = netaddr.IPNetwork(pool_info['pool_cidr'])
-        pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
+        #pool_net = netaddr.IPNetwork(gw_port['ip_cidr'])
+        pool_net = "%s/%s" % (pool_ip, pool_ip_prefix_len)
+        pool_net = netaddr.IPNetwork(pool_net)
         if self._fullsync and pool_ip in self._existing_cfg_dict['pools']:
             LOG.info(_LI("Pool already exists, skipping"))
             return
