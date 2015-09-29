@@ -65,7 +65,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             else:
                 LOG.debug("Adding IPv4 internal network port: %s"
                           " for router %s" % (port, ri.id))
-                self._create_sub_interface(ri, port, False, gw_ip)
+                self._create_sub_interface(
+                    ri, port, is_external=False, gw_ip=gw_ip)
 
     def external_gateway_added(self, ri, ext_gw_port):
         # global router handles IP assignment, HSRP setup
@@ -91,8 +92,10 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
                     self._remove_default_route(ri, ext_gw_port)
 
     def floating_ip_added(self, ri, ext_gw_port, floating_ip, fixed_ip):
-        vrf_name = self._get_vrf_name(ri)
-        self._asr_add_floating_ip(floating_ip, fixed_ip, vrf_name, ext_gw_port)
+        self._add_floating_ip(ri, ext_gw_port, floating_ip, fixed_ip)
+
+    def floating_ip_removed(self, ri, ext_gw_port, floating_ip, fixed_ip):
+        self._remove_floating_ip(ri, ext_gw_port, floating_ip, fixed_ip)
 
     def disable_internal_network_NAT(self, ri, port, ext_gw_port,
                                      itfc_deleted=False):
@@ -114,8 +117,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _get_interface_name_from_hosting_port(self, port):
         """
-        generates the underlying subinterface name for a port
-        e.g. Port-channel10.200
+        Extract the underlying subinterface name for a port
+        e.g. Port-channel10.200 or GigabitEthernet0/0/0.500
         """
         try:
             vlan = port['hosting_info']['segmentation_id']
@@ -145,7 +148,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             self._create_sub_interface(ri, ext_gw_port, True, sub_itfc_ip)
 
     def _handle_external_gateway_added_normal_router(self, ri, ext_gw_port):
-        # Default routes are mapped to VRFs tenant routers). Global Router
+        # Default routes are mapped to tenant router VRFs . Global Router
         # is not aware of tenant routers with ext network assigned. Thus,
         # default route must be handled per tenant router.
         ex_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
@@ -490,7 +493,12 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         conf_str = snippets.REMOVE_ACL % acl_no
         self._edit_running_config(conf_str, 'REMOVE_ACL')
 
-    def _asr_add_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
+    def _add_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        vrf_name = self._get_vrf_name(ri)
+        self._asr_do_add_floating_ip(floating_ip, fixed_ip,
+                                     vrf_name, ex_gw_port)
+
+    def _asr_do_add_floating_ip(self, floating_ip, fixed_ip, vrf, ex_gw_port):
         """
         To implement a floating ip, an ip static nat is configured in the
         underlying router ex_gw_port contains data to derive the vlan
