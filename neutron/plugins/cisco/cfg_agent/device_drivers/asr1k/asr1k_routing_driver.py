@@ -250,7 +250,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             return
         ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
-            conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
             out_itfc = self._get_interface_name_from_hosting_port(ext_gw_port)
             conf_str = asr1k_snippets.SET_DEFAULT_ROUTE_WITH_INTF % (
@@ -260,7 +259,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
     def _remove_default_route(self, ri, ext_gw_port):
         ext_gw_ip = ext_gw_port['subnets'][0]['gateway_ip']
         if ext_gw_ip:
-            conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
             out_itfc = self._get_interface_name_from_hosting_port(ext_gw_port)
             conf_str = asr1k_snippets.REMOVE_DEFAULT_ROUTE_WITH_INTF % (
@@ -333,7 +331,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _add_default_route_v6(self, ri, gw_ip, gw_port):
         vrf_name = self._get_vrf_name(ri)
-        conn = self._get_connection()
         conf_str = asr1k_snippets.SET_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf_name, gw_ip)
         self._edit_running_config(conf_str, 'SET_DEFAULT_ROUTE_V6_WITH_INTF')
@@ -344,7 +341,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         self._remove_default_static_route_v6(gw_ip, vrf_name, sub_interface)
 
     def _remove_default_static_route_v6(self, gw_ip, vrf, out_intf):
-        conn = self._get_connection()
         conf_str = asr1k_snippets.REMOVE_DEFAULT_ROUTE_V6_WITH_INTF % (
             vrf, gw_ip)
         self._edit_running_config(conf_str,
@@ -483,7 +479,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             self._remove_dyn_nat_rule(acl, ext_itfc_name, vrf_name)
 
     def _remove_dyn_nat_rule(self, acl_no, outer_itfc_name, vrf_name):
-        conn = self._get_connection()
         try:
             pool_name = "%s_nat_pool" % (vrf_name)
             confstr = asr1k_snippets.REMOVE_DYN_SRC_TRL_POOL % \
@@ -508,7 +503,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         associated with related subnet for the fixed ip.  The vlan in turn
         is applied to the redundancy parameter for setting the IP NAT.
         """
-        conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
         hsrp_grp = ex_gw_port['ha_info']['group']
 
@@ -528,7 +522,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     def _asr_do_remove_floating_ip(self, floating_ip,
                                    fixed_ip, vrf, ex_gw_port):
-        conn = self._get_connection()
         vlan = ex_gw_port['hosting_info']['segmentation_id']
         hsrp_grp = ex_gw_port['ha_info']['group']
 

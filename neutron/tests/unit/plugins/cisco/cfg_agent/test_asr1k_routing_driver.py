@@ -22,11 +22,11 @@ from neutron.plugins.cisco.common import cisco_constants
 from neutron.tests import base
 
 from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
+    asr1k_routing_driver as driver)
+from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
     asr1k_snippets as snippets)
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     cisco_csr1kv_snippets as csr_snippets)
-from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
-    asr1k_routing_driver as driver)
 from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     iosxe_routing_driver as iosxe_driver)
 from neutron.plugins.cisco.cfg_agent.service_helpers import (
@@ -55,7 +55,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
                          'device_id': 'ASR-1'
                          }
         self.driver = driver.ASR1kRoutingDriver(**device_params)
-        self.driver._ncc_connection =  mock.MagicMock()
+        self.driver._ncc_connection = mock.MagicMock()
         self.driver._check_response = mock.MagicMock(return_value=True)
 
         self.vrf = ('nrouter-' + FAKE_ID)[:iosxe_driver.IosXeRoutingDriver.
@@ -102,8 +102,9 @@ class ASR1kRoutingDriver(base.BaseTestCase):
                                         'gateway_ip': self.ex_gw_gateway_ip}],
                            'device_owner': l3_constants.DEVICE_OWNER_ROUTER_GW,
                            'mac_address': 'ca:fe:de:ad:be:ef',
-                           'hosting_info': {'physical_interface': self.phy_infc,
-                                            'segmentation_id': self.vlan_ext},
+                           'hosting_info':
+                               {'physical_interface': self.phy_infc,
+                                'segmentation_id': self.vlan_ext},
                            'ha_info': self.ha_info}
         self.floating_ip = '20.0.0.35'
         self.fixed_ip = '10.0.3.5'
@@ -162,7 +163,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
     def test_internal_network_added(self):
         self.driver.internal_network_added(self.ri, self.port)
 
-        sub_interface = self.phy_infc+'.'+str(self.vlan_int)
+        sub_interface = self.phy_infc + '.' + str(self.vlan_int)
         cfg_args_sub = (sub_interface, self.vlan_int, self.vrf,
                         self.gw_ip, self.gw_ip_mask)
         self.assert_edit_run_cfg(
@@ -170,13 +171,13 @@ class ASR1kRoutingDriver(base.BaseTestCase):
 
         cfg_args_hsrp = self._generate_hsrp_cfg_args(
             sub_interface, self.ha_group, self.ha_priority, self.gw_ip_vip,
-            self.vlan_int )
+            self.vlan_int)
         self.assert_edit_run_cfg(
             snippets.SET_INTC_ASR_HSRP_EXTERNAL, cfg_args_hsrp)
 
     def test_internal_network_added_global_router(self):
         self.driver.internal_network_added(self.ri_global, self.port)
-        sub_interface = self.phy_infc+'.'+str(self.vlan_int)
+        sub_interface = self.phy_infc + '.' + str(self.vlan_int)
         cfg_args_sub = (sub_interface, self.vlan_int,
                         self.gw_ip, self.gw_ip_mask)
         self.assert_edit_run_cfg(
@@ -184,14 +185,14 @@ class ASR1kRoutingDriver(base.BaseTestCase):
 
         cfg_args_hsrp = self._generate_hsrp_cfg_args(
             sub_interface, self.ha_group, self.ha_priority, self.gw_ip_vip,
-            self.vlan_int )
+            self.vlan_int)
         self.assert_edit_run_cfg(
             snippets.SET_INTC_ASR_HSRP_EXTERNAL, cfg_args_hsrp)
 
     def test_external_network_added(self):
         self.driver.external_gateway_added(self.ri, self.ex_gw_port)
 
-        sub_interface = self.phy_infc+'.'+str(self.vlan_ext)
+        sub_interface = self.phy_infc + '.' + str(self.vlan_ext)
         self.assert_edit_run_cfg(csr_snippets.ENABLE_INTF, sub_interface)
 
         cfg_params_nat = (self.vrf + '_nat_pool', self.ex_gw_ip,
@@ -205,8 +206,9 @@ class ASR1kRoutingDriver(base.BaseTestCase):
                           self.ex_gw_ip, self.ex_gw_ip_mask)
         self.assert_edit_run_cfg(snippets.DELETE_NAT_POOL, cfg_params_nat)
 
-        sub_interface = self.phy_infc+'.'+str(self.vlan_ext)
-        cfg_params_remove_route = (self.vrf, sub_interface, self.ex_gw_gateway_ip)
+        sub_interface = self.phy_infc + '.' + str(self.vlan_ext)
+        cfg_params_remove_route = (self.vrf,
+                                   sub_interface, self.ex_gw_gateway_ip)
         self.assert_edit_run_cfg(snippets.REMOVE_DEFAULT_ROUTE_WITH_INTF,
                                  cfg_params_remove_route)
 
@@ -215,7 +217,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
 
         self.driver.external_gateway_removed(self.ri_global, self.ex_gw_port)
 
-        sub_interface = self.phy_infc+'.'+str(self.vlan_ext)
+        sub_interface = self.phy_infc + '.' + str(self.vlan_ext)
         self.assert_edit_run_cfg(
             csr_snippets.REMOVE_SUBINTERFACE, sub_interface)
 
@@ -245,7 +247,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
 
         self._assert_number_of_edit_run_cfg_calls(4)
 
-        acl_name = '%s_%s'%('neutron_acl', str(self.vlan_int))
+        acl_name = '%s_%s' % ('neutron_acl', str(self.vlan_int))
         net = netaddr.IPNetwork(self.gw_ip_cidr).network
         net_mask = netaddr.IPNetwork(self.gw_ip_cidr).hostmask
         cfg_params_create_acl = (acl_name, net, net_mask)
@@ -257,8 +259,8 @@ class ASR1kRoutingDriver(base.BaseTestCase):
         self.assert_edit_run_cfg(
             snippets.SET_DYN_SRC_TRL_POOL, cfg_params_dyn_trans)
 
-        sub_interface_int = self.phy_infc+'.'+str(self.vlan_int)
-        sub_interface_ext = self.phy_infc+'.'+str(self.vlan_ext)
+        sub_interface_int = self.phy_infc + '.' + str(self.vlan_int)
+        sub_interface_ext = self.phy_infc + '.' + str(self.vlan_ext)
         self.assert_edit_run_cfg(csr_snippets.SET_NAT,
                                  (sub_interface_int, 'inside'))
         self.assert_edit_run_cfg(csr_snippets.SET_NAT,
@@ -270,7 +272,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
 
         self._assert_number_of_edit_run_cfg_calls(3)
 
-        acl_name = '%s_%s'%('neutron_acl', str(self.vlan_int))
+        acl_name = '%s_%s' % ('neutron_acl', str(self.vlan_int))
         pool_name = "%s_nat_pool" % self.vrf
 
         cfg_params_dyn_trans = (acl_name, pool_name, self.vrf)
