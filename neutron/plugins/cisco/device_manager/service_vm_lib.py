@@ -40,9 +40,15 @@ cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS, "general")
 
 class ServiceVMManager(object):
 
-    def __init__(self, keystone_session):
-        self._nclient = client.Client(session=keystone_session,
-                                      service_type="compute")
+    def __init__(self, is_auth_v3, user=None, passwd=None,
+                 l3_admin_tenant=None, auth_url='', keystone_session=None):
+
+        if is_auth_v3:
+            self._nclient = client.Client(session=keystone_session,
+                                          service_type="compute")
+        else:
+            self._nclient = client.Client(user, passwd, l3_admin_tenant,
+                                          auth_url, service_type="compute")
 
     @property
     def _core_plugin(self):
