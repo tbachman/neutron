@@ -427,9 +427,9 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         conf_str = asr1k_snippets.SET_DYN_SRC_TRL_POOL % (acl_no, pool_name,
                                                           vrf_name)
         try:
-            self._edit_running_config(conf_str, 'CREATE_DYN_NAT')
+            self._edit_running_config(conf_str, 'SET_DYN_SRC_TRL_POOL')
         except Exception as dyn_nat_e:
-            LOG.error(_LE("Ignore exception for CREATE_DYN_NAT: %s"),
+            LOG.error(_LE("Ignore exception for SET_DYN_SRC_TRL_POOL: %s"),
                       dyn_nat_e)
 
         conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
