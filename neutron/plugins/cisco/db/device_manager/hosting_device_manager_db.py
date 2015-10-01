@@ -593,6 +593,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
+
+        # For now the pool size is only elastic for service VMs.
+        if template['host_category'] != VM_CATEGORY:
+            return
         if cfg.CONF.general.ensure_nova_running and not self._nova_running:
             if self.svc_vm_mgr.nova_services_up():
                 self._nova_running = True
@@ -616,9 +620,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         :param context: context for this operation
         :param template: db object for hosting device template
         """
-        # For now the pool size is only elastic for service VMs.
-        if template['host_category'] != VM_CATEGORY:
-            return
         #TODO(bobmel): Support HA/load-balanced Neutron servers:
         #TODO(bobmel): Locking across multiple running Neutron server instances
         lock = self._get_template_pool_lock(template['id'])

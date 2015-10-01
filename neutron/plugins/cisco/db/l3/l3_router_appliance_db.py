@@ -772,7 +772,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                         context,
                         cfg.CONF.routing.namespace_router_type_name)['id'])
             except n_exc.NeutronException:
-                return
+                self._namespace_router_type_id = ''
         return self._namespace_router_type_id
 
     @lockutils.synchronized('routerbacklog', 'neutron-')
