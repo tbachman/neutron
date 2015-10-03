@@ -252,8 +252,9 @@ class CiscoCfgAgent(manager.Manager):
             LOG.debug("Reporting revived hosting devices: %s " %
                       res['revived'])
             # trigger a sync on only the revived hosting-devices
-            self.get_routing_service_helper().sync_devices |= \
-                set(res['revived'])
+            #self.get_routing_service_helper().sync_devices |= \
+            #    set(res['revived'])
+            self.process_services(device_ids=res['revived'])
 #            self.devmgr_rpc.report_revived_hosting_devices(context,
 #                                                  hd_ids=res['revived'])
         if res['dead']:
@@ -387,7 +388,9 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             configurations = self.routing_service_helper.collect_state(
                 self.agent_state['configurations'])
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
+        monitored_hosting_devices = self._dev_status.get_monitored_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
+        configurations['monitored_hosting_devices'] = monitored_hosting_devices
         configurations['service_agents'] = service_agents
         self.agent_state['configurations'] = configurations
         self.agent_state['local_time'] = str(timeutils.utcnow())

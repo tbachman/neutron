@@ -78,22 +78,61 @@ class DeviceStatus(object):
         return self.backlog_hosting_devices.keys()
 
     def get_backlogged_hosting_devices_info(self):
+#        wait_time = datetime.timedelta(
+#            seconds=cfg.CONF.cfg_agent.hosting_device_dead_timeout)
+#        resp = []
+#        for hd_id in self.backlog_hosting_devices:
+#            hd = self.backlog_hosting_devices[hd_id]['hd']
+#            if hd['hd_state'] == 'Unknown':
+#                created_time = hd['created_at']
+#                boottime = datetime.timedelta(seconds=hd['booting_time'])
+#                backlogged_at = hd['backlog_insertion_ts']
+#                booted_at = created_time + boottime
+#                dead_at = backlogged_at + wait_time
+#                resp.append({'host id': hd['id'],
+#                             'created at': str(created_time),
+#                             'backlogged at': str(backlogged_at),
+#                             'estimate booted at': str(booted_at),
+#                             'considered dead at': str(dead_at)})
+#        return resp
+        resp = self.get_monitored_hosting_devices_info(hd_state_filter='Dead')
+        return resp
+
+    def get_monitored_hosting_devices_info(self, hd_state_filter=None):
+        """
+        This function returns a list of all hosting devices monitored
+        by this agent
+        """
         wait_time = datetime.timedelta(
             seconds=cfg.CONF.cfg_agent.hosting_device_dead_timeout)
         resp = []
         for hd_id in self.backlog_hosting_devices:
             hd = self.backlog_hosting_devices[hd_id]['hd']
-            created_time = hd['created_at']
-            boottime = datetime.timedelta(seconds=hd['booting_time'])
-            backlogged_at = hd['backlog_insertion_ts']
-            booted_at = created_time + boottime
-            dead_at = backlogged_at + wait_time
-            resp.append({'host id': hd['id'],
-                         'created at': str(created_time),
-                         'backlogged at': str(backlogged_at),
-                         'estimate booted at': str(booted_at),
-                         'considered dead at': str(dead_at)})
+            
+            display_hd = True
+
+            if hd_state_filter is not None:
+                if hd['hd_state'] == hd_state_filter:
+                    display_hd = True
+                else:
+                    display_hd = False
+            
+            if display_hd:
+                created_time = hd['created_at']
+                boottime = datetime.timedelta(seconds=hd['booting_time'])
+                backlogged_at = hd['backlog_insertion_ts']
+                booted_at = created_time + boottime
+                dead_at = backlogged_at + wait_time
+                resp.append({'host id': hd['id'],
+                             'hd_state': hd['hd_state'],
+                             'created at': str(created_time),
+                             'backlogged at': str(backlogged_at),
+                             'estimate booted at': str(booted_at),
+                             'considered dead at': str(dead_at)})
+            else:
+                continue
         return resp
+
 
     def is_hosting_device_reachable(self, hosting_device):
         """Check the hosting device which hosts this resource is reachable.
@@ -161,15 +200,15 @@ class DeviceStatus(object):
                 do not delete from backlog_hosting_devices
 
         :return A dict of the format:
-        {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..]}
+        {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..], 'revived': [<hd_id>,..]}
         """
         response_dict = {'reachable': [], 'revived': [], 'dead': []}
-        LOG.debug("Current Backlogged hosting devices: %s",
+        LOG.debug("Current Backlogged hosting devices: \n%s\n",
                   self.backlog_hosting_devices.keys())
         for hd_id in self.backlog_hosting_devices.keys():
             hd = self.backlog_hosting_devices[hd_id]['hd']
 
-            LOG.debug("backlogged hosting_device = %s" % pprint.pformat(hd))
+            LOG.debug("monitored hosting_device = \n%s\n" % pprint.pformat(hd))
 
             if not timeutils.is_older_than(hd['created_at'],
                                            hd['booting_time']):
@@ -183,12 +222,16 @@ class DeviceStatus(object):
             hd_state = hd['hd_state']
             if _is_pingable(hd['management_ip_address']):
                 if hd_state == 'Unknown':
+                    LOG.debug("hosting devices revived & reachable, %s" %
+                              (pprint.pformat(hd)))
                     hd['hd_state'] = 'Active'
                     response_dict['revived'].append(hd_id)
                     # Rely just on full-sync to ensure consistent
                     # hosting device state
-                    # response_dict['reachable'].append(hd_id)
+                    response_dict['reachable'].append(hd_id)
                 elif hd_state == 'Dead':
+                    LOG.debug("Dead hosting devices revived %s" %
+                              (pprint.pformat(hd)))
                     hd['hd_state'] = 'Active'
                     response_dict['revived'].append(hd_id)
                 else:
@@ -203,10 +246,15 @@ class DeviceStatus(object):
                              "reachable. Adding it to response"),
                          {'hd_id': hd_id, 'ip': hd['management_ip_address']})
             else:
-                LOG.info(_LI("Hosting device: %(hd_id)s @ %(ip)s still not "
+                LOG.info(_LI("Hosting device: %(hd_id)s %(hd_state)s @ %(ip)s not "
                              "reachable "),
-                         {'hd_id': hd_id, 'ip': hd['management_ip_address']})
-                if hd_state == 'Alive':
+                         {'hd_id': hd_id,
+                          'hd_state': hd['hd_state'],
+                          'ip': hd['management_ip_address']})
+                LOG.debug("**** hd_state = %s" % (hd_state))
+                if hd_state == 'Active':
+                    LOG.debug("**** hosting device lost connectivity, %s" %
+                              (pprint.pformat(hd)))
                     hd['backlog_insertion_ts'] = timeutils.utcnow()
                     hd['hd_state'] = 'Unknown'
 
