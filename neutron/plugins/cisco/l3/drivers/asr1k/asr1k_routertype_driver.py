@@ -60,10 +60,11 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         if current[HOSTING_DEVICE_ATTR] is None:
             return
+        e_context = context.elevated()
         if current['gw_port_id']:
-            self._conditionally_add_global_router(context, current)
+            self._conditionally_add_global_router(e_context, current)
         else:
-            self._conditionally_remove_global_router(context, current, True)
+            self._conditionally_remove_global_router(e_context, current, True)
 
     def delete_router_precommit(self, context, router_context):
         pass
@@ -81,7 +82,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # connectivity.
         current = router_context.current
         if current['gw_port_id'] and current[HOSTING_DEVICE_ATTR] is not None:
-            self._conditionally_add_global_router(context, current)
+            self._conditionally_add_global_router(context.elevated(), current)
 
     def unschedule_router_precommit(self, context, router_context):
         pass
@@ -93,7 +94,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         hd_id = current[HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
-            self._conditionally_remove_global_router(context, current)
+            self._conditionally_remove_global_router(context.elevated(),
+                                                     current)
 
     def add_router_interface_precommit(self, context, r_port_context):
         pass
@@ -178,8 +180,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                     priority=ha_priority,
                     user_router_id=log_global_router['id'])
             context.session.add(r_b_b)
-            self._l3_plugin.add_type_and_hosting_device_info(
-                context.elevated(), global_router)
+            self._l3_plugin.add_type_and_hosting_device_info(context,
+                                                             global_router)
             for ni in self._l3_plugin.get_notifiers(context, [global_router]):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'])

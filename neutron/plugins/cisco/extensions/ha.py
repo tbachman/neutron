@@ -151,10 +151,6 @@ class HADisabled(nexception.Conflict):
     message = _("HA support is disabled")
 
 
-class HAOnlyForGatewayRouters(nexception.BadRequest):
-    message = _("%(msg)s")
-
-
 class HADisabledHAType(nexception.Conflict):
     message = _("HA type %(ha_type)s is administratively disabled")
 
