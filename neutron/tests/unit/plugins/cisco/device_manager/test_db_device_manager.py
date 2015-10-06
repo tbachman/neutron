@@ -277,7 +277,7 @@ class TestDeviceManagerDBPlugin(
             c_constants.DEVICE_MANAGER]
         # in unit tests we don't use keystone so we mock that session
         self._devmgr._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
-            keystone_session=mock.MagicMock())
+            True, None, None, None, '', keystone_session=mock.MagicMock())
         self._mock_svc_vm_create_delete(self._devmgr)
         self._other_tenant_id = device_manager_test_support._uuid()
         self._devmgr._core_plugin = NeutronManager.get_plugin()
@@ -942,24 +942,27 @@ class TestDeviceManagerDBPlugin(
                     creds_dict, mgmt_port1, mgmt_port2):
                 with contextlib.nested(
                         self.hosting_device(
-                                template_id=hdt_id,
-                                management_port_id=mgmt_port1['port']['id'],
-                                auto_delete=True,
-                                no_delete=True),
+                            template_id=hdt_id,
+                            management_port_id=mgmt_port1['port']['id'],
+                            auto_delete=True,
+                            no_delete=True),
                         self.hosting_device(
-                                template_id=hdt_id,
-                                management_port_id=mgmt_port2['port']['id'],
-                                auto_delete=True,
-                                no_delete=True)):
+                            template_id=hdt_id,
+                            management_port_id=mgmt_port2['port']['id'],
+                            auto_delete=True,
+                            no_delete=True)):
                         context = self._get_test_context(is_admin=True)
                         template = self._devmgr._get_hosting_device_template(
                             context, hdt_id)
-                        self._devmgr._maintain_hosting_device_pool(context,
-                                                                   template)
+                        self._devmgr._gt_pool = mock.MagicMock()
+                        self._devmgr._gt_pool.spawn_n.side_effect = (
+                            lambda fcn, ctx, tmplt: fcn(ctx, tmplt))
+                        self._devmgr._dispatch_pool_maintenance_job(
+                            template)
                         result_hds = self._list(
                             'hosting_devices')['hosting_devices']
                         self.assertEqual(len(result_hds) * slot_capacity,
-                                         expected)
+                                             expected)
             self._devmgr.delete_all_hosting_devices(context, True)
 
     # hosting device pool maintenance tests

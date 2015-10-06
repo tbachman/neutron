@@ -139,7 +139,7 @@ class Asr1kRouterTypeDriverTestCase(
         self._test_router_create_adds_no_global_router()
 
     def test_router_create_adds_no_global_router_non_admin(self):
-        self._test_router_create_adds_no_global_router(False)
+        self._test_router_create_adds_no_global_router(True)
 
     def _verify_updated_routers(self, router_ids, hd_id=None, call_index=1):
         # tenant routers

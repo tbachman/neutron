@@ -33,6 +33,8 @@ from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.i18n import _LW
 from neutron.openstack.common import uuidutils
+from neutron.plugins.cisco.db.l3.l3_router_appliance_db import (
+    L3RouterApplianceDBMixin)
 from neutron.plugins.cisco.extensions import ha
 from neutron.plugins.cisco.extensions import routertype
 
@@ -198,17 +200,11 @@ class HA_db_mixin(object):
                ha.DETAILS: details}
 
         if not is_attr_set(res[ha.ENABLED]):
-            res[ha.ENABLED] = (cfg.CONF.ha.ha_enabled_by_default
-                               if router.get(EXTERNAL_GW_INFO) else False)
+            res[ha.ENABLED] = cfg.CONF.ha.ha_enabled_by_default
         if res[ha.ENABLED] and not cfg.CONF.ha.ha_support_enabled:
             raise ha.HADisabled()
         if not res[ha.ENABLED]:
             return res
-        if router.get(EXTERNAL_GW_INFO) is None:
-            #TODO(bobmel): Consider removing this gateway requirement
-            raise ha.HAOnlyForGatewayRouters(
-                msg="HA is only supported for routers with gateway. "
-                    "Please specify %s" % EXTERNAL_GW_INFO)
         if not is_attr_set(details.get(ha.TYPE, ATTR_NOT_SPECIFIED)):
             details[ha.TYPE] = cfg.CONF.ha.default_ha_mechanism
         if details[ha.TYPE] in cfg.CONF.ha.disabled_ha_mechanisms:
@@ -253,9 +249,10 @@ class HA_db_mixin(object):
                             "enabled but probe target is not specified. Please"
                             " configure option \'default_probe_target\'."))
         e_context = context.elevated()
-        # generate ha settings and extra port for router gateway (VIP) port
-        self._create_ha_group(e_context, new_router, new_router_db.gw_port,
-                              r_ha_s_db)
+        if new_router_db.gw_port:
+            # generate ha settings and extra port for router gateway (VIP) port
+            gw_port = self._core_plugin._make_port_dict(new_router_db.gw_port)
+            self._create_ha_group(e_context, new_router, gw_port, r_ha_s_db)
         self._add_redundancy_routers(e_context, 1,
                                      ha_spec[ha.REDUNDANCY_LEVEL] + 1,
                                      new_router, ports or [], r_ha_s_db)
@@ -263,27 +260,26 @@ class HA_db_mixin(object):
             context.session.expire(new_router_db)
         self._extend_router_dict_ha(new_router, new_router_db)
 
-    def _ensure_update_ha_compliant(self, context, router_id, router):
+    def _ensure_update_ha_compliant(self, router, current_router):
         """To be called in update_router() BEFORE router has been
         updated in DB.
         """
-        current = self.get_router(context, router_id)
+        auto_enable_ha = cfg.CONF.ha.ha_enabled_by_default
         requested_ha_details = router.pop(ha.DETAILS, {})
-        # if ha_details are given then ha is assumed to be enabled even if
-        # it is not explicitly specified
+        # If ha_details are given then ha is assumed to be enabled even if
+        # it is not explicitly specified or if auto_enable_ha says so.
+        # Note that None is used to indicate that request did not include any
+        # ha information was provided!
         requested_ha_enabled = router.pop(
-            ha.ENABLED, True if requested_ha_details else False)
+            ha.ENABLED, True if requested_ha_details or auto_enable_ha is True
+            else None)
         res = {}
+        ha_currently_enabled = current_router.get(ha.ENABLED, False)
         # Note: must check for 'is True' as None implies attribute not given
-        if requested_ha_enabled is True or current.get(ha.ENABLED, False):
-            has_gateway = router.get(EXTERNAL_GW_INFO,
-                                     current[EXTERNAL_GW_INFO] is not None)
+        if requested_ha_enabled is True or ha_currently_enabled is True:
             if not cfg.CONF.ha.ha_support_enabled:
                 raise ha.HADisabled()
-            elif not has_gateway:
-                raise ha.HAOnlyForGatewayRouters(
-                    msg="Cannot clear gateway when HA is enabled.")
-            curr_ha_details = current.get(ha.DETAILS, {})
+            curr_ha_details = current_router.get(ha.DETAILS, {})
             if ha.TYPE in requested_ha_details:
                 requested_ha_type = requested_ha_details[ha.TYPE]
                 if (ha.TYPE in curr_ha_details and
@@ -299,9 +295,36 @@ class HA_db_mixin(object):
             res[ha.ENABLED] = False
         return res
 
+    def _teardown_redundancy_router_gw_connectivity(self, context, router,
+                                                    router_db,
+                                                    plugging_driver):
+        """To be called in update_router() if the router gateway is to change
+        BEFORE router has been updated in DB .
+        """
+        if not router[ha.ENABLED]:
+            # No HA currently enabled so we're done
+            return
+        e_context = context.elevated()
+        # since gateway is about to change the ha group for the current gateway
+        # is removed, a new one will be created later
+        self._delete_ha_group(e_context, router_db.gw_port_id)
+        # teardown connectivity for the gw ports on the redundancy routers
+        # and remove those ports as new ones will be created later
+        rr_ids = []
+        for r_b_db in router_db.redundancy_bindings:
+            if plugging_driver is not None:
+                plugging_driver.teardown_logical_port_connectivity(
+                    e_context, r_b_db.redundancy_router.gw_port,
+                    r_b_db.redundancy_router.hosting_info.hosting_device_id)
+            super(L3RouterApplianceDBMixin, self).update_router(
+                e_context, r_b_db.redundancy_router_id,
+                {'router': {EXTERNAL_GW_INFO: None}})
+            rr_ids.append(r_b_db.redundancy_router_id)
+        self.notify_routers_updated(context, rr_ids)
+
     def _update_redundancy_routers(self, context, updated_router,
                                    update_specification, requested_ha_settings,
-                                   updated_router_db):
+                                   updated_router_db, gateway_changed):
         """To be called in update_router() AFTER router has been
         updated in DB.
         """
@@ -314,6 +337,7 @@ class HA_db_mixin(object):
         # The redundancy routers need interfaces on the same networks as the
         # user visible router.
         ports = self._get_router_interfaces(updated_router_db)
+        e_context = context.elevated()
         if not updated_router[ha.ENABLED] and ha_enabled_requested:
             # No HA currently enabled but HA requested
             router_requested.update(requested_ha_settings)
@@ -322,18 +346,17 @@ class HA_db_mixin(object):
             requested_ha_settings = self._ensure_create_ha_compliant(
                 router_requested)
             self._create_redundancy_routers(
-                context, updated_router, requested_ha_settings,
+                e_context, updated_router, requested_ha_settings,
                 updated_router_db, ports, expire_db=True)
             return
-        rr_ids = self._get_redundancy_router_ids(context,
-                                                 updated_router['id'])
+        rr_ids = self._get_redundancy_router_ids(context, updated_router['id'])
         ha_details_update_spec = requested_ha_settings.get(ha.DETAILS)
         if (updated_router[ha.ENABLED] and not requested_ha_settings.get(
                 ha.ENABLED, updated_router[ha.ENABLED])):
             # HA currently enabled but HA disable requested
             # delete ha settings and extra port for gateway (VIP) port
-            self._delete_ha_group(context, updated_router_db.gw_port_id)
-            self._remove_redundancy_routers(context, rr_ids, ports, True)
+            self._delete_ha_group(e_context, updated_router_db.gw_port_id)
+            self._remove_redundancy_routers(e_context, rr_ids, ports, True)
             with context.session.begin(subtransactions=True):
                 context.session.delete(ha_settings_db)
         elif ha_details_update_spec:
@@ -351,20 +374,61 @@ class HA_db_mixin(object):
                 #TODO(bobmel): Ensure currently active router is excluded
                 to_remove = rr_ids[len(rr_ids) + diff:]
                 rr_ids = rr_ids[:len(rr_ids) + diff]
-                self._remove_redundancy_routers(context, to_remove, ports)
+                self._remove_redundancy_routers(e_context, to_remove, ports)
             elif diff > 0:
                 # Add diff redundancy routers
                 start = old_redundancy_level + 1
                 stop = start + diff
-                self._add_redundancy_routers(context, start, stop,
+                self._add_redundancy_routers(e_context, start, stop,
                                              updated_router, ports,
                                              ha_settings_db, False)
-            # Notify redundancy routers about changes
-            for r_id in rr_ids:
-                self.update_router(context.elevated(), r_id, {'router': {}})
+            if gateway_changed is True:
+                self._change_ha_for_gateway(e_context, updated_router,
+                                            updated_router_db, ha_settings_db,
+                                            router_requested, expire=True)
+            else:
+                # Notify redundancy routers about changes
+                self.notify_routers_updated(context, rr_ids)
+
+        elif gateway_changed is True:
+            # HA currently enabled (and to remain so) nor any HA setting update
+            # and gateway has changed
+            self._change_ha_for_gateway(e_context, updated_router,
+                                        updated_router_db, ha_settings_db,
+                                        router_requested)
         # Ensure we get latest state from DB
         context.session.expire(updated_router_db)
         self._extend_router_dict_ha(updated_router, updated_router_db)
+
+    def _change_ha_for_gateway(self, context, router, router_db,
+                               ha_settings_db, update_spec, expire=False):
+        # generate ha settings and extra port for router gateway VIP
+        if router_db.gw_port is None:
+            # gateway was removed and since gw's of redundancy routers are
+            # removed by _teardown_redundancy_router_gw_connectivity we're done
+            return
+        gw_port = self._core_plugin._make_port_dict(router_db.gw_port)
+        self._create_ha_group(context, router, gw_port, ha_settings_db)
+        if expire is True:
+            context.session.expire(router_db)
+        # Now add gw to redundancy routers
+        rr_ids = []
+        for r_b_db in router_db.redundancy_bindings:
+            spec = {EXTERNAL_GW_INFO: copy.copy(router[EXTERNAL_GW_INFO])}
+            spec[EXTERNAL_GW_INFO].pop('external_fixed_ips', None)
+            # call grandparent's update method since we add gateway to
+            # a redundancy router and those have HA off anyway
+            super(L3RouterApplianceDBMixin, self).update_router(
+                context, r_b_db.redundancy_router_id, {'router': spec})
+            rr_ids.append(r_b_db.redundancy_router_id)
+        self.notify_routers_updated(context, rr_ids)
+
+    def _process_other_router_updates(self, context, router_db, update_spec):
+        for r_b_db in router_db.redundancy_bindings:
+            # call grandparent's update method since we process non-ha
+            # updates to redundancy router
+            super(L3RouterApplianceDBMixin, self).update_router(
+                context, r_b_db.redundancy_router_id, update_spec)
 
     def _add_redundancy_routers(self, context, start_index, stop_index,
                                 user_visible_router, ports=None,
@@ -381,14 +445,20 @@ class HA_db_mixin(object):
         redundancy_r_ids = []
         for i in xrange(start_index, stop_index):
             del r['id']
+            # We don't replicate the user visible router's routes, instead
+            # they are populated to redundancy routers for get router(s) ops
+            r.pop('routes', None)
+            # Redundancy routers will never have a route spec themselves
             # The redundancy routers must have HA disabled
             r[ha.ENABLED] = False
             r['name'] = name + REDUNDANCY_ROUTER_SUFFIX + str(i)
-            # Ensure ip address is not specified as it cannot be same as
-            # visible router's ip address.
-            r[EXTERNAL_GW_INFO]['external_fixed_ips'][0].pop('ip_address',
-                                                             None)
-            r = self.create_router(context.elevated(), {'router': r})
+            gw_info = r[EXTERNAL_GW_INFO]
+            if gw_info and gw_info['external_fixed_ips']:
+                # Ensure ip addresses are not specified as they cannot be
+                # same as visible router's ip addresses.
+                for e_fixed_ip in gw_info['external_fixed_ips']:
+                    e_fixed_ip.pop('ip_address', None)
+            r = self.create_router(context, {'router': r})
             LOG.debug("Created redundancy router %(index)d with router id "
                       "%(r_id)s", {'index': i, 'r_id': r['id']})
             priority += PRIORITY_INCREASE_STEP
@@ -398,29 +468,29 @@ class HA_db_mixin(object):
                 user_router_id=user_visible_router['id'])
             context.session.add(r_b_b)
             redundancy_r_ids.append(r['id'])
-        for port in ports or []:
+        for port_db in ports or []:
+            port = self._core_plugin._make_port_dict(port_db)
             self._add_redundancy_router_interfaces(
-                context, user_visible_router, port, redundancy_r_ids,
-                ha_settings_db, create_ha_group)
+                context, user_visible_router, None, port,
+                redundancy_r_ids, ha_settings_db, create_ha_group)
 
     def _remove_redundancy_routers(self, context, router_ids, ports,
                                    delete_ha_groups=False):
         """Deletes all interfaces of the specified redundancy routers
         and then the redundancy routers themselves.
         """
-        e_context = context.elevated()
         subnets_info = [{'subnet_id': port['fixed_ips'][0]['subnet_id']}
                         for port in ports]
         for r_id in router_ids:
             for i in xrange(len(subnets_info)):
-                self.remove_router_interface(e_context, r_id, subnets_info[i])
+                self.remove_router_interface(context, r_id, subnets_info[i])
                 LOG.debug("Removed interface on %(s_id)s to redundancy router "
                           "with %(r_id)s",
                           {'s_id': port['network_id'], 'r_id': r_id})
                 # There is only one ha group per network so only delete once
                 if delete_ha_groups and r_id == router_ids[0]:
                     self._delete_ha_group(context, ports[i]['id'])
-            self.delete_router(e_context, r_id)
+            self.delete_router(context, r_id)
             LOG.debug("Deleted redundancy router %s", r_id)
 
     def _get_router_interfaces(self, router_db,
@@ -437,16 +507,54 @@ class HA_db_mixin(object):
             self.delete_router(e_context, binding.redundancy_router_id)
             LOG.debug("Deleted redundancy router %s",
                       binding.redundancy_router_id)
-        # delete ha settings and extra port for gateway (VIP) port
-        self._delete_ha_group(e_context, router_db.gw_port_id)
+        if router_db.gw_port_id:
+            # delete ha settings and extra port for gateway (VIP) port
+            self._delete_ha_group(e_context, router_db.gw_port_id)
 
-    def _add_redundancy_router_interfaces(self, context, router, new_port,
-                                          redundancy_router_ids=None,
+    def _add_redundancy_router_interfaces(self, context, router, itfc_info,
+                                          new_port, redundancy_router_ids=None,
                                           ha_settings_db=None,
                                           create_ha_group=True):
         """To be called in add_router_interface() AFTER interface has been
         added to router in DB.
         """
+        # There are essentially three cases where we add interface to a
+        # redundancy router:
+        # 1. HA is enabled on a user visible router that has one or more
+        #    interfaces.
+        # 2. Redundancy level is increased so one or more redundancy routers
+        #    are added.
+        # 3. An interface is added to a user visible router.
+        #
+        # For 1: An HA GROUP MUST BE CREATED and EXTRA PORTS MUST BE CREATED
+        #        for each redundancy router. The id of extra port should be
+        #        specified in the interface_info argument of the
+        #        add_router_interface call so that we ADD BY PORT.
+        # For 2: HA group need NOT be created as it will already exist (since
+        #        there is already at least on redundancy router). EXTRA PORTS
+        #        MUST BE CREATED for each added redundancy router. The id
+        #        of extra port should be specified in the interface_info
+        #        argument of the add_router_interface call so that we ADD BY
+        #        PORT.
+        # For 3: if the interface for the user_visible_router was added by ...
+        #   a) PORT:   An HA GROUP MUST BE CREATED and and EXTRA PORTS MUST BE
+        #              CREATED for each redundancy router. The id of extra port
+        #              should be specified in the interface_info argument of
+        #              the add_router_interface call so that we ADD BY PORT.
+        #   b) SUBNET: There are two cases to consider. If the added interface
+        #              of the user_visible_router has ...
+        #        b1) 1 SUBNET:   An HA GROUP MUST BE CREATED and and EXTRA
+        #                        PORTS MUST BE CREATED for each redundancy
+        #                        router. The id of extra port should be
+        #                        specified in the interface_info argument of
+        #                        the add_router_interface call so we ADD BY
+        #                        PORT.
+        #        b2) >1 SUBNETS: HA group need NOT be created as it will
+        #                        already exist (since the redundancy routers
+        #                        should already have extra ports to which the
+        #                        (IPv6) subnet is added. Extra ports need
+        #                        thus NOT be created. The subnet id should be
+        #                        added to the existing extra ports.
         router_id = router['id']
         if ha_settings_db is None:
             ha_settings_db = self._get_ha_settings_by_router_id(context,
@@ -454,15 +562,33 @@ class HA_db_mixin(object):
         if ha_settings_db is None:
             return
         e_context = context.elevated()
-        if create_ha_group:
+        add_by_subnet = (itfc_info is not None and 'subnet_id' in itfc_info and
+                         len(new_port['fixed_ips']) > 1)
+        if (add_by_subnet is False or (itfc_info is None and
+                                       create_ha_group is True)):
             # generate ha settings and extra port for router (VIP) port
             self._create_ha_group(e_context, router, new_port, ha_settings_db)
+        fixed_ips = self._get_fixed_ips_subnets(new_port['fixed_ips'])
         for r_id in (redundancy_router_ids or
                      self._get_redundancy_router_ids(e_context, router_id)):
-            redundancy_port = self._create_hidden_port(
-                e_context, new_port['network_id'], '')
-            interface_info = {'port_id': redundancy_port['id']}
-            self.add_router_interface(e_context, r_id, interface_info)
+            if add_by_subnet is True:
+                # need to add subnet to redundancy router port
+                ports = self._core_plugin.get_ports(
+                    context, filters={'device_id': [r_id],
+                                      'network_id': [new_port['network_id']]},
+                    fields=['fixed_ips', 'id'])
+                redundancy_port = ports[0]
+                fixed_ips = redundancy_port['fixed_ips']
+                fixed_ip = {'subnet_id': itfc_info['subnet_id']}
+                fixed_ips.append(fixed_ip)
+                self._core_plugin.update_port(
+                    context, redundancy_port['id'],
+                    {'port': {'fixed_ips': fixed_ips}})
+            else:
+                redundancy_port = self._create_hidden_port(
+                    e_context, new_port['network_id'], '', fixed_ips)
+                interface_info = {'port_id': redundancy_port['id']}
+                self.add_router_interface(e_context, r_id, interface_info)
 
     def _create_ha_group(self, context, router, port, ha_settings_db):
         driver = self._get_router_type_driver(context,
@@ -486,12 +612,15 @@ class HA_db_mixin(object):
                 context, router, port, ha_settings_db, ha_group_uuid)
             if driver.ha_interface_ip_address_needed(
                     context, router, port, ha_settings_db, ha_group_uuid):
+                fixed_ips = self._get_fixed_ips_subnets(port['fixed_ips'])
                 extra_port = self._create_hidden_port(
                     context, port['network_id'], ha_group_uuid,
-                    port['device_owner'])
+                    fixed_ips, port['device_owner'])
                 extra_port_id = extra_port['id']
             else:
                 extra_port_id = None
+            subnet_id = (port['fixed_ips'][0]['subnet_id']
+                         if port['fixed_ips'] else None)
             r_ha_g = RouterHAGroup(
                 id=ha_group_uuid,
                 tenant_id=self._get_tenant_id_for_create(context, port),
@@ -499,13 +628,19 @@ class HA_db_mixin(object):
                 group_identity=group_id,
                 ha_port_id=port['id'],
                 extra_port_id=extra_port_id,
-                subnet_id=port['fixed_ips'][0]['subnet_id'],
+                subnet_id=subnet_id,
                 user_router_id=router['id'],
                 timers_config=timers_cfg,
                 tracking_config=tracking_cfg,
                 other_config=other_cfg)
             context.session.add(r_ha_g)
         return r_ha_g
+
+    def _get_fixed_ips_subnets(self, fixed_ips):
+        subnets = copy.copy(fixed_ips)
+        for s in subnets:
+            s.pop('ip_address', None)
+        return subnets
 
     def _remove_redundancy_router_interfaces(self, context, router_id,
                                              old_port):
@@ -515,16 +650,21 @@ class HA_db_mixin(object):
         ha_settings = self._get_ha_settings_by_router_id(context, router_id)
         if ha_settings is None or old_port is None:
             return
-        interface_info = {
-            'subnet_id': old_port['fixed_ips'][0]['subnet_id']}
         e_context = context.elevated()
-        for r_id in self._get_redundancy_router_ids(e_context, router_id):
-            self.remove_router_interface(e_context, r_id, interface_info)
+        rr_ids = self._get_redundancy_router_ids(e_context, router_id)
+        port_info_list = self._core_plugin.get_ports(
+            e_context, filters={'device_id': rr_ids,
+                                'network_id': [old_port['network_id']]},
+            fields=['device_id', 'id'])
+        for port_info in port_info_list:
+            interface_info = {'port_id': port_info['id']}
+            self.remove_router_interface(e_context, port_info['device_id'],
+                                         interface_info)
         self._delete_ha_group(e_context, old_port['id'])
 
-    def _redundant_floatingip_update(self, context, router_id,
-                                     redundancy_router_ids=None,
-                                     ha_settings_db=None):
+    def _redundancy_routers_for_floatingip(
+            self, context, router_id, redundancy_router_ids=None,
+            ha_settings_db=None):
         """To be called in update_floatingip() to get the
             redundant router ids.
         """
@@ -553,6 +693,14 @@ class HA_db_mixin(object):
     def _extend_router_dict_ha(self, router_res, router_db):
         if utils.is_extension_supported(self, ha.HA_ALIAS):
             ha_s = router_db.ha_settings
+            rr_b = router_db.redundancy_binding
+            if rr_b and rr_b.user_router:
+                # include static routes from user visible router
+                temp = {}
+                self._extend_router_dict_extraroute(temp,
+                                                    rr_b.user_router)
+                if temp['routes']:
+                    router_res['routes'].extend(temp['routes'])
             router_res[ha.ENABLED] = False if ha_s is None else True
             if router_res[ha.ENABLED]:
                 ha_details = {ha.TYPE: ha_s.ha_type,
@@ -602,14 +750,15 @@ class HA_db_mixin(object):
             self._extend_router_dict_ha(router, user_router_db)
         # The interfaces of the user visible router must use the
         # IP configuration of the extra ports in the HA groups.
-        modified_interfaces = []
-        e_context = context.elevated()
         hags = self._get_subnet_id_indexed_ha_groups(context, user_router_id)
-        interface_port = self._populate_port_ha_information(
-            e_context, router['gw_port'], router['id'], hags, user_router_id,
-            modified_interfaces)
-        if modified_interfaces:
-            router['gw_port'] = interface_port
+        e_context = context.elevated()
+        if router.get('gw_port'):
+            modified_interfaces = []
+            interface_port = self._populate_port_ha_information(
+                e_context, router['gw_port'], router['id'], hags,
+                user_router_id, modified_interfaces)
+            if modified_interfaces:
+                router['gw_port'] = interface_port
         modified_interfaces = []
         for itfc in router.get(l3_constants.INTERFACE_KEY, []):
             self._populate_port_ha_information(
@@ -645,7 +794,7 @@ class HA_db_mixin(object):
             HA_PORT: ha_port}
         return interface_port
 
-    def _create_hidden_port(self, context, network_id, device_id,
+    def _create_hidden_port(self, context, network_id, device_id, fixed_ips,
                             port_type=DEVICE_OWNER_ROUTER_INTF):
         """Creates port used specially for HA purposes."""
         return self._core_plugin.create_port(context, {
@@ -653,7 +802,7 @@ class HA_db_mixin(object):
                 'tenant_id': '',  # intentionally not set
                 'network_id': network_id,
                 'mac_address': attrs.ATTR_NOT_SPECIFIED,
-                'fixed_ips': attrs.ATTR_NOT_SPECIFIED,
+                'fixed_ips': fixed_ips,
                 'device_id': device_id,
                 'device_owner': port_type,
                 'admin_state_up': True,
@@ -714,6 +863,7 @@ class HA_db_mixin(object):
             # ha_type must be ha_type.GLBP
             return random.randint(0, MAX_GLBP_GROUPS)
 
+    # Overloaded function from l3_db
     def _get_router_for_floatingip(self, context, internal_port,
                                    internal_subnet_id,
                                    external_network_id):
