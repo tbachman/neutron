@@ -366,6 +366,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def add_router_interface(self, context, router_id, interface_info):
         info = (super(L3RouterApplianceDBMixin, self).
                 add_router_interface(context, router_id, interface_info))
+        context.session.expire_all()
         r_hd_binding_db = self._get_router_binding_info(context.elevated(),
                                                         router_id)
         is_ha = (utils.is_extension_supported(self, ha.HA_ALIAS) and
