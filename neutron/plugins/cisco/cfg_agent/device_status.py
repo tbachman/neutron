@@ -191,24 +191,50 @@ class DeviceStatus(object):
         Skips newly spun up instances during their booting time as specified
         in the boot time parameter.
 
-        heartbeat revisions
-        if _is_pingable is True
-            do not delete from backlog_hosting_devices
+        Each hosting-device tracked has a key, hd_state, that represents the 
+        last known state for the hosting device.  Valid values for hd_state
+        are ['Active', 'Unknown', 'Dead']
 
-        if _is_pingable is False
-            if elapsed time > dead time out
-                do not delete from backlog_hosting_devices
+        Each time check_backlogged_hosting_devices is invoked, a ping-test
+        is performed to determine the current state.  If the current state
+        differs, hd_state is updated.
+
+        The hd_state transitions/actions are represented by the following 
+        table.
+
+        ┌────────────┬──────────────────────┬───────────────────┬─────────────┐
+        │ current /  │ Active               │ Unknown           │ Dead        │
+        │ last state │                      │                   │             │
+        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
+        │ Active     │ Device is reachable. │ Device was        │ Dead        │
+        │            │ No state change.     │ temporarily       │ device      │
+        │            │                      │ unreachable.      │ recovered.  │
+        │            │                      │                   │ Trigger     │
+        │            │                      │                   │ resync.     │
+        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
+        │ Unknown    │ Device connectivity  │ Device            │ Not a valid │
+        │            │ test failed. Set     │ connectivity      │ state       │
+        │            │ backlog timestamp    │ test failed.      │ transition. │
+        │            │ and wait for dead    │ Dead timeout has  │             │
+        │            │ timeout to occur.    │ not occurred yet. │             │
+        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
+        │ Dead       │ Not a valid state    │ Dead timeout      │ Device is   │
+        │            │ transition.          │ for device has    │ still dead. │
+        │            │                      │ elapsed.          │ No state    │
+        │            │                      │ Notify plugin     │ change.     │
+        └────────────┴──────────────────────┴───────────────────┴─────────────┘
 
         :return A dict of the format:
         {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..], 'revived': [<hd_id>,..]}
+        reachable - a list of hosting devices that are now reachable
+        dead      - a list of hosting devices deemed dead
+        revived   - a list of hosting devices (dead to active)
         """
         response_dict = {'reachable': [], 'revived': [], 'dead': []}
         LOG.debug("Current Backlogged hosting devices: \n%s\n",
                   self.backlog_hosting_devices.keys())
         for hd_id in self.backlog_hosting_devices.keys():
             hd = self.backlog_hosting_devices[hd_id]['hd']
-
-            LOG.debug("monitored hosting_device = \n%s\n" % pprint.pformat(hd))
 
             if not timeutils.is_older_than(hd['created_at'],
                                            hd['booting_time']):
@@ -239,9 +265,6 @@ class DeviceStatus(object):
                               "_is_pingable is True and current"
                               " hd['hd_state']=%s" % (hd_state))
 
-                # hd.pop('backlog_insertion_ts', None)
-                # del self.backlog_hosting_devices[hd_id]
-                # response_dict['reachable'].append(hd_id)
                 LOG.info(_LI("Hosting device: %(hd_id)s @ %(ip)s is now "
                              "reachable. Adding it to response"),
                          {'hd_id': hd_id, 'ip': hd['management_ip_address']})
@@ -251,9 +274,8 @@ class DeviceStatus(object):
                          {'hd_id': hd_id,
                           'hd_state': hd['hd_state'],
                           'ip': hd['management_ip_address']})
-                LOG.debug("**** hd_state = %s" % (hd_state))
                 if hd_state == 'Active':
-                    LOG.debug("**** hosting device lost connectivity, %s" %
+                    LOG.debug("hosting device lost connectivity, %s" %
                               (pprint.pformat(hd)))
                     hd['backlog_insertion_ts'] = timeutils.utcnow()
                     hd['hd_state'] = 'Unknown'
@@ -273,7 +295,5 @@ class DeviceStatus(object):
                                    'time': cfg.CONF.cfg_agent.
                                    hosting_device_dead_timeout})
                         response_dict['dead'].append(hd_id)
-                    # hd.pop('backlog_insertion_ts', None)
-                    #del self.backlog_hosting_devices[hd_id]
         LOG.debug("Response: %s", response_dict)
         return response_dict

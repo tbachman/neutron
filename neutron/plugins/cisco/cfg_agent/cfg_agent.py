@@ -232,7 +232,7 @@ class CiscoCfgAgent(manager.Manager):
         For devices which have passed the `hosting_device_dead_timeout` and
         hence presumed dead, execute a RPC to the plugin informing that.
 
-        * heartbeat revision
+        heartbeat revision
         res['reachable'] - hosting device went from Unknown to Active state
                            process_services(...)
         res['revived']   - hosting device went from Dead to Active
@@ -251,12 +251,8 @@ class CiscoCfgAgent(manager.Manager):
         if res['revived']:
             LOG.debug("Reporting revived hosting devices: %s " %
                       res['revived'])
-            # trigger a sync on only the revived hosting-devices
-            #self.get_routing_service_helper().sync_devices |= \
-            #    set(res['revived'])
+            # trigger a sync only on the revived hosting-devices
             self.process_services(device_ids=res['revived'])
-#            self.devmgr_rpc.report_revived_hosting_devices(context,
-#                                                  hd_ids=res['revived'])
         if res['dead']:
             LOG.debug("Reporting dead hosting devices: %s", res['dead'])
             self.devmgr_rpc.report_dead_hosting_devices(context,
