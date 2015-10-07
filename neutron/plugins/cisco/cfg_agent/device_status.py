@@ -78,23 +78,6 @@ class DeviceStatus(object):
         return self.backlog_hosting_devices.keys()
 
     def get_backlogged_hosting_devices_info(self):
-#        wait_time = datetime.timedelta(
-#            seconds=cfg.CONF.cfg_agent.hosting_device_dead_timeout)
-#        resp = []
-#        for hd_id in self.backlog_hosting_devices:
-#            hd = self.backlog_hosting_devices[hd_id]['hd']
-#            if hd['hd_state'] == 'Unknown':
-#                created_time = hd['created_at']
-#                boottime = datetime.timedelta(seconds=hd['booting_time'])
-#                backlogged_at = hd['backlog_insertion_ts']
-#                booted_at = created_time + boottime
-#                dead_at = backlogged_at + wait_time
-#                resp.append({'host id': hd['id'],
-#                             'created at': str(created_time),
-#                             'backlogged at': str(backlogged_at),
-#                             'estimate booted at': str(booted_at),
-#                             'considered dead at': str(dead_at)})
-#        return resp
         resp = self.get_monitored_hosting_devices_info(hd_state_filter='Dead')
         return resp
 
@@ -108,7 +91,7 @@ class DeviceStatus(object):
         resp = []
         for hd_id in self.backlog_hosting_devices:
             hd = self.backlog_hosting_devices[hd_id]['hd']
-            
+
             display_hd = True
 
             if hd_state_filter is not None:
@@ -116,7 +99,7 @@ class DeviceStatus(object):
                     display_hd = True
                 else:
                     display_hd = False
-            
+
             if display_hd:
                 created_time = hd['created_at']
                 boottime = datetime.timedelta(seconds=hd['booting_time'])
@@ -132,7 +115,6 @@ class DeviceStatus(object):
             else:
                 continue
         return resp
-
 
     def is_hosting_device_reachable(self, hosting_device):
         """Check the hosting device which hosts this resource is reachable.
@@ -191,7 +173,7 @@ class DeviceStatus(object):
         Skips newly spun up instances during their booting time as specified
         in the boot time parameter.
 
-        Each hosting-device tracked has a key, hd_state, that represents the 
+        Each hosting-device tracked has a key, hd_state, that represents the
         last known state for the hosting device.  Valid values for hd_state
         are ['Active', 'Unknown', 'Dead']
 
@@ -199,7 +181,7 @@ class DeviceStatus(object):
         is performed to determine the current state.  If the current state
         differs, hd_state is updated.
 
-        The hd_state transitions/actions are represented by the following 
+        The hd_state transitions/actions are represented by the following
         table.
 
         ┌────────────┬──────────────────────┬───────────────────┬─────────────┐
@@ -225,7 +207,7 @@ class DeviceStatus(object):
         └────────────┴──────────────────────┴───────────────────┴─────────────┘
 
         :return A dict of the format:
-        {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..], 'revived': [<hd_id>,..]}
+        {'reachable': [<hd_id>,..],'dead':[<hd_id>,..],'revived':[<hd_id>,..]}
         reachable - a list of hosting devices that are now reachable
         dead      - a list of hosting devices deemed dead
         revived   - a list of hosting devices (dead to active)
@@ -269,8 +251,8 @@ class DeviceStatus(object):
                              "reachable. Adding it to response"),
                          {'hd_id': hd_id, 'ip': hd['management_ip_address']})
             else:
-                LOG.info(_LI("Hosting device: %(hd_id)s %(hd_state)s @ %(ip)s not "
-                             "reachable "),
+                LOG.info(_LI("Hosting device: %(hd_id)s %(hd_state)s"
+                             " @ %(ip)s not reachable "),
                          {'hd_id': hd_id,
                           'hd_state': hd['hd_state'],
                           'ip': hd['management_ip_address']})
