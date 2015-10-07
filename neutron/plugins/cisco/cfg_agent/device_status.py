@@ -184,27 +184,21 @@ class DeviceStatus(object):
         The hd_state transitions/actions are represented by the following
         table.
 
-        ┌────────────┬──────────────────────┬───────────────────┬─────────────┐
-        │ current /  │ Active               │ Unknown           │ Dead        │
-        │ last state │                      │                   │             │
-        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
-        │ Active     │ Device is reachable. │ Device was        │ Dead        │
-        │            │ No state change.     │ temporarily       │ device      │
-        │            │                      │ unreachable.      │ recovered.  │
-        │            │                      │                   │ Trigger     │
-        │            │                      │                   │ resync.     │
-        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
-        │ Unknown    │ Device connectivity  │ Device            │ Not a valid │
-        │            │ test failed. Set     │ connectivity      │ state       │
-        │            │ backlog timestamp    │ test failed.      │ transition. │
-        │            │ and wait for dead    │ Dead timeout has  │             │
-        │            │ timeout to occur.    │ not occurred yet. │             │
-        ├────────────┼──────────────────────┼───────────────────┼─────────────┤
-        │ Dead       │ Not a valid state    │ Dead timeout      │ Device is   │
-        │            │ transition.          │ for device has    │ still dead. │
-        │            │                      │ elapsed.          │ No state    │
-        │            │                      │ Notify plugin     │ change.     │
-        └────────────┴──────────────────────┴───────────────────┴─────────────┘
+        current /    Active                 Unknown          Dead
+        last state
+        Active       Device is reachable.   Device was       Dead device
+                     No state change        temporarily      recovered.
+                     unreachable.     Trigger resync
+        Unknown      Device connectivity    Device           Not a valid
+                     test failed.  Set      connectivity     state
+                     backlog timestamp      test failed.     transition.
+                     and wait for dead      Dead timeout
+                     timeout to occur.      has not
+                                            occurred yet.
+        Dead         Not a valid state      Dead timeout     Device is
+                     transition.            for device has   still dead.
+                                            elapsed.         No state
+                                            Notify plugin    change.
 
         :return A dict of the format:
         {'reachable': [<hd_id>,..],'dead':[<hd_id>,..],'revived':[<hd_id>,..]}

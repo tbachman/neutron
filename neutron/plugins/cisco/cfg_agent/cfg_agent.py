@@ -371,7 +371,8 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             configurations = self.routing_service_helper.collect_state(
                 self.agent_state['configurations'])
         non_responding = self._dev_status.get_backlogged_hosting_devices_info()
-        monitored_hosting_devices = self._dev_status.get_monitored_hosting_devices_info()
+        monitored_hosting_devices = \
+            self._dev_status.get_monitored_hosting_devices_info()
         configurations['non_responding_hosting_devices'] = non_responding
         configurations['monitored_hosting_devices'] = monitored_hosting_devices
         configurations['service_agents'] = service_agents
