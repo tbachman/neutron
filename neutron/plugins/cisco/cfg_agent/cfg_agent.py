@@ -58,19 +58,6 @@ class CiscoDeviceManagementApi(object):
         target = oslo_messaging.Target(topic=topic, version='1.0')
         self.client = n_rpc.get_client(target)
 
-    def report_revived_hosting_devices(self, context, hd_ids=None):
-        """
-        Reports that a list of hosting devices (previously presumed dead)
-        is now reachable/alive again.
-
-        :param: context: session context
-        :param: hosting_device_ids: list of responding hosting devices
-        :return: None
-        """
-        cctxt = self.client.prepare()
-        cctxt.cast(context, 'report_revived_hosting_devices',
-                   host=self.host, hosting_device_ids=hd_ids)
-
     def report_dead_hosting_devices(self, context, hd_ids=None):
         """Report that a hosting device cannot be contacted (presumed dead).
 
