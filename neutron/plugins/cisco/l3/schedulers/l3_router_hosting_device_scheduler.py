@@ -21,11 +21,12 @@ from oslo_log import log as logging
 from sqlalchemy import func
 from sqlalchemy.sql import expression as expr
 
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.device_manager import hd_models
 
 LOG = logging.getLogger(__name__)
 
-
+ROUTER_ROLE_HA_REDUNDANCY = cisco_constants.ROUTER_ROLE_HA_REDUNDANCY
 # Maximum allowed minute difference in creation time
 # for hosting devices to be considered equal
 EQUIVALENCE_TIME_DIFF = 7
@@ -164,6 +165,10 @@ class CandidatesHAFilter(object):
                     if (rr.id != r_b.redundancy_router_id and
                             rr.hosting_info.hosting_device_id):
                         del candidates_dict[rr.hosting_info.hosting_device_id]
+            elif r_hd_binding_db.role == ROUTER_ROLE_HA_REDUNDANCY:
+                # redundancy binding has not been persisted to db yet
+                # so we abort this scheduling attempt and retry later
+                return []
             for rr_b in r_hd_binding_db.router.redundancy_bindings:
                 # this is a user visible router so we need to exclude the
                 # hosting devices of its redundancy routers

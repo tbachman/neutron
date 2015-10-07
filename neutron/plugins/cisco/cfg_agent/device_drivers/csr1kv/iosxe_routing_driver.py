@@ -554,11 +554,11 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _add_interface_nat(self, itfc_name, itfc_type):
         conf_str = snippets.SET_NAT % (itfc_name, itfc_type)
-        self._edit_running_config(conf_str, 'SET_NAT_'+itfc_type)
+        self._edit_running_config(conf_str, 'SET_NAT_' + itfc_type)
 
     def _remove_interface_nat(self, itfc_name, itfc_type):
         conf_str = snippets.REMOVE_NAT % (itfc_name, itfc_type)
-        self._edit_running_config(conf_str, 'SET_NAT_'+itfc_type)
+        self._edit_running_config(conf_str, 'SET_NAT_' + itfc_type)
 
     def _remove_dyn_nat_rule(self, acl_no, outer_itfc_name, vrf_name):
         conf_str = snippets.SNAT_CFG % (acl_no, outer_itfc_name, vrf_name)

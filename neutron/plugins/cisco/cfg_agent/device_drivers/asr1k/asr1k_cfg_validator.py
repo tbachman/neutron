@@ -19,11 +19,13 @@ from neutron.common import constants
 
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ha
+from neutron.plugins.cisco.extensions import routerrole
 
 import re
 import xml.etree.ElementTree as ET
 
 HA_INFO = 'ha_info'
+ROUTER_ROLE_ATTR = routerrole.ROUTER_ROLE_ATTR
 
 """
 Compares ASR running-config and neutron DB state, informs caller
@@ -89,7 +91,7 @@ class ConfigValidator(object):
         return missing_cfg
 
     def check_router(self, router, running_config, segment_nat_dict):
-        if router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL:
+        if router[ROUTER_ROLE_ATTR] == cisco_constants.ROUTER_ROLE_GLOBAL:
             missing_cfg = self.check_global_router(router,
                                                    running_config,
                                                    segment_nat_dict)
