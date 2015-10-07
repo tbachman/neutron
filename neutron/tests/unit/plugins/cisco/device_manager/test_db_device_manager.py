@@ -962,7 +962,7 @@ class TestDeviceManagerDBPlugin(
                         result_hds = self._list(
                             'hosting_devices')['hosting_devices']
                         self.assertEqual(len(result_hds) * slot_capacity,
-                                             expected)
+                                         expected)
             self._devmgr.delete_all_hosting_devices(context, True)
 
     # hosting device pool maintenance tests
