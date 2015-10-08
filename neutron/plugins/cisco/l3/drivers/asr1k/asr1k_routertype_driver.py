@@ -20,6 +20,8 @@ from neutron import manager
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import ha_db
+from neutron.plugins.cisco.db.l3.l3_router_appliance_db import (
+    L3RouterApplianceDBMixin)
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
@@ -282,10 +284,12 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             # this should not happen but ...
             return
         if num_rtrs == 0:
-            # there are no global routers left so the logical global router
-            # can also be deleted
-            self._l3_plugin.delete_router(context, log_global_routers[0]['id'],
-                                          unschedule=False)
+            # There are no global routers left so the logical global router
+            # can also be deleted.
+            # We use parent class method as no special operations beyond what
+            # the base implemenation does are needed for logical global router
+            super(L3RouterApplianceDBMixin, self._l3_plugin).delete_router(
+                context, log_global_routers[0]['id'])
         else:
             self._update_ha_redundancy_level(context, log_global_routers[0],
                                              -1)

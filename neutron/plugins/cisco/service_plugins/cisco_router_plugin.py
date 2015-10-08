@@ -21,8 +21,6 @@ from neutron.common import constants as neutron_constants
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import common_db_mixin
-
-from neutron.common import constants as l3_constants
 #from neutron.db import l3_gwmode_db
 from neutron import manager
 import neutron.plugins
@@ -119,7 +117,7 @@ class CiscoRouterPlugin(common_db_mixin.CommonDbMixin,
         """
         return super(CiscoRouterPlugin, self).create_floatingip(
             context, floatingip,
-            initial_status=l3_constants.FLOATINGIP_STATUS_DOWN)
+            initial_status=neutron_constants.FLOATINGIP_STATUS_DOWN)
 
     @property
     def _core_plugin(self):

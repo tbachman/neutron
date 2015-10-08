@@ -52,8 +52,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
     def internal_network_added(self, ri, port):
         gw_ip = port['subnets'][0]['gateway_ip']
         if self._is_port_v6(port):
-            LOG.debug("Adding IPv6 internal network port: %s for router %s" % (
-                      port, ri.id))
+            LOG.debug("Adding IPv6 internal network port: %(port)s for router "
+                      "%(r_id)s", {'port': port, 'r_id': ri.id})
             self._create_sub_interface_v6(ri, port, False, gw_ip)
         else:
             # IPv4 handling
@@ -65,8 +65,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
                 LOG.debug("++++ global router handling")
                 self.external_gateway_added(ri, port)
             else:
-                LOG.debug("Adding IPv4 internal network port: %s"
-                          " for router %s" % (port, ri.id))
+                LOG.debug("Adding IPv4 internal network port: %(port)s "
+                          "for router %(r_id)s", {'port': port, 'r_id': ri.id})
                 self._create_sub_interface(
                     ri, port, is_external=False, gw_ip=gw_ip)
 
@@ -141,12 +141,14 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         virtual_gw_port = ext_gw_port["ha_info"]["ha_port"]
         sub_itfc_ip = virtual_gw_port['fixed_ips'][0]['ip_address']
         if self._is_port_v6(ext_gw_port):
-            LOG.debug("Adding IPv6 external network port: %s for global "
-                      "router %s" % (ext_gw_port['id'], ri.id))
+            LOG.debug("Adding IPv6 external network port: %(port)s for global "
+                      "router %(r_id)s", {'port': ext_gw_port['id'],
+                                          'r_id': ri.id})
             self._create_sub_interface_v6(ri, ext_gw_port, True, sub_itfc_ip)
         else:
-            LOG.debug("Adding IPv4 external network port: %s for global "
-                      "router %s" % (ext_gw_port['id'], ri.id))
+            LOG.debug("Adding IPv4 external network port: %(port)s for global "
+                      "router %(r_id)s", {'port': ext_gw_port['id'],
+                                          'r_id': ri.id})
             self._create_sub_interface(ri, ext_gw_port, True, sub_itfc_ip)
 
     def _handle_external_gateway_added_normal_router(self, ri, ext_gw_port):
@@ -161,8 +163,9 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
             LOG.debug("Sub-interface already exists, don't create "
                       "interface")
         else:
-            LOG.debug("Adding IPv4 external network port: %s for tenant "
-                      "router %s" % (ext_gw_port['id'], ri.id))
+            LOG.debug("Adding IPv4 external network port: %(port)s for tenant "
+                      "router %(r_id)s", {'port': ext_gw_port['id'],
+                                          'r_id': ri.id})
             self._create_ext_sub_interface_enable_only(sub_interface)
         if ex_gw_ip:
             # Set default route via this network's gateway ip
@@ -200,7 +203,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         self._edit_running_config(conf_str, 'CREATE_SUBINTERFACE_WITH_ID')
 
     def _create_ext_sub_interface_enable_only(self, sub_interface):
-        LOG.debug("Enabling external network sub interface: %s" %
+        LOG.debug("Enabling external network sub interface: %s",
                   sub_interface)
         conf_str = snippets.ENABLE_INTF % sub_interface
         self._edit_running_config(conf_str, 'ENABLE_INTF')
@@ -509,8 +512,10 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         vlan = ex_gw_port['hosting_info']['segmentation_id']
         hsrp_grp = ex_gw_port['ha_info']['group']
 
-        LOG.debug("add floating_ip: %s, fixed_ip: %s, vrf: %s, ex_gw_port: %s"
-                  % (floating_ip, fixed_ip, vrf, ex_gw_port))
+        LOG.debug("add floating_ip: %(fip)s, fixed_ip: %(fixed_ip)s, "
+                  "vrf: %(vrf)s, ex_gw_port: %(port)s",
+                  {'fip': floating_ip, 'fixed_ip': fixed_ip, 'vrf': vrf,
+                   'port': ex_gw_port})
 
         confstr = asr1k_snippets.SET_STATIC_SRC_TRL_NO_VRF_MATCH % \
             (fixed_ip, floating_ip, vrf, hsrp_grp, vlan)
