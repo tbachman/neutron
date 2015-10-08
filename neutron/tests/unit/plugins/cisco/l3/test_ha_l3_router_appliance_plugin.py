@@ -76,13 +76,14 @@ class TestApplianceHAL3RouterServicePlugin(
 class HAL3RouterApplianceNamespaceTestCase(
         test_l3_router_appliance_plugin.L3RouterApplianceNamespaceTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         super(HAL3RouterApplianceNamespaceTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
@@ -95,7 +96,7 @@ class HAL3RouterTestsMixin(object):
                          probe_target=None, probe_interval=None):
 
         if ha_enabled is None:
-            ha_enabled = cfg.CONF.ha.ha_enabled_by_default
+            ha_enabled = self._is_ha_tests
         if not ha_enabled:
             return {ha.ENABLED: False}
         ha_details = {
@@ -148,13 +149,14 @@ class HAL3RouterApplianceVMTestCase(
     HAL3RouterTestsMixin,
         test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
         super(HAL3RouterApplianceVMTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
@@ -1352,13 +1354,14 @@ class L3CfgAgentHARouterApplianceTestCase(
     HAL3RouterTestsMixin,
         test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
 
         super(L3CfgAgentHARouterApplianceTestCase, self).setUp(

@@ -45,6 +45,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                 name=rt['name'],
                 description=rt['description'],
                 template_id=rt['template_id'],
+                ha_enabled_by_default=rt['ha_enabled_by_default'],
                 shared=rt['shared'],
                 slot_need=rt['slot_need'],
                 scheduler=rt['scheduler'],
@@ -93,6 +94,10 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                                     page_reverse=page_reverse)
 
     def get_routertype_by_id_name(self, context, id_or_name):
+        return self._make_routertype_dict(
+            self.get_routertype_db_by_id_name(context, id_or_name))
+
+    def get_routertype_db_by_id_name(self, context, id_or_name):
         query = context.session.query(l3_models.RouterType)
         query = query.filter(l3_models.RouterType.id == id_or_name)
         try:
@@ -131,6 +136,7 @@ class RoutertypeDbMixin(routertype.RoutertypePluginBase):
                'name': routertype['name'],
                'description': routertype['description'],
                'template_id': routertype['template_id'],
+               'ha_enabled_by_default': routertype['ha_enabled_by_default'],
                'shared': routertype['shared'],
                'slot_need': routertype['slot_need'],
                'scheduler': routertype['scheduler'],

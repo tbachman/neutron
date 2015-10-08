@@ -27,6 +27,7 @@ from neutron.plugins.cisco.cfg_agent import cfg_agent
 from neutron.plugins.cisco.cfg_agent import cfg_exceptions
 from neutron.plugins.cisco.cfg_agent.service_helpers import (
     routing_svc_helper)
+from neutron.plugins.cisco.extensions import routerrole
 
 
 _uuid = uuidutils.generate_uuid
@@ -70,7 +71,7 @@ def prepare_router_data(enable_snat=None, num_internal_ports=1):
         'gw_port': ex_gw_port,
         'hosting_device': hosting_device,
         'router_type': '',
-        'role': None}
+        routerrole.ROUTER_ROLE_ATTR: None}
     if enable_snat is not None:
         router['enable_snat'] = enable_snat
     return router, int_ports
@@ -380,7 +381,7 @@ class TestBasicRoutingOperations(base.BaseTestCase):
     def test_process_router_delete(self):
         router = self.router
         router['gw_port'] = self.ex_gw_port
-        router['role'] = None
+        router[routerrole.ROUTER_ROLE_ATTR] = None
         self.routing_helper._router_added(router['id'], router)
         self.assertIn(router['id'], self.routing_helper.router_info)
         # Now we remove the router

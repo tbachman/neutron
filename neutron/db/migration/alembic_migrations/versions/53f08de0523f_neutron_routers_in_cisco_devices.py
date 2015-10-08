@@ -38,6 +38,8 @@ def upgrade():
         sa.Column('name', sa.String(length=255), nullable=False),
         sa.Column('description', sa.String(length=255), nullable=True),
         sa.Column('template_id', sa.String(length=36), nullable=True),
+        sa.Column('ha_enabled_by_default', sa.Boolean(), nullable=False,
+                  server_default=sa.sql.false()),
         sa.Column('shared', sa.Boolean(), nullable=False,
                   server_default=sa.sql.true()),
         sa.Column('slot_need', sa.Integer(), autoincrement=False,
