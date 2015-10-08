@@ -27,6 +27,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     iosxe_routing_driver as iosxe_driver)
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ha
+from neutron.plugins.cisco.extensions import routerrole
 
 
 LOG = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ LOG = logging.getLogger(__name__)
 
 DEVICE_OWNER_ROUTER_GW = constants.DEVICE_OWNER_ROUTER_GW
 HA_INFO = 'ha_info'
+ROUTER_ROLE_ATTR = routerrole.ROUTER_ROLE_ATTR
 
 
 class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
@@ -375,7 +377,8 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
 
     @staticmethod
     def _is_global_router(ri):
-        return ri.router.get('role') == cisco_constants.ROUTER_ROLE_GLOBAL
+        return (ri.router.get(ROUTER_ROLE_ATTR) ==
+                cisco_constants.ROUTER_ROLE_GLOBAL)
 
     @staticmethod
     def _is_port_v6(port):

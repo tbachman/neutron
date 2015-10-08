@@ -163,7 +163,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 'admin_state_up': True,
                 l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
             with context.session.begin(subtransactions=True):
-                global_router = self._l3_plugin.do_create_router(
+                global_router, r_hd_b_db = self._l3_plugin.do_create_router(
                     context, r_spec, router[routertype.TYPE_ATTR], False, True,
                     hosting_device_id, ROUTER_ROLE_GLOBAL)
                 log_global_router = (
@@ -227,9 +227,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 routertypeawarescheduler.AUTO_SCHEDULE_ATTR: False}}
             # notifications should never be sent for this logical router!
             with context.session.begin(subtransactions=True):
-                logical_global_router = self._l3_plugin.do_create_router(
-                    context, r_spec, router[routertype.TYPE_ATTR], False, True,
-                    None, ROUTER_ROLE_LOGICAL_GLOBAL)
+                logical_global_router, r_hd_b_db = (
+                    self._l3_plugin.do_create_router(
+                        context, r_spec, router[routertype.TYPE_ATTR], False,
+                        True, None, ROUTER_ROLE_LOGICAL_GLOBAL))
                 self._provision_ha(context, logical_global_router)
         else:
             logical_global_router = logical_global_routers[0]

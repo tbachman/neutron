@@ -33,9 +33,9 @@ from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.i18n import _LW
 from neutron.openstack.common import uuidutils
-from neutron.plugins.cisco.db.l3.l3_router_appliance_db import (
-    L3RouterApplianceDBMixin)
+from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.extensions import ha
+from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
 
 LOG = logging.getLogger(__name__)
@@ -55,6 +55,8 @@ EXTERNAL_GW_INFO = l3.EXTERNAL_GW_INFO
 DEVICE_OWNER_ROUTER_GW = l3_constants.DEVICE_OWNER_ROUTER_GW
 DEVICE_OWNER_ROUTER_INTF = l3_constants.DEVICE_OWNER_ROUTER_INTF
 DEVICE_OWNER_ROUTER_HA_INTF = l3_constants.DEVICE_OWNER_ROUTER_HA_INTF
+ROUTER_ROLE_HA_REDUNDANCY = cisco_constants.ROUTER_ROLE_HA_REDUNDANCY
+
 DEFAULT_MASTER_PRIORITY = 10
 PRIORITY_INCREASE_STEP = 10
 REDUNDANCY_ROUTER_SUFFIX = '_HA_backup_'
@@ -316,9 +318,9 @@ class HA_db_mixin(object):
                 plugging_driver.teardown_logical_port_connectivity(
                     e_context, r_b_db.redundancy_router.gw_port,
                     r_b_db.redundancy_router.hosting_info.hosting_device_id)
-            super(L3RouterApplianceDBMixin, self).update_router(
+            self._update_router_no_notify(
                 e_context, r_b_db.redundancy_router_id,
-                {'router': {EXTERNAL_GW_INFO: None}})
+                {'router': {EXTERNAL_GW_INFO: None, ha.ENABLED: False}})
             rr_ids.append(r_b_db.redundancy_router_id)
         self.notify_routers_updated(context, rr_ids)
 
@@ -416,19 +418,20 @@ class HA_db_mixin(object):
         for r_b_db in router_db.redundancy_bindings:
             spec = {EXTERNAL_GW_INFO: copy.copy(router[EXTERNAL_GW_INFO])}
             spec[EXTERNAL_GW_INFO].pop('external_fixed_ips', None)
-            # call grandparent's update method since we add gateway to
-            # a redundancy router and those have HA off anyway
-            super(L3RouterApplianceDBMixin, self).update_router(
+            spec[ha.ENABLED] = False
+            self._update_router_no_notify(
                 context, r_b_db.redundancy_router_id, {'router': spec})
             rr_ids.append(r_b_db.redundancy_router_id)
         self.notify_routers_updated(context, rr_ids)
 
     def _process_other_router_updates(self, context, router_db, update_spec):
+        rr_ids = []
         for r_b_db in router_db.redundancy_bindings:
-            # call grandparent's update method since we process non-ha
-            # updates to redundancy router
-            super(L3RouterApplianceDBMixin, self).update_router(
+            update_spec['router'][ha.ENABLED] = False
+            self._update_router_no_notify(
                 context, r_b_db.redundancy_router_id, update_spec)
+            rr_ids.append(r_b_db.redundancy_router_id)
+        self.notify_routers_updated(context, rr_ids)
 
     def _add_redundancy_routers(self, context, start_index, stop_index,
                                 user_visible_router, ports=None,
@@ -452,6 +455,8 @@ class HA_db_mixin(object):
             # The redundancy routers must have HA disabled
             r[ha.ENABLED] = False
             r['name'] = name + REDUNDANCY_ROUTER_SUFFIX + str(i)
+            # set role so that purpose of this router can be easily determined
+            r[routerrole.ROUTER_ROLE_ATTR] = ROUTER_ROLE_HA_REDUNDANCY
             gw_info = r[EXTERNAL_GW_INFO]
             if gw_info and gw_info['external_fixed_ips']:
                 # Ensure ip addresses are not specified as they cannot be

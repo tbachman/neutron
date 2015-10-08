@@ -22,7 +22,6 @@ import webob.exc
 
 import neutron
 from neutron.common import constants as l3_constants
-# from neutron.common import utils
 from neutron import context
 from neutron.extensions import extraroute
 from neutron.extensions import l3
