@@ -323,7 +323,7 @@ class HA_db_mixin(object):
                 e_context, r_b_db.redundancy_router_id,
                 {'router': {EXTERNAL_GW_INFO: None, ha.ENABLED: False}})
             rr_ids.append(r_b_db.redundancy_router_id)
-        self.notify_routers_updated(context, rr_ids)
+        self.notify_routers_updated(e_context, rr_ids)
 
     def _update_redundancy_routers(self, context, updated_router,
                                    update_specification, requested_ha_settings,
@@ -391,7 +391,7 @@ class HA_db_mixin(object):
                                             router_requested, expire=True)
             else:
                 # Notify redundancy routers about changes
-                self.notify_routers_updated(context, rr_ids)
+                self.notify_routers_updated(e_context, rr_ids)
 
         elif gateway_changed is True:
             # HA currently enabled (and to remain so) nor any HA setting update
@@ -580,15 +580,16 @@ class HA_db_mixin(object):
             if add_by_subnet is True:
                 # need to add subnet to redundancy router port
                 ports = self._core_plugin.get_ports(
-                    context, filters={'device_id': [r_id],
-                                      'network_id': [new_port['network_id']]},
+                    e_context,
+                    filters={'device_id': [r_id],
+                             'network_id': [new_port['network_id']]},
                     fields=['fixed_ips', 'id'])
                 redundancy_port = ports[0]
                 fixed_ips = redundancy_port['fixed_ips']
                 fixed_ip = {'subnet_id': itfc_info['subnet_id']}
                 fixed_ips.append(fixed_ip)
                 self._core_plugin.update_port(
-                    context, redundancy_port['id'],
+                    e_context, redundancy_port['id'],
                     {'port': {'fixed_ips': fixed_ips}})
             else:
                 redundancy_port = self._create_hidden_port(
