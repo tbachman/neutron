@@ -73,6 +73,7 @@ class DeviceStatus(object):
 
     def __init__(self):
         self.backlog_hosting_devices = {}
+        self.enable_heartbeat = False
 
     def get_backlogged_hosting_devices(self):
         return self.backlog_hosting_devices.keys()
@@ -155,14 +156,16 @@ class DeviceStatus(object):
             hd['hd_state'] = 'Unknown'
             ret_val = False
 
-        if hd_id not in self.backlog_hosting_devices:
-            hd['backlog_insertion_ts'] = max(
-                timeutils.utcnow(),
-                hd['created_at'] +
-                datetime.timedelta(seconds=hd['booting_time']))
+        if (self.enable_heartbeat is True or ret_val is False):
 
-            self.backlog_hosting_devices[hd_id] = {'hd': hd}
-            LOG.debug("Hosting device: %(hd_id)s @ %(ip)s is now added "
+            if hd_id not in self.backlog_hosting_devices:
+                hd['backlog_insertion_ts'] = max(
+                    timeutils.utcnow(),
+                    hd['created_at'] +
+                    datetime.timedelta(seconds=hd['booting_time']))
+
+                self.backlog_hosting_devices[hd_id] = {'hd': hd}
+                LOG.debug("Hosting device: %(hd_id)s @ %(ip)s is now added "
                       "to backlog", {'hd_id': hd_id, 'ip': hd_mgmt_ip})
 
         return ret_val

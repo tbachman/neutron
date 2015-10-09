@@ -114,11 +114,20 @@ class CiscoCfgAgent(manager.Manager):
                    default='neutron.plugins.cisco.cfg_agent.service_helpers'
                            '.routing_svc_helper.RoutingServiceHelper',
                    help=_("Path of the routing service helper class.")),
+        cfg.BoolOpt('enable_heartbeat',
+                    default=True,
+                    help=_("If enabled, the agent will maintain "
+                           "a heartbeat against its hosting-devices.  If  "
+                           "a device dies and recovers, the agent will then "
+                           "trigger a configuration resync.")),
+
     ]
 
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
         self._dev_status = device_status.DeviceStatus()
+        self._dev_status.enable_heartbeat = \
+            self.conf.cfg_agent.enable_heartbeat
         self.context = n_context.get_admin_context_without_session()
 
         self._initialize_rpc(host)
@@ -239,7 +248,8 @@ class CiscoCfgAgent(manager.Manager):
             LOG.debug("Reporting revived hosting devices: %s " %
                       res['revived'])
             # trigger a sync only on the revived hosting-devices
-            self.process_services(device_ids=res['revived'])
+            if (self.conf.cfg_agent.enable_heartbeat is True):
+                self.process_services(device_ids=res['revived'])
         if res['dead']:
             LOG.debug("Reporting dead hosting devices: %s", res['dead'])
             self.devmgr_rpc.report_dead_hosting_devices(context,
