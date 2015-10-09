@@ -76,5 +76,4 @@ def convert_validate_driver_class(driver_class_name):
         except ImportError as e:
             LOG.error(_LE('Failed to verify driver module %(name)s: %(err)s'),
                       {'name': driver_class_name, 'err': e})
-            pass
     raise DriverNotFound(driver=driver_class_name)

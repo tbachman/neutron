@@ -135,7 +135,14 @@ class Asr1kRouterTypeDriverTestCase(
             q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_LOGICAL_GLOBAL)
             g_l_rtrs = self._list('routers', query_params=q_p)['routers']
             self.assertEqual(len(g_l_rtrs), 0)
-            #TODO(bobmel): Also check that notification is sent
+            notifier = self.plugin.agent_notifiers[AGENT_TYPE_L3_CFG]
+            # ensure *no* update notifications where sent for global
+            # router (as there should be none) or logical global router
+            for call in notifier.method_calls:
+                if call[0] != 'router_deleted':
+                    self.assertNotIn(call[1][1][0][ROUTER_ROLE_ATTR],
+                                     [ROUTER_ROLE_GLOBAL,
+                                      ROUTER_ROLE_LOGICAL_GLOBAL])
 
     def test_router_create_adds_no_global_router(self):
         self._test_router_create_adds_no_global_router()
@@ -270,19 +277,11 @@ class Asr1kRouterTypeDriverTestCase(
         else:
             self.assertEqual(len(g_rtrs), 0)
             notifier = self.plugin.agent_notifiers[AGENT_TYPE_L3_CFG]
-            # ensure 2nd last router_deleted notification was for global router
-            notify_call = notifier.method_calls[-2]
-            self.assertEqual(notify_call[0], 'router_deleted')
-            deleted_router = notify_call[1][1]
-            self.assertEqual(deleted_router['id'], id_global_router)
-            # ensure last router_deleted notification was for logical global
-            # router
+            # ensure last router_deleted notification was for global router
             notify_call = notifier.method_calls[-1]
             self.assertEqual(notify_call[0], 'router_deleted')
             deleted_router = notify_call[1][1]
-            self.assertEqual(deleted_router[ROUTER_ROLE_ATTR],
-                             ROUTER_ROLE_LOGICAL_GLOBAL)
-            self.assertEqual(deleted_router[AUTO_SCHEDULE_ATTR], False)
+            self.assertEqual(deleted_router['id'], id_global_router)
 
     def _test_gw_router_delete_removes_global_router(self, set_context=False):
         tenant_id = _uuid()
@@ -344,7 +343,7 @@ class Asr1kRouterTypeDriverTestCase(
     def test_router_delete_removes_no_global_router(self):
         self._test_router_delete_removes_no_global_router()
 
-    def test_gw_router_delete_removes_no_global_router_non_admin(self):
+    def test_router_delete_removes_no_global_router_non_admin(self):
         self._test_router_delete_removes_no_global_router(True)
 
 
@@ -354,6 +353,7 @@ class Asr1kHARouterTypeDriverTestCase(
 
     # For the HA tests we need more than one hosting device
     router_type = 'ASR1k_Neutron_router'
+    _is_ha_tests = True
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -362,14 +362,19 @@ class Asr1kHARouterTypeDriverTestCase(
         if ext_mgr is None:
             ext_mgr = (cisco_test_case.
                        TestHASchedulingL3RouterApplianceExtensionManager())
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 1, group='ha')
 
         super(Asr1kHARouterTypeDriverTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
     def _verify_ha_created_routers(self, router_ids, num_redundancy=1,
-                                has_gw=True):
+                                   has_gw=None):
+        if has_gw is None:
+            has_gw = [True for r_id in router_ids]
+        temp = {}
+        for i in range(len(router_ids)):
+            temp[router_ids[i]] = has_gw[i]
+        has_gw = temp
         # tenant HA user_visible routers
         q_p = '%s=None' % ROUTER_ROLE_ATTR
         uv_routers = self._list('routers', query_params=q_p)['routers']
@@ -387,7 +392,7 @@ class Asr1kHARouterTypeDriverTestCase(
         hd_ids = set()
         for uv_r in uv_routers:
             uv_r_hd_id = uv_r[HOSTING_DEVICE_ATTR]
-            if has_gw is True:
+            if has_gw[uv_r['id']] is True:
                 self.assertIsNotNone(uv_r[EXTERNAL_GW_INFO])
                 hd_ids.add(uv_r_hd_id)
             else:
@@ -404,7 +409,7 @@ class Asr1kHARouterTypeDriverTestCase(
                 # redundancy router must not be hosted on same device as its
                 # user visible router since that defeats HA
                 self.assertFalse(uv_r_hd_id == rr_hd_id)
-                if has_gw is True:
+                if has_gw[uv_r['id']] is True:
                     self.assertIsNotNone(rr[EXTERNAL_GW_INFO])
                     hd_ids.add(rr_hd_id)
                 else:
@@ -424,7 +429,7 @@ class Asr1kHARouterTypeDriverTestCase(
         # logical global router for global routers HA
         q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_LOGICAL_GLOBAL)
         g_l_rtrs = self._list('routers', query_params=q_p)['routers']
-        if has_gw:
+        if g_l_rtrs:
             self.assertEqual(len(g_l_rtrs), 1)
             g_l_rtr = g_l_rtrs[0]
             self.assertEqual(g_l_rtr['name'], LOGICAL_ROUTER_ROLE_NAME)
@@ -433,7 +438,7 @@ class Asr1kHARouterTypeDriverTestCase(
             self.assertEqual(len(g_l_rtrs), 0)
 
         notifier = self.plugin.agent_notifiers[AGENT_TYPE_L3_CFG]
-        if has_gw:
+        if g_l_rtrs:
             # ensure first routers_updated notifications were
             # for global routers
             for i in range(len(hd_ids)):
@@ -468,47 +473,48 @@ class Asr1kHARouterTypeDriverTestCase(
                 # should now have one user-visible router, its single
                 # redundancy router and two global routers (one for each of
                 # the hosting devices of the aforementioned routers)
-                self._verify_ha_created_routers({r['id']})
+                self._verify_ha_created_routers([r['id']])
 
     def _test_router_create_adds_no_global_router(self, set_context=False):
         with self.router(set_context=set_context) as router:
             r = router['router']
             self.plugin._process_backlogged_routers()
-            self._verify_ha_created_routers({r['id']}, 1, False)
+            self._verify_ha_created_routers([r['id']], 1, has_gw=[False])
 
     def _verify_ha_updated_router(self, router_id, hd_ids=None, call_index=1,
                                   num_redundancy=1, has_gw=True):
         # ids of hosting devices hosting routers with gateway set
         hd_ids = hd_ids or set()
-        # tenant router
-        uv_r = self._show('routers', router_id)['router']
-        uv_r_hd_id = uv_r[HOSTING_DEVICE_ATTR]
-        if has_gw is True:
-            self.assertIsNotNone(uv_r[EXTERNAL_GW_INFO])
-            hd_ids.add(uv_r_hd_id)
-        else:
-            self.assertIsNone(uv_r[EXTERNAL_GW_INFO])
-        rr_ids = [rr_info['id']
-                  for rr_info in uv_r[ha.DETAILS][ha.REDUNDANCY_ROUTERS]]
-        # tenant HA redundancy routers
-        q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_HA_REDUNDANCY)
-        rr_id_to_rr = {
-            r['id']: r for r in self._list('routers',
-                                           query_params=q_p)['routers']}
-        all_rr_ids = rr_id_to_rr.keys()
-        self.assertEqual(len(rr_ids), num_redundancy)
-        for rr_id in rr_ids:
-            self.assertIn(rr_id, all_rr_ids)
-            rr = rr_id_to_rr[rr_id]
-            rr_hd_id = rr[HOSTING_DEVICE_ATTR]
-            # redundancy router must not be hosted on same device as its
-            # user visible router since that defeats HA
-            self.assertFalse(uv_r_hd_id == rr_hd_id)
+        if router_id:
+            # tenant router
+            uv_r = self._show('routers', router_id)['router']
+            uv_r_hd_id = uv_r[HOSTING_DEVICE_ATTR]
             if has_gw is True:
-                self.assertIsNotNone(rr[EXTERNAL_GW_INFO])
-                hd_ids.add(rr_hd_id)
+                self.assertIsNotNone(uv_r[EXTERNAL_GW_INFO])
+                hd_ids.add(uv_r_hd_id)
             else:
-                self.assertIsNone(rr[EXTERNAL_GW_INFO])
+                self.assertIsNone(uv_r[EXTERNAL_GW_INFO])
+            rr_ids = [rr_info['id']
+                      for rr_info in uv_r[ha.DETAILS][ha.REDUNDANCY_ROUTERS]]
+            # tenant HA redundancy routers
+            q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_HA_REDUNDANCY)
+            rr_id_to_rr = {
+                r['id']: r for r in self._list('routers',
+                                               query_params=q_p)['routers']}
+            all_rr_ids = rr_id_to_rr.keys()
+            self.assertEqual(len(rr_ids), num_redundancy)
+            for rr_id in rr_ids:
+                self.assertIn(rr_id, all_rr_ids)
+                rr = rr_id_to_rr[rr_id]
+                rr_hd_id = rr[HOSTING_DEVICE_ATTR]
+                # redundancy router must not be hosted on same device as its
+                # user visible router since that defeats HA
+                self.assertFalse(uv_r_hd_id == rr_hd_id)
+                if has_gw is True:
+                    self.assertIsNotNone(rr[EXTERNAL_GW_INFO])
+                    hd_ids.add(rr_hd_id)
+                else:
+                    self.assertIsNone(rr[EXTERNAL_GW_INFO])
 
         # we should have a global router on all hosting devices that hosts
         # a router (user visible or redundancy router) with gateway set
@@ -561,12 +567,12 @@ class Asr1kHARouterTypeDriverTestCase(
                             set_context=set_context)) as (router1, router2):
                 r1 = router1['router']
                 r2 = router2['router']
-                # backlog processing will trigger one routers_updated
-                # notification containing r1 and r2
+                # backlog processing to schedule the routers
                 self.plugin._process_backlogged_routers()
                 # should have no global router yet
-                r_ids = {r1['id'], r2['id']}
-                self._verify_ha_created_routers(r_ids, 1, False)
+                r_ids = [r1['id'], r2['id']]
+                self._verify_ha_created_routers(r_ids, 1, has_gw=[False,
+                                                                  False])
                 ext_gw = {'network_id': s['subnet']['network_id']}
                 r_spec = {'router': {l3.EXTERNAL_GW_INFO: ext_gw}}
                 self._update('routers', r1['id'], r_spec)
@@ -594,26 +600,92 @@ class Asr1kHARouterTypeDriverTestCase(
                             set_context=set_context)) as (router1, router2):
                 r1 = router1['router']
                 r2 = router2['router']
-                # backlog processing will trigger one routers_updated
-                # notification containing r1 and r2
+                # make sure we have only two eligible hosting devices
+                # in this test
+                qp = "template_id=00000000-0000-0000-0000-000000000005"
+                hds = self._list('hosting_devices', query_params=qp)
+                self._delete('hosting_devices',
+                             hds['hosting_devices'][1]['id'])
+                # backlog processing to schedule the routers
                 self.plugin._process_backlogged_routers()
-                r1_after = self._show('routers', r1['id'])['router']
-                hd_id = r1_after[HOSTING_DEVICE_ATTR]
-                r_ids = {r1['id'], r2['id']}
-                # should have one global router now
-                self._verify_updated_routers(r_ids, hd_id, 0)
+                self._verify_ha_created_routers([r1['id'], r2['id']])
                 r_spec = {'router': {l3.EXTERNAL_GW_INFO: None}}
                 self._update('routers', r1['id'], r_spec)
-                # should still have one global router
-                self._verify_updated_routers(r_ids, hd_id, 0)
+                # should still have two global routers, we verify using r2
+                self._verify_ha_updated_router(r2['id'])
                 self._update('routers', r2['id'], r_spec)
-                # should have no global router now
-                self._verify_updated_routers(r_ids)
+                # should have no global routers now, we verify using r1
+                self._verify_ha_updated_router(r2['id'], has_gw=False)
+
+    def _test_gw_router_delete_removes_global_router(self, set_context=False):
+        tenant_id = _uuid()
+        with self.network(tenant_id=tenant_id) as n_external:
+            res = self._create_subnet(self.fmt, n_external['network']['id'],
+                                      cidr='10.0.1.0/24', tenant_id=tenant_id)
+            s = self.deserialize(self.fmt, res)
+            self._set_net_external(s['subnet']['network_id'])
+            ext_gw = {'network_id': s['subnet']['network_id']}
+            with contextlib.nested(
+                self.router(tenant_id=tenant_id, external_gateway_info=ext_gw,
+                            set_context=set_context),
+                self.router(name='router2', tenant_id=tenant_id,
+                            external_gateway_info=ext_gw,
+                            set_context=set_context)) as (router1, router2):
+                r1 = router1['router']
+                r2 = router2['router']
+                # make sure we have only two eligible hosting devices
+                # in this test
+                qp = "template_id=00000000-0000-0000-0000-000000000005"
+                hds = self._list('hosting_devices', query_params=qp)
+                self._delete('hosting_devices',
+                             hds['hosting_devices'][1]['id'])
+                # backlog processing to schedule the routers
+                self.plugin._process_backlogged_routers()
+                self._verify_ha_created_routers([r1['id'], r2['id']])
+                self._delete('routers', r1['id'])
+                # should still have two global routers, we verify using r2
+                self._verify_ha_updated_router(r2['id'])
+                self._delete('routers', r2['id'])
+                # should have no global routers now
+                self._verify_ha_updated_router(None)
+
+    def _test_router_delete_removes_no_global_router(self, set_context=False):
+        tenant_id = _uuid()
+        with self.network(tenant_id=tenant_id) as n_external:
+            res = self._create_subnet(self.fmt, n_external['network']['id'],
+                                      cidr='10.0.1.0/24', tenant_id=tenant_id)
+            s = self.deserialize(self.fmt, res)
+            self._set_net_external(s['subnet']['network_id'])
+            ext_gw = {'network_id': s['subnet']['network_id']}
+            with contextlib.nested(
+                self.router(tenant_id=tenant_id, set_context=set_context),
+                self.router(name='router2', tenant_id=tenant_id,
+                            external_gateway_info=ext_gw,
+                            set_context=set_context)) as (router1, router2):
+                r1 = router1['router']
+                r2 = router2['router']
+                # make sure we have only two eligible hosting devices
+                # in this test
+                qp = "template_id=00000000-0000-0000-0000-000000000005"
+                hds = self._list('hosting_devices', query_params=qp)
+                self._delete('hosting_devices',
+                             hds['hosting_devices'][1]['id'])
+                self.plugin._process_backlogged_routers()
+                self._verify_ha_created_routers([r1['id'], r2['id']],
+                                                has_gw=[False, True])
+                self._delete('routers', r1['id'])
+                # should still have two global routers, we verify using r2
+                self._verify_ha_updated_router(r2['id'])
+                self._delete('routers', r2['id'])
+                # should have no global routers now
+                self._verify_ha_updated_router(None)
 
 
 class L3CfgAgentAsr1kRouterTypeDriverTestCase(
         cisco_test_case.L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase,
         cisco_ha_test.HAL3RouterTestsMixin):
+
+    _is_ha_tests = True
 
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
@@ -622,7 +694,6 @@ class L3CfgAgentAsr1kRouterTypeDriverTestCase(
         if ext_mgr is None:
             ext_mgr = (cisco_test_case.
                        TestHASchedulingL3RouterApplianceExtensionManager())
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 1, group='ha')
 
         super(L3CfgAgentAsr1kRouterTypeDriverTestCase, self).setUp(

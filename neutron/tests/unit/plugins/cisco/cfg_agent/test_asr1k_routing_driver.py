@@ -17,6 +17,8 @@ import sys
 
 import mock
 import netaddr
+from oslo_utils import uuidutils
+
 from neutron.common import constants as l3_constants
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.tests import base
@@ -31,8 +33,7 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.csr1kv import (
     iosxe_routing_driver as iosxe_driver)
 from neutron.plugins.cisco.cfg_agent.service_helpers import (
     routing_svc_helper)
-
-from oslo_utils import uuidutils
+from neutron.plugins.cisco.extensions import routerrole
 
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
@@ -122,7 +123,7 @@ class ASR1kRoutingDriver(base.BaseTestCase):
             l3_constants.INTERFACE_KEY: int_ports,
             'enable_snat': True,
             'routes': [],
-            'role': 'Logical',
+            routerrole.ROUTER_ROLE_ATTR: 'Logical',
             'cisco_ha:details': self.cisco_ha_details,
             'gw_port': self.ex_gw_port}
 
@@ -130,7 +131,8 @@ class ASR1kRoutingDriver(base.BaseTestCase):
         self.ri.internal_ports = int_ports
         # Global router
         self.global_router = copy.deepcopy(self.router)
-        self.global_router['role'] = cisco_constants.ROUTER_ROLE_GLOBAL
+        self.global_router[routerrole.ROUTER_ROLE_ATTR] = (
+            cisco_constants.ROUTER_ROLE_GLOBAL)
         self.global_router['gw_port']['ha_info']['ha_port']['fixed_ips'][0][
             'ip_address'] = self.ex_gw_ip_vip
         self.ri_global = routing_svc_helper.RouterInfo(

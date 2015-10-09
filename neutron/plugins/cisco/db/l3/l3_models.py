@@ -40,6 +40,9 @@ class RouterType(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                             sa.ForeignKey('cisco_hosting_device_templates.id',
                                           ondelete='CASCADE'))
     template = orm.relationship(hd_models.HostingDeviceTemplate)
+    # 'ha_enabled_by_default' is True if routers of this type should have HA on
+    ha_enabled_by_default = sa.Column(sa.Boolean, default=False,
+                                      nullable=False)
     # 'shared' is True if routertype is available to all tenants
     shared = sa.Column(sa.Boolean, default=True, nullable=False)
     #TODO(bobmel): add HA attribute: One of None, 'GPLB', 'VRRP', or 'HSRP'

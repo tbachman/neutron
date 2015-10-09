@@ -55,6 +55,7 @@ class RouterTypeTestCase(test_extensions_base.ExtensionTestCase):
             'name': 'Fancy router type 1',
             'description': 'Lightning fast router type',
             'template_id': _uuid(),
+            'ha_enabled_by_default': False,
             'shared': True,
             'slot_need': 200,
             'scheduler': dummy_driver,

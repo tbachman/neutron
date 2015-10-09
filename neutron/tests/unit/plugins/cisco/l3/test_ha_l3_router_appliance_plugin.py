@@ -13,7 +13,6 @@
 #    under the License.
 
 import copy
-import mock
 
 import contextlib
 from oslo_config import cfg
@@ -76,13 +75,14 @@ class TestApplianceHAL3RouterServicePlugin(
 class HAL3RouterApplianceNamespaceTestCase(
         test_l3_router_appliance_plugin.L3RouterApplianceNamespaceTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         super(HAL3RouterApplianceNamespaceTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
 
@@ -95,7 +95,7 @@ class HAL3RouterTestsMixin(object):
                          probe_target=None, probe_interval=None):
 
         if ha_enabled is None:
-            ha_enabled = cfg.CONF.ha.ha_enabled_by_default
+            ha_enabled = self._is_ha_tests
         if not ha_enabled:
             return {ha.ENABLED: False}
         ha_details = {
@@ -148,13 +148,14 @@ class HAL3RouterApplianceVMTestCase(
     HAL3RouterTestsMixin,
         test_l3_router_appliance_plugin.L3RouterApplianceVMTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
         super(HAL3RouterApplianceVMTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)
@@ -1352,13 +1353,14 @@ class L3CfgAgentHARouterApplianceTestCase(
     HAL3RouterTestsMixin,
         test_l3_router_appliance_plugin.L3CfgAgentRouterApplianceTestCase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHAL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
 
         super(L3CfgAgentHARouterApplianceTestCase, self).setUp(
@@ -1658,17 +1660,15 @@ class L3CfgAgentHARouterApplianceTestCase(
         # 3 x add interface (one for each router),
         # 1 x update of floatingip (with 3 routers included),
         # 1 x deletion of floatingip (with 3 routers included)
-        c = mock.call(mock.ANY, mock.ANY, first_operation)
         notify_call_1 = notifyApi.routers_updated.mock_calls[5]
-        self.assertTrue(notify_call_1 == c)
+        self.assertEqual(notify_call_1[1][2], first_operation)
         r_ids = {r['id'] for r in notify_call_1[1][1]}
         for r in routers:
             self.assertIn(r['id'], r_ids)
             r_ids.remove(r['id'])
         self.assertEqual(len(r_ids), 0)
-        c = mock.call(mock.ANY, mock.ANY, 'delete_floatingip')
         delete_call = notifyApi.routers_updated.mock_calls[6]
-        self.assertTrue(delete_call == c)
+        self.assertEqual(delete_call[1][2], 'delete_floatingip')
         r_ids = {r['id'] for r in delete_call[1][1]}
         for r in routers:
             self.assertIn(r['id'], r_ids)

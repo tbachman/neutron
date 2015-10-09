@@ -193,7 +193,7 @@ class RouterRedundancyBinding(model_base.BASEV2):
 class HA_db_mixin(object):
     """Mixin class to support VRRP, HSRP, and GLBP based HA for routing."""
 
-    def _ensure_create_ha_compliant(self, router):
+    def _ensure_create_ha_compliant(self, router, router_type):
         """To be called in create_router() BEFORE router is created in DB."""
         details = router.pop(ha.DETAILS, {})
         if details == ATTR_NOT_SPECIFIED:
@@ -202,7 +202,7 @@ class HA_db_mixin(object):
                ha.DETAILS: details}
 
         if not is_attr_set(res[ha.ENABLED]):
-            res[ha.ENABLED] = cfg.CONF.ha.ha_enabled_by_default
+            res[ha.ENABLED] = router_type['ha_enabled_by_default']
         if res[ha.ENABLED] and not cfg.CONF.ha.ha_support_enabled:
             raise ha.HADisabled()
         if not res[ha.ENABLED]:
@@ -262,11 +262,12 @@ class HA_db_mixin(object):
             context.session.expire(new_router_db)
         self._extend_router_dict_ha(new_router, new_router_db)
 
-    def _ensure_update_ha_compliant(self, router, current_router):
+    def _ensure_update_ha_compliant(self, router, current_router,
+                                    r_hd_binding_db):
         """To be called in update_router() BEFORE router has been
         updated in DB.
         """
-        auto_enable_ha = cfg.CONF.ha.ha_enabled_by_default
+        auto_enable_ha = r_hd_binding_db.router_type.ha_enabled_by_default
         requested_ha_details = router.pop(ha.DETAILS, {})
         # If ha_details are given then ha is assumed to be enabled even if
         # it is not explicitly specified or if auto_enable_ha says so.
@@ -322,7 +323,7 @@ class HA_db_mixin(object):
                 e_context, r_b_db.redundancy_router_id,
                 {'router': {EXTERNAL_GW_INFO: None, ha.ENABLED: False}})
             rr_ids.append(r_b_db.redundancy_router_id)
-        self.notify_routers_updated(context, rr_ids)
+        self.notify_routers_updated(e_context, rr_ids)
 
     def _update_redundancy_routers(self, context, updated_router,
                                    update_specification, requested_ha_settings,
@@ -346,7 +347,7 @@ class HA_db_mixin(object):
             router_requested[EXTERNAL_GW_INFO] = (
                 updated_router[EXTERNAL_GW_INFO])
             requested_ha_settings = self._ensure_create_ha_compliant(
-                router_requested)
+                router_requested, updated_router_db.hosting_info.router_type)
             self._create_redundancy_routers(
                 e_context, updated_router, requested_ha_settings,
                 updated_router_db, ports, expire_db=True)
@@ -390,7 +391,7 @@ class HA_db_mixin(object):
                                             router_requested, expire=True)
             else:
                 # Notify redundancy routers about changes
-                self.notify_routers_updated(context, rr_ids)
+                self.notify_routers_updated(e_context, rr_ids)
 
         elif gateway_changed is True:
             # HA currently enabled (and to remain so) nor any HA setting update
@@ -579,15 +580,16 @@ class HA_db_mixin(object):
             if add_by_subnet is True:
                 # need to add subnet to redundancy router port
                 ports = self._core_plugin.get_ports(
-                    context, filters={'device_id': [r_id],
-                                      'network_id': [new_port['network_id']]},
+                    e_context,
+                    filters={'device_id': [r_id],
+                             'network_id': [new_port['network_id']]},
                     fields=['fixed_ips', 'id'])
                 redundancy_port = ports[0]
                 fixed_ips = redundancy_port['fixed_ips']
                 fixed_ip = {'subnet_id': itfc_info['subnet_id']}
                 fixed_ips.append(fixed_ip)
                 self._core_plugin.update_port(
-                    context, redundancy_port['id'],
+                    e_context, redundancy_port['id'],
                     {'port': {'fixed_ips': fixed_ips}})
             else:
                 redundancy_port = self._create_hidden_port(
