@@ -71,6 +71,21 @@ class TestHostingDevice(base.BaseTestCase):
         self.assertTrue(self.status.is_hosting_device_reachable(
             self.hosting_device))
 
+    def test_is_hosting_device_reachable_positive_heartbeat_disabled(self):
+        self.status.enable_heartbeat = False
+        self.assertTrue(self.status.is_hosting_device_reachable(
+            self.hosting_device))
+        self.assertEqual(0, len(self.status.get_backlogged_hosting_devices()))
+
+    def test_is_hosting_device_reachable_positive_heartbeat_enabled(self):
+        self.status.enable_heartbeat = True
+        self.assertTrue(self.status.is_hosting_device_reachable(
+            self.hosting_device))
+        self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
+        self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
+        self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
+                         self.hosting_device)
+
     def test_is_hosting_device_reachable_negative(self):
         self.assertEqual(0, len(self.status.backlog_hosting_devices))
         self.hosting_device['created_at'] = self.created_at_str  # Back to str
@@ -84,6 +99,27 @@ class TestHostingDevice(base.BaseTestCase):
         self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
         self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
                          self.hosting_device)
+
+    def test_is_hosting_device_reachable_negative_heartbeat_disabled(self):
+        """
+        Even if heartbeat is disabled, unreachable hosting device should
+        still be backlogged
+        """
+        self.status.enable_heartbeat = False
+
+        self.assertEqual(0, len(self.status.backlog_hosting_devices))
+        self.hosting_device['created_at'] = self.created_at_str  # Back to str
+        device_status._is_pingable.return_value = False
+        self.hosting_device['hd_state'] = 'Unknown'
+
+        self.assertFalse(device_status._is_pingable('1.2.3.4'))
+        self.assertFalse(self.status.is_hosting_device_reachable(
+            self.hosting_device))
+        self.assertEqual(1, len(self.status.get_backlogged_hosting_devices()))
+        self.assertTrue(123 in self.status.get_backlogged_hosting_devices())
+        self.assertEqual(self.status.backlog_hosting_devices[123]['hd'],
+                         self.hosting_device)
+
 
     def test_test_is_hosting_device_reachable_negative_exisiting_hd(self):
         self.status.backlog_hosting_devices.clear()
