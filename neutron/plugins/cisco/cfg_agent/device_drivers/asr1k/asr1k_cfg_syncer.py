@@ -18,6 +18,7 @@ import netaddr
 from neutron.common import constants
 from neutron.i18n import _LI
 from neutron.plugins.cisco.common import cisco_constants
+from neutron.plugins.cisco.extensions import routerrole
 
 import re
 import xml.etree.ElementTree as ET
@@ -30,6 +31,8 @@ from neutron.plugins.cisco.cfg_agent.device_drivers.asr1k import (
 from oslo_log import log as logging
 
 LOG = logging.getLogger(__name__)
+
+ROUTER_ROLE_ATTR = routerrole.ROUTER_ROLE_ATTR
 
 NROUTER_REGEX = "nrouter-(\w{6,6})"
 
@@ -132,8 +135,9 @@ class ConfigSyncer(object):
                     interface_segment_dict[segment_id] = []
                     if segment_id not in segment_nat_dict:
                         segment_nat_dict[segment_id] = False
-                interface['is_external'] = \
-                    (router['role'] == cisco_constants.ROUTER_ROLE_GLOBAL)
+                interface['is_external'] = (
+                    router[ROUTER_ROLE_ATTR] ==
+                    cisco_constants.ROUTER_ROLE_GLOBAL)
                 interface_segment_dict[segment_id].append(interface)
 
             # Mark which segments have NAT enabled

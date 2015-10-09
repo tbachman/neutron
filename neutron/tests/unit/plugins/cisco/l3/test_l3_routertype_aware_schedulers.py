@@ -1141,13 +1141,14 @@ class TestSchedulingHACapableL3RouterServicePlugin(
 class L3RouterHostingDeviceHARandomSchedulerTestCase(
         L3RoutertypeAwareHostingDeviceSchedulerTestCaseBase):
 
+    _is_ha_tests = True
+
     def setUp(self, core_plugin=None, l3_plugin=None, dm_plugin=None,
               ext_mgr=None):
         if l3_plugin is None:
             l3_plugin = HA_L3_PLUGIN_KLASS
         if ext_mgr is None:
             ext_mgr = TestHASchedulingL3RouterApplianceExtensionManager()
-        cfg.CONF.set_override('ha_enabled_by_default', True, group='ha')
         cfg.CONF.set_override('default_ha_redundancy_level', 2, group='ha')
         super(L3RouterHostingDeviceHARandomSchedulerTestCase, self).setUp(
             l3_plugin=l3_plugin, ext_mgr=ext_mgr)

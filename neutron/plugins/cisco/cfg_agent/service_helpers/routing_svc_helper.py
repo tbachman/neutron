@@ -33,10 +33,12 @@ from neutron.plugins.cisco.cfg_agent.device_drivers import driver_mgr
 from neutron.plugins.cisco.cfg_agent import device_status
 from neutron.plugins.cisco.common import cisco_constants as c_constants
 from neutron.plugins.cisco.extensions import ha
+from neutron.plugins.cisco.extensions import routerrole
 
 LOG = logging.getLogger(__name__)
 
 N_ROUTER_PREFIX = 'nrouter-'
+ROUTER_ROLE_ATTR = routerrole.ROUTER_ROLE_ATTR
 
 
 class RouterInfo(object):
@@ -128,7 +130,6 @@ class CiscoRoutingPluginApi(object):
         @param router_id: id of router associated with the floatingips
         @param router_id: dict with floatingip_id as key and status as value
         """
-        """Call the plugin update floating IPs's operational status."""
         cctxt = self.client.prepare(version='1.1')
         return cctxt.call(context, 'update_floatingip_statuses_cfg',
                           router_id=router_id, fip_statuses=fip_statuses)
@@ -391,7 +392,7 @@ class RoutingServiceHelper(object):
         """
         #ToDo(Hareesh): Simplify if possible
         for r in routers:
-            if r['role'] == c_constants.ROUTER_ROLE_GLOBAL:
+            if r[ROUTER_ROLE_ATTR] == c_constants.ROUTER_ROLE_GLOBAL:
                 routers.remove(r)
                 routers.append(r)
 
@@ -439,6 +440,7 @@ class RoutingServiceHelper(object):
                 self._router_removed(router_id)
                 deleted_id_list.append(router_id)
             if removed_routers:
+                self._adjust_router_list_for_global_router(removed_routers)
                 for router in removed_routers:
                     self._router_removed(router['id'])
                     deleted_id_list.append(router['id'])
@@ -650,12 +652,13 @@ class RoutingServiceHelper(object):
         """
         ri = RouterInfo(router_id, router)
         driver = self._drivermgr.set_driver(router)
-        if router['role'] in [c_constants.ROUTER_ROLE_GLOBAL,
-                              c_constants.ROUTER_ROLE_LOGICAL_GLOBAL]:
+        if router[ROUTER_ROLE_ATTR] in [
+            c_constants.ROUTER_ROLE_GLOBAL,
+            c_constants.ROUTER_ROLE_LOGICAL_GLOBAL]:
             # No need to create a vrf for Global or logical global routers
             LOG.debug("Skipping router_added device processing for %(id)s as "
                       "its role is %(role)s",
-                      {'id': router_id, 'role': router['role']})
+                      {'id': router_id, 'role': router[ROUTER_ROLE_ATTR]})
         else:
             driver.router_added(ri)
         self.router_info[router_id] = ri

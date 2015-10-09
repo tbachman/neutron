@@ -109,6 +109,9 @@ class RoutertypeTestCaseMixin(object):
             'description': kwargs.get('description'),
             'template_id': template_id,
             'slot_need': slot_need,
+            'shared': kwargs.get('shared', True),
+            'ha_enabled_by_default': kwargs.get('ha_enabled_by_default',
+                                                False),
             'scheduler': kwargs.get('scheduler', NOOP_SCHEDULER),
             'driver': NOOP_RT_DRIVER,
             'cfg_agent_service_helper': NOOP_AGT_SVC_HELPER,
@@ -143,7 +146,8 @@ class RoutertypeTestCaseMixin(object):
                     self.fmt, template['hosting_device_template']['id'],
                     routertype_name,
                     RT_SETTINGS[routertype_name]['slot_need'],
-                    scheduler=RT_SETTINGS[routertype_name]['scheduler'])
+                    scheduler=RT_SETTINGS[routertype_name]['scheduler'],
+                    ha_enabled_by_default=self._is_ha_tests)
 
     def _test_remove_routertypes(self, delete_routers=True):
         if delete_routers:

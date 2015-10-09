@@ -113,7 +113,7 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         self._ncc_connection = None
 
     def cleanup_invalid_cfg(self, hd, routers):
-        # at this point nothing to be done for CSR
+        self._asr_config = None
         return
 
     ##### Internal Functions  ####
@@ -198,25 +198,21 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
     def _add_default_route(self, ri, ext_gw_port):
         ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
         if ext_gw_ip:
-            conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
             conf_str = snippets.DEFAULT_ROUTE_CFG % (vrf_name, ext_gw_ip)
             if not self._cfg_exists(conf_str):
                 conf_str = snippets.SET_DEFAULT_ROUTE % (vrf_name, ext_gw_ip)
-                rpc_obj = conn.edit_config(target='running', config=conf_str)
-                self._check_response(rpc_obj, 'SET_DEFAULT_ROUTE')
+                self._edit_running_config(conf_str, 'SET_DEFAULT_ROUTE')
 
     def _remove_default_route(self, ri, ext_gw_port):
         ext_gw_ip = ext_gw_port['subnet']['gateway_ip']
         if ext_gw_ip:
-            conn = self._get_connection()
             vrf_name = self._get_vrf_name(ri)
             conf_str = snippets.DEFAULT_ROUTE_CFG % (vrf_name, ext_gw_ip)
             if self._cfg_exists(conf_str):
                 conf_str = snippets.REMOVE_DEFAULT_ROUTE % (vrf_name,
                                                             ext_gw_ip)
-                rpc_obj = conn.edit_config(target='running', config=conf_str)
-                self._check_response(rpc_obj, 'REMOVE_DEFAULT_ROUTE')
+                self._edit_running_config(conf_str, 'REMOVE_DEFAULT_ROUTE')
 
     def _add_floating_ip(self, ri, floating_ip, fixed_ip):
         vrf_name = self._get_vrf_name(ri)
@@ -469,30 +465,17 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         return len(cfg_raw) > 0
 
     def _set_interface(self, name, ip_address, mask):
-        conn = self._get_connection()
         conf_str = snippets.SET_INTC % (name, ip_address, mask)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_INTC')
+        self._edit_running_config(conf_str, 'SET_INTC')
 
     def _do_create_vrf(self, vrf_name):
-        try:
-            conn = self._get_connection()
-            conf_str = snippets.CREATE_VRF % vrf_name
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            if self._check_response(rpc_obj, 'CREATE_VRF'):
-                LOG.info(_LI("VRF %s successfully created"), vrf_name)
-        except Exception:
-            LOG.exception(_LE("Failed creating VRF %s"), vrf_name)
+        conf_str = snippets.CREATE_VRF % vrf_name
+        self._edit_running_config(conf_str, 'CREATE_VRF')
 
     def _do_remove_vrf(self, vrf_name):
         if vrf_name in self._get_vrfs():
-            conn = self._get_connection()
             conf_str = snippets.REMOVE_VRF % vrf_name
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            if self._check_response(rpc_obj, 'REMOVE_VRF'):
-                LOG.info(_LI("VRF %s removed"), vrf_name)
-        else:
-            LOG.warning(_LW("VRF %s not present"), vrf_name)
+            self._edit_running_config(conf_str, 'REMOVE_VRF')
 
     def _do_create_sub_interface(self, sub_interface, vlan_id, vrf_name, ip,
                                 mask):
@@ -553,71 +536,51 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         :raises: neutron.plugins.cisco.cfg_agent.cfg_exceptions.
         CSR1kvConfigException
         """
-        conn = self._get_connection()
         # Duplicate ACL creation throws error, so checking
         # it first. Remove it in future as this is not common in production
         acl_present = self._check_acl(acl_no, network, netmask)
         if not acl_present:
             conf_str = snippets.CREATE_ACL % (acl_no, network, netmask)
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, 'CREATE_ACL')
+            self._edit_running_config(conf_str, 'CREATE_ACL')
 
         conf_str = snippets.SET_DYN_SRC_TRL_INTFC % (acl_no, outer_itfc,
                                                     vrf_name)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'CREATE_SNAT')
+        self._edit_running_config(conf_str, 'SET_DYN_SRC_TRL_INTFC')
 
         conf_str = snippets.SET_NAT % (inner_itfc, 'inside')
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_NAT')
-
+        self._edit_running_config(conf_str, 'SET_NAT_INSIDE')
         conf_str = snippets.SET_NAT % (outer_itfc, 'outside')
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_NAT')
+        self._edit_running_config(conf_str, 'SET_NAT_OUTSIDE')
 
     def _add_interface_nat(self, itfc_name, itfc_type):
-        conn = self._get_connection()
         conf_str = snippets.SET_NAT % (itfc_name, itfc_type)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_NAT ' + itfc_type)
+        self._edit_running_config(conf_str, 'SET_NAT_' + itfc_type)
 
     def _remove_interface_nat(self, itfc_name, itfc_type):
-        conn = self._get_connection()
         conf_str = snippets.REMOVE_NAT % (itfc_name, itfc_type)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'REMOVE_NAT ' + itfc_type)
+        self._edit_running_config(conf_str, 'SET_NAT_' + itfc_type)
 
     def _remove_dyn_nat_rule(self, acl_no, outer_itfc_name, vrf_name):
-        conn = self._get_connection()
         conf_str = snippets.SNAT_CFG % (acl_no, outer_itfc_name, vrf_name)
         if self._cfg_exists(conf_str):
             conf_str = snippets.REMOVE_DYN_SRC_TRL_INTFC % (
                 acl_no, outer_itfc_name, vrf_name)
-            rpc_obj = conn.edit_config(target='running', config=conf_str)
-            self._check_response(rpc_obj, 'REMOVE_DYN_SRC_TRL_INTFC')
-
+            self._edit_running_config(conf_str, 'REMOVE_DYN_SRC_TRL_INTFC')
         conf_str = snippets.REMOVE_ACL % acl_no
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'REMOVE_ACL')
+        self._edit_running_config(conf_str, 'REMOVE_ACL')
 
     def _remove_dyn_nat_translations(self):
-        conn = self._get_connection()
         conf_str = snippets.CLEAR_DYN_NAT_TRANS
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'CLEAR_DYN_NAT_TRANS')
+        self._edit_running_config(conf_str, 'CLEAR_DYN_NAT_TRANS')
 
     def _do_add_floating_ip(self, floating_ip, fixed_ip, vrf):
-        conn = self._get_connection()
         conf_str = snippets.SET_STATIC_SRC_TRL % (fixed_ip, floating_ip, vrf)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_STATIC_SRC_TRL')
+        self._edit_running_config(conf_str, 'SET_STATIC_SRC_TRL')
 
     def _do_remove_floating_ip(self, floating_ip, fixed_ip, vrf):
-        conn = self._get_connection()
-        conf_str = snippets.REMOVE_STATIC_SRC_TRL % (fixed_ip, floating_ip,
-                                                     vrf)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'REMOVE_STATIC_SRC_TRL')
+        conf_str = snippets.REMOVE_STATIC_SRC_TRL % (
+            fixed_ip, floating_ip, vrf)
+        self._edit_running_config(conf_str, 'REMOVE_STATIC_SRC_TRL')
 
     def _get_floating_ip_cfg(self):
         ios_cfg = self._get_running_config()
@@ -626,16 +589,12 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         return res
 
     def _add_static_route(self, dest, dest_mask, next_hop, vrf):
-        conn = self._get_connection()
         conf_str = snippets.SET_IP_ROUTE % (vrf, dest, dest_mask, next_hop)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'SET_IP_ROUTE')
+        self._edit_running_config(conf_str, 'SET_IP_ROUTE')
 
     def _remove_static_route(self, dest, dest_mask, next_hop, vrf):
-        conn = self._get_connection()
         conf_str = snippets.REMOVE_IP_ROUTE % (vrf, dest, dest_mask, next_hop)
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, 'REMOVE_IP_ROUTE')
+        self._edit_running_config(conf_str, 'REMOVE_IP_ROUTE')
 
     def _get_static_route_cfg(self):
         ios_cfg = self._get_running_config()
@@ -682,9 +641,9 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
 
     def _edit_running_config(self, conf_str, snippet):
         conn = self._get_connection()
-        LOG.warn(_LW("Config generated for [%(device)s] %(snip)s is:%(conf)s "
+        LOG.info(_LI("Config generated for [%(device)s] %(snip)s is:%(conf)s "
                  "caller:%(caller)s"),
-                 {'device': self.hosting_device['name'],
+                 {'device': self.hosting_device['id'],
                   'snip': snippet,
                   'conf': conf_str,
                   'caller': self.caller_name()})

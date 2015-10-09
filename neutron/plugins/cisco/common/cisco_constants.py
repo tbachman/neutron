@@ -149,7 +149,9 @@ CSR1KV_ROUTER_TYPE = 'CSR1kv_router'
 # Router roles
 ROUTER_ROLE_GLOBAL = 'Global'
 ROUTER_ROLE_LOGICAL_GLOBAL = 'Logical-Global'
-
+ROUTER_ROLE_HA_REDUNDANCY = 'HA-Redundancy'
+ALLOWED_ROUTER_ROLES = [ROUTER_ROLE_GLOBAL, ROUTER_ROLE_LOGICAL_GLOBAL,
+                        ROUTER_ROLE_HA_REDUNDANCY]
 
 # Prefix of name given to global routers
 ROUTER_ROLE_NAME_PREFIX = ROUTER_ROLE_GLOBAL + '-router'

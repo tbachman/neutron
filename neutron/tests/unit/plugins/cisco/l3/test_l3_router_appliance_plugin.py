@@ -176,7 +176,7 @@ class L3RouterApplianceTestCaseBase(
             self._test_create_routertypes(templates.values())
         # in unit tests we don't use keystone so we mock that session
         self.core_plugin._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
-            keystone_session=mock.MagicMock())
+            True, None, None, None, '', keystone_session=mock.MagicMock())
         self._mock_svc_vm_create_delete(self.core_plugin)
         self._mock_io_file_ops()
         if self.mock_cfg_agent_notifiers is True:

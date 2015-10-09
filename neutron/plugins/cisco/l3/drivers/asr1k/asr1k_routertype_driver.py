@@ -20,6 +20,8 @@ from neutron import manager
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.common import cisco_constants
 from neutron.plugins.cisco.db.l3 import ha_db
+from neutron.plugins.cisco.db.l3.l3_router_appliance_db import (
+    L3RouterApplianceDBMixin)
 from neutron.plugins.cisco.extensions import routerhostingdevice
 from neutron.plugins.cisco.extensions import routerrole
 from neutron.plugins.cisco.extensions import routertype
@@ -60,10 +62,11 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         if current[HOSTING_DEVICE_ATTR] is None:
             return
+        e_context = context.elevated()
         if current['gw_port_id']:
-            self._conditionally_add_global_router(context, current)
+            self._conditionally_add_global_router(e_context, current)
         else:
-            self._conditionally_remove_global_router(context, current, True)
+            self._conditionally_remove_global_router(e_context, current, True)
 
     def delete_router_precommit(self, context, router_context):
         pass
@@ -81,7 +84,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # connectivity.
         current = router_context.current
         if current['gw_port_id'] and current[HOSTING_DEVICE_ATTR] is not None:
-            self._conditionally_add_global_router(context, current)
+            self._conditionally_add_global_router(context.elevated(), current)
 
     def unschedule_router_precommit(self, context, router_context):
         pass
@@ -93,7 +96,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         current = router_context.current
         hd_id = current[HOSTING_DEVICE_ATTR]
         if current['gw_port_id'] and hd_id is not None:
-            self._conditionally_remove_global_router(context, current)
+            self._conditionally_remove_global_router(context.elevated(),
+                                                     current)
 
     def add_router_interface_precommit(self, context, r_port_context):
         pass
@@ -161,7 +165,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 'admin_state_up': True,
                 l3.EXTERNAL_GW_INFO: {'network_id': ext_nw}}}
             with context.session.begin(subtransactions=True):
-                global_router = self._l3_plugin.do_create_router(
+                global_router, r_hd_b_db = self._l3_plugin.do_create_router(
                     context, r_spec, router[routertype.TYPE_ATTR], False, True,
                     hosting_device_id, ROUTER_ROLE_GLOBAL)
                 log_global_router = (
@@ -178,8 +182,8 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                     priority=ha_priority,
                     user_router_id=log_global_router['id'])
             context.session.add(r_b_b)
-            self._l3_plugin.add_type_and_hosting_device_info(
-                context.elevated(), global_router)
+            self._l3_plugin.add_type_and_hosting_device_info(context,
+                                                             global_router)
             for ni in self._l3_plugin.get_notifiers(context, [global_router]):
                 if ni['notifier']:
                     ni['notifier'].routers_updated(context, ni['routers'])
@@ -225,9 +229,10 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
                 routertypeawarescheduler.AUTO_SCHEDULE_ATTR: False}}
             # notifications should never be sent for this logical router!
             with context.session.begin(subtransactions=True):
-                logical_global_router = self._l3_plugin.do_create_router(
-                    context, r_spec, router[routertype.TYPE_ATTR], False, True,
-                    None, ROUTER_ROLE_LOGICAL_GLOBAL)
+                logical_global_router, r_hd_b_db = (
+                    self._l3_plugin.do_create_router(
+                        context, r_spec, router[routertype.TYPE_ATTR], False,
+                        True, None, ROUTER_ROLE_LOGICAL_GLOBAL))
                 self._provision_ha(context, logical_global_router)
         else:
             logical_global_router = logical_global_routers[0]
@@ -279,10 +284,12 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
             # this should not happen but ...
             return
         if num_rtrs == 0:
-            # there are no global routers left so the logical global router
-            # can also be deleted
-            self._l3_plugin.delete_router(context, log_global_routers[0]['id'],
-                                          unschedule=False)
+            # There are no global routers left so the logical global router
+            # can also be deleted.
+            # We use parent class method as no special operations beyond what
+            # the base implemenation does are needed for logical global router
+            super(L3RouterApplianceDBMixin, self._l3_plugin).delete_router(
+                context, log_global_routers[0]['id'])
         else:
             self._update_ha_redundancy_level(context, log_global_routers[0],
                                              -1)

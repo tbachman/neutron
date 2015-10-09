@@ -20,6 +20,7 @@ import threading
 from keystoneclient.auth.identity import v3
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient import session
+from keystoneclient.v2_0 import client as k_client
 from keystoneclient.v3 import client
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -140,27 +141,66 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
     @property
     def svc_vm_mgr(self):
         if self._svc_vm_mgr_obj is None:
-            self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
-                keystone_session=self._keystone_auth_session())
+            if hasattr(cfg.CONF.keystone_authtoken, 'project_domain_id'):
+                self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
+                    is_auth_v3=True,
+                    keystone_session=self._keystone_auth_session())
+            else:
+                auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
+                u_name = cfg.CONF.keystone_authtoken.admin_user
+                pw = cfg.CONF.keystone_authtoken.admin_password
+                tenant = cfg.CONF.general.l3_admin_tenant
+
+                self._svc_vm_mgr_obj = service_vm_lib.ServiceVMManager(
+                    is_auth_v3=False,
+                    user=u_name, passwd=pw, l3_admin_tenant=tenant,
+                    auth_url=auth_url)
         return self._svc_vm_mgr_obj
+
+    @classmethod
+    def _get_tenant_id_using_keystone_v2(cls):
+        auth_url = cfg.CONF.keystone_authtoken.identity_uri + "/v2.0"
+        user = cfg.CONF.keystone_authtoken.admin_user
+        pw = cfg.CONF.keystone_authtoken.admin_password
+        tenant = cfg.CONF.keystone_authtoken.admin_tenant_name
+        keystone = k_client.Client(username=user, password=pw,
+                                   tenant_name=tenant,
+                                   auth_url=auth_url)
+        try:
+            tenant = keystone.tenants.find(
+                name=cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NotFound:
+            LOG.error(_LE('No tenant with a name or ID of %s exists.'),
+                      cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NoUniqueMatch:
+            LOG.error(_LE('Multiple tenants matches found for %s'),
+                      cfg.CONF.general.l3_admin_tenant)
+        return tenant.id
+
+    @classmethod
+    def _get_tenant_id_using_keystone_v3(cls):
+        keystone = client.Client(session=cls._keystone_auth_session())
+        try:
+            tenant = keystone.projects.find(
+                name=cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NotFound:
+            LOG.error(_LE('No tenant with a name or ID of %s exists.'),
+                      cfg.CONF.general.l3_admin_tenant)
+        except k_exceptions.NoUniqueMatch:
+            LOG.error(_LE('Multiple tenants matches found for %s'),
+                      cfg.CONF.general.l3_admin_tenant)
+        return tenant.id
 
     @classmethod
     def l3_tenant_id(cls):
         """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
-            # This should normally only happen once so we register hosting
-            # device templates defined in config file here.
-            keystone = client.Client(session=cls._keystone_auth_session())
-            try:
-                tenant = keystone.projects.find(
-                    name=cfg.CONF.general.l3_admin_tenant)
-                cls._l3_tenant_uuid = tenant.id
-            except k_exceptions.NotFound:
-                LOG.error(_LE('No tenant with a name or ID of %s exists.'),
-                          cfg.CONF.general.l3_admin_tenant)
-            except k_exceptions.NoUniqueMatch:
-                LOG.error(_LE('Multiple tenants matches found for %s'),
-                          cfg.CONF.general.l3_admin_tenant)
+            if hasattr(cfg.CONF.keystone_authtoken, 'project_domain_id'):
+                # TODO(sridar): hack for now to determing if keystone v3
+                # API is to be used.
+                cls._l3_tenant_uuid = cls._get_tenant_id_using_keystone_v3()
+            else:
+                cls._l3_tenant_uuid = cls._get_tenant_id_using_keystone_v2()
         return cls._l3_tenant_uuid
 
     @classmethod
@@ -553,6 +593,10 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         # devstack script that creates a Neutron router, which in turn
         # triggers service VM dispatching.
         # Only perform pool maintenance if needed Nova services have started
+
+        # For now the pool size is only elastic for service VMs.
+        if template['host_category'] != VM_CATEGORY:
+            return
         if cfg.CONF.general.ensure_nova_running and not self._nova_running:
             if self.svc_vm_mgr.nova_services_up():
                 self._nova_running = True
@@ -576,9 +620,6 @@ class HostingDeviceManagerMixin(hosting_devices_db.HostingDeviceDBMixin):
         :param context: context for this operation
         :param template: db object for hosting device template
         """
-        # For now the pool size is only elastic for service VMs.
-        if template['host_category'] != VM_CATEGORY:
-            return
         #TODO(bobmel): Support HA/load-balanced Neutron servers:
         #TODO(bobmel): Locking across multiple running Neutron server instances
         lock = self._get_template_pool_lock(template['id'])
