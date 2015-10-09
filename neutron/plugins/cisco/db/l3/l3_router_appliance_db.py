@@ -438,11 +438,12 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
     def _notify_affected_routers(self, context, router_ids, operation):
         ha_supported = utils.is_extension_supported(self, ha.HA_ALIAS)
         valid_router_ids = []
+        e_context = context.elevated()
         for main_router_id in router_ids:
             if main_router_id is None:
                 continue
             valid_router_ids.append(main_router_id)
-            r_hd_binding_db = self._get_router_binding_info(context.elevated(),
+            r_hd_binding_db = self._get_router_binding_info(e_context,
                                                             main_router_id)
             is_ha = (ha_supported and r_hd_binding_db.router_type_id !=
                      self.get_namespace_router_type_id(context))
@@ -452,15 +453,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                     context, main_router_id)
                 if router_id_list:
                     valid_router_ids.extend(router_id_list)
-        routers = []
-        for r_id in valid_router_ids:
-            router = self.get_router(context, r_id)
-            self.add_type_and_hosting_device_info(context.elevated(), router)
-            routers.append(router)
-        for ni in self.get_notifiers(context, routers):
-            if ni['notifier']:
-                ni['notifier'].routers_updated(context, ni['routers'],
-                                               operation)
+        self.notify_routers_updated(e_context, valid_router_ids,
+                                    operation)
 
     def update_floatingip(self, context, floatingip_id, floatingip):
         orig_fl_ip = super(L3RouterApplianceDBMixin, self).get_floatingip(
