@@ -331,7 +331,7 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         parse = ciscoconfparse.CiscoConfParse(ios_cfg)
         itfcs_raw = parse.find_lines("^interface GigabitEthernet")
         itfcs = [raw_if.strip().split(' ')[1] for raw_if in itfcs_raw]
-        LOG.debug("Interfaces on hosting device: %s" % itfcs)
+        LOG.debug("Interfaces on hosting device: %s", itfcs)
         return itfcs
 
     def _get_interface_ip(self, interface_name):
@@ -346,7 +346,7 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
         for line in children:
             if 'ip address' in line:
                 ip_address = line.strip().split(' ')[2]
-                LOG.debug("IP Address:%s" % ip_address)
+                LOG.debug("IP Address:%s", ip_address)
                 return ip_address
         LOG.warning(_LW("Cannot find interface: %s"), interface_name)
         return None
@@ -647,8 +647,23 @@ class IosXeRoutingDriver(devicedriver_api.RoutingDriverBase):
                   'snip': snippet,
                   'conf': conf_str,
                   'caller': self.caller_name()})
-        rpc_obj = conn.edit_config(target='running', config=conf_str)
-        self._check_response(rpc_obj, snippet, conf_str=conf_str)
+        try:
+            rpc_obj = conn.edit_config(target='running', config=conf_str)
+            self._check_response(rpc_obj, snippet, conf_str=conf_str)
+        except Exception:
+            # Here we catch all exceptions caused by REMOVE_/DELETE_ configs
+            # to avoid config agent to get stuck once it hits this condition.
+            # This is needed since the current ncclient version (0.4.2)
+            # generates an exception when an attempt to configure the device
+            # fails by the device (ASR1K router) but it doesn't provide any
+            # details about the error message that the device reported.
+            # With ncclient 0.4.4 version and onwards the exception returns
+            # also the proper error. Hence this code can be changed when the
+            # ncclient version is increased.
+            if re.search(r"REMOVE_|DELETE_", snippet):
+                LOG.error(_LE("Pass exception for %s"), snippet)
+            else:
+                raise
 
     @staticmethod
     def _check_response(rpc_obj, snippet_name, conf_str=None):
