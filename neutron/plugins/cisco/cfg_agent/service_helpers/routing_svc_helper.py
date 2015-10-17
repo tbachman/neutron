@@ -337,6 +337,7 @@ class RoutingServiceHelper(object):
         except oslo_messaging.MessagingException:
             LOG.exception(_LE("RPC Error in fetching routers from plugin"))
             self.fullsync = True
+            raise
 
     @staticmethod
     def _get_router_ids_from_removed_devices_info(removed_devices_info):
