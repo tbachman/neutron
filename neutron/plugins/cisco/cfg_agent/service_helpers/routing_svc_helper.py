@@ -134,6 +134,12 @@ class CiscoRoutingPluginApi(object):
         return cctxt.call(context, 'update_floatingip_statuses_cfg',
                           router_id=router_id, fip_statuses=fip_statuses)
 
+    def send_update_port_statuses(self, context, port_ids, status):
+        """Call the pluging to update the port status which updates the DB."""
+        return self.call(context,
+                         self.make_msg('update_port_statuses_cfg',
+                                       port_ids=port_ids, status=status))
+
 
 class RoutingServiceHelper(object):
 
@@ -339,6 +345,7 @@ class RoutingServiceHelper(object):
         except oslo_messaging.MessagingException:
             LOG.exception(_LE("RPC Error in fetching routers from plugin"))
             self.fullsync = True
+            raise
 
     @staticmethod
     def _get_router_ids_from_removed_devices_info(removed_devices_info):
@@ -479,6 +486,26 @@ class RoutingServiceHelper(object):
                           device_id)
             self.sync_devices.add(device_id)
 
+    def _send_update_port_statuses(self, port_ids, status):
+        """Sends update notifications to set the operational status of the
+        list of router ports provided. To make each notification doesn't exceed
+        the RPC length, each message contains a maximum of MAX_PORTS_IN_BATCH
+        port ids.
+
+        :param port_ids: List of ports to update the status
+        :param status: operational status to update
+                       (ex: l3_constants.PORT_STATUS_ACTIVE)
+        """
+        if not port_ids:
+            return
+
+        MAX_PORTS_IN_BATCH = 50
+        list_chunks_ports = [port_ids[i:i + MAX_PORTS_IN_BATCH]
+            for i in xrange(0, len(port_ids), MAX_PORTS_IN_BATCH)]
+        for chunk_ports in list_chunks_ports:
+            self.plugin_rpc.send_update_port_statuses(self.context,
+                            chunk_ports, status)
+
     def _process_router(self, ri):
         """Process a router, apply latest configuration and update router_info.
 
@@ -496,14 +523,10 @@ class RoutingServiceHelper(object):
         if the configuration operation fails.
         """
         try:
-            #ToDo(Hareesh): Check if we need these 1C debugs
-            # LOG.debug("++++ ri = %s " % (pp.pformat(ri)))
             ex_gw_port = ri.router.get('gw_port')
-            # LOG.debug("++++ ex_gw_port = %s " % (pp.pformat(ex_gw_port)))
             ri.ha_info = ri.router.get('ha_info', None)
             internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
 
-            # LOG.debug("++internal ports:%s" %(pp.pformat(internal_ports)))
             existing_port_ids = set([p['id'] for p in ri.internal_ports])
             current_port_ids = set([p['id'] for p in internal_ports
                                     if p['admin_state_up']])
@@ -515,6 +538,7 @@ class RoutingServiceHelper(object):
 
             new_port_ids = [p['id'] for p in new_ports]
             old_port_ids = [p['id'] for p in old_ports]
+            list_port_ids_up = []
             LOG.debug("++ new_port_ids = %s" % (pp.pformat(new_port_ids)))
             LOG.debug("++ old_port_ids = %s" % (pp.pformat(old_port_ids)))
 
@@ -522,6 +546,7 @@ class RoutingServiceHelper(object):
                 self._set_subnet_info(p)
                 self._internal_network_added(ri, p, ex_gw_port)
                 ri.internal_ports.append(p)
+                list_port_ids_up.append(p['id'])
 
             for p in old_ports:
                 self._internal_network_removed(ri, p, ri.ex_gw_port)
@@ -530,9 +555,12 @@ class RoutingServiceHelper(object):
             if ex_gw_port and not ri.ex_gw_port:
                 self._set_subnet_info(ex_gw_port)
                 self._external_gateway_added(ri, ex_gw_port)
+                list_port_ids_up.append(p['id'])
             elif not ex_gw_port and ri.ex_gw_port:
                 self._external_gateway_removed(ri, ri.ex_gw_port)
 
+            self._send_update_port_statuses(list_port_ids_up,
+                l3_constants.PORT_STATUS_ACTIVE)
             if ex_gw_port:
                 self._process_router_floating_ips(ri, ex_gw_port)
 
@@ -719,9 +747,6 @@ class RoutingServiceHelper(object):
     def _external_gateway_added(self, ri, ex_gw_port):
         driver = self._drivermgr.get_driver(ri.id)
         driver.external_gateway_added(ri, ex_gw_port)
-        if ri.snat_enabled and ri.internal_ports:
-            for port in ri.internal_ports:
-                driver.enable_internal_network_NAT(ri, port, ex_gw_port)
 
     def _external_gateway_removed(self, ri, ex_gw_port):
         driver = self._drivermgr.get_driver(ri.id)

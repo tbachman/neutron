@@ -289,26 +289,6 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
              group, priority, group, ip, group, group, group, vlan)
         self._edit_running_config(conf_str, 'SET_INTC_ASR_HSRP_EXTERNAL')
 
-    # ToDo(Hareesh):This function doesn't seem to be used. Delete in next sweep
-    # def _do_set_ha_hsrp2(self, subinterface, vrf_name, priority, group, vlan,
-    #                      ip, is_external=False):
-    #     try:
-    #         confstr = asr1k_snippets.REMOVE_INTC_ASR_HSRP_PREEMPT % (
-    #             subinterface, group)
-    #         self._edit_running_config(confstr, "REMOVE_HSRP_PREEMPT")
-    #     except Exception:
-    #         pass
-    #     if is_external is True:
-    #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP_EXTERNAL % (
-    #             subinterface, group, priority, group, ip, group, group,
-    #             group, vlan)
-    #     else:
-    #         conf_str = asr1k_snippets.SET_INTC_ASR_HSRP % (
-    #             subinterface, vrf_name, group, priority, group, ip, group)
-    #     action = "%s SET_INTC_HSRP (Group: %s, Priority: % s)" % (
-    #         self.hosting_device['name'], group, priority)
-    #     self._edit_running_config(conf_str, action)
-
     def _create_sub_interface_v6(self, ri, port, is_external=False, gw_ip=""):
         if self._v6_port_needs_config(port) is not True:
             return

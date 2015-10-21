@@ -705,6 +705,15 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                 ni['notifier'].routers_updated(context, ni['routers'],
                                                operation, data)
 
+    def update_router_port_statuses(self, context, port_ids, status):
+        """Function that gets called when asr plugin notifies about router port
+           status changes. By default, all ports are created with status set to
+           DOWN and when the ASR plugin creates the port it notifies the DB to
+           change the status to ACTIVE.
+        """
+        for port_id in port_ids:
+            self._core_plugin.update_port_status(context, port_id, status)
+
     def _notify_affected_routers(self, context, router_ids, operation):
         ha_supported = utils.is_extension_supported(self, ha.HA_ALIAS)
         valid_router_ids = []
