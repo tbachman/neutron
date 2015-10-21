@@ -557,7 +557,7 @@ class RoutingServiceHelper(object):
             if ex_gw_port and not ri.ex_gw_port:
                 self._set_subnet_info(ex_gw_port)
                 self._external_gateway_added(ri, ex_gw_port)
-                list_port_ids_up.append(p['id'])
+                list_port_ids_up.append(ex_gw_port['id'])
             elif not ex_gw_port and ri.ex_gw_port:
                 self._external_gateway_removed(ri, ri.ex_gw_port)
 
