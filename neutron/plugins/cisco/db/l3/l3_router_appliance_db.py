@@ -817,7 +817,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
             if r_hd_binding.hosting_device_id is not None:
                 # this router was scheduled by some other process so it
                 # requires no further processing
-                self._backlogged_routers.pop(r_id)
+                self._backlogged_routers.remove(r_id)
                 continue
             # since this function is already synchronized on the
             # router backlog, any backlog operations during scheduling
