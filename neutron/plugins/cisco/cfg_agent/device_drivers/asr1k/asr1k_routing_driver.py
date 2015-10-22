@@ -277,7 +277,12 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
                                       'REMOVE_DEFAULT_ROUTE_WITH_INTF')
 
     def _add_ha_hsrp(self, ri, port):
-        priority = ri.router[ha.DETAILS][ha.PRIORITY]
+        if ri.router.get(ROUTER_ROLE_ATTR) == ROUTER_ROLE_HA_REDUNDANCY:
+            for router in ri.router[ha.DETAILS][ha.REDUNDANCY_ROUTERS]:
+                if ri.router['id'] == router['id']:
+                    priority = router[ha.PRIORITY]
+        else:
+            priority = ri.router[ha.DETAILS][ha.PRIORITY]
         port_ha_info = port[HA_INFO]
         group = port_ha_info['group']
         ip = port_ha_info['ha_port']['fixed_ips'][0]['ip_address']
@@ -307,7 +312,7 @@ class ASR1kRoutingDriver(iosxe_driver.IosXeRoutingDriver):
         self._add_ha_HSRP_v6(ri, port, ip_cidr, is_external)
 
     def _do_create_sub_interface_v6(self, sub_interface, vlan_id, vrf_name,
-                                   ip_cidr, is_external=False):
+                                    ip_cidr, is_external=False):
         if is_external is True:
             conf_str = asr1k_snippets.CREATE_SUBINTERFACE_V6_NO_VRF_WITH_ID % (
                 sub_interface, self._deployment_id, vlan_id,
