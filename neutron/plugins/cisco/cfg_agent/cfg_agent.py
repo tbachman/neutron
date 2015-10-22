@@ -137,9 +137,9 @@ class CiscoCfgAgent(manager.Manager):
                 svc_helper_class, host, self.conf, self)
         except ImportError as e:
             LOG.warning(_LW("Error in loading routing service helper. Class "
-                       "specified is %(class)s. Reason:%(reason)s"),
-                     {'class': self.conf.cfg_agent.routing_svc_helper_class,
-                      'reason': e})
+                            "specified is %(class)s. Reason:%(reason)s"),
+                        {'class': self.conf.cfg_agent.routing_svc_helper_class,
+                         'reason': e})
             self.routing_service_helper = None
 
     def _start_periodic_tasks(self):
@@ -273,9 +273,9 @@ class CiscoCfgAgent(manager.Manager):
                     self.process_services(removed_devices_info=payload)
         except KeyError as e:
             LOG.error(_LE("Invalid payload format for received RPC message "
-                        "`hosting_devices_removed`. Error is %(error)s. "
-                        "Payload is %(payload)s"),
-                      {'error': e, 'payload': payload})
+                          "`hosting_devices_removed`. Error is %(error)s. "
+                          "Payload is %(payload)s"), {'error': e,
+                                                      'payload': payload})
 
     def get_assigned_hosting_devices(self):
         context = n_context.get_admin_context_without_session()
@@ -372,7 +372,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         except AttributeError:
             # This means the server does not support report_state
             LOG.warning(_LW("Neutron server does not support state report. "
-                       "State report for this agent will be disabled."))
+                            "State report for this agent will be disabled."))
             self.heartbeat.stop()
             return
         except Exception:
