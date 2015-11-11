@@ -60,7 +60,7 @@ class ASR1kL3RouterDriver(drivers.L3RouterBaseDriver):
         # (for add operation) or not running (for remove operation) on that
         # hosting device.
         current = router_context.current
-        if current[HOSTING_DEVICE_ATTR] is None:
+        if current.get(HOSTING_DEVICE_ATTR) is None:
             return
         e_context = context.elevated()
         if current['gw_port_id']:
