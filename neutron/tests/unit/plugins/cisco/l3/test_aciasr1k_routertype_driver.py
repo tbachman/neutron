@@ -84,20 +84,6 @@ class AciAsr1kRouterTypeDriverTestCase(
 
     router_type = 'ASR1k_Neutron_router'
 
-    def _verify_routers(self, router_ids, hd_id):
-        # tenant routers
-        q_p = '%s=None' % ROUTER_ROLE_ATTR
-        ports = [r for r in self._list(
-            'ports')['ports']]
-        #self.assertEqual(len(r_ids), len(router_ids))
-        #for r_id in r_ids:
-            #self.assertIn(r_id, router_ids)
-        # global router on hosting device
-        #q_p = '%s=%s' % (ROUTER_ROLE_ATTR, ROUTER_ROLE_GLOBAL)
-        #g_rtrs = self._list('routers', query_params=q_p)['routers']
-        import pdb
-        pdb.set_trace()
-
     def _create_req(self, resource, data, id,
                     expected_code=webob.exc.HTTPOk.code,
                     fmt=None, subresource=None, neutron_context=None):
@@ -147,7 +133,6 @@ class AciAsr1kRouterTypeDriverTestCase(
                     data = {'router_id': r1['id'], 'port_id': port_db['id'] }
                     self._create_req('routers', data, r1['id'],
                                      subresource='add_router_interface')
-                    self._verify_routers({r1['id']}, hd_id)
 
     def test_gw_router_add_interface(self):
         self._test_gw_router_create_add_interface()
