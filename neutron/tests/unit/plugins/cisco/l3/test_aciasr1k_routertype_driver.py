@@ -179,6 +179,46 @@ class AciAsr1kRouterTypeDriverTestCase(
     def test_gw_router_remove_interface(self):
         self._test_gw_router_create_remove_interface()
 
+    def _test_notify_op_agent(self, target_func, *args):
+        kargs = [item for item in args]
+        kargs.append(self._l3_cfg_agent_mock)
+        target_func(*kargs)
+
+    def _validate_ha_fip_ops(self, notifyApi, routers, first_operation):
+        # 2 x add gateway (one for user visible router), one for redundancy
+        # routers
+        # 3 x add interface (one for each router),
+        # 1 x update of floatingip (with 3 routers included),
+        # 1 x deletion of floatingip (with 3 routers included)
+        notify_call_1 = notifyApi.routers_updated.mock_calls[5]
+        self.assertEqual(notify_call_1[1][2], first_operation)
+        r_ids = {r['id'] for r in notify_call_1[1][1]}
+        for r in routers:
+            self.assertIn(r['id'], r_ids)
+            r_ids.remove(r['id'])
+        self.assertEqual(len(r_ids), 0)
+        delete_call = notifyApi.routers_updated.mock_calls[6]
+        self.assertEqual(delete_call[1][2], 'delete_floatingip')
+        r_ids = {r['id'] for r in delete_call[1][1]}
+        for r in routers:
+            self.assertIn(r['id'], r_ids)
+            r_ids.remove(r['id'])
+        self.assertEqual(len(r_ids), 0)
+        self.assertEqual(7, notifyApi.routers_updated.call_count)
+
+    def _test_ha_floatingip_update_cfg_agent(self, notifyApi):
+        with self.subnet() as private_sub:
+            with self.port(private_sub) as p_port:
+                private_port = p_port['port']
+                with self.floatingip_no_assoc(private_sub) as fl_ip:
+                    fip = fl_ip['floatingip']
+                    routers = self._list('routers')['routers']
+                    fip_spec = {'floatingip': {'port_id': private_port['id']}}
+                    self._update('floatingips', fip['id'], fip_spec)
+        self._validate_ha_fip_ops(notifyApi, routers, 'update_floatingip')
+
+    def test_ha_floatingip_update_cfg_agent(self):
+        self._test_notify_op_agent(self._test_ha_floatingip_update_cfg_agent)
 
 class AciAsr1kHARouterTypeDriverTestCase(
         asr1k.Asr1kHARouterTypeDriverTestCase):

@@ -486,7 +486,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                   router_type_id)
             if driver:
                 fip_ctxt = driver_context.FloatingipContext(
-                        floatingip)
+                        floatingip.get('floating_ip'))
                 driver.update_floatingip_postcommit(context, fip_ctxt)
         self._notify_affected_routers(context, router_ids, 'create_floatingip')
         return info
@@ -508,7 +508,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                   router_type_id)
             if driver:
                 fip_ctxt = driver_context.FloatingipContext(
-                        floatingip,
+                        floatingip.get('floatingip'),
                         orig_fl_ip)
                 driver.update_floatingip_postcommit(context, fip_ctxt)
         self._notify_affected_routers(context, router_ids, 'update_floatingip')
@@ -526,7 +526,7 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_dbonly_mixin):
                                                   router_type_id)
             if driver:
                 fip_ctxt = driver_context.FloatingipContext(
-                        floatingip_id)
+                        self._make_floatingip_dict(floatingip_db))
                 driver.delete_floatingip_postcommit(context, fip_ctxt)
         self._notify_affected_routers(context, router_ids, 'delete_floatingip')
 

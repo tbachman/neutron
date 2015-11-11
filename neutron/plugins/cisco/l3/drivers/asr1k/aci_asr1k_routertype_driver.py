@@ -245,6 +245,11 @@ class AciASR1kL3RouterDriver(asr1k.ASR1kL3RouterDriver):
     def create_router_precommit(self, context, router_context):
         pass
 
+    def _notify_port_update(self, port_id):
+        l2 = mechanism_apic.APICMechanismDriver.get_driver_instance()
+        if l2 and port_id:
+            l2.notify_port_update(port_id)
+
     def _create_floatingip(self, context, floatingip):
         port_id = floatingip.get('floatingip', {}).get('port_id')
         self._notify_port_update(port_id)
@@ -263,6 +268,6 @@ class AciASR1kL3RouterDriver(asr1k.ASR1kL3RouterDriver):
             self._create_floatingip(context, floatingip)
 
     def delete_floatingip_postcommit(self, context, fip_context):
+        floatingip = fip_context.current
         port_id = floatingip.get('port_id')
         self._notify_port_update(port_id)
-        return res
